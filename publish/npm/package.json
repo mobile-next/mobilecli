@@ -1,6 +1,6 @@
 {
 	"name": "@mobilenext/mobilectl",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"author": "Mobile Next",
 	"description": "A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps",
 	"repository": {
