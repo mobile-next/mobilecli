@@ -1,0 +1,14 @@
+{
+	"name": "@mobilenext/mobilectl",
+	"version": "0.0.3",
+	"author": "Mobile Next",
+	"description": "A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mobile-next/mobilectl.git"
+	},
+	"license": "MIT",
+	"bin": {
+		"mobilectl": "index.js"
+	}
+}
