@@ -1,10 +1,10 @@
-.PHONY: all build test lint fmt clean install-lint-deps
+.PHONY: all build test lint fmt clean
 
 all: build
 
 build:
 	go mod tidy
-	go build
+	go build -ldflags="-s -w"
 
 test:
 	go test ./... -v -race
