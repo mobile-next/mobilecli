@@ -2,6 +2,32 @@
 
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/). 
 
+<h4 align="center">
+<a href="https://github.com/mobile-next/mobilectl">
+    <img src="https://img.shields.io/github/stars/mobile-next/mobilectl" alt="Mobile Next Stars" />
+  </a>  
+ <a href="https://github.com/mobile-next/mobilectl">
+    <img src="https://img.shields.io/github/contributors/mobile-next/mobilectl?color=green" alt="Mobile Next Downloads" />
+  </a>
+  <a href="https://www.npmjs.com/package/@mobilenext/mobilectl">
+    <img src="https://img.shields.io/npm/dm/@mobilenext/mobilectl?logo=npm&style=flat&color=red" alt="npm">
+  </a>
+<a href="https://github.com/mobile-next/mobilectl/releases">
+    <img src="https://img.shields.io/github/release/mobile-next/mobilectl">
+  </a>
+<a href="https://github.com/mobile-next/mobilectl/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
+  </a> 
+  
+</p>
+
+<h4 align="center">
+<a href="http://mobilenexthq.com/join-slack">
+    <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
+</a>	
+</p>
+
+
 ## Features 🚀
 
 - **Device Management**: List and manage connected iOS/Android devices and simulators
