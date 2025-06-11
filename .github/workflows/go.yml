@@ -139,6 +139,6 @@ jobs:
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
         # publish to npm
         cd publish/npm
-        sed -i 's/\"local-build\"/\"${{ github.ref_name }}\"/' package.json
+        npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install
         npm publish
