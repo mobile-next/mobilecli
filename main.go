@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "1.0.0"
+const version = "0.0.1-dev"
 
 // AppCmd represents the app management commands
 var AppCmd = &cobra.Command{
@@ -370,6 +370,7 @@ func printJson(data interface{}) {
 }
 
 func initConfig() {
+	utils.SetVerbose(verbose)
 }
 
 func init() {
