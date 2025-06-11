@@ -2,8 +2,11 @@ package devices
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/mobile-next/mobilectl/utils"
 )
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
@@ -32,9 +35,19 @@ func (d AndroidDevice) DeviceType() string {
 	}
 }
 
+func getAdbPath() string {
+	adbPath := os.Getenv("ANDROID_HOME")
+	if adbPath != "" {
+		return adbPath + "/platform-tools/adb"
+	}
+
+	// best effort, look in path
+	return "adb"
+}
+
 func (d AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	cmdArgs := append([]string{"-s", d.id}, args...)
-	cmd := exec.Command("adb", cmdArgs...)
+	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
 }
 
@@ -108,7 +121,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	modelCmd := exec.Command("adb", "-s", deviceID, "shell", "getprop", "ro.product.model")
+	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
 		return strings.TrimSpace(string(modelOutput))
@@ -119,9 +132,15 @@ func getAndroidDeviceName(deviceID string) string {
 
 // GetAndroidDevices retrieves a list of connected Android devices
 func GetAndroidDevices() ([]ControllableDevice, error) { // Changed return type
-	command := exec.Command("adb", "devices")
+	command := exec.Command(getAdbPath(), "devices")
 	output, err := command.CombinedOutput()
 	if err != nil {
+		status := command.ProcessState.ExitCode()
+		if status < 0 {
+			utils.Verbose("Failed running 'adb devices', is ANDROID_HOME set correctly?")
+			return []ControllableDevice{}, nil
+		}
+
 		return nil, fmt.Errorf("failed to run 'adb devices': %v", err)
 	}
 
