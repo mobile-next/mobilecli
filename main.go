@@ -15,9 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.0.1-dev"
+const version = "dev"
 
-// AppCmd represents the app management commands
 var AppCmd = &cobra.Command{
 	Use:   "app",
 	Short: "Manage applications on devices",
