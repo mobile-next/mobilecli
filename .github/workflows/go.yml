@@ -137,8 +137,8 @@ jobs:
         chmod +x publish/npm/bin/*
         # setup npmrc
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
-        sed -i 's/\"local-build\"/\"${{ github.ref_name }}\"/' package.json
         # publish to npm
         cd publish/npm
+        sed -i 's/\"local-build\"/\"${{ github.ref_name }}\"/' package.json
         npm install
         npm publish
