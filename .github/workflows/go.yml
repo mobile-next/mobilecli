@@ -84,7 +84,6 @@ jobs:
       with:
         name: linux-build
         path: |
-          mobilectl-darwin
           mobilectl-linux-arm64
           mobilectl-linux-amd64
         retention-days: 1
@@ -95,16 +94,6 @@ jobs:
     needs: [build_on_linux, build_on_macos]
     steps:
     - uses: actions/checkout@v4
-
-    - name: Upload to GitHub Release
-      if: github.ref_type == 'tag'
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-      with:
-        name: Version ${{ github.ref_name }}
-        files: |
-          mobiledeck-${{ github.ref_name }}.vsix
 
   publish:
 
@@ -124,6 +113,39 @@ jobs:
       with:
         name: linux-build
         path: mobilectl-linux
+
+    - name: Zip builds
+      run: |
+        mkdir dist
+        cd dist
+        # mac
+        cp ../mobilectl-darwin/mobilectl-darwin mobilectl
+        zip -9 ../mobilectl-${{ github.ref_name }}-macos.zip mobilectl
+        rm -f mobilectl
+
+        # linux-amd64
+        cp ../mobilectl-linux/mobilectl-linux-amd64 mobilectl
+        zip -9 ../mobilectl-${{ github.ref_name }}-linux-amd64.zip mobilectl
+        rm -f mobilectl
+
+        # linux-arm64
+        cp ../mobilectl-linux/mobilectl-linux-arm64 mobilectl
+        zip -9 ../mobilectl-${{ github.ref_name }}-linux-arm64.zip mobilectl
+        rm -f mobilectl
+        cd ..
+
+        ls -l *.zip
+        rm -rf dist
+
+    - name: Upload to GitHub Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      with:
+        name: Version ${{ github.ref_name }}
+        files: |
+          mobilectl-*.zip
   
     - name: Publish
       if: github.ref_type == 'tag'
