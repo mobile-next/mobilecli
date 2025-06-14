@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilectl/devices"
+	"github.com/mobile-next/mobilectl/server"
 	"github.com/mobile-next/mobilectl/utils"
 	"github.com/spf13/cobra"
 )
@@ -23,18 +24,22 @@ var AppCmd = &cobra.Command{
 	Long:  `Install, uninstall, and manage applications on iOS and Android devices.`,
 }
 
-var (
-	deviceType string
-)
+var ()
 
 var (
-	verbose               bool
-	jsonOutput            bool
-	deviceId              string
-	platform              string
+	verbose bool
+
+	// all commands
+	deviceId string
+
+	// for screenshot command
 	screenshotOutputPath  string
 	screenshotFormat      string
 	screenshotJpegQuality int
+
+	// for devices command
+	platform   string
+	deviceType string
 )
 
 // rootCmd represents the base command
@@ -48,42 +53,18 @@ var rootCmd = &cobra.Command{
 	Version: version,
 }
 
-// For JSON marshaling of ControllableDevice interface
-type deviceJSON struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Platform string `json:"platform"`
-	Type     string `json:"type"`
-}
-
 var devicesCmd = &cobra.Command{
 	Use:   "devices",
 	Short: "List connected devices",
 	Long:  `List all connected iOS and Android devices, both real devices and simulators/emulators.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		allDevices, err := devices.GetAllControllableDevices()
+		deviceInfoList, err := devices.GetDeviceInfoList()
 		if err != nil {
 			log.Printf("Warning: Encountered errors while listing some devices: %v", err)
-		}
-
-		if err != nil {
 			return err
-		} else if len(allDevices) == 0 {
-			fmt.Println("No devices found.")
-			return nil
 		}
 
-		jsonDevices := make([]deviceJSON, len(allDevices))
-		for i, d := range allDevices {
-			jsonDevices[i] = deviceJSON{
-				ID:       d.ID(),
-				Name:     d.Name(),
-				Platform: d.Platform(),
-				Type:     d.DeviceType(),
-			}
-		}
-
-		printJson(jsonDevices)
+		printJson(deviceInfoList)
 		return nil
 	},
 }
@@ -205,7 +186,26 @@ var appsCmd = &cobra.Command{
 	Long:  `Launch, terminate, and manage applications on connected devices.`,
 }
 
-// IO subcommands
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Server management commands",
+	Long:  `Commands for managing the mobilectl server.`,
+}
+
+var serverStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the mobilectl server",
+	Long:  `Starts the mobilectl server.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		listenAddr := cmd.Flag("listen").Value.String()
+		if listenAddr == "" {
+			listenAddr = "localhost:12000"
+		}
+		return server.StartServer(listenAddr)
+	},
+}
+
+// io subcommands
 var ioTapCmd = &cobra.Command{
 	Use:   "tap [x,y]",
 	Short: "Tap on a device screen at the given coordinates",
@@ -376,7 +376,6 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
-	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 
 	// add main commands
 	rootCmd.AddCommand(devicesCmd)
@@ -384,6 +383,7 @@ func init() {
 	rootCmd.AddCommand(rebootCmd)
 	rootCmd.AddCommand(ioCmd)
 	rootCmd.AddCommand(appsCmd)
+	rootCmd.AddCommand(serverCmd)
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
@@ -393,6 +393,10 @@ func init() {
 	// add apps subcommands
 	appsCmd.AddCommand(appsLaunchCmd)
 	appsCmd.AddCommand(appsTerminateCmd)
+
+	// add server subcommands
+	serverCmd.AddCommand(serverStartCmd)
+	serverStartCmd.Flags().String("listen", "", "Address to listen on (e.g., 'localhost:12000' or '0.0.0.0:13000')")
 
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")

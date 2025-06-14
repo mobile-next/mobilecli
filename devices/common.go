@@ -77,3 +77,31 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 
 	return allDevices, nil
 }
+
+// DeviceInfo represents the JSON-friendly device information
+type DeviceInfo struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+	Type     string `json:"type"`
+}
+
+// GetDeviceInfoList returns a list of DeviceInfo for all connected devices
+func GetDeviceInfoList() ([]DeviceInfo, error) {
+	devices, err := GetAllControllableDevices()
+	if err != nil {
+		return nil, fmt.Errorf("error getting devices: %v", err)
+	}
+
+	deviceInfoList := make([]DeviceInfo, len(devices))
+	for i, d := range devices {
+		deviceInfoList[i] = DeviceInfo{
+			ID:       d.ID(),
+			Name:     d.Name(),
+			Platform: d.Platform(),
+			Type:     d.DeviceType(),
+		}
+	}
+
+	return deviceInfoList, nil
+}
