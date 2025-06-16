@@ -1,21 +1,21 @@
-# mobilectl 
+# mobilecli 
 
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/). 
 
 <h4 align="center">
-<a href="https://github.com/mobile-next/mobilectl">
-    <img src="https://img.shields.io/github/stars/mobile-next/mobilectl" alt="Mobile Next Stars" />
+<a href="https://github.com/mobile-next/mobilecli">
+    <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
   </a>  
- <a href="https://github.com/mobile-next/mobilectl">
-    <img src="https://img.shields.io/github/contributors/mobile-next/mobilectl?color=green" alt="Mobile Next Downloads" />
+ <a href="https://github.com/mobile-next/mobilecli">
+    <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
-  <a href="https://www.npmjs.com/package/@mobilenext/mobilectl">
-    <img src="https://img.shields.io/npm/dm/@mobilenext/mobilectl?logo=npm&style=flat&color=red" alt="npm">
+  <a href="https://www.npmjs.com/package/@mobilenext/mobilecli">
+    <img src="https://img.shields.io/npm/dm/@mobilenext/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
-<a href="https://github.com/mobile-next/mobilectl/releases">
-    <img src="https://img.shields.io/github/release/mobile-next/mobilectl">
+<a href="https://github.com/mobile-next/mobilecli/releases">
+    <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
   </a>
-<a href="https://github.com/mobile-next/mobilectl/blob/main/LICENSE">
+<a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
   </a> 
   
@@ -48,8 +48,8 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 ### Install from Source
 
 ```bash
-git clone https://github.com/mobile-next/mobilectl.git
-cd mobilectl
+git clone https://github.com/mobile-next/mobilecli.git
+cd mobilecli
 make build
 ```
 
@@ -77,7 +77,7 @@ brew install --cask android-platform-tools
 
 ```bash
 # List all connected devices and simulators to your local or remote server
-mobilectl devices
+mobilecli devices
 ```
 
 Example output:
@@ -102,31 +102,31 @@ Example output:
 
 ```bash
 # Take a PNG screenshot (default)
-mobilectl screenshot --device <device-id>
+mobilecli screenshot --device <device-id>
 
 # Take a JPEG screenshot with custom quality
-mobilectl screenshot --device <device-id> --format jpeg --quality 80
+mobilecli screenshot --device <device-id> --format jpeg --quality 80
 
 # Save to specific path
-mobilectl screenshot --device <device-id> --output screenshot.png
+mobilecli screenshot --device <device-id> --output screenshot.png
 
 # Output to stdout
-mobilectl screenshot --device <device-id> --output -
+mobilecli screenshot --device <device-id> --output -
 ```
 
 ### Device Control
 
 ```bash
 # Reboot a device
-mobilectl reboot --device <device-id>
+mobilecli reboot --device <device-id>
 
 # Tap at coordinates (x,y)
-mobilectl tap --device <device-id> 100,200
+mobilecli tap --device <device-id> 100,200
 
 # Press hardware buttons
-mobilectl press-button --device <device-id> HOME
-mobilectl press-button --device <device-id> VOLUME_UP
-mobilectl press-button --device <device-id> POWER
+mobilecli press-button --device <device-id> HOME
+mobilecli press-button --device <device-id> VOLUME_UP
+mobilecli press-button --device <device-id> POWER
 ```
 
 ### Supported Hardware Buttons
@@ -168,7 +168,7 @@ make lint
 ### Project Structure
 
 ```
-mobilectl/
+mobilecli/
 ├── main.go              # CLI entry point and commands
 ├── devices/             # Device management interfaces
 │   ├── common.go        # ControllableDevice interface
@@ -195,4 +195,4 @@ mobilectl/
 
 ## Support
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilectl/issues) page. 
+For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page. 
