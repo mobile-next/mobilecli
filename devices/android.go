@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mobile-next/mobilectl/utils"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // AndroidDevice implements the ControllableDevice interface for Android devices

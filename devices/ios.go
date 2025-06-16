@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os/exec"
 
-	"github.com/mobile-next/mobilectl/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/wda"
 )
 
 type IOSDevice struct {

@@ -37,18 +37,18 @@ jobs:
 
     - name: Build
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilectl-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilectl-amd64
-        lipo mobilectl-arm64 mobilectl-amd64 -create -output mobilectl-darwin
-        rm mobilectl-arm64 mobilectl-amd64
-        ./mobilectl-darwin --version
+        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
+        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-amd64
+        lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
+        rm mobilecli-arm64 mobilecli-amd64
+        ./mobilecli-darwin --version
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
       with:
         name: macos-build
         path: |
-          mobilectl-darwin
+          mobilecli-darwin
         retention-days: 1
         overwrite: true
 
@@ -75,17 +75,17 @@ jobs:
   
     - name: Build
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilectl-linux-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilectl-linux-amd64
-        ./mobilectl-linux-amd64 --version
+        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
+        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-linux-amd64
+        ./mobilecli-linux-amd64 --version
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-build
         path: |
-          mobilectl-linux-arm64
-          mobilectl-linux-amd64
+          mobilecli-linux-arm64
+          mobilecli-linux-amd64
         retention-days: 1
         overwrite: true
 
@@ -106,32 +106,32 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: macos-build
-        path: mobilectl-darwin
+        path: mobilecli-darwin
 
     - name: Download linux build
       uses: actions/download-artifact@v4
       with:
         name: linux-build
-        path: mobilectl-linux
+        path: mobilecli-linux
 
     - name: Zip builds
       run: |
         mkdir dist
         cd dist
         # mac
-        cp ../mobilectl-darwin/mobilectl-darwin mobilectl
-        zip -9 ../mobilectl-${{ github.ref_name }}-macos.zip mobilectl
-        rm -f mobilectl
+        cp ../mobilecli-darwin/mobilecli-darwin mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-macos.zip mobilecli
+        rm -f mobilecli
 
         # linux-amd64
-        cp ../mobilectl-linux/mobilectl-linux-amd64 mobilectl
-        zip -9 ../mobilectl-${{ github.ref_name }}-linux-amd64.zip mobilectl
-        rm -f mobilectl
+        cp ../mobilecli-linux/mobilecli-linux-amd64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-linux-amd64.zip mobilecli
+        rm -f mobilecli
 
         # linux-arm64
-        cp ../mobilectl-linux/mobilectl-linux-arm64 mobilectl
-        zip -9 ../mobilectl-${{ github.ref_name }}-linux-arm64.zip mobilectl
-        rm -f mobilectl
+        cp ../mobilecli-linux/mobilecli-linux-arm64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-linux-arm64.zip mobilecli
+        rm -f mobilecli
         cd ..
 
         ls -l *.zip
@@ -145,7 +145,7 @@ jobs:
       with:
         name: Version ${{ github.ref_name }}
         files: |
-          mobilectl-*.zip
+          mobilecli-*.zip
   
     - name: Publish
       if: github.ref_type == 'tag'
@@ -153,9 +153,9 @@ jobs:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
         # prepare binaries for distribution
-        mv ./mobilectl-darwin/mobilectl-darwin publish/npm/bin
-        mv ./mobilectl-linux/mobilectl-linux-amd64 publish/npm/bin
-        mv ./mobilectl-linux/mobilectl-linux-arm64 publish/npm/bin
+        mv ./mobilecli-darwin/mobilecli-darwin publish/npm/bin
+        mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
+        mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
         chmod +x publish/npm/bin/*
         # setup npmrc
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc

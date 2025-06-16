@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilectl/devices"
+	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilectl/server"
-	"github.com/mobile-next/mobilectl/utils"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +23,6 @@ var AppCmd = &cobra.Command{
 	Short: "Manage applications on devices",
 	Long:  `Install, uninstall, and manage applications on iOS and Android devices.`,
 }
-
-var ()
 
 var (
 	verbose bool
@@ -44,7 +42,7 @@ var (
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
-	Use:   "mobilectl",
+	Use:   "mobilecli",
 	Short: "A cross-platform iOS/Android device automation tool",
 	Long:  `A universal tool for managing iOS and Android devices`,
 	CompletionOptions: cobra.CompletionOptions{

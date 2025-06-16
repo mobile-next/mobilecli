@@ -1,4 +1,4 @@
-module github.com/mobile-next/mobilectl
+module github.com/mobile-next/mobilecli
 
 go 1.23.0
 
