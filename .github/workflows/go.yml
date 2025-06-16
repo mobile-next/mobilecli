@@ -164,4 +164,4 @@ jobs:
         cd publish/npm
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install
-        npm publish
+        npm publish --access public
