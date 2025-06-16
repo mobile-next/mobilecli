@@ -115,6 +115,7 @@ jobs:
         path: mobilecli-linux
 
     - name: Zip builds
+      if: github.ref_type == 'tag'    
       run: |
         mkdir dist
         cd dist

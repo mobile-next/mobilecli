@@ -11,4 +11,5 @@
 	"bin": {
 		"mobilecli": "index.js"
 	}
+
 }
