@@ -17,4 +17,4 @@ fmt:
 	$(GOPATH)/bin/goimports -w .
 
 clean:
-	rm -f mobilectl coverage.out
+	rm -f mobilecli coverage.out

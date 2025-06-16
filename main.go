@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilectl/devices"
-	"github.com/mobile-next/mobilectl/server"
-	"github.com/mobile-next/mobilectl/utils"
+	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/server"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +23,6 @@ var AppCmd = &cobra.Command{
 	Short: "Manage applications on devices",
 	Long:  `Install, uninstall, and manage applications on iOS and Android devices.`,
 }
-
-var ()
 
 var (
 	verbose bool
@@ -44,7 +42,7 @@ var (
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
-	Use:   "mobilectl",
+	Use:   "mobilecli",
 	Short: "A cross-platform iOS/Android device automation tool",
 	Long:  `A universal tool for managing iOS and Android devices`,
 	CompletionOptions: cobra.CompletionOptions{
@@ -189,13 +187,13 @@ var appsCmd = &cobra.Command{
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Server management commands",
-	Long:  `Commands for managing the mobilectl server.`,
+	Long:  `Commands for managing the mobilecli server.`,
 }
 
 var serverStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the mobilectl server",
-	Long:  `Starts the mobilectl server.`,
+	Short: "Start the mobilecli server",
+	Long:  `Starts the mobilecli server.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		listenAddr := cmd.Flag("listen").Value.String()
 		if listenAddr == "" {

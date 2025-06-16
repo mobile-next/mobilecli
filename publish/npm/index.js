@@ -7,16 +7,16 @@ let binary;
 
 switch (process.platform) {
 	case "darwin":
-		binary = "mobilectl-darwin";
+		binary = "mobilecli-darwin";
 		break;
 
 	case "linux":
 		switch (process.arch) {
 			case "arm64":
-				binary = "mobilectl-linux-arm64";
+				binary = "mobilecli-linux-arm64";
 				break;
 			case "x64":
-				binary = "mobilectl-linux-amd64";
+				binary = "mobilecli-linux-amd64";
 				break;
 		}
 		break;

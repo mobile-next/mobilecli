@@ -1,14 +1,15 @@
 {
-	"name": "@mobilenext/mobilectl",
+	"name": "@mobilenext/mobilecli",
 	"version": "0.0.4",
 	"author": "Mobile Next",
 	"description": "A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/mobile-next/mobilectl.git"
+		"url": "git+https://github.com/mobile-next/mobilecli.git"
 	},
 	"license": "MIT",
 	"bin": {
-		"mobilectl": "index.js"
+		"mobilecli": "index.js"
 	}
+
 }

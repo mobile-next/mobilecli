@@ -12,8 +12,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/mobile-next/mobilectl/devices/wda"
-	"github.com/mobile-next/mobilectl/utils"
+	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/otiai10/copy"
 )
 
