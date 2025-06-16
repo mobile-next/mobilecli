@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilectl/devices"
-	"github.com/mobile-next/mobilectl/utils"
+	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +39,7 @@ var (
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
-	Use:   "mobilectl",
+	Use:   "mobilecli",
 	Short: "A cross-platform iOS/Android device automation tool",
 	Long:  `A universal tool for managing iOS and Android devices`,
 	CompletionOptions: cobra.CompletionOptions{
