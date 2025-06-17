@@ -14,6 +14,7 @@ type ControllableDevice interface {
 	DeviceType() string // e.g., "real", "simulator", "emulator"
 
 	TakeScreenshot() ([]byte, error)
+	StartScreenRecording() error
 	Reboot() error
 	Tap(x, y int) error
 	StartAgent() error

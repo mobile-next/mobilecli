@@ -179,3 +179,7 @@ func (d AndroidDevice) SendKeys(text string) error {
 	_, err := d.runAdbCommand("shell", "input", "text", text)
 	return err
 }
+
+func (d AndroidDevice) StartScreenRecording() error {
+	return fmt.Errorf("not implemented")
+}

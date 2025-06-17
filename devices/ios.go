@@ -2,6 +2,7 @@ package devices
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -89,4 +90,8 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 
 func (d IOSDevice) SendKeys(text string) error {
 	return wda.SendKeys(text)
+}
+
+func (d IOSDevice) StartScreenRecording() error {
+	return fmt.Errorf("not implemented")
 }

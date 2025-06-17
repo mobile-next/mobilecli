@@ -59,7 +59,7 @@ type JSONRPCResponse struct {
 
 // ScreenshotParams represents the parameters for the screenshot request
 type ScreenshotParams struct {
-	DeviceID string `json:"device_id"`
+	DeviceID string `json:"deviceId"`
 	Format   string `json:"format,omitempty"`  // "png" or "jpeg"
 	Quality  int    `json:"quality,omitempty"` // 1-100, only used for JPEG
 }
@@ -67,6 +67,7 @@ type ScreenshotParams struct {
 func StartServer(addr string) error {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/", sendBanner)
 	mux.HandleFunc("/rpc", handleJSONRPC)
 
 	// if host is missing, default to localhost
@@ -88,7 +89,7 @@ func StartServer(addr string) error {
 		IdleTimeout:  IdleTimeout,
 	}
 
-	log.Printf("Starting server on %s...", server.Addr)
+	log.Printf("Starting server on http://%s...", server.Addr)
 	return server.ListenAndServe()
 }
 
@@ -113,10 +114,18 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch req.Method {
-	case "list_devices":
+	case "devices":
 		result, err = handleDevicesList()
-	case "take_screenshot":
+	case "screenshot":
 		result, err = handleScreenshot(req.Params)
+	case "screenrecord":
+		err = handleScreenRecord(w, req.Params)
+	case "io_tap":
+		result, err = handleIoTap(req.Params)
+	case "io_text":
+		result, err = handleIoText(req.Params)
+	case "io_button":
+		result, err = handleIoButton(req.Params)
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
 		return
@@ -145,6 +154,28 @@ func handleDevicesList() (interface{}, error) {
 	return devices.GetDeviceInfoList()
 }
 
+var deviceCache = make(map[string]devices.ControllableDevice)
+
+func findDevice(deviceID string) (devices.ControllableDevice, error) {
+	if device, exists := deviceCache[deviceID]; exists {
+		return device, nil
+	}
+
+	allDevices, err := devices.GetAllControllableDevices()
+	if err != nil {
+		return nil, fmt.Errorf("error getting devices: %v", err)
+	}
+
+	for _, d := range allDevices {
+		if d.ID() == deviceID {
+			deviceCache[deviceID] = d
+			return d, nil
+		}
+	}
+
+	return nil, fmt.Errorf("device not found: %s", deviceID)
+}
+
 func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	var screenshotParams ScreenshotParams
 	if err := json.Unmarshal(params, &screenshotParams); err != nil {
@@ -169,21 +200,9 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 		}
 	}
 
-	allDevices, err := devices.GetAllControllableDevices()
+	targetDevice, err := findDevice(screenshotParams.DeviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error getting devices: %v", err)
-	}
-
-	var targetDevice devices.ControllableDevice
-	for _, d := range allDevices {
-		if d.ID() == screenshotParams.DeviceID {
-			targetDevice = d
-			break
-		}
-	}
-
-	if targetDevice == nil {
-		return nil, fmt.Errorf("device not found: %s", screenshotParams.DeviceID)
+		return nil, fmt.Errorf("error finding device: %v", err)
 	}
 
 	imageBytes, err := targetDevice.TakeScreenshot()
@@ -206,6 +225,85 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	}, nil
 }
 
+type IoTapParams struct {
+	DeviceID string `json:"deviceId"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+}
+
+func handleIoTap(params json.RawMessage) (interface{}, error) {
+	var ioTapParams IoTapParams
+	if err := json.Unmarshal(params, &ioTapParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	targetDevice, err := findDevice(ioTapParams.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %v", err)
+	}
+
+	err = targetDevice.Tap(ioTapParams.X, ioTapParams.Y)
+	if err != nil {
+		return nil, fmt.Errorf("error tapping: %v", err)
+	}
+
+	return map[string]interface{}{
+		"status": "ok",
+	}, nil
+}
+
+type IoTextParams struct {
+	DeviceID string `json:"deviceId"`
+	Text     string `json:"text"`
+}
+
+func handleIoText(params json.RawMessage) (interface{}, error) {
+	var ioTextParams IoTextParams
+	if err := json.Unmarshal(params, &ioTextParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	targetDevice, err := findDevice(ioTextParams.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %v", err)
+	}
+
+	err = targetDevice.SendKeys(ioTextParams.Text)
+	if err != nil {
+		return nil, fmt.Errorf("error sending keys: %v", err)
+	}
+
+	return map[string]interface{}{
+		"status": "ok",
+	}, nil
+}
+
+type IoButtonParams struct {
+	DeviceID string `json:"deviceId"`
+	Button   string `json:"button"`
+}
+
+func handleIoButton(params json.RawMessage) (interface{}, error) {
+	var ioButtonParams IoButtonParams
+	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	targetDevice, err := findDevice(ioButtonParams.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %v", err)
+	}
+
+	err = targetDevice.PressButton(ioButtonParams.Button)
+	if err != nil {
+		return nil, fmt.Errorf("error pressing button: %v", err)
+	}
+
+	return map[string]interface{}{
+		"status": "ok",
+	}, nil
+}
+
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -219,4 +317,48 @@ func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message s
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func sendBanner(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"status": "ok",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+type ScreenRecordParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+func handleScreenRecord(w http.ResponseWriter, params json.RawMessage) error {
+	var screenRecordParams ScreenRecordParams
+	if err := json.Unmarshal(params, &screenRecordParams); err != nil {
+		return fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+
+	/*
+		windowId, err := devices.FindWindowIdForDevice(screenRecordParams.DeviceID)
+		if err != nil {
+			return fmt.Errorf("failed to find window id: %v", err)
+		}
+
+		windowgrabber := exec.Command("./windowgrabber", "stream", "--window-id", strconv.Itoa(windowId), "--fps", "30")
+
+		stdout, err := windowgrabber.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("failed to get stdout pipe: %v", err)
+		}
+
+		err = windowgrabber.Start()
+		if err != nil {
+			return fmt.Errorf("failed to start windowgrabber: %v", err)
+		}
+
+		io.Copy(w, stdout)
+	*/
+	return nil
 }

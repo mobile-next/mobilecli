@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -409,4 +410,79 @@ func (s SimulatorDevice) SendKeys(text string) error {
 
 func (s SimulatorDevice) Tap(x, y int) error {
 	return wda.Tap(x, y)
+}
+
+type Window struct {
+	ID     int    `json:"id"`
+	Title  string `json:"title"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+type Process struct {
+	App     string   `json:"app"`
+	PID     int      `json:"pid"`
+	Windows []Window `json:"windows"`
+}
+
+func findWindowIdForDevice(deviceID string) (int, error) {
+
+	bootedDevices, err := GetBootedSimulators()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get booted devices: %v", err)
+	}
+
+	deviceName := ""
+	for _, device := range bootedDevices {
+		if device.UDID == deviceID {
+			deviceName = device.Name
+			break
+		}
+	}
+
+	if deviceName == "" {
+		return 0, fmt.Errorf("device not found: %s", deviceID)
+	}
+
+	// now run windowgrabber and get the window id
+	windowgrabber := exec.Command("./windowgrabber", "list", "--json")
+	output, err := windowgrabber.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list windows: %v", err)
+	}
+
+	var processes []Process
+	err = json.Unmarshal(output, &processes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to unmarshal windows: %v", err)
+	}
+
+	for _, process := range processes {
+		if process.App == "Simulator" {
+			for _, window := range process.Windows {
+				if window.Title == deviceName {
+					return window.ID, nil
+				}
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("window not found for device: %s", deviceID)
+}
+
+func (s SimulatorDevice) StartScreenRecording() error {
+	windowId, err := findWindowIdForDevice(s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to get window id: %v", err)
+	}
+
+	windowgrabber := exec.Command("./windowgrabber", "stream", "--window-id", strconv.Itoa(windowId), "--fps", "30")
+	windowgrabber.Stdout = os.Stdout
+	windowgrabber.Stderr = os.Stderr
+	err = windowgrabber.Run()
+	if err != nil {
+		return fmt.Errorf("failed to start windowgrabber: %v", err)
+	}
+
+	return nil
 }

@@ -38,6 +38,10 @@ var (
 	// for devices command
 	platform   string
 	deviceType string
+
+	// for screenrecord command
+	screenrecordOutputPath string
+	screenrecordDuration   int
 )
 
 // rootCmd represents the base command
@@ -145,6 +149,36 @@ var screenshotCmd = &cobra.Command{
 			}
 			log.Printf("Screenshot for device %s saved to %s as %s.", targetDevice.ID(), finalPath, screenshotFormat)
 		}
+
+		return nil
+	},
+}
+
+var screenrecordCmd = &cobra.Command{
+	Use:   "screenrecord",
+	Short: "Record the screen of a connected device",
+	Long:  `Records the screen of a specified device and saves it locally as an MP4 file.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		targetDevice, err := findTargetDevice(deviceId)
+		if err != nil {
+			return err
+		}
+
+		err = targetDevice.StartAgent()
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Starting screen recording for %s device with ID: %s (Name: %s)", targetDevice.Platform(), targetDevice.ID(), targetDevice.Name())
+
+		err = targetDevice.StartScreenRecording()
+		if err != nil {
+			return fmt.Errorf("failed to start screen recording: %v", err)
+		}
+
+		// Record for the specified duration
+		log.Printf("Recording for %d seconds...", screenrecordDuration)
+		time.Sleep(time.Duration(screenrecordDuration) * time.Second)
 
 		return nil
 	},
@@ -378,6 +412,7 @@ func init() {
 	// add main commands
 	rootCmd.AddCommand(devicesCmd)
 	rootCmd.AddCommand(screenshotCmd)
+	rootCmd.AddCommand(screenrecordCmd)
 	rootCmd.AddCommand(rebootCmd)
 	rootCmd.AddCommand(ioCmd)
 	rootCmd.AddCommand(appsCmd)
@@ -424,6 +459,11 @@ func init() {
 
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsTerminateCmd.MarkFlagRequired("device")
+
+	screenrecordCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to record from")
+	screenrecordCmd.Flags().StringVarP(&screenrecordOutputPath, "output", "", "", "Output file path for recording (e.g., recording.mp4)")
+	screenrecordCmd.Flags().IntVarP(&screenrecordDuration, "duration", "", 0, "Recording duration in seconds (0 for infinite)")
+	screenrecordCmd.MarkFlagRequired("device")
 }
 
 func main() {
