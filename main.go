@@ -199,7 +199,9 @@ var serverStartCmd = &cobra.Command{
 		if listenAddr == "" {
 			listenAddr = "localhost:12000"
 		}
-		return server.StartServer(listenAddr)
+
+		enableCORS, _ := cmd.Flags().GetBool("cors")
+		return server.StartServer(listenAddr, enableCORS)
 	},
 }
 
@@ -395,6 +397,7 @@ func init() {
 	// add server subcommands
 	serverCmd.AddCommand(serverStartCmd)
 	serverStartCmd.Flags().String("listen", "", "Address to listen on (e.g., 'localhost:12000' or '0.0.0.0:13000')")
+	serverStartCmd.Flags().Bool("cors", false, "Enable CORS support")
 
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
