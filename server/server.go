@@ -261,17 +261,17 @@ type IoTapParams struct {
 func handleIoTap(params json.RawMessage) (interface{}, error) {
 	var ioTapParams IoTapParams
 	if err := json.Unmarshal(params, &ioTapParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v", err)
+		return nil, err
 	}
 
 	targetDevice, err := findDevice(ioTapParams.DeviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding device: %v", err)
+		return nil, err
 	}
 
 	err = targetDevice.Tap(ioTapParams.X, ioTapParams.Y)
 	if err != nil {
-		return nil, fmt.Errorf("error tapping: %v", err)
+		return nil, err
 	}
 
 	return map[string]interface{}{
@@ -287,17 +287,17 @@ type IoTextParams struct {
 func handleIoText(params json.RawMessage) (interface{}, error) {
 	var ioTextParams IoTextParams
 	if err := json.Unmarshal(params, &ioTextParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v", err)
+		return nil, err
 	}
 
 	targetDevice, err := findDevice(ioTextParams.DeviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding device: %v", err)
+		return nil, err
 	}
 
 	err = targetDevice.SendKeys(ioTextParams.Text)
 	if err != nil {
-		return nil, fmt.Errorf("error sending keys: %v", err)
+		return nil, err
 	}
 
 	return map[string]interface{}{
