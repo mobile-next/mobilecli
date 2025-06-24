@@ -132,6 +132,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, string(req.Params))
+
 	var result interface{}
 	var err error
 
