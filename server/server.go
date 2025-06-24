@@ -179,6 +179,7 @@ func handleDevicesList() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
+		"status":  "ok",
 		"devices": devices,
 	}, nil
 }
