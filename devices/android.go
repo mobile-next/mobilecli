@@ -155,11 +155,17 @@ func (d AndroidDevice) StartAgent() error {
 
 func (d AndroidDevice) PressButton(key string) error {
 	keyMap := map[string]string{
-		"home":        "3",
-		"back":        "4",
-		"power":       "26",
-		"volume_up":   "24",
-		"volume_down": "25",
+		"HOME":        "KEYCODE_HOME",
+		"BACK":        "KEYCODE_BACK",
+		"VOLUME_UP":   "KEYCODE_VOLUME_UP",
+		"VOLUME_DOWN": "KEYCODE_VOLUME_DOWN",
+		"ENTER":       "KEYCODE_ENTER",
+		"DPAD_CENTER": "KEYCODE_DPAD_CENTER",
+		"DPAD_UP":     "KEYCODE_DPAD_UP",
+		"DPAD_DOWN":   "KEYCODE_DPAD_DOWN",
+		"DPAD_LEFT":   "KEYCODE_DPAD_LEFT",
+		"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
+		"BACKSPACE":   "KEYCODE_DEL",
 	}
 
 	keycode, exists := keyMap[key]
@@ -176,6 +182,13 @@ func (d AndroidDevice) PressButton(key string) error {
 }
 
 func (d AndroidDevice) SendKeys(text string) error {
+	if text == "\b" {
+		return d.PressButton("BACKSPACE")
+	} else if text == "\n" {
+		return d.PressButton("ENTER")
+	}
+
+	text = strings.ReplaceAll(text, " ", "\\ ")
 	_, err := d.runAdbCommand("shell", "input", "text", text)
 	return err
 }
