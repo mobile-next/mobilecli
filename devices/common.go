@@ -40,18 +40,13 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 	}
 
 	// Get iOS real devices
-	iosDeviceEntries, err := ListIOSDevices() // This returns []ios.DeviceEntry
+	iosDevices, err := ListIOSDevices()
 	if err != nil {
 		log.Printf("Warning: Failed to get iOS real devices: %v", err)
 		errs = append(errs, fmt.Errorf("ios real: %w", err))
 	} else {
-		for _, dev := range iosDeviceEntries {
-			allDevices = append(allDevices, IOSDevice{
-				Udid:           dev.Udid,
-				ProductName:    dev.ProductName,
-				ProductVersion: dev.ProductVersion,
-				ProductType:    dev.ProductType,
-			})
+		for _, device := range iosDevices {
+			allDevices = append(allDevices, device)
 		}
 	}
 

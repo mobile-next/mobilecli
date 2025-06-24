@@ -8,14 +8,12 @@ import (
 )
 
 type IOSDevice struct {
-	Udid           string `json:"Udid"`
-	ProductName    string `json:"ProductName"`
-	ProductVersion string `json:"ProductVersion"`
-	ProductType    string `json:"ProductType"`
+	Udid       string `json:"UniqueDeviceID"`
+	DeviceName string `json:"DeviceName"`
 }
 
 type listDevicesResponse struct {
-	Devices []IOSDevice `json:"deviceList"`
+	Devices []string `json:"deviceList"`
 }
 
 func (d IOSDevice) ID() string {
@@ -23,7 +21,7 @@ func (d IOSDevice) ID() string {
 }
 
 func (d IOSDevice) Name() string {
-	return d.ProductName + " " + d.ProductVersion
+	return d.DeviceName
 }
 
 func (d IOSDevice) Platform() string {
@@ -39,20 +37,43 @@ func runGoIosCommand(args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
-// listIOSDevices returns a list of all connected iOS devices using go-ios library
+func getDeviceInfo(udid string) (IOSDevice, error) {
+	output, err := runGoIosCommand("info", "--udid", udid)
+	if err != nil {
+		return IOSDevice{}, err
+	}
+
+	var device IOSDevice
+	err = json.Unmarshal(output, &device)
+	if err != nil {
+		return IOSDevice{}, err
+	}
+
+	return device, nil
+}
+
 func ListIOSDevices() ([]IOSDevice, error) {
-	output, err := runGoIosCommand("list", "--details")
+	output, err := runGoIosCommand("list")
 	if err != nil {
 		return []IOSDevice{}, err
 	}
 
-	var devices listDevicesResponse
-	err = json.Unmarshal(output, &devices)
+	var response listDevicesResponse
+	err = json.Unmarshal(output, &response)
 	if err != nil {
 		return []IOSDevice{}, err
 	}
 
-	return devices.Devices, nil
+	devices := make([]IOSDevice, len(response.Devices))
+	for i, udid := range response.Devices {
+		device, err := getDeviceInfo(udid)
+		if err != nil {
+			return []IOSDevice{}, err
+		}
+		devices[i] = device
+	}
+
+	return devices, nil
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
