@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/utils"
+	"github.com/mobile-next/mobilecli/commands"
 )
 
 const (
@@ -40,6 +38,8 @@ const (
 	WriteTimeout = 10 * time.Second
 	IdleTimeout  = 120 * time.Second
 )
+
+var okResponse = map[string]interface{}{"status": "ok"}
 
 // JSONRPCRequest represents a JSON-RPC request
 type JSONRPCRequest struct {
@@ -172,39 +172,15 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 	json.NewEncoder(w).Encode(response)
 }
 
-func handleDevicesList() (map[string]interface{}, error) {
-	devices, err := devices.GetDeviceInfoList()
-	if err != nil {
-		return nil, err
+func handleDevicesList() (interface{}, error) {
+	response := commands.DevicesCommand()
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
-
-	return map[string]interface{}{
-		"status":  "ok",
-		"devices": devices,
-	}, nil
+	return response.Data, nil
 }
 
-var deviceCache = make(map[string]devices.ControllableDevice)
-
-func findDevice(deviceID string) (devices.ControllableDevice, error) {
-	if device, exists := deviceCache[deviceID]; exists {
-		return device, nil
-	}
-
-	allDevices, err := devices.GetAllControllableDevices()
-	if err != nil {
-		return nil, fmt.Errorf("error getting devices: %v", err)
-	}
-
-	for _, d := range allDevices {
-		if d.ID() == deviceID {
-			deviceCache[deviceID] = d
-			return d, nil
-		}
-	}
-
-	return nil, fmt.Errorf("device not found: %s", deviceID)
-}
+// Device cache is now handled in the commands package
 
 func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	var screenshotParams ScreenshotParams
@@ -212,47 +188,27 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("invalid parameters: %v", err)
 	}
 
-	if screenshotParams.DeviceID == "" {
-		return nil, fmt.Errorf("device_id is required")
+	req := commands.ScreenshotRequest{
+		DeviceID:   screenshotParams.DeviceID,
+		Format:     screenshotParams.Format,
+		Quality:    screenshotParams.Quality,
+		OutputPath: "-", // Always return base64 data for server
 	}
 
-	if screenshotParams.Format != "" {
-		if screenshotParams.Format != "png" && screenshotParams.Format != "jpeg" {
-			return nil, fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", screenshotParams.Format)
-		}
-	} else {
-		screenshotParams.Format = "png" // Default to PNG
+	response := commands.ScreenshotCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
 
-	if screenshotParams.Format == "jpeg" {
-		if screenshotParams.Quality < 1 || screenshotParams.Quality > 100 {
-			screenshotParams.Quality = 90 // Default quality for JPEG
-		}
+	// Convert the response data to the expected server format
+	if screenshotResp, ok := response.Data.(commands.ScreenshotResponse); ok {
+		return map[string]interface{}{
+			"format": screenshotResp.Format,
+			"data":   fmt.Sprintf("data:image/%s;base64,%s", screenshotResp.Format, screenshotResp.Data),
+		}, nil
 	}
 
-	targetDevice, err := findDevice(screenshotParams.DeviceID)
-	if err != nil {
-		return nil, fmt.Errorf("error finding device: %v", err)
-	}
-
-	imageBytes, err := targetDevice.TakeScreenshot()
-	if err != nil {
-		return nil, fmt.Errorf("error taking screenshot: %v", err)
-	}
-
-	if screenshotParams.Format == "jpeg" {
-		convertedBytes, err := utils.ConvertPngToJpeg(imageBytes, screenshotParams.Quality)
-		if err != nil {
-			return nil, fmt.Errorf("error converting to JPEG: %v", err)
-		}
-		imageBytes = convertedBytes
-	}
-
-	// Return base64 encoded image
-	return map[string]interface{}{
-		"format": screenshotParams.Format,
-		"data":   fmt.Sprintf("data:image/%s;base64,%s", screenshotParams.Format, base64.StdEncoding.EncodeToString(imageBytes)),
-	}, nil
+	return nil, fmt.Errorf("unexpected response format")
 }
 
 type IoTapParams struct {
@@ -267,19 +223,18 @@ func handleIoTap(params json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
-	targetDevice, err := findDevice(ioTapParams.DeviceID)
-	if err != nil {
-		return nil, err
+	req := commands.TapRequest{
+		DeviceID: ioTapParams.DeviceID,
+		X:        ioTapParams.X,
+		Y:        ioTapParams.Y,
 	}
 
-	err = targetDevice.Tap(ioTapParams.X, ioTapParams.Y)
-	if err != nil {
-		return nil, err
+	response := commands.TapCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
 
-	return map[string]interface{}{
-		"status": "ok",
-	}, nil
+	return okResponse, nil
 }
 
 type IoTextParams struct {
@@ -293,19 +248,17 @@ func handleIoText(params json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
-	targetDevice, err := findDevice(ioTextParams.DeviceID)
-	if err != nil {
-		return nil, err
+	req := commands.TextRequest{
+		DeviceID: ioTextParams.DeviceID,
+		Text:     ioTextParams.Text,
 	}
 
-	err = targetDevice.SendKeys(ioTextParams.Text)
-	if err != nil {
-		return nil, err
+	response := commands.TextCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
 
-	return map[string]interface{}{
-		"status": "ok",
-	}, nil
+	return okResponse, nil
 }
 
 type IoButtonParams struct {
@@ -319,19 +272,17 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
-	targetDevice, err := findDevice(ioButtonParams.DeviceID)
-	if err != nil {
-		return nil, err
+	req := commands.ButtonRequest{
+		DeviceID: ioButtonParams.DeviceID,
+		Button:   ioButtonParams.Button,
 	}
 
-	err = targetDevice.PressButton(ioButtonParams.Button)
-	if err != nil {
-		return nil, err
+	response := commands.ButtonCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
 
-	return map[string]interface{}{
-		"status": "ok",
-	}, nil
+	return okResponse, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
@@ -350,10 +301,6 @@ func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message s
 }
 
 func sendBanner(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
-		"status": "ok",
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(okResponse)
 }
