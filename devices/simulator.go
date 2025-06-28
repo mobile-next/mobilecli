@@ -21,6 +21,7 @@ import (
 type AppInfo struct {
 	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
 	CFBundleDisplayName string `json:"CFBundleDisplayName"`
+	CFBundleVersion     string `json:"CFBundleVersion"`
 }
 
 // Simulator represents an iOS simulator device
@@ -456,6 +457,7 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 		apps = append(apps, InstalledAppInfo{
 			PackageName: app.CFBundleIdentifier,
 			AppName:     app.CFBundleDisplayName,
+			Version:     app.CFBundleVersion,
 		})
 	}
 
