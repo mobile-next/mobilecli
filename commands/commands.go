@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
 )
@@ -57,4 +58,41 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	}
 
 	return nil, fmt.Errorf("device not found: %s", deviceID)
+}
+
+// FindDeviceOrAutoSelect finds a device by ID, or auto-selects if deviceID is empty
+func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error) {
+	// if deviceID is provided, use existing logic
+	if deviceID != "" {
+		return FindDevice(deviceID)
+	}
+
+	// Get all devices for auto-selection
+	allDevices, err := devices.GetAllControllableDevices()
+	if err != nil {
+		return nil, fmt.Errorf("error getting devices: %v", err)
+	}
+
+	if len(allDevices) == 0 {
+		return nil, fmt.Errorf("no devices found")
+	}
+
+	if len(allDevices) == 1 {
+		device := allDevices[0]
+		// Cache the device for future use
+		deviceCache[device.ID()] = device
+		return device, nil
+	}
+
+	err = fmt.Errorf("multiple devices found (%d), please specify --device.", len(allDevices))
+	return nil, err
+}
+
+// getDeviceIDList returns a comma-separated list of device IDs for error messages
+func getDeviceIDList(devices []devices.ControllableDevice) string {
+	var ids []string
+	for _, d := range devices {
+		ids = append(ids, d.ID())
+	}
+	return fmt.Sprintf("[%s]", strings.Join(ids, ", "))
 }

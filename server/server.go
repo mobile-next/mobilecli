@@ -148,6 +148,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoText(req.Params)
 	case "io_button":
 		result, err = handleIoButton(req.Params)
+	case "url":
+		result, err = handleURL(req.Params)
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
 		return
@@ -266,6 +268,11 @@ type IoButtonParams struct {
 	Button   string `json:"button"`
 }
 
+type URLParams struct {
+	DeviceID string `json:"deviceId"`
+	URL      string `json:"url"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	var ioButtonParams IoButtonParams
 	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
@@ -278,6 +285,25 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ButtonCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleURL(params json.RawMessage) (interface{}, error) {
+	var urlParams URLParams
+	if err := json.Unmarshal(params, &urlParams); err != nil {
+		return nil, err
+	}
+
+	req := commands.URLRequest{
+		DeviceID: urlParams.DeviceID, // Can be empty for auto-selection
+		URL:      urlParams.URL,
+	}
+
+	response := commands.URLCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf(response.Error)
 	}

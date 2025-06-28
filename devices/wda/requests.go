@@ -82,6 +82,36 @@ func PostWebDriverAgentEndpoint(endpoint string, data map[string]interface{}) (m
 	return result, nil
 }
 
+func DeleteWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	url := fmt.Sprintf("http://localhost:8100/%s", endpoint)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete endpoint %s: %v", endpoint, err)
+	}
+
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %v", err)
+	}
+
+	return result, nil
+}
+
 // waitForWebDriverAgent waits for WebDriverAgent to be ready by polling its status endpoint
 func WaitForWebDriverAgent() error {
 	// Set timeout for the entire operation
@@ -117,11 +147,20 @@ func CreateSession() (string, error) {
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("SimulatorDevice: failed to create session: %v", err)
+		return "", fmt.Errorf("failed to create session: %v", err)
 	}
 
-	log.Printf("SimulatorDevice: createSession response: %v", response)
+	log.Printf("createSession response: %v", response)
 
 	sessionId := response["sessionId"].(string)
 	return sessionId, nil
+}
+
+func DeleteSession(sessionId string) error {
+	url := fmt.Sprintf("session/%s", sessionId)
+	_, err := DeleteWebDriverAgentEndpoint(url)
+	if err != nil {
+		return fmt.Errorf("failed to delete session %s: %v", sessionId, err)
+	}
+	return nil
 }

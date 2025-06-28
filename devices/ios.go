@@ -2,7 +2,9 @@ package devices
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 )
@@ -110,4 +112,60 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 
 func (d IOSDevice) SendKeys(text string) error {
 	return wda.SendKeys(text)
+}
+
+func (d IOSDevice) OpenURL(url string) error {
+	return wda.OpenURL(url)
+}
+
+func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
+	output, err := runGoIosCommand("apps", "--all", "--list")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var apps []InstalledAppInfo
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, " ")
+		if len(parts) >= 2 {
+			packageName := parts[0]
+			version := parts[len(parts)-1]
+			appName := strings.Join(parts[1:len(parts)-1], " ")
+
+			apps = append(apps, InstalledAppInfo{
+				PackageName: packageName,
+				AppName:     appName,
+				Version:     version,
+			})
+		}
+	}
+
+	return apps, nil
+}
+
+func (d IOSDevice) Info() (*FullDeviceInfo, error) {
+	wdaSize, err := wda.GetWindowSize()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+	}
+
+	return &FullDeviceInfo{
+		DeviceInfo: DeviceInfo{
+			ID:       d.ID(),
+			Name:     d.Name(),
+			Platform: d.Platform(),
+			Type:     d.DeviceType(),
+		},
+		ScreenSize: &ScreenSize{
+			Width:  wdaSize.ScreenSize.Width,
+			Height: wdaSize.ScreenSize.Height,
+			Scale:  wdaSize.Scale,
+		},
+	}, nil
 }

@@ -28,9 +28,10 @@ type ScreenshotResponse struct {
 
 // ScreenshotCommand takes a screenshot of the specified device
 func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
-	// Validate device ID
-	if req.DeviceID == "" {
-		return NewErrorResponse(fmt.Errorf("device ID is required"))
+	// Find the target device
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
 	// Set default format
@@ -49,12 +50,6 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		if req.Quality < 1 || req.Quality > 100 {
 			req.Quality = 90 // Default quality
 		}
-	}
-
-	// Find the target device
-	targetDevice, err := FindDevice(req.DeviceID)
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
 	// Start agent if needed

@@ -25,15 +25,11 @@ type ButtonRequest struct {
 
 // TapCommand performs a tap operation on the specified device
 func TapCommand(req TapRequest) *CommandResponse {
-	if req.DeviceID == "" {
-		return NewErrorResponse(fmt.Errorf("device ID is required"))
-	}
-
 	if req.X < 0 || req.Y < 0 {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
-	targetDevice, err := FindDevice(req.DeviceID)
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
@@ -55,15 +51,11 @@ func TapCommand(req TapRequest) *CommandResponse {
 
 // TextCommand sends text input to the specified device
 func TextCommand(req TextRequest) *CommandResponse {
-	if req.DeviceID == "" {
-		return NewErrorResponse(fmt.Errorf("device ID is required"))
-	}
-
 	if req.Text == "" {
 		return NewErrorResponse(fmt.Errorf("text is required"))
 	}
 
-	targetDevice, err := FindDevice(req.DeviceID)
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
@@ -85,15 +77,11 @@ func TextCommand(req TextRequest) *CommandResponse {
 
 // ButtonCommand presses a hardware button on the specified device
 func ButtonCommand(req ButtonRequest) *CommandResponse {
-	if req.DeviceID == "" {
-		return NewErrorResponse(fmt.Errorf("device ID is required"))
-	}
-
 	if req.Button == "" {
 		return NewErrorResponse(fmt.Errorf("button name is required"))
 	}
 
-	targetDevice, err := FindDevice(req.DeviceID)
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}

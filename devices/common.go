@@ -21,6 +21,9 @@ type ControllableDevice interface {
 	PressButton(key string) error
 	LaunchApp(bundleID string) error
 	TerminateApp(bundleID string) error
+	OpenURL(url string) error
+	ListApps() ([]InstalledAppInfo, error)
+	Info() (*FullDeviceInfo, error)
 }
 
 // GetAllControllableDevices aggregates all known devices (iOS, Android, Simulators)
@@ -56,7 +59,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		errs = append(errs, fmt.Errorf("ios simulator: %w", err))
 	} else {
 		for _, sim := range sims {
-			allDevices = append(allDevices, SimulatorDevice{
+			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
 			})
 		}
@@ -81,6 +84,17 @@ type DeviceInfo struct {
 	Type     string `json:"type"`
 }
 
+type ScreenSize struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	Scale  int `json:"scale"`
+}
+
+type FullDeviceInfo struct {
+	DeviceInfo
+	ScreenSize *ScreenSize `json:"screenSize"`
+}
+
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList() ([]DeviceInfo, error) {
 	devices, err := GetAllControllableDevices()
@@ -99,4 +113,11 @@ func GetDeviceInfoList() ([]DeviceInfo, error) {
 	}
 
 	return deviceInfoList, nil
+}
+
+// InstalledAppInfo represents information about an installed application.
+type InstalledAppInfo struct {
+	PackageName string `json:"packageName"`
+	AppName     string `json:"appName,omitempty"`
+	Version     string `json:"version,omitempty"`
 }

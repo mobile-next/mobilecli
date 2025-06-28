@@ -109,22 +109,32 @@ var rebootCmd = &cobra.Command{
 	Short: "Reboot a connected device or simulator",
 	Long:  `Reboots a specified device (using its ID). Supports iOS (real/simulator) and Android (real/emulator).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.RebootRequest{
+			DeviceID: deviceId,
 		}
 
-		err = targetDevice.Reboot()
-		if err != nil {
-			response := commands.NewErrorResponse(err)
-			printJson(response)
+		response := commands.RebootCommand(req)
+		printJson(response)
+		if response.Status == "error" {
 			return fmt.Errorf(response.Error)
 		}
 
-		response := commands.NewSuccessResponse(map[string]interface{}{
-			"message": fmt.Sprintf("Reboot command processed for device %s", targetDevice.ID()),
+		return nil
+	},
+}
+
+var infoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Get device info",
+	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response, err := commands.InfoCommand(deviceId)
+		if err != nil {
+			return err
+		}
+		printJson(map[string]interface{}{
+			"info": response,
 		})
-		printJson(response)
 		return nil
 	},
 }
@@ -281,6 +291,44 @@ var appsTerminateCmd = &cobra.Command{
 	},
 }
 
+var appsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List installed apps on a device",
+	Long:  `Lists all applications installed on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ListAppsRequest{
+			DeviceID: deviceId,
+		}
+
+		response := commands.ListAppsCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
+var urlCmd = &cobra.Command{
+	Use:   "url [url]",
+	Short: "Open a URL on a device",
+	Long:  `Opens a URL in the default browser on the specified device`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.URLRequest{
+			DeviceID: deviceId,
+			URL:      args[0],
+		}
+
+		response := commands.URLCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
 func printJson(data interface{}) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -303,9 +351,11 @@ func init() {
 	rootCmd.AddCommand(devicesCmd)
 	rootCmd.AddCommand(screenshotCmd)
 	rootCmd.AddCommand(rebootCmd)
+	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(ioCmd)
 	rootCmd.AddCommand(appsCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(urlCmd)
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
@@ -315,6 +365,7 @@ func init() {
 	// add apps subcommands
 	appsCmd.AddCommand(appsLaunchCmd)
 	appsCmd.AddCommand(appsTerminateCmd)
+	appsCmd.AddCommand(appsListCmd)
 
 	// add server subcommands
 	serverCmd.AddCommand(serverStartCmd)
@@ -324,31 +375,31 @@ func init() {
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
 
-	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from")
+	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from (optional if only one device connected)")
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
-	screenshotCmd.MarkFlagRequired("device")
 
 	rebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
-	rebootCmd.MarkFlagRequired("device")
+
+	infoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from (optional if only one device connected)")
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
-	ioTapCmd.MarkFlagRequired("device")
 
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
-	ioButtonCmd.MarkFlagRequired("device")
 
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
-	ioTextCmd.MarkFlagRequired("device")
 
 	// apps command flags
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
-	appsLaunchCmd.MarkFlagRequired("device")
 
-	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
-	appsTerminateCmd.MarkFlagRequired("device")
+	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on (optional if only one device connected)")
+
+	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from (optional if only one device connected)")
+
+	// url command flags
+	urlCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to open URL on")
 }
 
 func main() {
