@@ -152,6 +152,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleURL(req.Params)
 	case "info":
 		result, err = handleInfo(req.Params)
+	case "screencapture":
+
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
 		return

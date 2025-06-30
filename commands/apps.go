@@ -21,11 +21,6 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent()
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
-	}
-
 	err = targetDevice.LaunchApp(req.BundleID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
@@ -45,11 +40,6 @@ func TerminateAppCommand(req AppRequest) *CommandResponse {
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent()
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
 	err = targetDevice.TerminateApp(req.BundleID)
