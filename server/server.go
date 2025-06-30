@@ -150,6 +150,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoButton(req.Params)
 	case "url":
 		result, err = handleURL(req.Params)
+	case "info":
+		result, err = handleInfo(req.Params)
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
 		return
@@ -273,6 +275,10 @@ type URLParams struct {
 	URL      string `json:"url"`
 }
 
+type InfoParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	var ioButtonParams IoButtonParams
 	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
@@ -309,6 +315,20 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 	}
 
 	return okResponse, nil
+}
+
+func handleInfo(params json.RawMessage) (interface{}, error) {
+	var infoParams InfoParams
+	if err := json.Unmarshal(params, &infoParams); err != nil {
+		return nil, err
+	}
+
+	response, err := commands.InfoCommand(infoParams.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
