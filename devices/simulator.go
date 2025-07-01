@@ -17,6 +17,13 @@ import (
 	"github.com/otiai10/copy"
 )
 
+// AppInfo corresponds to the structure from plutil output
+type AppInfo struct {
+	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
+	CFBundleDisplayName string `json:"CFBundleDisplayName"`
+	CFBundleVersion     string `json:"CFBundleVersion"`
+}
+
 // Simulator represents an iOS simulator device
 type Simulator struct {
 	Name    string `json:"name"`
@@ -409,4 +416,75 @@ func (s SimulatorDevice) SendKeys(text string) error {
 
 func (s SimulatorDevice) Tap(x, y int) error {
 	return wda.Tap(x, y)
+}
+
+func (s *SimulatorDevice) OpenURL(url string) error {
+	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
+}
+
+func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
+	simctlCmd := exec.Command("xcrun", "simctl", "listapps", s.ID())
+	plutilCmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-r", "-")
+
+	var err error
+	plutilCmd.Stdin, err = simctlCmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pipe: %w", err)
+	}
+
+	var plutilOut bytes.Buffer
+	plutilCmd.Stdout = &plutilOut
+
+	if err := plutilCmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start plutil: %w", err)
+	}
+
+	if err := simctlCmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to run simctl: %w", err)
+	}
+
+	if err := plutilCmd.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to wait for plutil: %w", err)
+	}
+
+	var output map[string]AppInfo
+	if err := json.Unmarshal(plutilOut.Bytes(), &output); err != nil {
+		return nil, fmt.Errorf("failed to parse plutil JSON output: %w", err)
+	}
+
+	var apps []InstalledAppInfo
+	for _, app := range output {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: app.CFBundleIdentifier,
+			AppName:     app.CFBundleDisplayName,
+			Version:     app.CFBundleVersion,
+		})
+	}
+
+	return apps, nil
+}
+
+func (s Simulator) Info() (*FullDeviceInfo, error) {
+	wdaSize, err := wda.GetWindowSize()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+	}
+
+	return &FullDeviceInfo{
+		DeviceInfo: DeviceInfo{
+			ID:       s.UDID,
+			Name:     s.Name,
+			Platform: "ios",
+			Type:     "simulator",
+		},
+		ScreenSize: &ScreenSize{
+			Width:  wdaSize.ScreenSize.Width,
+			Height: wdaSize.ScreenSize.Height,
+			Scale:  wdaSize.Scale,
+		},
+	}, nil
+}
+
+func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
+	return wda.StartScreenCapture(format, callback)
 }

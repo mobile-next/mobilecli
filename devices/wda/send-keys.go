@@ -9,6 +9,8 @@ func SendKeys(text string) error {
 		return err
 	}
 
+	defer DeleteSession(sessionId)
+
 	url := fmt.Sprintf("session/%s/wda/keys", sessionId)
 	_, err = PostWebDriverAgentEndpoint(url, map[string]interface{}{
 		"value": []string{text},

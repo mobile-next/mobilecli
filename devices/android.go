@@ -192,3 +192,24 @@ func (d AndroidDevice) SendKeys(text string) error {
 	_, err := d.runAdbCommand("shell", "input", "text", text)
 	return err
 }
+
+func (d AndroidDevice) OpenURL(url string) error {
+	output, err := d.runAdbCommand("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url)
+	if err != nil {
+		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
+	}
+
+	return nil
+}
+
+func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
+	return nil, fmt.Errorf("not implemented for Android devices")
+}
+
+func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
+	return nil, fmt.Errorf("device info not implemented for Android devices")
+}
+
+func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+	return fmt.Errorf("screen capture not implemented for Android devices")
+}

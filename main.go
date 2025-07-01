@@ -1,15 +1,15 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
@@ -56,13 +56,11 @@ var devicesCmd = &cobra.Command{
 	Short: "List connected devices",
 	Long:  `List all connected iOS and Android devices, both real devices and simulators/emulators.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		deviceInfoList, err := devices.GetDeviceInfoList()
-		if err != nil {
-			log.Printf("Warning: Encountered errors while listing some devices: %v", err)
-			return err
+		response := commands.DevicesCommand()
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-
-		printJson(deviceInfoList)
 		return nil
 	},
 }
@@ -72,80 +70,36 @@ var screenshotCmd = &cobra.Command{
 	Short: "Take a screenshot of a connected device",
 	Long:  `Takes a screenshot of a specified device (using its ID) and saves it locally as a PNG file. Supports iOS (real/simulator) and Android (real/emulator).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.ScreenshotRequest{
+			DeviceID:   deviceId,
+			Format:     screenshotFormat,
+			Quality:    screenshotJpegQuality,
+			OutputPath: screenshotOutputPath,
 		}
 
-		// Validate format
-		screenshotFormat = strings.ToLower(screenshotFormat)
-		if screenshotFormat != "png" && screenshotFormat != "jpeg" {
-			return fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", screenshotFormat)
-		}
+		response := commands.ScreenshotCommand(req)
 
-		// Validate JPEG quality if format is jpeg
-		if screenshotFormat == "jpeg" {
-			if screenshotJpegQuality < 1 || screenshotJpegQuality > 100 {
-				return fmt.Errorf("invalid JPEG quality '%d'. Must be between 1 and 100", screenshotJpegQuality)
-			}
-		}
-
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return err
-		}
-
-		log.Printf("Attempting to take screenshot for %s device with ID: %s (Name: %s)", targetDevice.Platform(), targetDevice.ID(), targetDevice.Name())
-
-		imageBytes, err := targetDevice.TakeScreenshot()
-		if err != nil {
-			return err
-		}
-
-		if screenshotFormat == "jpeg" {
-			convertedBytes, err := utils.ConvertPngToJpeg(imageBytes, screenshotJpegQuality)
-			if err != nil {
-				return err
-			}
-			imageBytes = convertedBytes
-			log.Printf("Converted screenshot to JPEG format with quality %d.", screenshotJpegQuality)
-		}
-
-		if screenshotOutputPath == "-" {
-			_, err = os.Stdout.Write(imageBytes)
-			if err != nil {
-				return err
-			}
-			log.Printf("Screenshot for device %s written to stdout as %s.", targetDevice.ID(), screenshotFormat)
-		} else {
-			var finalPath string
-			if screenshotOutputPath != "" {
-				finalPath, err = filepath.Abs(screenshotOutputPath)
+		// Handle stdout output for binary data
+		if screenshotOutputPath == "-" && response.Status == "ok" {
+			if screenshotResp, ok := response.Data.(commands.ScreenshotResponse); ok && screenshotResp.Data != "" {
+				// Write binary data to stdout
+				imageBytes, err := base64.StdEncoding.DecodeString(screenshotResp.Data)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to decode image data: %v", err)
 				}
-			} else {
-				// Default filename generation
-				timestamp := time.Now().Format("20060102150405")
-				safeDeviceID := strings.ReplaceAll(targetDevice.ID(), ":", "_")
-				extension := "png"
-				if screenshotFormat == "jpeg" {
-					extension = "jpg"
-				}
-				fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
-				finalPath, err = filepath.Abs("./" + fileName)
+				_, err = os.Stdout.Write(imageBytes)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to write to stdout: %v", err)
 				}
+				return nil
 			}
-
-			err = os.WriteFile(finalPath, imageBytes, 0o644)
-			if err != nil {
-				return err
-			}
-			log.Printf("Screenshot for device %s saved to %s as %s.", targetDevice.ID(), finalPath, screenshotFormat)
 		}
 
+		// Print JSON response
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
 		return nil
 	},
 }
@@ -155,19 +109,30 @@ var rebootCmd = &cobra.Command{
 	Short: "Reboot a connected device or simulator",
 	Long:  `Reboots a specified device (using its ID). Supports iOS (real/simulator) and Android (real/emulator).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.RebootRequest{
+			DeviceID: deviceId,
 		}
 
-		log.Printf("Attempting to reboot %s device with ID: %s (Name: %s)", targetDevice.Platform(), targetDevice.ID(), targetDevice.Name())
-
-		err = targetDevice.Reboot()
-		if err != nil {
-			return err
+		response := commands.RebootCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
 
-		log.Printf("Reboot command processed for device %s. Check device for status.", targetDevice.ID())
+		return nil
+	},
+}
+
+var infoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Get device info",
+	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response := commands.InfoCommand(deviceId)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
 		return nil
 	},
 }
@@ -212,41 +177,34 @@ var ioTapCmd = &cobra.Command{
 	Long:  `Sends a tap event to the specified device at the given x,y coordinates. Coordinates should be provided as a single string "x,y".`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
-		}
-
 		coordsStr := args[0]
 		parts := strings.Split(coordsStr, ",")
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr)
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
+			printJson(response)
+			return fmt.Errorf(response.Error)
 		}
 
 		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 		y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
 
 		if errX != nil || errY != nil {
-			return fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1])
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+			printJson(response)
+			return fmt.Errorf(response.Error)
 		}
 
-		if x < 0 || y < 0 {
-			return fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", x, y)
+		req := commands.TapRequest{
+			DeviceID: deviceId,
+			X:        x,
+			Y:        y,
 		}
 
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err)
+		response := commands.TapCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-
-		log.Printf("Attempting to tap on %s device '%s' at (%d,%d)", targetDevice.Platform(), targetDevice.ID(), x, y)
-
-		err = targetDevice.Tap(x, y)
-		if err != nil {
-			return fmt.Errorf("failed to tap on device %s: %w", targetDevice.ID(), err)
-		}
-
-		log.Printf("Tap command processed for device %s at (%d,%d).", targetDevice.ID(), x, y)
 		return nil
 	},
 }
@@ -257,23 +215,16 @@ var ioButtonCmd = &cobra.Command{
 	Long:  `Sends a hardware button press event to the specified device (e.g., "HOME", "VOLUME_UP", "VOLUME_DOWN", "POWER"). Button names are case-insensitive.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.ButtonRequest{
+			DeviceID: deviceId,
+			Button:   args[0],
 		}
 
-		buttonName := args[0]
-
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return err
+		response := commands.ButtonCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-
-		err = targetDevice.PressButton(buttonName)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	},
 }
@@ -284,23 +235,16 @@ var ioTextCmd = &cobra.Command{
 	Long:  `Sends text input to the currently focused element on the specified device.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.TextRequest{
+			DeviceID: deviceId,
+			Text:     args[0],
 		}
 
-		text := args[0]
-
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return err
+		response := commands.TextCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-
-		err = targetDevice.SendKeys(text)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	},
 }
@@ -311,23 +255,16 @@ var appsLaunchCmd = &cobra.Command{
 	Long:  `Launches an app on the specified device using its bundle ID (e.g., "com.example.app").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.AppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
 		}
 
-		bundleID := args[0]
-
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return err
+		response := commands.LaunchAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-
-		err = targetDevice.LaunchApp(bundleID)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	},
 }
@@ -338,23 +275,54 @@ var appsTerminateCmd = &cobra.Command{
 	Long:  `Terminates an app on the specified device using its bundle ID (e.g., "com.example.app").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		targetDevice, err := findTargetDevice(deviceId)
-		if err != nil {
-			return err
+		req := commands.AppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
 		}
 
-		bundleID := args[0]
+		response := commands.TerminateAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
 
-		err = targetDevice.StartAgent()
-		if err != nil {
-			return err
+var appsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List installed apps on a device",
+	Long:  `Lists all applications installed on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ListAppsRequest{
+			DeviceID: deviceId,
 		}
 
-		err = targetDevice.TerminateApp(bundleID)
-		if err != nil {
-			return err
+		response := commands.ListAppsCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
+var urlCmd = &cobra.Command{
+	Use:   "url [url]",
+	Short: "Open a URL on a device",
+	Long:  `Opens a URL in the default browser on the specified device`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.URLRequest{
+			DeviceID: deviceId,
+			URL:      args[0],
 		}
 
+		response := commands.URLCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
 		return nil
 	},
 }
@@ -381,9 +349,11 @@ func init() {
 	rootCmd.AddCommand(devicesCmd)
 	rootCmd.AddCommand(screenshotCmd)
 	rootCmd.AddCommand(rebootCmd)
+	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(ioCmd)
 	rootCmd.AddCommand(appsCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(urlCmd)
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
@@ -393,6 +363,7 @@ func init() {
 	// add apps subcommands
 	appsCmd.AddCommand(appsLaunchCmd)
 	appsCmd.AddCommand(appsTerminateCmd)
+	appsCmd.AddCommand(appsListCmd)
 
 	// add server subcommands
 	serverCmd.AddCommand(serverStartCmd)
@@ -402,31 +373,31 @@ func init() {
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
 
-	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from")
+	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from (optional if only one device connected)")
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
-	screenshotCmd.MarkFlagRequired("device")
 
 	rebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
-	rebootCmd.MarkFlagRequired("device")
+
+	infoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from (optional if only one device connected)")
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
-	ioTapCmd.MarkFlagRequired("device")
 
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
-	ioButtonCmd.MarkFlagRequired("device")
 
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
-	ioTextCmd.MarkFlagRequired("device")
 
 	// apps command flags
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
-	appsLaunchCmd.MarkFlagRequired("device")
 
-	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
-	appsTerminateCmd.MarkFlagRequired("device")
+	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on (optional if only one device connected)")
+
+	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from (optional if only one device connected)")
+
+	// url command flags
+	urlCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to open URL on")
 }
 
 func main() {

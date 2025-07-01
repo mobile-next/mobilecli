@@ -11,6 +11,8 @@ func Tap(x, y int) error {
 		return err
 	}
 
+	defer DeleteSession(sessionId)
+
 	data := map[string]interface{}{
 		"actions": []map[string]interface{}{
 			{
