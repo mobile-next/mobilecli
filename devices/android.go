@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/mobile-next/mobilecli/utils"
@@ -207,7 +208,41 @@ func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
-	return nil, fmt.Errorf("device info not implemented for Android devices")
+
+	// run adb shell wm size
+	output, err := d.runAdbCommand("shell", "wm", "size")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	// split result by space, and then take 2nd argument split by "x"
+	screenSize := strings.Split(string(output), " ")
+	pair := strings.Trim(screenSize[len(screenSize)-1], "\r\n")
+	parts := strings.SplitN(pair, "x", 2)
+
+	widthInt, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	heightInt, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	return &FullDeviceInfo{
+		DeviceInfo: DeviceInfo{
+			ID:       d.ID(),
+			Name:     d.Name(),
+			Platform: d.Platform(),
+			Type:     d.DeviceType(),
+		},
+		ScreenSize: &ScreenSize{
+			Width:  widthInt,
+			Height: heightInt,
+			Scale:  1,
+		},
+	}, nil
 }
 
 func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
