@@ -204,7 +204,35 @@ func (d AndroidDevice) OpenURL(url string) error {
 }
 
 func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
-	return nil, fmt.Errorf("not implemented for Android devices")
+	output, err := d.runAdbCommand("shell", "cmd", "package", "query-activities", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+
+	var packageNames []string
+	seen := make(map[string]bool)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "packageName=") {
+			packageName := strings.TrimPrefix(line, "packageName=")
+			if !seen[packageName] {
+				seen[packageName] = true
+				packageNames = append(packageNames, packageName)
+			}
+		}
+	}
+
+	var apps []InstalledAppInfo
+	for _, packageName := range packageNames {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: packageName,
+		})
+	}
+
+	return apps, nil
 }
 
 func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
