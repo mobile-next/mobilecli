@@ -142,6 +142,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleDevicesList()
 	case "screenshot":
 		result, err = handleScreenshot(req.Params)
+	case "screencapture":
+		err = handleScreenCapture(w, req.Params)
 	case "io_tap":
 		result, err = handleIoTap(req.Params)
 	case "io_text":
@@ -152,7 +154,6 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleURL(req.Params)
 	case "info":
 		result, err = handleInfo(req.Params)
-	case "screencapture":
 
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
@@ -185,8 +186,6 @@ func handleDevicesList() (interface{}, error) {
 	}
 	return response.Data, nil
 }
-
-// Device cache is now handled in the commands package
 
 func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	var screenshotParams ScreenshotParams
@@ -351,4 +350,51 @@ func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message s
 func sendBanner(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(okResponse)
+}
+
+func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
+
+	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+
+	var screenCaptureParams commands.ScreenCaptureRequest
+	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
+		return fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	// Find the target device
+	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %v", err)
+	}
+
+	if screenCaptureParams.Format == "" || screenCaptureParams.Format != "mjpeg" {
+		return fmt.Errorf("format must be 'mjpeg' for screen capture")
+	}
+
+	// Set headers for streaming response
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	// Start screen capture and stream to the response writer
+	err = targetDevice.StartScreenCapture(screenCaptureParams.Format, func(data []byte) bool {
+		_, writeErr := w.Write(data)
+		if writeErr != nil {
+			fmt.Println("Error writing data:", writeErr)
+			return false
+		}
+
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
+		return true
+	})
+
+	if err != nil {
+		return fmt.Errorf("error starting screen capture: %v", err)
+	}
+
+	return nil
 }

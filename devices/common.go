@@ -24,6 +24,7 @@ type ControllableDevice interface {
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
+	StartScreenCapture(format string, callback func([]byte) bool) error
 }
 
 // GetAllControllableDevices aggregates all known devices (iOS, Android, Simulators)

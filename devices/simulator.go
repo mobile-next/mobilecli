@@ -484,3 +484,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 		},
 	}, nil
 }
+
+func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
+	return wda.StartScreenCapture(format, callback)
+}

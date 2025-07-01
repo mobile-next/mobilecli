@@ -209,3 +209,7 @@ func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 	return nil, fmt.Errorf("device info not implemented for Android devices")
 }
+
+func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+	return fmt.Errorf("screen capture not implemented for Android devices")
+}

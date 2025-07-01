@@ -169,3 +169,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 		},
 	}, nil
 }
+
+func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+	return wda.StartScreenCapture(format, callback)
+}
