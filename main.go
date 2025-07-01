@@ -128,13 +128,11 @@ var infoCmd = &cobra.Command{
 	Short: "Get device info",
 	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response, err := commands.InfoCommand(deviceId)
-		if err != nil {
-			return err
+		response := commands.InfoCommand(deviceId)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
 		}
-		printJson(map[string]interface{}{
-			"info": response,
-		})
 		return nil
 	},
 }

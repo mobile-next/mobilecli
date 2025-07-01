@@ -2,7 +2,6 @@ package wda
 
 import "fmt"
 
-// OpenURL opens a URL in Safari on iOS using WebDriverAgent
 func OpenURL(url string) error {
 	sessionId, err := CreateSession()
 	if err != nil {

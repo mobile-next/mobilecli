@@ -325,12 +325,12 @@ func handleInfo(params json.RawMessage) (interface{}, error) {
 		return nil, err
 	}
 
-	response, err := commands.InfoCommand(infoParams.DeviceID)
-	if err != nil {
-		return nil, err
+	response := commands.InfoCommand(infoParams.DeviceID)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
 	}
 
-	return response, nil
+	return response.Data, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
