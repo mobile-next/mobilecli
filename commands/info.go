@@ -15,5 +15,9 @@ func InfoCommand(deviceID string) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error getting device info: %v", err))
 	}
 
-	return NewSuccessResponse(info)
+	response := map[string]interface{}{
+		"device": info,
+	}
+
+	return NewSuccessResponse(response)
 }
