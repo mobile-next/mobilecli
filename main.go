@@ -35,6 +35,9 @@ var (
 	screenshotFormat      string
 	screenshotJpegQuality int
 
+	// for screencapture command
+	screencaptureFormat string
+
 	// for devices command
 	platform   string
 	deviceType string
@@ -48,7 +51,9 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
-	Version: version,
+	Version:       version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 var devicesCmd = &cobra.Command{
@@ -100,6 +105,54 @@ var screenshotCmd = &cobra.Command{
 		if response.Status == "error" {
 			return fmt.Errorf(response.Error)
 		}
+		return nil
+	},
+}
+
+var screencaptureCmd = &cobra.Command{
+	Use:   "screencapture",
+	Short: "Stream screen capture from a connected device",
+	Long:  `Streams MJPEG screen capture from a specified device to stdout. Only supports MJPEG format.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validate format
+		if screencaptureFormat != "mjpeg" {
+			response := commands.NewErrorResponse(fmt.Errorf("format must be 'mjpeg' for screen capture"))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
+		// Find the target device
+		targetDevice, err := commands.FindDeviceOrAutoSelect(deviceId)
+		if err != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
+		// Start agent
+		err = targetDevice.StartAgent()
+		if err != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
+		// Start screen capture and stream to stdout
+		err = targetDevice.StartScreenCapture(screencaptureFormat, func(data []byte) bool {
+			_, writeErr := os.Stdout.Write(data)
+			if writeErr != nil {
+				fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
+				return false
+			}
+			return true
+		})
+
+		if err != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("error starting screen capture: %v", err))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
 		return nil
 	},
 }
@@ -348,6 +401,7 @@ func init() {
 	// add main commands
 	rootCmd.AddCommand(devicesCmd)
 	rootCmd.AddCommand(screenshotCmd)
+	rootCmd.AddCommand(screencaptureCmd)
 	rootCmd.AddCommand(rebootCmd)
 	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(ioCmd)
@@ -373,14 +427,17 @@ func init() {
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
 
-	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from (optional if only one device connected)")
+	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from")
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
 
+	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
+	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
+
 	rebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
 
-	infoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from (optional if only one device connected)")
+	infoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -392,9 +449,9 @@ func init() {
 	// apps command flags
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 
-	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on (optional if only one device connected)")
+	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 
-	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from (optional if only one device connected)")
+	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 
 	// url command flags
 	urlCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to open URL on")
