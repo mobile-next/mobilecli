@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
@@ -157,7 +156,13 @@ var screencaptureCmd = &cobra.Command{
 	},
 }
 
-var rebootCmd = &cobra.Command{
+var deviceCmd = &cobra.Command{
+	Use:   "device",
+	Short: "Device management commands",
+	Long:  `Commands for managing individual devices including rebooting and getting device information.`,
+}
+
+var deviceRebootCmd = &cobra.Command{
 	Use:   "reboot",
 	Short: "Reboot a connected device or simulator",
 	Long:  `Reboots a specified device (using its ID). Supports iOS (real/simulator) and Android (real/emulator).`,
@@ -176,7 +181,7 @@ var rebootCmd = &cobra.Command{
 	},
 }
 
-var infoCmd = &cobra.Command{
+var deviceInfoCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Get device info",
 	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
@@ -400,14 +405,17 @@ func init() {
 
 	// add main commands
 	rootCmd.AddCommand(devicesCmd)
+	rootCmd.AddCommand(deviceCmd)
 	rootCmd.AddCommand(screenshotCmd)
 	rootCmd.AddCommand(screencaptureCmd)
-	rootCmd.AddCommand(rebootCmd)
-	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(ioCmd)
 	rootCmd.AddCommand(appsCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(urlCmd)
+
+	// add device subcommands
+	deviceCmd.AddCommand(deviceRebootCmd)
+	deviceCmd.AddCommand(deviceInfoCmd)
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
@@ -424,33 +432,32 @@ func init() {
 	serverStartCmd.Flags().String("listen", "", "Address to listen on (e.g., 'localhost:12000' or '0.0.0.0:13000')")
 	serverStartCmd.Flags().Bool("cors", false, "Enable CORS support")
 
+	// devices command flags
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
 
+	// screenshot command flags
 	screenshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to take screenshot from")
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
 
+	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
 	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
 
-	rebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
-
-	infoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
+	// device command flags
+	deviceRebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
+	deviceInfoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
-
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
-
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 
 	// apps command flags
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
-
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
-
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 
 	// url command flags
@@ -466,23 +473,4 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func findTargetDevice(deviceID string) (devices.ControllableDevice, error) {
-	if deviceID == "" {
-		return nil, fmt.Errorf("--device flag is required")
-	}
-
-	allDevices, err := devices.GetAllControllableDevices()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list devices: %w", err)
-	}
-
-	for _, d := range allDevices {
-		if d.ID() == deviceID {
-			return d, nil
-		}
-	}
-
-	return nil, fmt.Errorf("device with ID '%s' not found", deviceID)
 }
