@@ -150,7 +150,7 @@ func CreateSession() (string, error) {
 		return "", fmt.Errorf("failed to create session: %v", err)
 	}
 
-	log.Printf("createSession response: %v", response)
+	// log.Printf("createSession response: %v", response)
 
 	sessionId := response["sessionId"].(string)
 	return sessionId, nil
