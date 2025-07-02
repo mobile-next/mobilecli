@@ -2,7 +2,6 @@ package wda
 
 import (
 	"fmt"
-	"log"
 )
 
 type Size struct {
@@ -31,7 +30,8 @@ func GetWindowSize() (*WindowSize, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("response: %v", response["value"])
+
+	// log.Printf("response: %v", response["value"])
 
 	windowSize := response["value"].(map[string]interface{})
 	screenSize := windowSize["screenSize"].(map[string]interface{})
