@@ -2,11 +2,15 @@ package devices
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image/jpeg"
 	"image/png"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -296,7 +300,12 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
 
-	cmdArgs := append([]string{"-s", d.id}, "shell", "CLASSPATH=/sdcard/Download/app-debug.apk", "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	err := d.EnsureDeviceKitInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to get app path: %v", err)
+	}
+
+	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", "x"), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
@@ -325,5 +334,116 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 	}
 
 	cmd.Process.Kill()
+	return nil
+}
+
+type githubRelease struct {
+	Assets []struct {
+		BrowserDownloadURL string `json:"browser_download_url"`
+		Name               string `json:"name"`
+	} `json:"assets"`
+}
+
+func (d AndroidDevice) isPackageInstalled(packageName string) (bool, error) {
+	output, err := d.runAdbCommand("shell", "pm", "list", "packages", packageName)
+	if err != nil {
+		return false, fmt.Errorf("failed to check package installation: %v", err)
+	}
+
+	return strings.Contains(string(output), packageName), nil
+}
+
+func (d AndroidDevice) installPackage(apkPath string) error {
+	output, err := d.runAdbCommand("install", apkPath)
+	if err != nil {
+		return fmt.Errorf("failed to install package: %v\nOutput: %s", err, string(output))
+	}
+
+	if strings.Contains(string(output), "Success") {
+		return nil
+	}
+
+	return fmt.Errorf("installation failed: %s", string(output))
+}
+
+func (d AndroidDevice) EnsureDeviceKitInstalled() error {
+	packageName := "com.mobilenext.devicekit"
+
+	installed, err := d.isPackageInstalled(packageName)
+	if err != nil {
+		return fmt.Errorf("failed to check if %s is installed: %v", packageName, err)
+	}
+
+	if installed {
+		return nil
+	}
+
+	utils.Verbose("DeviceKit not installed, downloading and installing...")
+
+	resp, err := http.Get("https://api.github.com/repos/mobile-next/devicekit-android/releases/latest")
+	if err != nil {
+		return fmt.Errorf("failed to fetch latest release: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to decode release JSON: %v", err)
+	}
+
+	if len(release.Assets) == 0 {
+		return fmt.Errorf("no assets found in latest release")
+	}
+
+	downloadURL := release.Assets[0].BrowserDownloadURL
+	utils.Verbose("Downloading APK from: %s", downloadURL)
+
+	tempDir, err := os.MkdirTemp("", "devicekit-android-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	apkPath := filepath.Join(tempDir, "devicekit.apk")
+
+	apkResp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download APK: %v", err)
+	}
+	defer apkResp.Body.Close()
+
+	if apkResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("APK download returned status %d", apkResp.StatusCode)
+	}
+
+	apkFile, err := os.Create(apkPath)
+	if err != nil {
+		return fmt.Errorf("failed to create APK file: %v", err)
+	}
+	defer apkFile.Close()
+
+	if _, err := io.Copy(apkFile, apkResp.Body); err != nil {
+		return fmt.Errorf("failed to write APK file: %v", err)
+	}
+
+	utils.Verbose("Installing APK...")
+	if err := d.installPackage(apkPath); err != nil {
+		return fmt.Errorf("failed to install APK: %v", err)
+	}
+
+	installed, err = d.isPackageInstalled(packageName)
+	if err != nil {
+		return fmt.Errorf("failed to verify installation: %v", err)
+	}
+
+	if !installed {
+		return fmt.Errorf("package %s was not installed successfully", packageName)
+	}
+
+	utils.Verbose("DeviceKit successfully installed")
 	return nil
 }
