@@ -1,10 +1,7 @@
 package devices
 
 import (
-	"bytes"
 	"fmt"
-	"image/jpeg"
-	"image/png"
 	"os"
 	"os/exec"
 	"strconv"
@@ -274,21 +271,6 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Scale:  1,
 		},
 	}, nil
-}
-
-func (d AndroidDevice) ConvertPNGtoJPEG(pngData []byte, quality int) ([]byte, error) {
-	img, err := png.Decode(bytes.NewReader(pngData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode PNG: %v", err)
-	}
-
-	var buf bytes.Buffer
-	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode JPEG: %v", err)
-	}
-
-	return buf.Bytes(), nil
 }
 
 func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
