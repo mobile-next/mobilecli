@@ -1,7 +1,10 @@
 package devices
 
 import (
+	"bytes"
 	"fmt"
+	"image/jpeg"
+	"image/png"
 	"os"
 	"os/exec"
 	"strconv"
@@ -273,6 +276,54 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
+func (d AndroidDevice) ConvertPNGtoJPEG(pngData []byte, quality int) ([]byte, error) {
+	img, err := png.Decode(bytes.NewReader(pngData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode PNG: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode JPEG: %v", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
 func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
-	return fmt.Errorf("screen capture not implemented for Android devices")
+	if format != "mjpeg" {
+		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
+	}
+
+	cmdArgs := append([]string{"-s", d.id}, "shell", "CLASSPATH=/sdcard/Download/app-debug.apk", "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	cmd := exec.Command(getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start MJPEG server: %v", err)
+	}
+
+	// Read bytes from the command output and send to callback
+	buffer := make([]byte, 65536)
+	for {
+		n, err := stdout.Read(buffer)
+		if err != nil {
+			break
+		}
+
+		if n > 0 {
+			// Send bytes to callback, break if it returns false
+			if !callback(buffer[:n]) {
+				break
+			}
+		}
+	}
+
+	cmd.Process.Kill()
+	return nil
 }
