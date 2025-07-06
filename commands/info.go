@@ -17,6 +17,11 @@ func InfoCommand(deviceID string) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
+	}
+
 	info, err := targetDevice.Info()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error getting device info: %v", err))
