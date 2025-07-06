@@ -152,8 +152,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoButton(req.Params)
 	case "url":
 		result, err = handleURL(req.Params)
-	case "info":
-		result, err = handleInfo(req.Params)
+	case "device_info":
+		result, err = handleDeviceInfo(req.Params)
 
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
@@ -318,7 +318,7 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleInfo(params json.RawMessage) (interface{}, error) {
+func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 	var infoParams InfoParams
 	if err := json.Unmarshal(params, &infoParams); err != nil {
 		return nil, err
