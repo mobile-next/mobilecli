@@ -1,13 +1,7 @@
 package devices
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"image/jpeg"
-	"image/png"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -280,19 +274,17 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d AndroidDevice) ConvertPNGtoJPEG(pngData []byte, quality int) ([]byte, error) {
-	img, err := png.Decode(bytes.NewReader(pngData))
+func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
+	output, err := d.runAdbCommand("shell", "pm", "path", packageName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode PNG: %v", err)
+		// best effort (pm path will return error code 1)
+		return "", nil
 	}
 
-	var buf bytes.Buffer
-	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode JPEG: %v", err)
-	}
-
-	return buf.Bytes(), nil
+	// remove the "package:" prefix
+	appPath := strings.TrimPrefix(string(output), "package:")
+	appPath = strings.TrimSuffix(appPath, "\n")
+	return appPath, nil
 }
 
 func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
@@ -300,12 +292,19 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
 
+	utils.Verbose("Ensuring DeviceKit is installed...")
 	err := d.EnsureDeviceKitInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to ensure DeviceKit is installed: %v", err)
+	}
+
+	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
 	if err != nil {
 		return fmt.Errorf("failed to get app path: %v", err)
 	}
 
-	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", "x"), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
+	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
@@ -337,22 +336,6 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 	return nil
 }
 
-type githubRelease struct {
-	Assets []struct {
-		BrowserDownloadURL string `json:"browser_download_url"`
-		Name               string `json:"name"`
-	} `json:"assets"`
-}
-
-func (d AndroidDevice) isPackageInstalled(packageName string) (bool, error) {
-	output, err := d.runAdbCommand("shell", "pm", "list", "packages", packageName)
-	if err != nil {
-		return false, fmt.Errorf("failed to check package installation: %v", err)
-	}
-
-	return strings.Contains(string(output), packageName), nil
-}
-
 func (d AndroidDevice) installPackage(apkPath string) error {
 	output, err := d.runAdbCommand("install", apkPath)
 	if err != nil {
@@ -369,37 +352,22 @@ func (d AndroidDevice) installPackage(apkPath string) error {
 func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 	packageName := "com.mobilenext.devicekit"
 
-	installed, err := d.isPackageInstalled(packageName)
+	appPath, err := d.GetAppPath(packageName)
 	if err != nil {
 		return fmt.Errorf("failed to check if %s is installed: %v", packageName, err)
 	}
 
-	if installed {
+	if appPath != "" {
+		// already installed, we have a path to .apk
 		return nil
 	}
 
 	utils.Verbose("DeviceKit not installed, downloading and installing...")
 
-	resp, err := http.Get("https://api.github.com/repos/mobile-next/devicekit-android/releases/latest")
+	downloadURL, err := utils.GetLatestReleaseDownloadURL("mobile-next/devicekit-android")
 	if err != nil {
-		return fmt.Errorf("failed to fetch latest release: %v", err)
+		return fmt.Errorf("failed to get download URL: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
-	}
-
-	var release githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return fmt.Errorf("failed to decode release JSON: %v", err)
-	}
-
-	if len(release.Assets) == 0 {
-		return fmt.Errorf("no assets found in latest release")
-	}
-
-	downloadURL := release.Assets[0].BrowserDownloadURL
 	utils.Verbose("Downloading APK from: %s", downloadURL)
 
 	tempDir, err := os.MkdirTemp("", "devicekit-android-*")
@@ -410,24 +378,8 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 
 	apkPath := filepath.Join(tempDir, "devicekit.apk")
 
-	apkResp, err := http.Get(downloadURL)
-	if err != nil {
+	if err := utils.DownloadFile(downloadURL, apkPath); err != nil {
 		return fmt.Errorf("failed to download APK: %v", err)
-	}
-	defer apkResp.Body.Close()
-
-	if apkResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("APK download returned status %d", apkResp.StatusCode)
-	}
-
-	apkFile, err := os.Create(apkPath)
-	if err != nil {
-		return fmt.Errorf("failed to create APK file: %v", err)
-	}
-	defer apkFile.Close()
-
-	if _, err := io.Copy(apkFile, apkResp.Body); err != nil {
-		return fmt.Errorf("failed to write APK file: %v", err)
 	}
 
 	utils.Verbose("Installing APK...")
@@ -435,12 +387,12 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 		return fmt.Errorf("failed to install APK: %v", err)
 	}
 
-	installed, err = d.isPackageInstalled(packageName)
+	appPath, err = d.GetAppPath(packageName)
 	if err != nil {
 		return fmt.Errorf("failed to verify installation: %v", err)
 	}
 
-	if !installed {
+	if appPath == "" {
 		return fmt.Errorf("package %s was not installed successfully", packageName)
 	}
 
