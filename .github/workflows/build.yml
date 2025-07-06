@@ -92,12 +92,35 @@ jobs:
         retention-days: 1
         overwrite: true
 
+  build_on_windows:
+
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Build
+      run: |
+        go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
+      env:
+        GOARCH: amd64
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: |
+          mobilecli-windows-amd64.exe
+
   publish:
 
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build_on_linux, build_on_macos]
+    needs: [build_on_linux, build_on_macos, build_on_windows]
     steps:
     - uses: actions/checkout@v4
 
@@ -112,6 +135,12 @@ jobs:
       with:
         name: linux-build
         path: mobilecli-linux
+
+    - name: Download windows build
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-build
+        path: mobilecli-windows
 
     - name: Zip builds
       if: github.ref_type == 'tag'    
@@ -133,6 +162,11 @@ jobs:
         zip -9 ../mobilecli-${{ github.ref_name }}-linux-arm64.zip mobilecli
         rm -f mobilecli
         cd ..
+
+        # windows
+        cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli
+        rm -f mobilecli
 
         ls -l *.zip
         rm -rf dist
@@ -156,6 +190,7 @@ jobs:
         mv ./mobilecli-darwin/mobilecli-darwin publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
+        mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
         chmod +x publish/npm/bin/*
         # setup npmrc
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
