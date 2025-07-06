@@ -291,12 +291,29 @@ func (d AndroidDevice) ConvertPNGtoJPEG(pngData []byte, quality int) ([]byte, er
 	return buf.Bytes(), nil
 }
 
+func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
+	output, err := d.runAdbCommand("shell", "pm", "path", packageName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get app path: %v", err)
+	}
+
+	// remove the "package:" prefix
+	appPath := strings.TrimPrefix(string(output), "package:")
+	appPath = strings.TrimSuffix(appPath, "\n")
+	return appPath, nil
+}
+
 func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
 	if format != "mjpeg" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
 
-	cmdArgs := append([]string{"-s", d.id}, "shell", "CLASSPATH=/sdcard/Download/app-debug.apk", "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
+	if err != nil {
+		return fmt.Errorf("failed to get app path: %v", err)
+	}
+
+	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
