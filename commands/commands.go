@@ -84,7 +84,7 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return device, nil
 	}
 
-	err = fmt.Errorf("multiple devices found (%d), please specify --device.", len(allDevices))
+	err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(allDevices), getDeviceIDList(allDevices))
 	return nil, err
 }
 
