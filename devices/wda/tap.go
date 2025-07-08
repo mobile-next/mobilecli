@@ -4,6 +4,29 @@ import (
 	"fmt"
 )
 
+type TapAction struct {
+	Type     string `json:"type"`
+	Duration int    `json:"duration,omitempty"`
+	X        int    `json:"x,omitempty"`
+	Y        int    `json:"y,omitempty"`
+	Button   int    `json:"button,omitempty"`
+}
+
+type PointerParameters struct {
+	PointerType string `json:"pointerType"`
+}
+
+type Pointer struct {
+	Type       string            `json:"type"`
+	ID         string            `json:"id"`
+	Parameters PointerParameters `json:"parameters"`
+	Actions    []TapAction       `json:"actions"`
+}
+
+type ActionsRequest struct {
+	Actions []Pointer `json:"actions"`
+}
+
 func Tap(x, y int) error {
 
 	sessionId, err := CreateSession()
@@ -13,19 +36,19 @@ func Tap(x, y int) error {
 
 	defer DeleteSession(sessionId)
 
-	data := map[string]interface{}{
-		"actions": []map[string]interface{}{
+	data := ActionsRequest{
+		Actions: []Pointer{
 			{
-				"type": "pointer",
-				"id":   "finger1",
-				"parameters": map[string]interface{}{
-					"pointerType": "touch",
+				Type: "pointer",
+				ID:   "finger1",
+				Parameters: PointerParameters{
+					PointerType: "touch",
 				},
-				"actions": []map[string]interface{}{
-					{"type": "pointerMove", "duration": 0, "x": x, "y": y},
-					{"type": "pointerDown", "button": 0},
-					{"type": "pause", "duration": 100},
-					{"type": "pointerUp", "button": 0},
+				Actions: []TapAction{
+					{Type: "pointerMove", Duration: 0, X: x, Y: y},
+					{Type: "pointerDown", Button: 0},
+					{Type: "pause", Duration: 100},
+					{Type: "pointerUp", Button: 0},
 				},
 			},
 		},
