@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -276,7 +277,8 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 	output, err := d.runAdbCommand("shell", "pm", "path", packageName)
 	if err != nil {
-		return "", fmt.Errorf("failed to get app path: %v", err)
+		// best effort (pm path will return error code 1)
+		return "", nil
 	}
 
 	// remove the "package:" prefix
@@ -290,11 +292,18 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
 
+	utils.Verbose("Ensuring DeviceKit is installed...")
+	err := d.EnsureDeviceKitInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to ensure DeviceKit is installed: %v", err)
+	}
+
 	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
 	if err != nil {
 		return fmt.Errorf("failed to get app path: %v", err)
 	}
 
+	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
 	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
@@ -324,5 +333,69 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 	}
 
 	cmd.Process.Kill()
+	return nil
+}
+
+func (d AndroidDevice) installPackage(apkPath string) error {
+	output, err := d.runAdbCommand("install", apkPath)
+	if err != nil {
+		return fmt.Errorf("failed to install package: %v\nOutput: %s", err, string(output))
+	}
+
+	if strings.Contains(string(output), "Success") {
+		return nil
+	}
+
+	return fmt.Errorf("installation failed: %s", string(output))
+}
+
+func (d AndroidDevice) EnsureDeviceKitInstalled() error {
+	packageName := "com.mobilenext.devicekit"
+
+	appPath, err := d.GetAppPath(packageName)
+	if err != nil {
+		return fmt.Errorf("failed to check if %s is installed: %v", packageName, err)
+	}
+
+	if appPath != "" {
+		// already installed, we have a path to .apk
+		return nil
+	}
+
+	utils.Verbose("DeviceKit not installed, downloading and installing...")
+
+	downloadURL, err := utils.GetLatestReleaseDownloadURL("mobile-next/devicekit-android")
+	if err != nil {
+		return fmt.Errorf("failed to get download URL: %v", err)
+	}
+	utils.Verbose("Downloading APK from: %s", downloadURL)
+
+	tempDir, err := os.MkdirTemp("", "devicekit-android-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	apkPath := filepath.Join(tempDir, "devicekit.apk")
+
+	if err := utils.DownloadFile(downloadURL, apkPath); err != nil {
+		return fmt.Errorf("failed to download APK: %v", err)
+	}
+
+	utils.Verbose("Installing APK...")
+	if err := d.installPackage(apkPath); err != nil {
+		return fmt.Errorf("failed to install APK: %v", err)
+	}
+
+	appPath, err = d.GetAppPath(packageName)
+	if err != nil {
+		return fmt.Errorf("failed to verify installation: %v", err)
+	}
+
+	if appPath == "" {
+		return fmt.Errorf("package %s was not installed successfully", packageName)
+	}
+
+	utils.Verbose("DeviceKit successfully installed")
 	return nil
 }
