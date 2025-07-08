@@ -163,10 +163,11 @@ jobs:
         rm -f mobilecli
         cd ..
 
-        # windows
-        cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli
-        rm -f mobilecli
+        # windows-amd64
+        cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
+        zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli.exe
+        rm -f mobilecli.exe
+        cd ..
 
         ls -l *.zip
         rm -rf dist
@@ -199,3 +200,4 @@ jobs:
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install
         npm publish --access public
+
