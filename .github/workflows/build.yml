@@ -163,7 +163,6 @@ jobs:
         rm -f mobilecli
 
         # windows-amd64
-        find .. -ls
         cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
         zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli.exe
         rm -f mobilecli.exe
