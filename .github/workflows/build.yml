@@ -161,7 +161,6 @@ jobs:
         cp ../mobilecli-linux/mobilecli-linux-arm64 mobilecli
         zip -9 ../mobilecli-${{ github.ref_name }}-linux-arm64.zip mobilecli
         rm -f mobilecli
-        cd ..
 
         # windows-amd64
         cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
