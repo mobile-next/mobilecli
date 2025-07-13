@@ -7,9 +7,9 @@ import (
 
 func PressButton(key string) error {
 	buttonMap := map[string]string{
-		"volume_up":   "volumeup",
-		"volume_down": "volumedown",
-		"home":        "home",
+		"VOLUME_UP":   "volumeup",
+		"VOLUME_DOWN": "volumedown",
+		"HOME":        "home",
 	}
 
 	if key == "enter" {

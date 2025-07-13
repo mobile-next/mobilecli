@@ -47,7 +47,7 @@ func GetWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) 
 	return result, nil
 }
 
-func PostWebDriverAgentEndpoint(endpoint string, data map[string]interface{}) (map[string]interface{}, error) {
+func PostWebDriverAgentEndpoint(endpoint string, data interface{}) (map[string]interface{}, error) {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
