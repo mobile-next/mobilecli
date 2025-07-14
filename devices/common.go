@@ -2,11 +2,10 @@ package devices
 
 import (
 	"fmt"
-	"log"
-	"strings"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
-// ControllableDevice defines common operations that can be performed on any device (real or simulated).
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -37,7 +36,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 	androidDevices, err := GetAndroidDevices() // Assumes this now returns []ControllableDevice
 	if err != nil {
 		// Log or collect error, decide if it's fatal or if we continue
-		log.Printf("Warning: Failed to get Android devices: %v", err)
+		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 		errs = append(errs, fmt.Errorf("android: %w", err))
 	} else {
 		allDevices = append(allDevices, androidDevices...)
@@ -46,7 +45,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 	// Get iOS real devices
 	iosDevices, err := ListIOSDevices()
 	if err != nil {
-		log.Printf("Warning: Failed to get iOS real devices: %v", err)
+		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
 		errs = append(errs, fmt.Errorf("ios real: %w", err))
 	} else {
 		for _, device := range iosDevices {
@@ -56,7 +55,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 
 	sims, err := GetBootedSimulators()
 	if err != nil {
-		log.Printf("Warning: Failed to get iOS simulators: %v", err)
+		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 		errs = append(errs, fmt.Errorf("ios simulator: %w", err))
 	} else {
 		for _, sim := range sims {
@@ -64,14 +63,6 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 				Simulator: sim,
 			})
 		}
-	}
-
-	if len(errs) > 0 {
-		var errorMessages []string
-		for _, e := range errs {
-			errorMessages = append(errorMessages, e.Error())
-		}
-		return allDevices, fmt.Errorf("encountered errors while listing devices: %s", strings.Join(errorMessages, "; "))
 	}
 
 	return allDevices, nil
