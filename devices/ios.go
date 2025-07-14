@@ -36,7 +36,11 @@ func (d IOSDevice) DeviceType() string {
 
 func runGoIosCommand(args ...string) ([]byte, error) {
 	cmd := exec.Command("go-ios", args...)
-	return cmd.Output()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("go-ios command failed: %w", err)
+	}
+	return output, nil
 }
 
 func getDeviceInfo(udid string) (IOSDevice, error) {
