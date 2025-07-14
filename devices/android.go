@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -101,7 +102,7 @@ func (d AndroidDevice) Tap(x, y int) error {
 }
 
 // Gesture is not implemented for Android devices
-func (d AndroidDevice) Gesture(actions []interface{}) error {
+func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
 	return fmt.Errorf("gesture actions are not supported for Android devices")
 }
 

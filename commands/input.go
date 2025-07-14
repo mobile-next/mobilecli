@@ -1,7 +1,10 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices/wda"
 )
 
 // TapRequest represents the parameters for a tap command
@@ -123,7 +126,22 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.Gesture(req.Actions)
+	// Convert []interface{} to []wda.TapAction
+	tapActions := make([]wda.TapAction, len(req.Actions))
+	for i, action := range req.Actions {
+		actionBytes, err := json.Marshal(action)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to marshal action at index %d: %v", i, err))
+		}
+		
+		var tapAction wda.TapAction
+		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to unmarshal action at index %d: %v", i, err))
+		}
+		tapActions[i] = tapAction
+	}
+
+	err = targetDevice.Gesture(tapActions)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to perform gesture on device %s: %v", targetDevice.ID(), err))
 	}
