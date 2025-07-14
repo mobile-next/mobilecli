@@ -14,10 +14,6 @@ type WindowSize struct {
 	ScreenSize Size `json:"screenSize"`
 }
 
-type windowSizeResponse struct {
-	Value WindowSize `json:"value"`
-}
-
 func GetWindowSize() (*WindowSize, error) {
 	sessionId, err := CreateSession()
 	if err != nil {
