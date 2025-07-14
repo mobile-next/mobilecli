@@ -123,12 +123,21 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	var req JSONRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", err.Error())
+		if err.Error() == "EOF" {
+			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", "expecting jsonrpc payload")
+		} else {
+			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", err.Error())
+		}
 		return
 	}
 
 	if req.JSONRPC != "2.0" {
 		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "'jsonrpc' must be '2.0'")
+		return
+	}
+
+	if req.ID == nil {
+		sendJSONRPCError(w, nil, ErrCodeInvalidRequest, "Invalid Request", "'id' field is required")
 		return
 	}
 
@@ -228,9 +237,13 @@ type IoTapParams struct {
 }
 
 func handleIoTap(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
+	}
+	
 	var ioTapParams IoTapParams
 	if err := json.Unmarshal(params, &ioTapParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
 	}
 
 	req := commands.TapRequest{
