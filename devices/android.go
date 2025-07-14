@@ -100,6 +100,11 @@ func (d AndroidDevice) Tap(x, y int) error {
 	return nil
 }
 
+// Gesture is not implemented for Android devices
+func (d AndroidDevice) Gesture(actions []interface{}) error {
+	return fmt.Errorf("gesture actions are not supported for Android devices")
+}
+
 func parseAdbDevicesOutput(output string) []ControllableDevice {
 	var devices []ControllableDevice
 

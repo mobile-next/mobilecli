@@ -95,6 +95,25 @@ func (d IOSDevice) Tap(x, y int) error {
 	return wda.Tap(x, y)
 }
 
+func (d IOSDevice) Gesture(actions []interface{}) error {
+	// Convert []interface{} to []TapAction
+	tapActions := make([]wda.TapAction, len(actions))
+	for i, action := range actions {
+		actionBytes, err := json.Marshal(action)
+		if err != nil {
+			return fmt.Errorf("failed to marshal action: %v", err)
+		}
+		
+		var tapAction wda.TapAction
+		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
+			return fmt.Errorf("failed to unmarshal action: %v", err)
+		}
+		tapActions[i] = tapAction
+	}
+	
+	return wda.Gesture(tapActions)
+}
+
 func (d IOSDevice) StartAgent() error {
 	_, err := wda.GetWebDriverAgentStatus()
 	return err

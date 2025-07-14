@@ -15,6 +15,7 @@ type ControllableDevice interface {
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
 	Tap(x, y int) error
+	Gesture(actions []interface{}) error
 	StartAgent() error
 	SendKeys(text string) error
 	PressButton(key string) error

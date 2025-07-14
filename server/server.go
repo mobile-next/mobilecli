@@ -41,12 +41,12 @@ const (
 
 var okResponse = map[string]interface{}{"status": "ok"}
 
-// JSONRPCRequest represents a JSON-RPC request
 type JSONRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-	ID      interface{}     `json:"id"`
+	// these fields are all omitempty, so we can report back to client if they are missing
+	JSONRPC string          `json:"jsonrpc,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	ID      interface{}     `json:"id,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC response
@@ -128,7 +128,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.JSONRPC != "2.0" {
-		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "jsonrpc must be '2.0'")
+		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "'jsonrpc' must be '2.0'")
 		return
 	}
 
@@ -150,10 +150,14 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoText(req.Params)
 	case "io_button":
 		result, err = handleIoButton(req.Params)
+	case "io_gesture":
+		result, err = handleIoGesture(req.Params)
 	case "url":
 		result, err = handleURL(req.Params)
 	case "device_info":
 		result, err = handleDeviceInfo(req.Params)
+	case "":
+		err = fmt.Errorf("'method' is required")
 
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
@@ -161,6 +165,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("Error decoding JSON-RPC request: %v", err)
 		sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
 		return
 	}
@@ -271,6 +276,11 @@ type IoButtonParams struct {
 	Button   string `json:"button"`
 }
 
+type IoGestureParams struct {
+	DeviceID string        `json:"deviceId"`
+	Actions  []interface{} `json:"actions"`
+}
+
 type URLParams struct {
 	DeviceID string `json:"deviceId"`
 	URL      string `json:"url"`
@@ -292,6 +302,25 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ButtonCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleIoGesture(params json.RawMessage) (interface{}, error) {
+	var ioGestureParams IoGestureParams
+	if err := json.Unmarshal(params, &ioGestureParams); err != nil {
+		return nil, err
+	}
+
+	req := commands.GestureRequest{
+		DeviceID: ioGestureParams.DeviceID,
+		Actions:  ioGestureParams.Actions,
+	}
+
+	response := commands.GestureCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf(response.Error)
 	}
