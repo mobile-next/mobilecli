@@ -3,6 +3,7 @@ package devices
 import (
 	"fmt"
 
+	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -15,6 +16,7 @@ type ControllableDevice interface {
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
 	Tap(x, y int) error
+	Gesture(actions []wda.TapAction) error
 	StartAgent() error
 	SendKeys(text string) error
 	PressButton(key string) error

@@ -41,12 +41,12 @@ const (
 
 var okResponse = map[string]interface{}{"status": "ok"}
 
-// JSONRPCRequest represents a JSON-RPC request
 type JSONRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-	ID      interface{}     `json:"id"`
+	// these fields are all omitempty, so we can report back to client if they are missing
+	JSONRPC string          `json:"jsonrpc,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	ID      interface{}     `json:"id,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC response
@@ -123,12 +123,21 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	var req JSONRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", err.Error())
+		if err.Error() == "EOF" {
+			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", "expecting jsonrpc payload")
+		} else {
+			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", err.Error())
+		}
 		return
 	}
 
 	if req.JSONRPC != "2.0" {
-		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "jsonrpc must be '2.0'")
+		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "'jsonrpc' must be '2.0'")
+		return
+	}
+
+	if req.ID == nil {
+		sendJSONRPCError(w, nil, ErrCodeInvalidRequest, "Invalid Request", "'id' field is required")
 		return
 	}
 
@@ -150,10 +159,14 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoText(req.Params)
 	case "io_button":
 		result, err = handleIoButton(req.Params)
+	case "io_gesture":
+		result, err = handleIoGesture(req.Params)
 	case "url":
 		result, err = handleURL(req.Params)
 	case "device_info":
 		result, err = handleDeviceInfo(req.Params)
+	case "":
+		err = fmt.Errorf("'method' is required")
 
 	default:
 		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
@@ -161,6 +174,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("Error decoding JSON-RPC request: %v", err)
 		sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
 		return
 	}
@@ -223,9 +237,13 @@ type IoTapParams struct {
 }
 
 func handleIoTap(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
+	}
+	
 	var ioTapParams IoTapParams
 	if err := json.Unmarshal(params, &ioTapParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
 	}
 
 	req := commands.TapRequest{
@@ -248,9 +266,13 @@ type IoTextParams struct {
 }
 
 func handleIoText(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
+	}
+	
 	var ioTextParams IoTextParams
 	if err := json.Unmarshal(params, &ioTextParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, text", err)
 	}
 
 	req := commands.TextRequest{
@@ -271,6 +293,11 @@ type IoButtonParams struct {
 	Button   string `json:"button"`
 }
 
+type IoGestureParams struct {
+	DeviceID string        `json:"deviceId"`
+	Actions  []interface{} `json:"actions"`
+}
+
 type URLParams struct {
 	DeviceID string `json:"deviceId"`
 	URL      string `json:"url"`
@@ -281,9 +308,13 @@ type InfoParams struct {
 }
 
 func handleIoButton(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
+	}
+	
 	var ioButtonParams IoButtonParams
 	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, button", err)
 	}
 
 	req := commands.ButtonRequest{
@@ -299,10 +330,37 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
+func handleIoGesture(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, actions")
+	}
+	
+	var ioGestureParams IoGestureParams
+	if err := json.Unmarshal(params, &ioGestureParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, actions", err)
+	}
+
+	req := commands.GestureRequest{
+		DeviceID: ioGestureParams.DeviceID,
+		Actions:  ioGestureParams.Actions,
+	}
+
+	response := commands.GestureCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return okResponse, nil
+}
+
 func handleURL(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, url")
+	}
+	
 	var urlParams URLParams
 	if err := json.Unmarshal(params, &urlParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, url", err)
 	}
 
 	req := commands.URLRequest{
@@ -319,9 +377,13 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 }
 
 func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+	
 	var infoParams InfoParams
 	if err := json.Unmarshal(params, &infoParams); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
 	}
 
 	response := commands.InfoCommand(infoParams.DeviceID)

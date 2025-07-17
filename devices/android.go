@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -95,6 +97,42 @@ func (d AndroidDevice) Tap(x, y int) error {
 	_, err := d.runAdbCommand("shell", "input", "tap", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y))
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// Gesture performs a sequence of touch actions on the Android device
+func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
+
+	x := 0
+	y := 0
+
+	for _, action := range actions {
+		var cmd []string
+
+		if action.Type == "pause" {
+			time.Sleep(time.Duration(action.Duration) * time.Millisecond)
+			continue
+		}
+
+		switch action.Type {
+		case "pointerDown":
+			cmd = []string{"shell", "input", "touchscreen", "motionevent", "down", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
+		case "pointerMove":
+			x = action.X
+			y = action.Y
+			cmd = []string{"shell", "input", "touchscreen", "motionevent", "move", fmt.Sprintf("%d", action.X), fmt.Sprintf("%d", action.Y)}
+		case "pointerUp":
+			cmd = []string{"shell", "input", "touchscreen", "motionevent", "up", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
+		default:
+			return fmt.Errorf("unsupported gesture action type: %s", action.Type)
+		}
+
+		_, err := d.runAdbCommand(cmd...)
+		if err != nil {
+			return fmt.Errorf("failed to execute gesture action %s: %v", action.Type, err)
+		}
 	}
 
 	return nil

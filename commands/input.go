@@ -1,7 +1,10 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices/wda"
 )
 
 // TapRequest represents the parameters for a tap command
@@ -21,6 +24,12 @@ type TextRequest struct {
 type ButtonRequest struct {
 	DeviceID string `json:"deviceId"`
 	Button   string `json:"button"`
+}
+
+// GestureRequest represents the parameters for a gesture command
+type GestureRequest struct {
+	DeviceID string        `json:"deviceId"`
+	Actions  []interface{} `json:"actions"`
 }
 
 // TapCommand performs a tap operation on the specified device
@@ -98,5 +107,46 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 
 	return NewSuccessResponse(map[string]interface{}{
 		"message": fmt.Sprintf("Pressed button '%s' on device %s", req.Button, targetDevice.ID()),
+	})
+}
+
+// GestureCommand performs a gesture operation on the specified device
+func GestureCommand(req GestureRequest) *CommandResponse {
+	if len(req.Actions) == 0 {
+		return NewErrorResponse(fmt.Errorf("actions array is required and cannot be empty"))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+	}
+
+	// Convert []interface{} to []wda.TapAction
+	tapActions := make([]wda.TapAction, len(req.Actions))
+	for i, action := range req.Actions {
+		actionBytes, err := json.Marshal(action)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to marshal action at index %d: %v", i, err))
+		}
+		
+		var tapAction wda.TapAction
+		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to unmarshal action at index %d: %v", i, err))
+		}
+		tapActions[i] = tapAction
+	}
+
+	err = targetDevice.Gesture(tapActions)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to perform gesture on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]interface{}{
+		"message": fmt.Sprintf("Performed gesture on device %s with %d actions", targetDevice.ID(), len(req.Actions)),
 	})
 }

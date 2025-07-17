@@ -418,6 +418,10 @@ func (s SimulatorDevice) Tap(x, y int) error {
 	return wda.Tap(x, y)
 }
 
+func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
+	return wda.Gesture(actions)
+}
+
 func (s *SimulatorDevice) OpenURL(url string) error {
 	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
 }

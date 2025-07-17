@@ -95,6 +95,10 @@ func (d IOSDevice) Tap(x, y int) error {
 	return wda.Tap(x, y)
 }
 
+func (d IOSDevice) Gesture(actions []wda.TapAction) error {
+	return wda.Gesture(actions)
+}
+
 func (d IOSDevice) StartAgent() error {
 	_, err := wda.GetWebDriverAgentStatus()
 	return err

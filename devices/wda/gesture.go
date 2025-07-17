@@ -1,11 +1,11 @@
 package wda
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
-func Tap(x, y int) error {
-
+func Gesture(actions []TapAction) error {
 	sessionId, err := CreateSession()
 	if err != nil {
 		return err
@@ -21,12 +21,7 @@ func Tap(x, y int) error {
 				Parameters: PointerParameters{
 					PointerType: "touch",
 				},
-				Actions: []TapAction{
-					{Type: "pointerMove", Duration: 0, X: x, Y: y},
-					{Type: "pointerDown", Button: 0},
-					{Type: "pause", Duration: 100},
-					{Type: "pointerUp", Button: 0},
-				},
+				Actions: actions,
 			},
 		},
 	}
@@ -36,4 +31,13 @@ func Tap(x, y int) error {
 		return err
 	}
 	return nil
+}
+
+func GestureFromJSON(jsonData []byte) error {
+	var actions []TapAction
+	if err := json.Unmarshal(jsonData, &actions); err != nil {
+		return fmt.Errorf("failed to parse gesture actions: %v", err)
+	}
+
+	return Gesture(actions)
 }
