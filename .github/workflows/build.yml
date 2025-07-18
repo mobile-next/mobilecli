@@ -36,6 +36,11 @@ jobs:
       run: |
         make lint || true
 
+    - name: Test
+      run: |
+        (cd test; npm install)
+        make test
+
     - name: Build
       run: |
         GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
