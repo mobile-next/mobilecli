@@ -2,19 +2,15 @@ package devices
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/utils"
-	"github.com/otiai10/copy"
 )
 
 // AppInfo corresponds to the structure from plutil output
@@ -228,66 +224,23 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 }
 
 func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
-	url := "https://github.com/appium/WebDriverAgent/releases/download/v9.13.0/WebDriverAgentRunner-Runner.zip"
+	url := "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/WebDriverAgentRunner-Build-Sim-arm64.zip"
 
 	tmpFile, err := os.CreateTemp("", "wda-*.zip")
-	log.Printf("Created temp file: %s", tmpFile.Name())
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %v", err)
 	}
+	tmpFile.Close()
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
+	log.Printf("Downloading WebDriverAgent to: %s", tmpFile.Name())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	err = utils.DownloadFile(url, tmpFile.Name())
 	if err != nil {
+		os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to download WebDriverAgent: %v", err)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download WebDriverAgent: status code %d", resp.StatusCode)
-	}
-
-	_, err = io.Copy(tmpFile, resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	defer tmpFile.Close()
 
 	return tmpFile.Name(), nil
-}
-
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open source file %s: %v", src, err)
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file %s: %v", dst, err)
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	if err != nil {
-		return fmt.Errorf("failed to copy file %s: %v", src, err)
-	}
-
-	return nil
 }
 
 func (s SimulatorDevice) InstallWebDriverAgent() error {
@@ -297,7 +250,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
 
-	// defer os.Remove(file)
+	defer os.Remove(file)
 
 	log.Printf("Downloaded WebDriverAgent to %s", file)
 
@@ -306,48 +259,8 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to unzip WebDriverAgent: %v", err)
 	}
 
+	defer os.RemoveAll(dir)
 	log.Printf("Unzipped WebDriverAgent to %s", dir)
-
-	// copy frameworks into this directory
-	frameworks := []string{
-		"Testing.framework",
-		"WebDriverAgentRunner.xctest",
-		"XCTAutomationSupport.framework",
-		"XCTest.framework",
-		"XCTestCore.framework",
-		"XCTestSupport.framework",
-		"XCUIAutomation.framework",
-		"XCUnit.framework",
-	}
-
-	files := []string{
-		"libXCTestSwiftSupport.dylib",
-	}
-
-	xcodePath := "/Applications/Xcode.app/Contents/Developer"
-	iPhoneSimulatorPath := xcodePath + "/Platforms/iPhoneSimulator.platform/Developer"
-	frameworksPath := iPhoneSimulatorPath + "/Library/Frameworks/"
-
-	// copy recursively all files in frameworks to the simulator
-	for _, framework := range frameworks {
-		src := frameworksPath + framework
-		dst := dir + "/" + framework
-		err = copy.Copy(src, dst)
-		if err != nil {
-			os.RemoveAll(dir)
-			return fmt.Errorf("failed to copy framework %s: %v", src, err)
-		}
-	}
-
-	for _, file := range files {
-		src := iPhoneSimulatorPath + "/usr/lib/" + file
-		dst := dir + "/" + file
-		err = copyFile(src, dst)
-		if err != nil {
-			os.RemoveAll(dir)
-			return fmt.Errorf("failed to copy file %s: %v", src, err)
-		}
-	}
 
 	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
 	if err != nil {
@@ -359,7 +272,6 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to wait for WebDriverAgent to be installed: %v", err)
 	}
 
-	defer os.RemoveAll(dir)
 	return nil
 }
 
@@ -384,11 +296,10 @@ func (s SimulatorDevice) StartAgent() error {
 
 		if !installed {
 			log.Printf("WebdriverAgent is not installed. Will try to install now")
-			return fmt.Errorf("WebdriverAgent is not installed")
-			// err = s.InstallWebDriverAgent()
-			// if err != nil {
-			// return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
-			// }
+			err = s.InstallWebDriverAgent()
+			if err != nil {
+				return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
+			}
 		}
 
 		webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
