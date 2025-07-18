@@ -36,11 +36,6 @@ jobs:
       run: |
         make lint || true
 
-    - name: Test
-      run: |
-        (cd test; npm install)
-        make test
-
     - name: Build
       run: |
         GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
@@ -48,6 +43,12 @@ jobs:
         lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
         rm mobilecli-arm64 mobilecli-amd64
         ./mobilecli-darwin --version
+
+    - name: Test
+      run: |
+        (cd test; npm install)
+        make build test
+
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
