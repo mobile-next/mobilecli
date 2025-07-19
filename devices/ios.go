@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 type IOSDevice struct {
@@ -101,6 +102,44 @@ func (d IOSDevice) Gesture(actions []wda.TapAction) error {
 
 func (d IOSDevice) StartAgent() error {
 	_, err := wda.GetWebDriverAgentStatus()
+	if err != nil {
+		utils.Verbose("WebdriverAgent is not running, starting it")
+
+		// list apps on device
+		apps, err := d.ListApps()
+		if err != nil {
+			return fmt.Errorf("failed to list apps: %w", err)
+		}
+
+		// check if WebDriverAgent is installed
+		webdriverBundleId := ""
+		for _, app := range apps {
+			if app.AppName == "WebDriverAgentRunner-Runner" {
+				utils.Verbose("WebDriverAgent is installed, launching it")
+				webdriverBundleId = app.PackageName
+				break
+			}
+		}
+
+		if webdriverBundleId == "" {
+			return fmt.Errorf("WebDriverAgent is not installed")
+		}
+
+		// launch WebDriverAgent
+		err = d.LaunchApp(webdriverBundleId)
+		if err != nil {
+			return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+		}
+
+		// wait for WebDriverAgent to start
+		err = wda.WaitForWebDriverAgent()
+		if err != nil {
+			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
+		}
+
+		utils.Verbose("WebDriverAgent started")
+	}
+
 	return err
 }
 
