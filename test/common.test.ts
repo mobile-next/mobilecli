@@ -1,9 +1,9 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, spawnSync } from 'child_process';
 import { describe, it, before, after } from 'mocha';
 import { strict as assert } from 'assert';
 import path from 'path';
 
-describe('common', () => {
+describe('jsonrpc api common', () => {
 	let serverProcess: ChildProcess;
 	const serverUrl = 'http://localhost:12000';
 	const timeout = 10000;
@@ -75,8 +75,10 @@ describe('common', () => {
 				jsonrpc: '2.0',
 				method: 'devices',
 				id: 1
-			})
+			}),
+			signal: AbortSignal.timeout(30000),
 		});
+
 		assert.equal(response.status, 200);
 		const json = await response.json();
 		assert.equal(json.jsonrpc, '2.0');
@@ -86,13 +88,14 @@ describe('common', () => {
 
 	it('should return error for "device_info" call without params', async () => {
 		const response = await fetch(`${serverUrl}/rpc`, {
-			method: 'POST', 
+			method: 'POST',
 			body: JSON.stringify({
 				jsonrpc: '2.0',
 				method: 'device_info',
 				id: 1
 			})
 		});
+		
 		assert.equal(response.status, 200);
 		const json = await response.json();
 		assert.equal(json.jsonrpc, '2.0');
@@ -100,24 +103,24 @@ describe('common', () => {
 		assert.equal(json.error.code, -32000);
 		assert.equal(json.error.data, "'params' is required with fields: deviceId");
 	});
-});
 
-async function waitForServer(url: string, timeoutMs: number): Promise<void> {
-	const startTime = Date.now();
+	const waitForServer = async (url: string, timeoutMs: number): Promise<void> => {
+		const startTime = Date.now();
+		const expirationTime = startTime + timeoutMs;
 
-	while (Date.now() - startTime < timeoutMs) {
-		try {
-			const response = await fetch(url);
-			if (response.status === 200) {
-				return; // Server is ready
+		while (Date.now() < expirationTime) {
+			try {
+				const response = await fetch(url);
+				if (response.status === 200) {
+					return; // Server is ready
+				}
+			} catch (error) {
+				// Server not ready yet, continue waiting
 			}
-		} catch (error) {
-			// Server not ready yet, continue waiting
+
+			await new Promise(resolve => setTimeout(resolve, 100));
 		}
 
-		// Wait 100ms before next attempt
-		await new Promise(resolve => setTimeout(resolve, 100));
-	}
-
-	throw new Error(`Server did not start within ${timeoutMs}ms`);
-}
+		throw new Error(`Server did not start within ${timeoutMs}ms`);
+	};
+});
