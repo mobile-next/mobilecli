@@ -36,10 +36,16 @@ func (d IOSDevice) DeviceType() string {
 
 func runGoIosCommand(args ...string) ([]byte, error) {
 	cmd := exec.Command("go-ios", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go-ios command failed: %w", err)
+		// try with "ios" (if installed through brew)
+		cmd = exec.Command("ios", args...)
+		output, err = cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("go-ios command failed: %w", err)
+		}
 	}
+
 	return output, nil
 }
 
