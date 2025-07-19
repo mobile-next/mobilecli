@@ -44,6 +44,7 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: read    
+    needs: [test_and_lint]
     steps:
     - uses: actions/checkout@v4
 
@@ -83,6 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    needs: [test_and_lint]      
     steps:
     - uses: actions/checkout@v4
 
@@ -122,6 +124,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    needs: [test_and_lint]
     steps:
     - uses: actions/checkout@v4
     - name: Set up Go
@@ -145,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [test_and_lint,build_on_linux, build_on_macos, build_on_windows]
+    needs: [build_on_linux, build_on_macos, build_on_windows]
     steps:
     - uses: actions/checkout@v4
 
