@@ -2,17 +2,17 @@ package wda
 
 import "fmt"
 
-func SendKeys(text string) error {
+func (c *WdaClient) SendKeys(text string) error {
 
-	sessionId, err := CreateSession()
+	sessionId, err := c.CreateSession()
 	if err != nil {
 		return err
 	}
 
-	defer DeleteSession(sessionId)
+	defer c.DeleteSession(sessionId)
 
 	url := fmt.Sprintf("session/%s/wda/keys", sessionId)
-	_, err = PostWebDriverAgentEndpoint(url, map[string]interface{}{
+	_, err = c.PostEndpoint(url, map[string]interface{}{
 		"value": []string{text},
 	})
 

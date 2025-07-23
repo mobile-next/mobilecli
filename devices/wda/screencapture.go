@@ -6,13 +6,13 @@ import (
 	"net/http"
 )
 
-func StartScreenCapture(format string, callback func([]byte) bool) error {
+func (c *WdaClient) StartScreenCapture(format string, callback func([]byte) bool) error {
 
 	client := &http.Client{
 		Timeout: 0, // No timeout for long-lived streaming requests
 	}
 
-	req, err := http.NewRequest("GET", "http://localhost:9100/", nil)
+	req, err := http.NewRequest("GET", c.baseURL+":9100/", nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

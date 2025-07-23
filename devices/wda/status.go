@@ -1,5 +1,5 @@
 package wda
 
-func GetWebDriverAgentStatus() (map[string]interface{}, error) {
-	return GetWebDriverAgentEndpoint("status")
+func (c *WdaClient) GetStatus() (map[string]interface{}, error) {
+	return c.GetEndpoint("status")
 }

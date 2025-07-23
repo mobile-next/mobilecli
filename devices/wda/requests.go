@@ -11,12 +11,8 @@ import (
 	"time"
 )
 
-func GetWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	url := fmt.Sprintf("http://localhost:8100/%s", endpoint)
+func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -26,7 +22,7 @@ func GetWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) 
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch endpoint %s: %v", endpoint, err)
 	}
@@ -47,12 +43,8 @@ func GetWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) 
 	return result, nil
 }
 
-func PostWebDriverAgentEndpoint(endpoint string, data interface{}) (map[string]interface{}, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	url := fmt.Sprintf("http://localhost:8100/%s", endpoint)
+func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal data: %v", err)
@@ -67,7 +59,7 @@ func PostWebDriverAgentEndpoint(endpoint string, data interface{}) (map[string]i
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to post to endpoint %s: %v", endpoint, err)
 	}
@@ -82,12 +74,8 @@ func PostWebDriverAgentEndpoint(endpoint string, data interface{}) (map[string]i
 	return result, nil
 }
 
-func DeleteWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	url := fmt.Sprintf("http://localhost:8100/%s", endpoint)
+func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -97,7 +85,7 @@ func DeleteWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, erro
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete endpoint %s: %v", endpoint, err)
 	}
@@ -113,7 +101,7 @@ func DeleteWebDriverAgentEndpoint(endpoint string) (map[string]interface{}, erro
 }
 
 // waitForWebDriverAgent waits for WebDriverAgent to be ready by polling its status endpoint
-func WaitForWebDriverAgent() error {
+func (c *WdaClient) WaitForAgent() error {
 	// Set timeout for the entire operation
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -127,7 +115,7 @@ func WaitForWebDriverAgent() error {
 			return fmt.Errorf("timed out waiting for WebDriverAgent to be ready")
 
 		case <-ticker.C:
-			_, err := GetWebDriverAgentStatus()
+			_, err := c.GetStatus()
 			if err != nil {
 				log.Printf("WebDriverAgent not ready yet: %v", err)
 				continue
@@ -139,8 +127,8 @@ func WaitForWebDriverAgent() error {
 	}
 }
 
-func CreateSession() (string, error) {
-	response, err := PostWebDriverAgentEndpoint("session", map[string]interface{}{
+func (c *WdaClient) CreateSession() (string, error) {
+	response, err := c.PostEndpoint("session", map[string]interface{}{
 		"capabilities": map[string]interface{}{
 			"alwaysMatch": map[string]interface{}{
 				"platformName": "iOS",
@@ -157,9 +145,9 @@ func CreateSession() (string, error) {
 	return sessionId, nil
 }
 
-func DeleteSession(sessionId string) error {
+func (c *WdaClient) DeleteSession(sessionId string) error {
 	url := fmt.Sprintf("session/%s", sessionId)
-	_, err := DeleteWebDriverAgentEndpoint(url)
+	_, err := c.DeleteEndpoint(url)
 	if err != nil {
 		return fmt.Errorf("failed to delete session %s: %v", sessionId, err)
 	}

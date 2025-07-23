@@ -21,6 +21,7 @@ type IOSDevice struct {
 	DeviceName string `json:"DeviceName"`
 
 	tunnelManager *ios.TunnelManager
+	wdaClient     *wda.WdaClient
 }
 
 type listDevicesResponse struct {
@@ -67,6 +68,7 @@ func getDeviceInfo(udid string) (IOSDevice, error) {
 	}
 
 	device.tunnelManager = ios.NewTunnelManager(udid)
+	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
 }
 
@@ -95,7 +97,7 @@ func ListIOSDevices() ([]IOSDevice, error) {
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
-	return wda.TakeScreenshot()
+	return d.wdaClient.TakeScreenshot()
 }
 
 func (d IOSDevice) Reboot() error {
@@ -104,11 +106,11 @@ func (d IOSDevice) Reboot() error {
 }
 
 func (d IOSDevice) Tap(x, y int) error {
-	return wda.Tap(x, y)
+	return d.wdaClient.Tap(x, y)
 }
 
 func (d IOSDevice) Gesture(actions []wda.TapAction) error {
-	return wda.Gesture(actions)
+	return d.wdaClient.Gesture(actions)
 }
 
 type Tunnel struct {
@@ -163,7 +165,7 @@ func (d *IOSDevice) GetTunnelPID() int {
 	return d.tunnelManager.GetTunnelPID()
 }
 
-func (d IOSDevice) StartAgent() error {
+func (d *IOSDevice) StartAgent() error {
 
 	// starting an agent on a real device requires quite a few things to happen in the right order:
 	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
@@ -178,7 +180,7 @@ func (d IOSDevice) StartAgent() error {
 	// 4. we need to set up a forward proxy to port 8100 on the device
 	// 5. we need to wait for the agent  to be ready
 
-	_, err := wda.GetWebDriverAgentStatus()
+	_, err := d.wdaClient.GetStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
@@ -234,6 +236,8 @@ func (d IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to forward port: %w", err)
 		}
 
+		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
+
 		// launch WebDriverAgent
 		utils.Verbose("Launching WebDriverAgent")
 		err = d.LaunchApp(webdriverBundleId)
@@ -243,13 +247,13 @@ func (d IOSDevice) StartAgent() error {
 
 		// wait for WebDriverAgent to start
 		utils.Verbose("Waiting for WebDriverAgent to start")
-		err = wda.WaitForWebDriverAgent()
+		err = d.wdaClient.WaitForAgent()
 		if err != nil {
 			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 		}
 
 		// wait 1 second after pressing home, so we make sure wda is in the background
-		wda.PressButton("HOME")
+		d.wdaClient.PressButton("HOME")
 		time.Sleep(1 * time.Second)
 
 		utils.Verbose("WebDriverAgent started")
@@ -260,7 +264,7 @@ func (d IOSDevice) StartAgent() error {
 }
 
 func (d IOSDevice) PressButton(key string) error {
-	return wda.PressButton(key)
+	return d.wdaClient.PressButton(key)
 }
 
 func (d IOSDevice) LaunchApp(bundleID string) error {
@@ -274,11 +278,11 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 }
 
 func (d IOSDevice) SendKeys(text string) error {
-	return wda.SendKeys(text)
+	return d.wdaClient.SendKeys(text)
 }
 
 func (d IOSDevice) OpenURL(url string) error {
-	return wda.OpenURL(url)
+	return d.wdaClient.OpenURL(url)
 }
 
 func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
@@ -313,7 +317,7 @@ func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := wda.GetWindowSize()
+	wdaSize, err := d.wdaClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -334,7 +338,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
-	return wda.StartScreenCapture(format, callback)
+	return d.wdaClient.StartScreenCapture(format, callback)
 }
 
 func findAvailablePort() (int, error) {

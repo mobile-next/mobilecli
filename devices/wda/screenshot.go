@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 )
 
-func TakeScreenshot() ([]byte, error) {
-	response, err := GetWebDriverAgentEndpoint("screenshot")
+func (c *WdaClient) TakeScreenshot() ([]byte, error) {
+	response, err := c.GetEndpoint("screenshot")
 	if err != nil {
 		return nil, err
 	}

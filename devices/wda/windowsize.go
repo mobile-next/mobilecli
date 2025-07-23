@@ -14,15 +14,15 @@ type WindowSize struct {
 	ScreenSize Size `json:"screenSize"`
 }
 
-func GetWindowSize() (*WindowSize, error) {
-	sessionId, err := CreateSession()
+func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
+	sessionId, err := c.CreateSession()
 	if err != nil {
 		return nil, err
 	}
 
-	defer DeleteSession(sessionId)
+	defer c.DeleteSession(sessionId)
 
-	response, err := GetWebDriverAgentEndpoint(fmt.Sprintf("session/%s/wda/screen", sessionId))
+	response, err := c.GetEndpoint(fmt.Sprintf("session/%s/wda/screen", sessionId))
 	if err != nil {
 		return nil, err
 	}

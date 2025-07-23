@@ -4,14 +4,14 @@ import (
 	"fmt"
 )
 
-func Tap(x, y int) error {
+func (c *WdaClient) Tap(x, y int) error {
 
-	sessionId, err := CreateSession()
+	sessionId, err := c.CreateSession()
 	if err != nil {
 		return err
 	}
 
-	defer DeleteSession(sessionId)
+	defer c.DeleteSession(sessionId)
 
 	data := ActionsRequest{
 		Actions: []Pointer{
@@ -31,7 +31,7 @@ func Tap(x, y int) error {
 		},
 	}
 
-	_, err = PostWebDriverAgentEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
+	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
 	if err != nil {
 		return err
 	}
