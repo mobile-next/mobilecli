@@ -125,6 +125,7 @@ func WaitForWebDriverAgent() error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("timed out waiting for WebDriverAgent to be ready")
+
 		case <-ticker.C:
 			_, err := GetWebDriverAgentStatus()
 			if err != nil {
@@ -132,6 +133,7 @@ func WaitForWebDriverAgent() error {
 				continue
 			}
 
+			log.Printf("WebDriverAgent is ready!")
 			return nil
 		}
 	}
@@ -151,7 +153,6 @@ func CreateSession() (string, error) {
 	}
 
 	// log.Printf("createSession response: %v", response)
-
 	sessionId := response["sessionId"].(string)
 	return sessionId, nil
 }

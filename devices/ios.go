@@ -1,24 +1,26 @@
 package devices
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
-	"sync"
+	"time"
 
+	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/utils"
+)
+
+var (
+	portForwarder *ios.PortForwarder
 )
 
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
 
-	tunnelProcess *exec.Cmd
-	tunnelCancel  context.CancelFunc
-	tunnelMutex   sync.Mutex
+	tunnelManager *ios.TunnelManager
 }
 
 type listDevicesResponse struct {
@@ -64,6 +66,7 @@ func getDeviceInfo(udid string) (IOSDevice, error) {
 		return IOSDevice{}, err
 	}
 
+	device.tunnelManager = ios.NewTunnelManager(udid)
 	return device, nil
 }
 
@@ -145,86 +148,36 @@ func findGoIosPath() (string, error) {
 }
 
 func (d *IOSDevice) StartTunnel() error {
-	return d.StartTunnelWithCallback(nil)
+	return d.tunnelManager.StartTunnel()
 }
 
 func (d *IOSDevice) StartTunnelWithCallback(onProcessDied func(error)) error {
-	d.tunnelMutex.Lock()
-	defer d.tunnelMutex.Unlock()
-
-	if d.tunnelProcess != nil {
-		return fmt.Errorf("tunnel is already running")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	d.tunnelCancel = cancel
-
-	cmdName, err := findGoIosPath()
-	if err != nil {
-		return fmt.Errorf("failed to find go-ios path: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, cmdName, "tunnel", "start", "--userspace", "--udid", d.ID())
-	err = cmd.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start tunnel process: %w", err)
-	}
-
-	d.tunnelProcess = cmd
-	utils.Verbose("Tunnel started in background with PID: %d", cmd.Process.Pid)
-
-	if onProcessDied != nil {
-		go func() {
-			waitErr := cmd.Wait()
-			d.tunnelMutex.Lock()
-			d.tunnelProcess = nil
-			d.tunnelCancel = nil
-			d.tunnelMutex.Unlock()
-			onProcessDied(waitErr)
-		}()
-	} else {
-		go func() {
-			cmd.Wait()
-			d.tunnelMutex.Lock()
-			d.tunnelProcess = nil
-			d.tunnelCancel = nil
-			d.tunnelMutex.Unlock()
-		}()
-	}
-
-	return nil
+	return d.tunnelManager.StartTunnelWithCallback(onProcessDied)
 }
 
 func (d *IOSDevice) StopTunnel() error {
-	d.tunnelMutex.Lock()
-	defer d.tunnelMutex.Unlock()
-
-	if d.tunnelProcess == nil {
-		return fmt.Errorf("no tunnel process running")
-	}
-
-	if d.tunnelCancel != nil {
-		d.tunnelCancel()
-	}
-
-	utils.Verbose("Stopping tunnel process with PID: %d", d.tunnelProcess.Process.Pid)
-	d.tunnelProcess = nil
-	d.tunnelCancel = nil
-
-	return nil
+	return d.tunnelManager.StopTunnel()
 }
 
 func (d *IOSDevice) GetTunnelPID() int {
-	d.tunnelMutex.Lock()
-	defer d.tunnelMutex.Unlock()
-
-	if d.tunnelProcess != nil && d.tunnelProcess.Process != nil {
-		return d.tunnelProcess.Process.Pid
-	}
-	return 0
+	return d.tunnelManager.GetTunnelPID()
 }
 
 func (d IOSDevice) StartAgent() error {
+
+	// starting an agent on a real device requires quite a few things to happen in the right order:
+	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
+	//    a. we download the wda bundle from github
+	//    b. we need to unzip it to a temp directory
+	//    c. we need to modify the Info.plist to set the correct bundle identifier
+	//    d. we need to create an entitlements file
+	//    e. we need to sign the bundle
+	//    f. we need to install the bundle to the device
+	// 2. we need to launch the agent ✅
+	// 3. we need to make sure there's a tunnel running for iOS17+
+	// 4. we need to set up a forward proxy to port 8100 on the device
+	// 5. we need to wait for the agent  to be ready
+
 	_, err := wda.GetWebDriverAgentStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
@@ -255,30 +208,53 @@ func (d IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to list tunnels: %w", err)
 		}
 
-		utils.Verbose("Tunnels available for this device: %v", tunnels)
+		if len(tunnels) > 0 {
+			utils.Verbose("Tunnels available for this device: %v", tunnels)
+		}
+
 		if len(tunnels) == 0 {
-			utils.Verbose("No tunnels found, starting tunnel")
+			utils.Verbose("No tunnels found, starting a new tunnel")
 			err = d.StartTunnel()
 			if err != nil {
 				return fmt.Errorf("failed to start tunnel: %w", err)
 			}
+
+			// sleep 5 seconds to make sure tunnel is ready
+			time.Sleep(5 * time.Second)
 		}
 
 		// check that forward proxy is running
+		port, err := findAvailablePort()
+		if err != nil {
+			return fmt.Errorf("failed to find available port: %w", err)
+		}
+
+		portForwarder = ios.NewPortForwarder(d.ID())
+		err = portForwarder.Forward(port, 8100)
+		if err != nil {
+			return fmt.Errorf("failed to forward port: %w", err)
+		}
 
 		// launch WebDriverAgent
+		utils.Verbose("Launching WebDriverAgent")
 		err = d.LaunchApp(webdriverBundleId)
 		if err != nil {
 			return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
 		}
 
 		// wait for WebDriverAgent to start
+		utils.Verbose("Waiting for WebDriverAgent to start")
 		err = wda.WaitForWebDriverAgent()
 		if err != nil {
 			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 		}
 
+		// wait 1 second after pressing home, so we make sure wda is in the background
+		wda.PressButton("HOME")
+		time.Sleep(1 * time.Second)
+
 		utils.Verbose("WebDriverAgent started")
+		return nil
 	}
 
 	return err
@@ -360,4 +336,13 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 
 func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
 	return wda.StartScreenCapture(format, callback)
+}
+
+func findAvailablePort() (int, error) {
+	for port := 8100; port <= 8199; port++ {
+		if utils.IsPortAvailable("localhost", port) {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no available ports found in range 8101-8199")
 }
