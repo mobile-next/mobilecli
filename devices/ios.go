@@ -236,27 +236,36 @@ func (d *IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to forward port: %w", err)
 		}
 
-		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
+		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 
-		// launch WebDriverAgent
-		utils.Verbose("Launching WebDriverAgent")
-		err = d.LaunchApp(webdriverBundleId)
-		if err != nil {
-			return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+		// check if wda is already running, now that we have a port forwarder set up
+		_, err = d.wdaClient.GetStatus()
+		if err == nil {
+			utils.Verbose("WebDriverAgent is already running")
 		}
 
-		// wait for WebDriverAgent to start
-		utils.Verbose("Waiting for WebDriverAgent to start")
-		err = d.wdaClient.WaitForAgent()
 		if err != nil {
-			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
+			// launch WebDriverAgent
+			utils.Verbose("Launching WebDriverAgent")
+			err = d.LaunchApp(webdriverBundleId)
+			if err != nil {
+				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+			}
+
+			// wait for WebDriverAgent to start
+			utils.Verbose("Waiting for WebDriverAgent to start")
+			err = d.wdaClient.WaitForAgent()
+			if err != nil {
+				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
+			}
+
+			// wait 1 second after pressing home, so we make sure wda is in the background
+			d.wdaClient.PressButton("HOME")
+			time.Sleep(1 * time.Second)
+
+			utils.Verbose("WebDriverAgent started")
 		}
 
-		// wait 1 second after pressing home, so we make sure wda is in the background
-		d.wdaClient.PressButton("HOME")
-		time.Sleep(1 * time.Second)
-
-		utils.Verbose("WebDriverAgent started")
 		return nil
 	}
 
