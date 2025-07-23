@@ -8,7 +8,7 @@ build:
 
 test:
 	go test ./... -v -race
-	(cd test; npm test)
+	(cd test && npm test)
 
 lint:
 	$(GOPATH)/bin/golangci-lint run

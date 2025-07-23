@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-func PressButton(key string) error {
+func (c *WdaClient) PressButton(key string) error {
 	buttonMap := map[string]string{
 		"VOLUME_UP":   "volumeup",
 		"VOLUME_DOWN": "volumedown",
@@ -13,7 +13,7 @@ func PressButton(key string) error {
 	}
 
 	if key == "enter" {
-		return SendKeys("\n")
+		return c.SendKeys("\n")
 	}
 
 	translatedKey, exists := buttonMap[key]
@@ -21,18 +21,18 @@ func PressButton(key string) error {
 		return fmt.Errorf("unsupported button: %s", key)
 	}
 
-	sessionId, err := CreateSession()
+	sessionId, err := c.CreateSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
 
-	defer DeleteSession(sessionId)
+	defer c.DeleteSession(sessionId)
 
 	data := map[string]interface{}{
 		"name": translatedKey,
 	}
 
-	_, err = PostWebDriverAgentEndpoint(fmt.Sprintf("session/%s/wda/pressButton", sessionId), data)
+	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/wda/pressButton", sessionId), data)
 	if err != nil {
 		return fmt.Errorf("failed to press button: %v", err)
 	}

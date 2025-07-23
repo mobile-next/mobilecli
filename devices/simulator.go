@@ -31,6 +31,7 @@ type Simulator struct {
 // SimulatorDevice wraps a Simulator to implement the AnyDevice interface
 type SimulatorDevice struct {
 	Simulator
+	wdaClient *wda.WdaClient
 }
 
 func (s SimulatorDevice) ID() string         { return s.UDID }
@@ -39,7 +40,7 @@ func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	return wda.TakeScreenshot()
+	return s.wdaClient.TakeScreenshot()
 }
 
 // Reboot shuts down and then boots the iOS simulator.
@@ -287,7 +288,7 @@ func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
 }
 
 func (s SimulatorDevice) StartAgent() error {
-	_, err := wda.GetWebDriverAgentStatus()
+	_, err := s.wdaClient.GetStatus()
 	if err != nil {
 		installed, err := s.IsWebDriverAgentInstalled()
 		if err != nil {
@@ -308,7 +309,7 @@ func (s SimulatorDevice) StartAgent() error {
 			return err
 		}
 
-		err = wda.WaitForWebDriverAgent()
+		err = s.wdaClient.WaitForAgent()
 		if err != nil {
 			return err
 		}
@@ -318,19 +319,19 @@ func (s SimulatorDevice) StartAgent() error {
 }
 
 func (s SimulatorDevice) PressButton(key string) error {
-	return wda.PressButton(key)
+	return s.wdaClient.PressButton(key)
 }
 
 func (s SimulatorDevice) SendKeys(text string) error {
-	return wda.SendKeys(text)
+	return s.wdaClient.SendKeys(text)
 }
 
 func (s SimulatorDevice) Tap(x, y int) error {
-	return wda.Tap(x, y)
+	return s.wdaClient.Tap(x, y)
 }
 
 func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
-	return wda.Gesture(actions)
+	return s.wdaClient.Gesture(actions)
 }
 
 func (s *SimulatorDevice) OpenURL(url string) error {
@@ -380,7 +381,8 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (s Simulator) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := wda.GetWindowSize()
+	client := wda.NewWdaClient("localhost:8100")
+	wdaSize, err := client.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -401,5 +403,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 }
 
 func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
-	return wda.StartScreenCapture(format, callback)
+	// Note: This method is on Simulator, not SimulatorDevice, so we need to create a WdaClient here
+	client := wda.NewWdaClient("localhost:8100")
+	return client.StartScreenCapture(format, callback)
 }

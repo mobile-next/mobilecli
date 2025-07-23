@@ -5,13 +5,13 @@ import (
 	"fmt"
 )
 
-func Gesture(actions []TapAction) error {
-	sessionId, err := CreateSession()
+func (c *WdaClient) Gesture(actions []TapAction) error {
+	sessionId, err := c.CreateSession()
 	if err != nil {
 		return err
 	}
 
-	defer DeleteSession(sessionId)
+	defer c.DeleteSession(sessionId)
 
 	data := ActionsRequest{
 		Actions: []Pointer{
@@ -26,18 +26,18 @@ func Gesture(actions []TapAction) error {
 		},
 	}
 
-	_, err = PostWebDriverAgentEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
+	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func GestureFromJSON(jsonData []byte) error {
+func (c *WdaClient) GestureFromJSON(jsonData []byte) error {
 	var actions []TapAction
 	if err := json.Unmarshal(jsonData, &actions); err != nil {
 		return fmt.Errorf("failed to parse gesture actions: %v", err)
 	}
 
-	return Gesture(actions)
+	return c.Gesture(actions)
 }

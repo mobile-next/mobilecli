@@ -51,7 +51,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		errs = append(errs, fmt.Errorf("ios real: %w", err))
 	} else {
 		for _, device := range iosDevices {
-			allDevices = append(allDevices, device)
+			allDevices = append(allDevices, &device)
 		}
 	}
 
@@ -63,6 +63,7 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		for _, sim := range sims {
 			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
+				wdaClient: wda.NewWdaClient("localhost:8100"),
 			})
 		}
 	}
