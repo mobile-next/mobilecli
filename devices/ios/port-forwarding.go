@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/utils"
@@ -53,10 +52,9 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 	cmd := exec.CommandContext(ctx, cmdName, "forward", srcPortStr, dstPortStr, "--udid", pf.udid)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
+
+	// Configure process attributes for proper cleanup
+	utils.ConfigureDetachedProcAttr(cmd)
 
 	utils.Verbose("Starting port forwarding process: %s", cmd.String())
 
@@ -70,7 +68,7 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 
 	go func() {
 		err := cmd.Wait()
-		utils.Verbose("Port forwarding process %d->%d terminated")
+		utils.Verbose("Port forwarding process %d->%d terminated", srcPort, dstPort)
 
 		pf.forwardMutex.Lock()
 		pf.forwardProcess = nil
@@ -80,13 +78,12 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 			utils.Verbose("Port forwarding process %d->%d terminated with error: %v", srcPort, dstPort, err)
 			utils.Verbose("Stdout: %s", stdout.String())
 			utils.Verbose("Stderr: %s", stderr.String())
-
 		} else {
 			utils.Verbose("Port forwarding process %d->%d terminated normally", srcPort, dstPort)
 		}
 	}()
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(1 * time.Second)
 	return nil
 }
 

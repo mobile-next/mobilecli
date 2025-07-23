@@ -219,8 +219,7 @@ func (d IOSDevice) StartAgent() error {
 				return fmt.Errorf("failed to start tunnel: %w", err)
 			}
 
-			// sleep 5 seconds to make sure tunnel is ready
-			time.Sleep(5 * time.Second)
+			time.Sleep(1 * time.Second)
 		}
 
 		// check that forward proxy is running

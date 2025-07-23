@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
-	"syscall"
 
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -44,10 +43,7 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 	}
 
 	cmd := exec.CommandContext(ctx, cmdName, "tunnel", "start", "--userspace", "--udid", tm.udid)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
+	utils.ConfigureDetachedProcAttr(cmd)
 	err = cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start tunnel process: %w", err)
@@ -115,6 +111,5 @@ func findGoIosPath() (string, error) {
 	if path, err := exec.LookPath("ios"); err == nil {
 		return path, nil
 	}
-
 	return "", fmt.Errorf("neither go-ios nor ios found in PATH")
 }
