@@ -11,25 +11,19 @@ import (
 )
 
 func TestDownloadFile_Success(t *testing.T) {
-	// Test successful download using real GitHub robots.txt
 	tmpFile := filepath.Join(t.TempDir(), "robots.txt")
 
 	err := DownloadFile("https://en.wikipedia.org/robots.txt", tmpFile)
 	assert.NoError(t, err, "Download should succeed")
-
-	// Verify file was created
 	assert.FileExists(t, tmpFile, "Downloaded file should exist")
 
-	// Verify file has content
 	content, err := os.ReadFile(tmpFile)
 	assert.NoError(t, err, "Should be able to read downloaded file")
 	assert.NotEmpty(t, content, "Downloaded file should not be empty")
 
-	// Verify it looks like a robots.txt file
 	contentStr := string(content)
 	assert.Contains(t, contentStr, "User-agent", "robots.txt should contain User-agent directive")
 
-	// Verify file info
 	info, err := os.Stat(tmpFile)
 	assert.NoError(t, err, "Should be able to stat downloaded file")
 	assert.Greater(t, info.Size(), int64(0), "Downloaded file should have non-zero size")
@@ -49,6 +43,5 @@ func TestDownloadFile_HTTPError(t *testing.T) {
 	assert.Error(t, err, "Should return error for 404 response")
 	assert.Contains(t, err.Error(), "download returned status 404", "Error should mention status code")
 
-	// File should not be created on error
 	assert.NoFileExists(t, tmpFile, "File should not exist after failed download")
 }
