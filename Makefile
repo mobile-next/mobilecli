@@ -1,4 +1,4 @@
-.PHONY: all build test lint fmt clean
+.PHONY: all build test test-cover lint fmt clean
 
 all: build
 
@@ -8,7 +8,10 @@ build:
 
 test:
 	go test ./... -v -race
-	(cd test && npm test)
+
+test-cover: build
+	go test ./... -v -race -cover -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
 
 lint:
 	$(GOPATH)/bin/golangci-lint run
@@ -18,4 +21,4 @@ fmt:
 	$(GOPATH)/bin/goimports -w .
 
 clean:
-	rm -f mobilecli coverage.out
+	rm -f mobilecli coverage.out coverage.html
