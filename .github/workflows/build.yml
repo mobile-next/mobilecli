@@ -36,7 +36,6 @@ jobs:
   
     - name: Test
       run: |
-        (cd test; npm install)
         make build test
             
   build_on_macos:
