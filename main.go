@@ -217,6 +217,7 @@ var serverStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the mobilecli server",
 	Long:  `Starts the mobilecli server.`,
+	Args:  cobra.NoArgs, // No arguments allowed after "start"
 	RunE: func(cmd *cobra.Command, args []string) error {
 		listenAddr := cmd.Flag("listen").Value.String()
 		if listenAddr == "" {

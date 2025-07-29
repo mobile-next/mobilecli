@@ -2,3 +2,5 @@ mobilecli
 screenshot.png
 .DS_Store
 **/node_modules
+**/coverage*.out
+**/coverage*.html

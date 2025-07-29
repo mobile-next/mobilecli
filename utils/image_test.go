@@ -7,6 +7,9 @@ import (
 	"image/jpeg"
 	"image/png"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConvertPngToJpeg(t *testing.T) {
@@ -21,21 +24,38 @@ func TestConvertPngToJpeg(t *testing.T) {
 
 	var pngBuf bytes.Buffer
 	err := png.Encode(&pngBuf, img)
-	if err != nil {
-		t.Fatalf("Failed to encode test PNG: %v", err)
-	}
+	require.NoError(t, err, "Failed to encode test PNG")
 
 	jpegBytes, err := ConvertPngToJpeg(pngBuf.Bytes(), 90)
-	if err != nil {
-		t.Errorf("ConvertPngToJpeg() error = %v", err)
-	}
+	assert.NoError(t, err, "ConvertPngToJpeg should succeed")
 
 	out, err := jpeg.Decode(bytes.NewReader(jpegBytes))
-	if err != nil {
-		t.Errorf("Output is not valid JPEG: %v", err)
-	}
+	assert.NoError(t, err, "Output should be valid JPEG")
 
-	if out.Bounds().Dx() != w || out.Bounds().Dy() != h {
-		t.Errorf("Output is not %dx%d: %v", w, h, out.Bounds())
-	}
+	assert.Equal(t, w, out.Bounds().Dx(), "Output width should match")
+	assert.Equal(t, h, out.Bounds().Dy(), "Output height should match")
+}
+
+func TestConvertPngToJpeg_InvalidPNG(t *testing.T) {
+	// Test with invalid PNG data
+	invalidPngData := []byte("not a png file")
+	
+	_, err := ConvertPngToJpeg(invalidPngData, 90)
+	assert.Error(t, err, "Should return error for invalid PNG data")
+}
+
+func TestConvertPngToJpeg_EmptyData(t *testing.T) {
+	// Test with empty data
+	emptyData := []byte{}
+	
+	_, err := ConvertPngToJpeg(emptyData, 90)
+	assert.Error(t, err, "Should return error for empty data")
+}
+
+func TestConvertPngToJpeg_CorruptPNG(t *testing.T) {
+	// Test with corrupted PNG data (starts with PNG signature but is invalid)
+	corruptPngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00} // PNG signature + invalid data
+	
+	_, err := ConvertPngToJpeg(corruptPngData, 90)
+	assert.Error(t, err, "Should return error for corrupt PNG data")
 }
