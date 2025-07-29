@@ -21,7 +21,7 @@ func TestIsPortAvailable_LocalhostVariations(t *testing.T) {
 		expected bool
 	}{
 		{"IPv4 loopback", "127.0.0.1", true},
-		{"IPv6 loopback", "::1", false},  // Function uses tcp4, so IPv6 fails
+		{"IPv6 loopback", "::1", false}, // Function uses tcp4, so IPv6 fails
 		{"localhost", "localhost", true}, // localhost resolves to IPv4
 	}
 
@@ -80,7 +80,6 @@ func TestIsPortAvailable_InvalidHost(t *testing.T) {
 func TestIsPortAvailable_PrivilegedPorts(t *testing.T) {
 	// Test well-known ports that are likely to be restricted or in use
 	privilegedPorts := []int{22, 25, 53, 80, 443}
-
 	for _, port := range privilegedPorts {
 		t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
 			// These ports are typically restricted or in use
