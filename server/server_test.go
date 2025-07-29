@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	testServerURL  = "http://localhost:12000"
-	testServerPort = "12000"
+	testServerURL  = "http://localhost:12001"
+	testServerPort = "12001"
 	serverTimeout  = 8 * time.Second
 )
 
@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 // startTestServer starts the mobilecli server process
 func startTestServer() error {
 	// Look for mobilecli binary in parent directory
-	serverProcess = exec.Command("../mobilecli", "server", "start", testServerPort)
+	serverProcess = exec.Command("../mobilecli", "server", "start", "--listen", "localhost:"+testServerPort)
 	serverProcess.Stdout = nil // Suppress output
 	serverProcess.Stderr = nil // Suppress output
 
@@ -477,4 +477,22 @@ func TestCORSMiddleware(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInvalidServerCommand tests that invalid server command usage returns an error
+func TestInvalidServerCommand(t *testing.T) {
+	// Test invalid command format: "mobilecli server start 12000" (arguments not allowed)
+	cmd := exec.Command("../mobilecli", "server", "start", "12000")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	err := cmd.Run()
+	
+	// Should return an error since arguments are not allowed after "start"
+	assert.Error(t, err, "Expected error for invalid command format")
+	
+	// Check that stderr contains error message about unknown command
+	stderrStr := stderr.String()
+	assert.Contains(t, stderrStr, "unknown command \"12000\" for \"mobilecli server start\"", "Expected error message about unknown command")
 }
