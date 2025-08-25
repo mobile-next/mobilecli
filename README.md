@@ -45,6 +45,14 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Android SDK** with `adb` in PATH (for Android device support)
 - **Xcode Command Line Tools** (for iOS simulator support on macOS)
 
+### Install
+
+Get started right now with `mobilecli`. 
+
+```bash
+npm install -g @mobilenext/mobilecli@latest
+```
+
 ### Install from Source
 
 ```bash
@@ -150,49 +158,16 @@ mobilecli press-button --device <device-id> POWER
 ### Building
 
 ```bash
+make lint
 make build
-```
-
-### Testing
-
-```bash
 make test
 ```
-
-### Linting
-
-```bash
-make lint
-```
-
-### Project Structure
-
-```
-mobilecli/
-├── main.go              # CLI entry point and commands
-├── devices/             # Device management interfaces
-│   ├── common.go        # ControllableDevice interface
-│   ├── android.go       # Android device implementation
-│   ├── ios.go          # iOS real device implementation
-│   ├── simulator.go    # iOS simulator implementation
-│   └── wda.go          # WebDriverAgent client
-└── utils/              # Utility functions
-    ├── image.go        # Image conversion utilities
-    ├── file.go         # File operations
-    └── zipfile.go      # Archive operations
-```
-
-## Roadmap
-
-- [ ] Webserver with json-rpc interface
-- [ ] Automatically install WebDriverAgent 
-- [ ] Automatically create tunnel for iOS17+
-- [ ] App installation/management commands (install, removed, update)
-- [ ] Video streaming capabilities with WebRTC
-- [ ] Remote device management server
-- [ ] CI/CD pipeline improvements
-- [ ] Package distribution (Homebrew, etc.)
 
 ## Support
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page. 
+
+Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today.
+
+To learn more about <a href="https://mobilenexthq.com/">Mobile Next</a> and what we're building, <a href="https://mobilenexthq.com/#newsletter">subscribe to our newsletter</a>.
+
