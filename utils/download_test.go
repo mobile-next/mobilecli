@@ -13,7 +13,7 @@ import (
 func TestDownloadFile_Success(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "robots.txt")
 
-	err := DownloadFile("https://en.wikipedia.org/robots.txt", tmpFile)
+	err := DownloadFile("https://github.com/robots.txt", tmpFile)
 	assert.NoError(t, err, "Download should succeed")
 	assert.FileExists(t, tmpFile, "Downloaded file should exist")
 
