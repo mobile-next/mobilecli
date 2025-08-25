@@ -486,12 +486,12 @@ func TestInvalidServerCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	err := cmd.Run()
-	
+
 	// Should return an error since arguments are not allowed after "start"
 	assert.Error(t, err, "Expected error for invalid command format")
-	
+
 	// Check that stderr contains error message about unknown command
 	stderrStr := stderr.String()
 	assert.Contains(t, stderrStr, "unknown command \"12000\" for \"mobilecli server start\"", "Expected error message about unknown command")

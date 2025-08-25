@@ -21,7 +21,7 @@ func TestIsPortAvailable_LocalhostVariations(t *testing.T) {
 		expected bool
 	}{
 		{"IPv4 loopback", "127.0.0.1", true},
-		{"IPv6 loopback", "::1", false}, // Function uses tcp4, so IPv6 fails
+		{"IPv6 loopback", "::1", false},  // Function uses tcp4, so IPv6 fails
 		{"localhost", "localhost", true}, // localhost resolves to IPv4
 	}
 

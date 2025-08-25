@@ -48,7 +48,7 @@ var deviceInfoCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(deviceCmd)
-	
+
 	// add device subcommands
 	deviceCmd.AddCommand(deviceRebootCmd)
 	deviceCmd.AddCommand(deviceInfoCmd)

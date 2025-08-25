@@ -95,7 +95,7 @@ var ioTextCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(ioCmd)
-	
+
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
 	ioCmd.AddCommand(ioButtonCmd)
