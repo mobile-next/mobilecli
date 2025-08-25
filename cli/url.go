@@ -29,7 +29,7 @@ var urlCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(urlCmd)
-	
+
 	// url command flags
 	urlCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to open URL on")
 }

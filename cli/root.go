@@ -37,7 +37,7 @@ func init() {
 func Execute() error {
 	// enable microseconds in logs
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	
+
 	return rootCmd.Execute()
 }
 

@@ -23,7 +23,7 @@ var devicesCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(devicesCmd)
-	
+
 	// devices command flags
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")

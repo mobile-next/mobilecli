@@ -29,10 +29,10 @@ var serverStartCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
-	
+
 	// add server subcommands
 	serverCmd.AddCommand(serverStartCmd)
-	
+
 	// server command flags
 	serverStartCmd.Flags().String("listen", "", "Address to listen on (e.g., 'localhost:12000' or '0.0.0.0:13000')")
 	serverStartCmd.Flags().Bool("cors", false, "Enable CORS support")

@@ -133,7 +133,7 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to marshal action at index %d: %v", i, err))
 		}
-		
+
 		var tapAction wda.TapAction
 		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to unmarshal action at index %d: %v", i, err))

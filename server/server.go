@@ -240,7 +240,7 @@ func handleIoTap(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
 	}
-	
+
 	var ioTapParams IoTapParams
 	if err := json.Unmarshal(params, &ioTapParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
@@ -269,7 +269,7 @@ func handleIoText(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
 	}
-	
+
 	var ioTextParams IoTextParams
 	if err := json.Unmarshal(params, &ioTextParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, text", err)
@@ -311,7 +311,7 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
 	}
-	
+
 	var ioButtonParams IoButtonParams
 	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, button", err)
@@ -334,7 +334,7 @@ func handleIoGesture(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, actions")
 	}
-	
+
 	var ioGestureParams IoGestureParams
 	if err := json.Unmarshal(params, &ioGestureParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, actions", err)
@@ -357,7 +357,7 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, url")
 	}
-	
+
 	var urlParams URLParams
 	if err := json.Unmarshal(params, &urlParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, url", err)
@@ -380,7 +380,7 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
-	
+
 	var infoParams InfoParams
 	if err := json.Unmarshal(params, &infoParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)

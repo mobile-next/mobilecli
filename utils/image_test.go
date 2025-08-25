@@ -39,7 +39,7 @@ func TestConvertPngToJpeg(t *testing.T) {
 func TestConvertPngToJpeg_InvalidPNG(t *testing.T) {
 	// Test with invalid PNG data
 	invalidPngData := []byte("not a png file")
-	
+
 	_, err := ConvertPngToJpeg(invalidPngData, 90)
 	assert.Error(t, err, "Should return error for invalid PNG data")
 }
@@ -47,7 +47,7 @@ func TestConvertPngToJpeg_InvalidPNG(t *testing.T) {
 func TestConvertPngToJpeg_CorruptPNG(t *testing.T) {
 	// Test with corrupted PNG data (starts with PNG signature but is invalid)
 	corruptPngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00} // PNG signature + invalid data
-	
+
 	_, err := ConvertPngToJpeg(corruptPngData, 90)
 	assert.Error(t, err, "Should return error for corrupt PNG data")
 }
@@ -55,10 +55,9 @@ func TestConvertPngToJpeg_CorruptPNG(t *testing.T) {
 func TestConvertPngToJpeg_EmptyData(t *testing.T) {
 	// Test with empty data
 	emptyData := []byte{}
-	
+
 	_, err := ConvertPngToJpeg(emptyData, 90)
 	if err == nil {
 		t.Error("Expected error for empty data, got nil")
 	}
 }
-

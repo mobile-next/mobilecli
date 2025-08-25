@@ -17,7 +17,7 @@ type GitHubRelease struct {
 // and returns the browser download URL of the first asset
 func GetLatestReleaseDownloadURL(repo string) (string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-	
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch latest release: %v", err)
