@@ -3,7 +3,6 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -46,7 +45,7 @@ func (d IOSDevice) DeviceType() string {
 }
 
 func runGoIosCommand(args ...string) ([]byte, error) {
-	cmdName, err := findGoIosPath()
+	cmdName, err := ios.FindGoIosPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find go-ios path: %w", err)
 	}
@@ -136,24 +135,6 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	}
 
 	return tunnels, nil
-}
-
-func findGoIosPath() (string, error) {
-	if envPath := os.Getenv("GO_IOS_PATH"); envPath != "" {
-		if _, err := os.Stat(envPath); err == nil {
-			return envPath, nil
-		}
-	}
-
-	if path, err := exec.LookPath("go-ios"); err == nil {
-		return path, nil
-	}
-
-	if path, err := exec.LookPath("ios"); err == nil {
-		return path, nil
-	}
-
-	return "", fmt.Errorf("neither go-ios nor ios found in PATH")
 }
 
 func (d *IOSDevice) StartTunnel() error {

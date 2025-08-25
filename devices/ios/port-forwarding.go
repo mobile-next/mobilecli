@@ -40,7 +40,7 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 	pf.srcPort = srcPort
 	pf.dstPort = dstPort
 
-	cmdName, err := findGoIosPath()
+	cmdName, err := FindGoIosPath()
 	if err != nil {
 		return fmt.Errorf("failed to find go-ios path: %w", err)
 	}
