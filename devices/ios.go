@@ -3,6 +3,7 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -138,6 +139,12 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 }
 
 func findGoIosPath() (string, error) {
+	if envPath := os.Getenv("GO_IOS_PATH"); envPath != "" {
+		if _, err := os.Stat(envPath); err == nil {
+			return envPath, nil
+		}
+	}
+
 	if path, err := exec.LookPath("go-ios"); err == nil {
 		return path, nil
 	}
