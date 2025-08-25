@@ -61,7 +61,7 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i '' 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' main.go
+        sed -i '' 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
 
     - name: Build
       run: |
