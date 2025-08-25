@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func Unzip(zipPath string) (string, error) {
@@ -33,6 +34,13 @@ func unzipFile(zipPath, destDir string) error {
 
 	for _, file := range reader.File {
 		path := filepath.Join(destDir, file.Name)
+
+		// Validate path to prevent zip slip attacks
+		cleanPath := filepath.Clean(path)
+		cleanDestDir := filepath.Clean(destDir)
+		if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
+			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
+		}
 
 		// Create directory tree
 		if file.FileInfo().IsDir() {
