@@ -37,7 +37,7 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 	ctx, cancel := context.WithCancel(context.Background())
 	tm.tunnelCancel = cancel
 
-	cmdName, err := findGoIosPath()
+	cmdName, err := FindGoIosPath()
 	if err != nil {
 		return fmt.Errorf("failed to find go-ios path: %w", err)
 	}
@@ -103,13 +103,3 @@ func (tm *TunnelManager) GetTunnelPID() int {
 	return 0
 }
 
-func findGoIosPath() (string, error) {
-	if path, err := exec.LookPath("go-ios"); err == nil {
-		return path, nil
-	}
-
-	if path, err := exec.LookPath("ios"); err == nil {
-		return path, nil
-	}
-	return "", fmt.Errorf("neither go-ios nor ios found in PATH")
-}
