@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -403,7 +404,6 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 }
 
 func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
-	// Note: This method is on Simulator, not SimulatorDevice, so we need to create a WdaClient here
-	client := wda.NewWdaClient("localhost:8100")
-	return client.StartScreenCapture(format, callback)
+	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
+	return mjpegClient.StartScreenCapture(format, callback)
 }
