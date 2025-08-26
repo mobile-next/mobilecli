@@ -9,6 +9,7 @@ import (
 
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -22,6 +23,7 @@ type IOSDevice struct {
 
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
+	mjpegClient   *mjpeg.WdaMjpegClient
 }
 
 type listDevicesResponse struct {
@@ -164,9 +166,11 @@ func (d *IOSDevice) StartAgent() error {
 	//    e. we need to sign the bundle
 	//    f. we need to install the bundle to the device
 	// 2. we need to launch the agent ✅
-	// 3. we need to make sure there's a tunnel running for iOS17+
-	// 4. we need to set up a forward proxy to port 8100 on the device
-	// 5. we need to wait for the agent  to be ready
+	// 3. we need to make sure there's a tunnel running for iOS17+ ✅
+	// 4. we need to set up a forward proxy to port 8100 on the device ✅
+	// 5. we need to set up a forward proxy to port 9100 on the device for MJPEG screencapture
+	// 6. we need to wait for the agent to be ready ✅
+	// 7. just in case, click HOME button ✅
 
 	_, err := d.wdaClient.GetStatus()
 	if err != nil {
@@ -253,11 +257,27 @@ func (d *IOSDevice) StartAgent() error {
 
 			utils.Verbose("WebDriverAgent started")
 		}
-
-		return nil
 	}
 
-	return err
+	// assuming everything went well if we reached this point
+	if true {
+		portMjpeg, err := findAvailablePort()
+		if err != nil {
+			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
+		}
+
+		portForwarderMjpeg := ios.NewPortForwarder(d.ID())
+		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
+		if err != nil {
+			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
+		}
+
+		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
+		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
+		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
+	}
+
+	return nil
 }
 
 func (d IOSDevice) PressButton(key string) error {
@@ -335,7 +355,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
-	return d.wdaClient.StartScreenCapture(format, callback)
+	return d.mjpegClient.StartScreenCapture(format, callback)
 }
 
 func findAvailablePort() (int, error) {

@@ -433,6 +433,11 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		return fmt.Errorf("format must be 'mjpeg' for screen capture")
 	}
 
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return fmt.Errorf("error starting agent: %v", err)
+	}
+
 	// Set headers for streaming response
 	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
 	w.Header().Set("Cache-Control", "no-cache")
