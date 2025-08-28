@@ -7,10 +7,15 @@ import (
 	"strings"
 	"time"
 
+	goios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/installationproxy"
+	"github.com/danielpaulus/go-ios/ios/instruments"
+	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -284,14 +289,150 @@ func (d IOSDevice) PressButton(key string) error {
 	return d.wdaClient.PressButton(key)
 }
 
+func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
+	rsdService, err := goios.NewWithAddrPortDevice(address, rsdPort, device)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("could not connect to RSD: %w", err)
+	}
+	defer rsdService.Close()
+	
+	rsdProvider, err := rsdService.Handshake()
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("RSD handshake failed: %w", err)
+	}
+	
+	device1, err := goios.GetDeviceWithAddress(udid, address, rsdProvider)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("error getting device with address: %w", err)
+	}
+	
+	device1.UserspaceTUN = device.UserspaceTUN
+	device1.UserspaceTUNHost = device.UserspaceTUNHost
+	device1.UserspaceTUNPort = device.UserspaceTUNPort
+	
+	return device1, nil
+}
+
+func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
+	const tunnelInfoHost = "localhost"
+	const tunnelInfoPort = 60105
+	const userspaceTunnelHost = "localhost"
+	
+	device, err := goios.GetDevice(udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", udid, err)
+	}
+	
+	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, tunnelInfoHost, tunnelInfoPort)
+	if err == nil {
+		device.UserspaceTUNPort = info.UserspaceTUNPort
+		device.UserspaceTUNHost = userspaceTunnelHost
+		device.UserspaceTUN = info.UserspaceTUN
+		device, err = deviceWithRsdProvider(device, udid, info.Address, info.RsdPort)
+		if err != nil {
+			utils.Verbose("failed to get device with RSD provider: %v", err)
+		}
+	} else {
+		utils.Verbose("failed to get tunnel info for device %s: %v", udid, err)
+	}
+	
+	return device, nil
+}
+
 func (d IOSDevice) LaunchApp(bundleID string) error {
-	_, err := runGoIosCommand("launch", bundleID)
-	return err
+	if bundleID == "" {
+		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	log.SetLevel(log.WarnLevel)
+
+	device, err := getEnhancedDevice(d.Udid)
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	pControl, err := instruments.NewProcessControl(device)
+	if err != nil {
+		return fmt.Errorf("processcontrol failed: %w", err)
+	}
+	defer pControl.Close()
+
+	opts := map[string]any{}
+	args := []interface{}{}
+	envs := map[string]any{}
+	
+	pid, err := pControl.LaunchAppWithArgs(bundleID, args, envs, opts)
+	if err != nil {
+		return fmt.Errorf("launch app command failed: %w", err)
+	}
+
+	utils.Verbose("Process launched with PID: %d", pid)
+	return nil
 }
 
 func (d IOSDevice) TerminateApp(bundleID string) error {
-	_, err := runGoIosCommand("kill", bundleID)
-	return err
+	if bundleID == "" {
+		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	log.SetLevel(log.WarnLevel)
+
+	device, err := getEnhancedDevice(d.Udid)
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	pControl, err := instruments.NewProcessControl(device)
+	if err != nil {
+		return fmt.Errorf("processcontrol failed: %w", err)
+	}
+	defer pControl.Close()
+
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return fmt.Errorf("installationproxy failed: %w", err)
+	}
+	defer svc.Close()
+
+	response, err := svc.BrowseAllApps()
+	if err != nil {
+		return fmt.Errorf("browsing apps failed: %w", err)
+	}
+
+	var processName string
+	for _, app := range response {
+		if app.CFBundleIdentifier() == bundleID {
+			processName = app.CFBundleExecutable()
+			break
+		}
+	}
+	if processName == "" {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+
+	service, err := instruments.NewDeviceInfoService(device)
+	if err != nil {
+		return fmt.Errorf("failed opening deviceInfoService for getting process list: %w", err)
+	}
+	defer service.Close()
+
+	processList, err := service.ProcessList()
+	if err != nil {
+		return fmt.Errorf("failed to get process list: %w", err)
+	}
+
+	for _, p := range processList {
+		if p.Name == processName {
+			err = pControl.KillProcess(p.Pid)
+			if err != nil {
+				return fmt.Errorf("kill process failed: %w", err)
+			}
+			utils.Verbose("%s killed, Pid: %d", bundleID, p.Pid)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("process of %s not found", bundleID)
 }
 
 func (d IOSDevice) SendKeys(text string) error {
