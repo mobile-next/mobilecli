@@ -7,7 +7,8 @@ import {
   createAndLaunchSimulator, 
   shutdownSimulator, 
   deleteSimulator, 
-  cleanupSimulators
+  cleanupSimulators,
+  findIOSRuntime
 } from './simctl';
 
 const TEST_SERVER_URL = 'http://localhost:12001';
@@ -39,10 +40,20 @@ describe('iOS Simulator Tests', () => {
   ['16', '17', '18'].forEach((iosVersion) => {
     describe(`iOS ${iosVersion}`, () => {
       let simulatorId: string;
+      let runtimeAvailable: boolean = false;
 
       before(function() {
         this.timeout(120000);
-        simulatorId = createAndLaunchSimulator(iosVersion);
+        
+        // Check if runtime is available
+        try {
+          findIOSRuntime(iosVersion);
+          runtimeAvailable = true;
+          simulatorId = createAndLaunchSimulator(iosVersion);
+        } catch (error) {
+          console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
+          runtimeAvailable = false;
+        }
       });
 
       after(() => {
@@ -53,6 +64,11 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should take screenshot', async function() {
+        if (!runtimeAvailable) {
+          this.skip();
+          return;
+        }
+        
         this.timeout(120000);
         
         const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
@@ -65,6 +81,11 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should open URL https://example.com', async function() {
+        if (!runtimeAvailable) {
+          this.skip();
+          return;
+        }
+        
         this.timeout(120000);
         
         openUrl(simulatorId, 'https://example.com');
