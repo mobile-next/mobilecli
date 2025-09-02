@@ -21,36 +21,16 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Build mobilecli
+    - name: Build mobilecli using Makefile
       run: |
-        go build -o mobilecli
+        make
 
-    - name: List available iOS simulators
+    - name: Install test dependencies
       run: |
-        xcrun simctl list devices available
+        cd test
+        npm install
 
-    - name: Create iOS 18 simulator
+    - name: Run tests
       run: |
-        RUNTIME=$( xcrun simctl list runtimes | grep "iOS 18." | head -1 | awk '{print $NF}' )
-        xcrun simctl create "iPhone-15-iOS-18" "iPhone 15" "$RUNTIME"
-
-    - name: Boot iOS 18 simulator
-      run: |
-        DEVICE_ID=$(xcrun simctl list devices | grep "iPhone-15-iOS-18" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
-        xcrun simctl boot "$DEVICE_ID"
-        xcrun simctl bootstatus "$DEVICE_ID"
-
-    - name: Wait for simulator to be ready
-      run: |
-        sleep 30
-
-    - name: Run mobilecli devices
-      run: |
-        ./mobilecli devices
-
-    - name: Shutdown simulator
-      if: always()
-      run: |
-        DEVICE_ID=$(xcrun simctl list devices | grep "iPhone-15-iOS-18" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
-        xcrun simctl shutdown "$DEVICE_ID" || true
-        xcrun simctl delete "$DEVICE_ID" || true
+        cd test
+        npm run test
