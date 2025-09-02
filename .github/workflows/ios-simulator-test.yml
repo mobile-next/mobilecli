@@ -1,0 +1,47 @@
+name: iOS Simulator Test
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  ios_simulator_test:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download runtimes
+      run: |
+        # must launch simulator first
+        xcodebuild -runFirstLaunch
+        # iOS 18.6
+        xcodebuild -downloadPlatform iOS -buildVersion 22G86
+        # iOS 17.5
+        xcodebuild -downloadPlatform iOS -buildVersion 21F79
+        # iOS 16.4
+        xcodebuild -downloadPlatform iOS -buildVersion 20E247
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Build mobilecli
+      run: |
+        make
+
+    - name: Install dependencies
+      run: |
+        cd test
+        npm install
+
+    - name: Run tests
+      run: |
+        cd test
+        npm run test

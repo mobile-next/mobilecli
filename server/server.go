@@ -123,11 +123,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	var req JSONRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if err.Error() == "EOF" {
-			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", "expecting jsonrpc payload")
-		} else {
-			sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", err.Error())
-		}
+		sendJSONRPCError(w, nil, ErrCodeParseError, "Parse error", "expecting jsonrpc payload")
 		return
 	}
 
