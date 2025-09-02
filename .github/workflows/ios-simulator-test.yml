@@ -18,6 +18,8 @@ jobs:
 
     - name: Download runtimes
       run: |
+        # must launch simulator first
+        open -a Simulator
         # iOS 18.6
         xcodebuild -downloadPlatform iOS -buildVersion 22G86
         # iOS 17.5
