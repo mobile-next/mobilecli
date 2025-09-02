@@ -62,7 +62,11 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 		DeviceName: allValues.Value.DeviceName,
 	}
 	
-	device.tunnelManager = ios.NewTunnelManager(udid)
+	tunnelManager, err := ios.NewTunnelManager(udid)
+	if err != nil {
+		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
+	}
+	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
 }
@@ -126,6 +130,10 @@ type Tunnel struct {
 
 func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	log.SetLevel(log.WarnLevel)
+	
+	if d.tunnelManager == nil {
+		return nil, fmt.Errorf("tunnel manager not initialized")
+	}
 	
 	// Use the library-based tunnel manager to get tunnels directly
 	tunnelMgr := d.tunnelManager.GetTunnelManager()

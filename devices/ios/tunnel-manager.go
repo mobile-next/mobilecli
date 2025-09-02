@@ -25,12 +25,11 @@ func (tm *TunnelManager) GetTunnelManager() *tunnel.TunnelManager {
 	return tm.tunnelMgr
 }
 
-func NewTunnelManager(udid string) *TunnelManager {
+func NewTunnelManager(udid string) (*TunnelManager, error) {
 	// Always use temp directory for pair records
 	pm, err := tunnel.NewPairRecordManager(os.TempDir())
 	if err != nil {
-		log.WithError(err).Error("Failed to create pair record manager")
-		return nil
+		return nil, fmt.Errorf("failed to create pair record manager: %w", err)
 	}
 	
 	// Create go-ios tunnel manager with userspace TUN enabled
@@ -39,7 +38,7 @@ func NewTunnelManager(udid string) *TunnelManager {
 	return &TunnelManager{
 		udid:      udid,
 		tunnelMgr: tunnelMgr,
-	}
+	}, nil
 }
 
 func (tm *TunnelManager) StartTunnel() error {
