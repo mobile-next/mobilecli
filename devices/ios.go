@@ -94,7 +94,7 @@ func (d IOSDevice) TakeScreenshot() ([]byte, error) {
 func (d IOSDevice) Reboot() error {
 	log.SetLevel(log.WarnLevel)
 
-	device, err := getEnhancedDevice(d.Udid)
+	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
@@ -127,10 +127,9 @@ type Tunnel struct {
 func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	log.SetLevel(log.WarnLevel)
 	
-	const tunnelInfoHost = "localhost"
-	const tunnelInfoPort = 60105
-
-	tunnels, err := tunnel.ListRunningTunnels(tunnelInfoHost, tunnelInfoPort)
+	// Use the library-based tunnel manager to get tunnels directly
+	tunnelMgr := d.tunnelManager.GetTunnelManager()
+	tunnels, err := tunnelMgr.ListTunnels()
 	if err != nil {
 		// if no tunnels found, go-ios might return error
 		utils.Verbose("No tunnels found or failed to get tunnel infos: %v", err)
@@ -139,13 +138,16 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 
 	var result []Tunnel
 	for _, t := range tunnels {
-		result = append(result, Tunnel{
-			Address:          t.Address,
-			RsdPort:          t.RsdPort,
-			UDID:             t.Udid,
-			UserspaceTun:     t.UserspaceTUN,
-			UserspaceTunPort: t.UserspaceTUNPort,
-		})
+		// Only return tunnels for this device
+		if t.Udid == d.Udid {
+			result = append(result, Tunnel{
+				Address:          t.Address,
+				RsdPort:          t.RsdPort,
+				UDID:             t.Udid,
+				UserspaceTun:     t.UserspaceTUN,
+				UserspaceTunPort: t.UserspaceTUNPort,
+			})
+		}
 	}
 
 	return result, nil
@@ -320,20 +322,61 @@ func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string
 	return device1, nil
 }
 
-func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
-	const tunnelInfoHost = "localhost"
-	const tunnelInfoPort = 60105
+// getEnhancedDevice gets device info enhanced with tunnel/RSD information for iOS 17+
+func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	const userspaceTunnelHost = "localhost"
 	
+	device, err := goios.GetDevice(d.Udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", d.Udid, err)
+	}
+	
+	// Get tunnel info directly from our tunnel manager first
+	tunnelMgr := d.tunnelManager.GetTunnelManager()
+	tunnelInfo, err := tunnelMgr.FindTunnel(d.Udid)
+	if err == nil && tunnelInfo.Udid != "" {
+		// We have tunnel info from our tunnel manager
+		device.UserspaceTUNPort = tunnelInfo.UserspaceTUNPort  
+		device.UserspaceTUNHost = userspaceTunnelHost
+		device.UserspaceTUN = tunnelInfo.UserspaceTUN
+		device, err = deviceWithRsdProvider(device, d.Udid, tunnelInfo.Address, tunnelInfo.RsdPort)
+		if err != nil {
+			utils.Verbose("failed to get device with RSD provider: %v", err)
+		}
+	} else {
+		// Fallback to HTTP API if our tunnel manager doesn't have info
+		utils.Verbose("No tunnel info from local tunnel manager, trying HTTP API")
+		info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
+		if err == nil {
+			device.UserspaceTUNPort = info.UserspaceTUNPort
+			device.UserspaceTUNHost = userspaceTunnelHost
+			device.UserspaceTUN = info.UserspaceTUN
+			device, err = deviceWithRsdProvider(device, d.Udid, info.Address, info.RsdPort)
+			if err != nil {
+				utils.Verbose("failed to get device with RSD provider: %v", err)
+			}
+		} else {
+			utils.Verbose("failed to get tunnel info for device %s: %v", d.Udid, err)
+			// If both fail, we'll just use the basic device info
+			// This will likely fail for iOS 17+ devices that require tunnels
+		}
+	}
+	
+	return device, nil
+}
+
+// Legacy function kept for compatibility - now just calls the method
+func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
 	device, err := goios.GetDevice(udid)
 	if err != nil {
 		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", udid, err)
 	}
 	
-	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, tunnelInfoHost, tunnelInfoPort)
+	// Fallback to HTTP API only - no access to tunnel manager from standalone function
+	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
 	if err == nil {
 		device.UserspaceTUNPort = info.UserspaceTUNPort
-		device.UserspaceTUNHost = userspaceTunnelHost
+		device.UserspaceTUNHost = "localhost"
 		device.UserspaceTUN = info.UserspaceTUN
 		device, err = deviceWithRsdProvider(device, udid, info.Address, info.RsdPort)
 		if err != nil {
@@ -353,7 +396,7 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 
 	log.SetLevel(log.WarnLevel)
 
-	device, err := getEnhancedDevice(d.Udid)
+	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
@@ -384,7 +427,7 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 
 	log.SetLevel(log.WarnLevel)
 
-	device, err := getEnhancedDevice(d.Udid)
+	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
@@ -453,7 +496,7 @@ func (d IOSDevice) OpenURL(url string) error {
 func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
-	device, err := getEnhancedDevice(d.Udid)
+	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
