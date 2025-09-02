@@ -5,6 +5,14 @@ import * as path from 'path';
 import { 
   cleanupSimulators
 } from './simctl';
+import {
+  JSONRPCRequest,
+  JSONRPCResponse,
+  ErrCodeParseError,
+  ErrCodeInvalidRequest,
+  ErrCodeMethodNotFound,
+  ErrCodeServerError
+} from './jsonrpc';
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 const TEST_SERVER_PORT = '12001';
@@ -12,30 +20,6 @@ const SERVER_TIMEOUT = 8000; // 8 seconds
 
 let serverProcess: ChildProcess | null = null;
 
-// JSON-RPC types
-interface JSONRPCRequest {
-  jsonrpc: string;
-  method: string;
-  params?: any;
-  id: number | string;
-}
-
-interface JSONRPCResponse {
-  jsonrpc: string;
-  result?: any;
-  error?: {
-    code: number;
-    message: string;
-    data?: any;
-  };
-  id: number | string | null;
-}
-
-// Error codes from the Go server
-const ErrCodeParseError = -32700;
-const ErrCodeInvalidRequest = -32600;
-const ErrCodeMethodNotFound = -32601;
-const ErrCodeServerError = -32000;
 
 describe('server jsonrpc', () => {
   // Start server before all tests

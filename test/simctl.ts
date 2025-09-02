@@ -5,9 +5,15 @@ let createdSimulators: string[] = []; // Track created simulators for cleanup
 // Simulator management functions
 export function findIOSRuntime(majorVersion: string): string {
   try {
-    const stdout = execSync(`xcrun simctl list runtimes | grep "iOS ${majorVersion}." | head -1 | awk '{print $NF}'`, 
-      { encoding: 'utf8' });
-    const runtime = stdout.trim();
+    const stdout = execSync('xcrun simctl list runtimes', { encoding: 'utf8' });
+    const lines = stdout.split('\n');
+    const matchingLines = lines.filter(line => 
+      line.includes(`iOS ${majorVersion}.`) && 
+      line.includes('com.apple.CoreSimulator.SimRuntime.')
+    );
+    
+    const runtime = matchingLines[0]?.split(' ').pop();
+    
     if (!runtime) {
       throw new Error(`No iOS ${majorVersion} runtime found`);
     }
@@ -50,10 +56,7 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
         { encoding: 'utf8' });
       if (stdout.includes('(Booted)')) {
         // Give it a bit more time to fully initialize
-        const endTime = Date.now() + 2000;
-        while (Date.now() < endTime) {
-          // Busy wait for 2 seconds
-        }
+        execSync('sleep 2');
         return;
       }
     } catch (error) {
@@ -61,10 +64,7 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
     }
     
     // Wait 1 second before next attempt
-    const endTime = Date.now() + 1000;
-    while (Date.now() < endTime) {
-      // Busy wait for 1 second
-    }
+    execSync('sleep 1');
   }
   
   throw new Error(`Simulator did not boot within ${timeout}ms`);

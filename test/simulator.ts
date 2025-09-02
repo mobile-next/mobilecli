@@ -55,11 +55,9 @@ describe('iOS Simulator Tests', () => {
       it('should take screenshot', async function() {
         this.timeout(60000);
         
-        const screenshotPath = `/tmp/screenshot-ios${iosVersion}.png`;
+        const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
         
-        cleanupExistingScreenshotFile(screenshotPath);
-        
-        takeScreenshotUsingMobileCLI(simulatorId, screenshotPath);
+        takeScreenshot(simulatorId, screenshotPath);
         verifyScreenshotFileWasCreated(screenshotPath);
         verifyScreenshotFileHasValidContent(screenshotPath);
         
@@ -69,20 +67,15 @@ describe('iOS Simulator Tests', () => {
       it('should open URL https://example.com', async function() {
         this.timeout(60000);
         
-        openURLUsingMobileCLI(simulatorId, 'https://example.com');
+        openUrl(simulatorId, 'https://example.com');
       });
     });
   });
 });
 
 // Screenshot test helper functions with descriptive English names
-function cleanupExistingScreenshotFile(screenshotPath: string): void {
-  if (fs.existsSync(screenshotPath)) {
-    fs.unlinkSync(screenshotPath);
-  }
-}
 
-function executeMobileCLI(args: string, description: string): void {
+function mobilecli(args: string, description: string): void {
   const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
   const command = `${mobilecliBinary} ${args}`;
   
@@ -107,8 +100,8 @@ function executeMobileCLI(args: string, description: string): void {
   }
 }
 
-function takeScreenshotUsingMobileCLI(simulatorId: string, screenshotPath: string): void {
-  executeMobileCLI(
+function takeScreenshot(simulatorId: string, screenshotPath: string): void {
+  mobilecli(
     `screenshot --device ${simulatorId} --format png --output ${screenshotPath}`,
     'Screenshot'
   );
@@ -127,8 +120,8 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
   expect(fileSizeInBytes).to.be.greaterThan(100*1024);
 }
 
-function openURLUsingMobileCLI(simulatorId: string, url: string): void {
-  executeMobileCLI(
+function openUrl(simulatorId: string, url: string): void {
+  mobilecli(
     `url "${url}" --device ${simulatorId}`,
     'URL'
   );
