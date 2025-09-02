@@ -26,8 +26,6 @@ jobs:
         xcodebuild -downloadPlatform iOS -buildVersion 21F79
         # iOS 16.4
         xcodebuild -downloadPlatform iOS -buildVersion 20E247
-        # iOS 15.5
-        xcodebuild -downloadPlatform iOS -buildVersion 19F70
     
     - name: Set up Go
       uses: actions/setup-go@v5
