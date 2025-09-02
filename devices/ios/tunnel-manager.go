@@ -3,6 +3,7 @@ package ios
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -25,13 +26,11 @@ func (tm *TunnelManager) GetTunnelManager() *tunnel.TunnelManager {
 }
 
 func NewTunnelManager(udid string) *TunnelManager {
-	// Create a pair record manager for the tunnel manager
-	// Use current directory for pair records (can be changed to /var/db/lockdown/RemotePairing/user_501 if needed)
-	pm, err := tunnel.NewPairRecordManager(".")
+	// Always use temp directory for pair records
+	pm, err := tunnel.NewPairRecordManager(os.TempDir())
 	if err != nil {
-		log.WithError(err).Error("Failed to create pair record manager, using fallback")
-		// If that fails, try to create with a temporary directory
-		pm, _ = tunnel.NewPairRecordManager("/tmp/mobilecli-pairrecords")
+		log.WithError(err).Error("Failed to create pair record manager")
+		return nil
 	}
 	
 	// Create go-ios tunnel manager with userspace TUN enabled
@@ -126,18 +125,6 @@ func (tm *TunnelManager) StopTunnel() error {
 	return err
 }
 
-func (tm *TunnelManager) GetTunnelPID() int {
-	tm.tunnelMutex.Lock()
-	defer tm.tunnelMutex.Unlock()
-
-	// With the library approach, there's no external process PID
-	// Instead, we return a non-zero value if the tunnel manager is running
-	if tm.updateCtx != nil {
-		// Return a dummy PID to indicate the tunnel is running
-		return 1
-	}
-	return 0
-}
 
 // GetTunnelInfo returns tunnel information for the specific device
 func (tm *TunnelManager) GetTunnelInfo() (*tunnel.Tunnel, error) {

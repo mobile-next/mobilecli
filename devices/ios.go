@@ -165,9 +165,6 @@ func (d *IOSDevice) StopTunnel() error {
 	return d.tunnelManager.StopTunnel()
 }
 
-func (d *IOSDevice) GetTunnelPID() int {
-	return d.tunnelManager.GetTunnelPID()
-}
 
 func (d *IOSDevice) StartAgent() error {
 
