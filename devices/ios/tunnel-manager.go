@@ -31,10 +31,10 @@ func NewTunnelManager(udid string) (*TunnelManager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pair record manager: %w", err)
 	}
-	
+
 	// Create go-ios tunnel manager with userspace TUN enabled
 	tunnelMgr := tunnel.NewTunnelManager(pm, true)
-	
+
 	return &TunnelManager{
 		udid:      udid,
 		tunnelMgr: tunnelMgr,
@@ -124,7 +124,6 @@ func (tm *TunnelManager) StopTunnel() error {
 	return err
 }
 
-
 // GetTunnelInfo returns tunnel information for the specific device
 func (tm *TunnelManager) GetTunnelInfo() (*tunnel.Tunnel, error) {
 	tunnels, err := tm.tunnelMgr.ListTunnels()
@@ -141,4 +140,3 @@ func (tm *TunnelManager) GetTunnelInfo() (*tunnel.Tunnel, error) {
 
 	return nil, fmt.Errorf("tunnel not found for device %s", tm.udid)
 }
-

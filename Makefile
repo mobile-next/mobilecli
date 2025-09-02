@@ -14,11 +14,11 @@ test-cover: build
 	go tool cover -html=coverage.out -o coverage.html
 
 lint:
-	$(GOPATH)/bin/golangci-lint run
+	$(shell go env GOPATH)/bin/golangci-lint run
 
 fmt:
 	go fmt ./...
-	$(GOPATH)/bin/goimports -w .
+	$(shell go env GOPATH)/bin/goimports -w .
 
 clean:
 	rm -f mobilecli coverage.out coverage.html

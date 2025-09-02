@@ -71,7 +71,6 @@ func (pf *PortForwarder) Stop() error {
 	return err
 }
 
-
 func (pf *PortForwarder) IsRunning() bool {
 	pf.forwardMutex.Lock()
 	defer pf.forwardMutex.Unlock()
