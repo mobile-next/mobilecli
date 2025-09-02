@@ -21,11 +21,11 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Build mobilecli using Makefile
+    - name: Build mobilecli
       run: |
         make
 
-    - name: Install test dependencies
+    - name: Install dependencies
       run: |
         cd test
         npm install
