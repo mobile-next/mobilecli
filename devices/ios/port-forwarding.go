@@ -71,17 +71,6 @@ func (pf *PortForwarder) Stop() error {
 	return err
 }
 
-func (pf *PortForwarder) GetForwardingPID() int {
-	pf.forwardMutex.Lock()
-	defer pf.forwardMutex.Unlock()
-
-	// With go-ios library, we don't have access to a separate process PID
-	// The port forwarding runs as a goroutine within the current process
-	if pf.connListener != nil {
-		return -1 // Return -1 to indicate it's running but no separate PID
-	}
-	return 0
-}
 
 func (pf *PortForwarder) IsRunning() bool {
 	pf.forwardMutex.Lock()
