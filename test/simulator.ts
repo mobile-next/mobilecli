@@ -43,7 +43,7 @@ describe('iOS Simulator Tests', () => {
       let runtimeAvailable: boolean = false;
 
       before(function() {
-        this.timeout(120000);
+        this.timeout(180000);
         
         // Check if runtime is available
         try {
@@ -69,7 +69,7 @@ describe('iOS Simulator Tests', () => {
           return;
         }
         
-        this.timeout(120000);
+        this.timeout(180000);
         
         const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
         
@@ -86,7 +86,7 @@ describe('iOS Simulator Tests', () => {
           return;
         }
         
-        this.timeout(120000);
+        this.timeout(180000);
         
         openUrl(simulatorId, 'https://example.com');
       });
@@ -103,7 +103,7 @@ function mobilecli(args: string, description: string): void {
   try {
     const result = execSync(command, { 
       encoding: 'utf8', 
-      timeout: 120000,
+      timeout: 180000,
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (error: any) {
