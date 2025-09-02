@@ -31,7 +31,8 @@ jobs:
 
     - name: Create iOS 18 simulator
       run: |
-        xcrun simctl create "iPhone-15-iOS-18" "iPhone 15" "iOS18.0"
+        RUNTIME=$( xcrun simctl list runtimes | grep "iOS 18." | head -1 | awk '{print $NF}' )
+        xcrun simctl create "iPhone-15-iOS-18" "iPhone 15" "$RUNTIME"
 
     - name: Boot iOS 18 simulator
       run: |
