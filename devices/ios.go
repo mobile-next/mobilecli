@@ -137,9 +137,8 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	tunnelMgr := d.tunnelManager.GetTunnelManager()
 	tunnels, err := tunnelMgr.ListTunnels()
 	if err != nil {
-		// if no tunnels found, go-ios might return error
-		utils.Verbose("No tunnels found or failed to get tunnel infos: %v", err)
-		return []Tunnel{}, nil
+		// ListTunnels only errors on serious internal problems, not "no tunnels"
+		return nil, fmt.Errorf("failed to list tunnels: %w", err)
 	}
 
 	var result []Tunnel
