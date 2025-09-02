@@ -1,16 +1,19 @@
 package devices
 
 import (
-	"encoding/json"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 
+	goios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/diagnostics"
+	"github.com/danielpaulus/go-ios/ios/installationproxy"
+	"github.com/danielpaulus/go-ios/ios/instruments"
+	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -24,10 +27,6 @@ type IOSDevice struct {
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
 	mjpegClient   *mjpeg.WdaMjpegClient
-}
-
-type listDevicesResponse struct {
-	Devices []string `json:"deviceList"`
 }
 
 func (d IOSDevice) ID() string {
@@ -46,51 +45,43 @@ func (d IOSDevice) DeviceType() string {
 	return "real"
 }
 
-func runGoIosCommand(args ...string) ([]byte, error) {
-	cmdName, err := ios.FindGoIosPath()
+func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
+	log.SetLevel(log.WarnLevel)
+
+	udid := deviceEntry.Properties.SerialNumber
+
+	allValues, err := goios.GetValues(deviceEntry)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find go-ios path: %w", err)
+		return IOSDevice{}, fmt.Errorf("failed getting values for device %s: %w", udid, err)
 	}
 
-	cmd := exec.Command(cmdName, args...)
-	output, err := cmd.Output()
-	return output, err
-}
-
-func getDeviceInfo(udid string) (IOSDevice, error) {
-	output, err := runGoIosCommand("info", "--udid", udid)
-	if err != nil {
-		return IOSDevice{}, err
+	device := IOSDevice{
+		Udid:       udid,
+		DeviceName: allValues.Value.DeviceName,
 	}
 
-	var device IOSDevice
-	err = json.Unmarshal(output, &device)
+	tunnelManager, err := ios.NewTunnelManager(udid)
 	if err != nil {
-		return IOSDevice{}, err
+		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
 	}
-
-	device.tunnelManager = ios.NewTunnelManager(udid)
+	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
 }
 
 func ListIOSDevices() ([]IOSDevice, error) {
-	output, err := runGoIosCommand("list")
+	log.SetLevel(log.WarnLevel)
+
+	deviceList, err := goios.ListDevices()
 	if err != nil {
-		return []IOSDevice{}, err
+		return []IOSDevice{}, fmt.Errorf("failed getting device list: %w", err)
 	}
 
-	var response listDevicesResponse
-	err = json.Unmarshal(output, &response)
-	if err != nil {
-		return []IOSDevice{}, err
-	}
-
-	devices := make([]IOSDevice, len(response.Devices))
-	for i, udid := range response.Devices {
-		device, err := getDeviceInfo(udid)
+	devices := make([]IOSDevice, len(deviceList.DeviceList))
+	for i, deviceEntry := range deviceList.DeviceList {
+		device, err := getDeviceInfo(deviceEntry)
 		if err != nil {
-			return []IOSDevice{}, err
+			return []IOSDevice{}, fmt.Errorf("failed to get device info: %w", err)
 		}
 		devices[i] = device
 	}
@@ -103,8 +94,20 @@ func (d IOSDevice) TakeScreenshot() ([]byte, error) {
 }
 
 func (d IOSDevice) Reboot() error {
-	_, err := runGoIosCommand("reboot", "--udid", d.ID())
-	return err
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	err = diagnostics.Reboot(device)
+	if err != nil {
+		return fmt.Errorf("reboot failed: %w", err)
+	}
+
+	utils.Verbose("Device %s rebooted successfully", d.Udid)
+	return nil
 }
 
 func (d IOSDevice) Tap(x, y int) error {
@@ -124,19 +127,36 @@ type Tunnel struct {
 }
 
 func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
-	output, err := runGoIosCommand("tunnel", "ls", "--udid", d.ID())
+	log.SetLevel(log.WarnLevel)
+
+	if d.tunnelManager == nil {
+		return nil, fmt.Errorf("tunnel manager not initialized")
+	}
+
+	// Use the library-based tunnel manager to get tunnels directly
+	tunnelMgr := d.tunnelManager.GetTunnelManager()
+	tunnels, err := tunnelMgr.ListTunnels()
 	if err != nil {
-		// if no tunnels found, go-ios might return err 1
+		// if no tunnels found, go-ios might return error
+		utils.Verbose("No tunnels found or failed to get tunnel infos: %v", err)
 		return []Tunnel{}, nil
 	}
 
-	var tunnels []Tunnel
-	err = json.Unmarshal(output, &tunnels)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse tunnel list: %w", err)
+	var result []Tunnel
+	for _, t := range tunnels {
+		// Only return tunnels for this device
+		if t.Udid == d.Udid {
+			result = append(result, Tunnel{
+				Address:          t.Address,
+				RsdPort:          t.RsdPort,
+				UDID:             t.Udid,
+				UserspaceTun:     t.UserspaceTUN,
+				UserspaceTunPort: t.UserspaceTUNPort,
+			})
+		}
 	}
 
-	return tunnels, nil
+	return result, nil
 }
 
 func (d *IOSDevice) StartTunnel() error {
@@ -149,10 +169,6 @@ func (d *IOSDevice) StartTunnelWithCallback(onProcessDied func(error)) error {
 
 func (d *IOSDevice) StopTunnel() error {
 	return d.tunnelManager.StopTunnel()
-}
-
-func (d *IOSDevice) GetTunnelPID() int {
-	return d.tunnelManager.GetTunnelPID()
 }
 
 func (d *IOSDevice) StartAgent() error {
@@ -284,14 +300,191 @@ func (d IOSDevice) PressButton(key string) error {
 	return d.wdaClient.PressButton(key)
 }
 
+func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
+	rsdService, err := goios.NewWithAddrPortDevice(address, rsdPort, device)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("could not connect to RSD: %w", err)
+	}
+	defer rsdService.Close()
+
+	rsdProvider, err := rsdService.Handshake()
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("RSD handshake failed: %w", err)
+	}
+
+	device1, err := goios.GetDeviceWithAddress(udid, address, rsdProvider)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("error getting device with address: %w", err)
+	}
+
+	device1.UserspaceTUN = device.UserspaceTUN
+	device1.UserspaceTUNHost = device.UserspaceTUNHost
+	device1.UserspaceTUNPort = device.UserspaceTUNPort
+
+	return device1, nil
+}
+
+// getEnhancedDevice gets device info enhanced with tunnel/RSD information for iOS 17+
+func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
+	const userspaceTunnelHost = "localhost"
+
+	device, err := goios.GetDevice(d.Udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", d.Udid, err)
+	}
+
+	// Get tunnel info directly from our tunnel manager first
+	tunnelMgr := d.tunnelManager.GetTunnelManager()
+	tunnelInfo, err := tunnelMgr.FindTunnel(d.Udid)
+	if err == nil && tunnelInfo.Udid != "" {
+		// We have tunnel info from our tunnel manager
+		device.UserspaceTUNPort = tunnelInfo.UserspaceTUNPort
+		device.UserspaceTUNHost = userspaceTunnelHost
+		device.UserspaceTUN = tunnelInfo.UserspaceTUN
+		device, err = deviceWithRsdProvider(device, d.Udid, tunnelInfo.Address, tunnelInfo.RsdPort)
+		if err != nil {
+			utils.Verbose("failed to get device with RSD provider: %v", err)
+		}
+	} else {
+		// Fallback to HTTP API if our tunnel manager doesn't have info
+		utils.Verbose("No tunnel info from local tunnel manager, trying HTTP API")
+		info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
+		if err == nil {
+			device.UserspaceTUNPort = info.UserspaceTUNPort
+			device.UserspaceTUNHost = userspaceTunnelHost
+			device.UserspaceTUN = info.UserspaceTUN
+			device, err = deviceWithRsdProvider(device, d.Udid, info.Address, info.RsdPort)
+			if err != nil {
+				utils.Verbose("failed to get device with RSD provider: %v", err)
+			}
+		} else {
+			utils.Verbose("failed to get tunnel info for device %s: %v", d.Udid, err)
+			// If both fail, we'll just use the basic device info
+			// This will likely fail for iOS 17+ devices that require tunnels
+		}
+	}
+
+	return device, nil
+}
+
+// Legacy function kept for compatibility - now just calls the method
+func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
+	device, err := goios.GetDevice(udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", udid, err)
+	}
+
+	// Fallback to HTTP API only - no access to tunnel manager from standalone function
+	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
+	if err == nil {
+		device.UserspaceTUNPort = info.UserspaceTUNPort
+		device.UserspaceTUNHost = "localhost"
+		device.UserspaceTUN = info.UserspaceTUN
+		device, err = deviceWithRsdProvider(device, udid, info.Address, info.RsdPort)
+		if err != nil {
+			utils.Verbose("failed to get device with RSD provider: %v", err)
+		}
+	} else {
+		utils.Verbose("failed to get tunnel info for device %s: %v", udid, err)
+	}
+
+	return device, nil
+}
+
 func (d IOSDevice) LaunchApp(bundleID string) error {
-	_, err := runGoIosCommand("launch", bundleID)
-	return err
+	if bundleID == "" {
+		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	pControl, err := instruments.NewProcessControl(device)
+	if err != nil {
+		return fmt.Errorf("processcontrol failed: %w", err)
+	}
+	defer pControl.Close()
+
+	opts := map[string]any{}
+	args := []interface{}{}
+	envs := map[string]any{}
+
+	pid, err := pControl.LaunchAppWithArgs(bundleID, args, envs, opts)
+	if err != nil {
+		return fmt.Errorf("launch app command failed: %w", err)
+	}
+
+	utils.Verbose("Process launched with PID: %d", pid)
+	return nil
 }
 
 func (d IOSDevice) TerminateApp(bundleID string) error {
-	_, err := runGoIosCommand("kill", bundleID)
-	return err
+	if bundleID == "" {
+		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	pControl, err := instruments.NewProcessControl(device)
+	if err != nil {
+		return fmt.Errorf("processcontrol failed: %w", err)
+	}
+	defer pControl.Close()
+
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return fmt.Errorf("installationproxy failed: %w", err)
+	}
+	defer svc.Close()
+
+	response, err := svc.BrowseAllApps()
+	if err != nil {
+		return fmt.Errorf("browsing apps failed: %w", err)
+	}
+
+	var processName string
+	for _, app := range response {
+		if app.CFBundleIdentifier() == bundleID {
+			processName = app.CFBundleExecutable()
+			break
+		}
+	}
+	if processName == "" {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+
+	service, err := instruments.NewDeviceInfoService(device)
+	if err != nil {
+		return fmt.Errorf("failed opening deviceInfoService for getting process list: %w", err)
+	}
+	defer service.Close()
+
+	processList, err := service.ProcessList()
+	if err != nil {
+		return fmt.Errorf("failed to get process list: %w", err)
+	}
+
+	for _, p := range processList {
+		if p.Name == processName {
+			err = pControl.KillProcess(p.Pid)
+			if err != nil {
+				return fmt.Errorf("kill process failed: %w", err)
+			}
+			utils.Verbose("%s killed, Pid: %d", bundleID, p.Pid)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("process of %s not found", bundleID)
 }
 
 func (d IOSDevice) SendKeys(text string) error {
@@ -303,31 +496,31 @@ func (d IOSDevice) OpenURL(url string) error {
 }
 
 func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
-	output, err := runGoIosCommand("apps", "--all", "--list")
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list apps: %w", err)
+		return nil, fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return nil, fmt.Errorf("installationproxy failed: %w", err)
+	}
+	defer svc.Close()
+
+	response, err := svc.BrowseAllApps()
+	if err != nil {
+		return nil, fmt.Errorf("browsing all apps failed: %w", err)
+	}
+
 	var apps []InstalledAppInfo
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, " ")
-		if len(parts) >= 2 {
-			packageName := parts[0]
-			version := parts[len(parts)-1]
-			appName := strings.Join(parts[1:len(parts)-1], " ")
-
-			apps = append(apps, InstalledAppInfo{
-				PackageName: packageName,
-				AppName:     appName,
-				Version:     version,
-			})
-		}
+	for _, app := range response {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: app.CFBundleIdentifier(),
+			AppName:     app.CFBundleName(),
+			Version:     app.CFBundleShortVersionString(),
+		})
 	}
 
 	return apps, nil

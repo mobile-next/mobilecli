@@ -1,24 +1,20 @@
 package ios
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"os/exec"
-	"strconv"
 	"sync"
-	"time"
 
+	goios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/forward"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
 type PortForwarder struct {
-	udid           string
-	forwardProcess *exec.Cmd
-	forwardCancel  context.CancelFunc
-	forwardMutex   sync.Mutex
-	srcPort        int
-	dstPort        int
+	udid         string
+	connListener *forward.ConnListener
+	forwardMutex sync.Mutex
+	srcPort      int
+	dstPort      int
 }
 
 func NewPortForwarder(udid string) *PortForwarder {
@@ -31,59 +27,26 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 	pf.forwardMutex.Lock()
 	defer pf.forwardMutex.Unlock()
 
-	if pf.forwardProcess != nil {
+	if pf.connListener != nil {
 		return fmt.Errorf("port forwarding is already running from %d to %d", pf.srcPort, pf.dstPort)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	pf.forwardCancel = cancel
 	pf.srcPort = srcPort
 	pf.dstPort = dstPort
 
-	cmdName, err := FindGoIosPath()
+	device, err := goios.GetDevice(pf.udid)
 	if err != nil {
-		return fmt.Errorf("failed to find go-ios path: %w", err)
+		return fmt.Errorf("failed to get device %s: %w", pf.udid, err)
 	}
 
-	srcPortStr := strconv.Itoa(srcPort)
-	dstPortStr := strconv.Itoa(dstPort)
-
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, cmdName, "forward", srcPortStr, dstPortStr, "--udid", pf.udid)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Configure process attributes for proper cleanup
-	utils.ConfigureDetachedProcAttr(cmd)
-
-	utils.Verbose("Starting port forwarding process: %s", cmd.String())
-
-	err = cmd.Start()
+	connListener, err := forward.Forward(device, uint16(srcPort), uint16(dstPort))
 	if err != nil {
-		return fmt.Errorf("failed to start port forwarding process: %w", err)
+		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}
 
-	pf.forwardProcess = cmd
-	utils.Verbose("Port forwarding started from %d to %d with PID: %d", srcPort, dstPort, cmd.Process.Pid)
+	pf.connListener = connListener
+	utils.Verbose("Port forwarding started from %d to %d", srcPort, dstPort)
 
-	go func() {
-		err := cmd.Wait()
-		utils.Verbose("Port forwarding process %d->%d terminated", srcPort, dstPort)
-
-		pf.forwardMutex.Lock()
-		pf.forwardProcess = nil
-		pf.forwardCancel = nil
-		pf.forwardMutex.Unlock()
-		if err != nil {
-			utils.Verbose("Port forwarding process %d->%d terminated with error: %v", srcPort, dstPort, err)
-			utils.Verbose("Stdout: %s", stdout.String())
-			utils.Verbose("Stderr: %s", stderr.String())
-		} else {
-			utils.Verbose("Port forwarding process %d->%d terminated normally", srcPort, dstPort)
-		}
-	}()
-
-	time.Sleep(1 * time.Second)
 	return nil
 }
 
@@ -91,38 +54,28 @@ func (pf *PortForwarder) Stop() error {
 	pf.forwardMutex.Lock()
 	defer pf.forwardMutex.Unlock()
 
-	if pf.forwardProcess == nil {
-		return fmt.Errorf("no port forwarding process running")
+	if pf.connListener == nil {
+		return fmt.Errorf("no port forwarding running")
 	}
 
-	if pf.forwardCancel != nil {
-		pf.forwardCancel()
+	err := pf.connListener.Close()
+	if err != nil {
+		utils.Verbose("Error stopping port forwarding %d->%d: %v", pf.srcPort, pf.dstPort, err)
 	}
 
-	utils.Verbose("Stopping port forwarding process %d->%d with PID: %d", pf.srcPort, pf.dstPort, pf.forwardProcess.Process.Pid)
-	pf.forwardProcess = nil
-	pf.forwardCancel = nil
+	utils.Verbose("Stopping port forwarding %d->%d", pf.srcPort, pf.dstPort)
+	pf.connListener = nil
 	pf.srcPort = 0
 	pf.dstPort = 0
 
-	return nil
-}
-
-func (pf *PortForwarder) GetForwardingPID() int {
-	pf.forwardMutex.Lock()
-	defer pf.forwardMutex.Unlock()
-
-	if pf.forwardProcess != nil && pf.forwardProcess.Process != nil {
-		return pf.forwardProcess.Process.Pid
-	}
-	return 0
+	return err
 }
 
 func (pf *PortForwarder) IsRunning() bool {
 	pf.forwardMutex.Lock()
 	defer pf.forwardMutex.Unlock()
 
-	return pf.forwardProcess != nil
+	return pf.connListener != nil
 }
 
 func (pf *PortForwarder) GetPorts() (srcPort, dstPort int) {
