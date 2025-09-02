@@ -82,25 +82,26 @@ export function shutdownSimulator(simulatorId: string): void {
 export function deleteSimulator(simulatorId: string): void {
   try {
     execSync(`xcrun simctl delete "${simulatorId}"`, { encoding: 'utf8' });
+    removeFromTracking(simulatorId);
   } catch (error) {
     console.warn(`Warning: Failed to delete simulator ${simulatorId}: ${error}`);
   }
 }
 
-export function createAndLaunchSimulator(iosVersion: string, deviceType: string = 'iPhone 15'): string {
+export function createAndLaunchSimulator(iosVersion: string, deviceType: string = 'iPhone 14'): string {
   const runtime = findIOSRuntime(iosVersion);
   const simulatorName = `Test-iOS-${iosVersion}-${Date.now()}`;
   
-  console.log(`Creating iOS ${iosVersion} simulator with runtime ${runtime}...`);
+  // console.log(`Creating iOS ${iosVersion} simulator with runtime ${runtime}...`);
   const simulatorId = createSimulator(simulatorName, deviceType, runtime);
   
-  console.log(`Booting simulator ${simulatorId}...`);
+  // console.log(`Booting simulator ${simulatorId}...`);
   bootSimulator(simulatorId);
   
-  console.log('Waiting for simulator to be ready...');
+  // console.log('Waiting for simulator to be ready...');
   waitForSimulatorReady(simulatorId);
   
-  console.log(`Simulator ${simulatorId} is ready!`);
+  // console.log(`Simulator ${simulatorId} is ready!`);
   return simulatorId;
 }
 
