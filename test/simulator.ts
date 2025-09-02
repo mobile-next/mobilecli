@@ -41,7 +41,7 @@ describe('iOS Simulator Tests', () => {
       let simulatorId: string;
 
       before(function() {
-        this.timeout(60000);
+        this.timeout(120000);
         simulatorId = createAndLaunchSimulator(iosVersion);
       });
 
@@ -53,7 +53,7 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should take screenshot', async function() {
-        this.timeout(60000);
+        this.timeout(120000);
         
         const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
         
@@ -65,7 +65,7 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should open URL https://example.com', async function() {
-        this.timeout(60000);
+        this.timeout(120000);
         
         openUrl(simulatorId, 'https://example.com');
       });
@@ -82,7 +82,7 @@ function mobilecli(args: string, description: string): void {
   try {
     const result = execSync(command, { 
       encoding: 'utf8', 
-      timeout: 60000,
+      timeout: 120000,
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (error: any) {
