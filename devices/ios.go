@@ -546,7 +546,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	return d.mjpegClient.StartScreenCapture(format, callback)
 }
 

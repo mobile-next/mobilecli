@@ -403,7 +403,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (s Simulator) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
 	return mjpegClient.StartScreenCapture(format, callback)
 }
