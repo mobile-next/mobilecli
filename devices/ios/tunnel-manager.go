@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -26,8 +27,13 @@ func (tm *TunnelManager) GetTunnelManager() *tunnel.TunnelManager {
 }
 
 func NewTunnelManager(udid string) (*TunnelManager, error) {
-	// Always use temp directory for pair records
-	pm, err := tunnel.NewPairRecordManager(os.TempDir())
+	// Create secure subdirectory for pair records
+	dir := filepath.Join(os.TempDir(), "mobilecli-pairrecords")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("failed to create pair records directory: %w", err)
+	}
+	
+	pm, err := tunnel.NewPairRecordManager(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pair record manager: %w", err)
 	}
