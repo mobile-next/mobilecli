@@ -39,13 +39,12 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 
 ## Installation 🪄
 
-### Prerequisites
+### Prerequisites 📋
 
-- [**go-ios**](https://github.com/danielpaulus/go-ios) (for iOS device management)
 - **Android SDK** with `adb` in PATH (for Android device support)
 - **Xcode Command Line Tools** (for iOS simulator support on macOS)
 
-### Install
+### Install ⚡
 
 Get started right now with `mobilecli`. 
 
@@ -53,7 +52,7 @@ Get started right now with `mobilecli`.
 npm install -g @mobilenext/mobilecli@latest
 ```
 
-### Install from Source
+### Install from Source 🛠️
 
 ```bash
 git clone https://github.com/mobile-next/mobilecli.git
@@ -63,13 +62,11 @@ make build
 
 ### Install Dependencies
 
-#### 🍎 For iOS Support 
-```bash
-# Install go-ios for iOS device management
-brew install go-ios
-# or
-npm install -g go-ios
-```
+#### 🍎 For iOS Simulator Support 
+
+Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
+
+`mobilecli` will automatically install an agent on the device that is required for functionalities such as opening a url, tapping on buttons and streaming screen capture.
 
 #### 🤖 For Android Support
 ```bash
@@ -81,7 +78,7 @@ brew install --cask android-platform-tools
 
 ## Usage
 
-### List Connected Devices
+### List Connected Devices 🔍
 
 ```bash
 # List all connected devices and simulators to your local or remote server
@@ -106,7 +103,7 @@ Example output:
 ]
 ```
 
-### Take Screenshots
+### Take Screenshots 📸
 
 ```bash
 # Take a PNG screenshot (default)
@@ -122,19 +119,30 @@ mobilecli screenshot --device <device-id> --output screenshot.png
 mobilecli screenshot --device <device-id> --output -
 ```
 
-### Device Control
+### Stream Screen 🎥
+
+```bash
+mobilecli screencapture --device <device-id> --format mjpeg | ffplay -
+```
+
+Note that screencapture is one way. You will have to use `io tap` commands to tap on the screen.
+
+### Device Control 🎮
 
 ```bash
 # Reboot a device
-mobilecli reboot --device <device-id>
+mobilecli device reboot --device <device-id>
 
 # Tap at coordinates (x,y)
-mobilecli tap --device <device-id> 100,200
+mobilecli io tap --device <device-id> 100,200
 
 # Press hardware buttons
-mobilecli press-button --device <device-id> HOME
-mobilecli press-button --device <device-id> VOLUME_UP
-mobilecli press-button --device <device-id> POWER
+mobilecli io button --device <device-id> HOME
+mobilecli io button --device <device-id> VOLUME_UP
+mobilecli io button --device <device-id> POWER
+
+# Send text
+mobilecli io text --device <device-id> 'hello world'
 ```
 
 ### Supported Hardware Buttons
@@ -148,14 +156,13 @@ mobilecli press-button --device <device-id> POWER
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Currently requires that you install and run WebDriverAgent manually
+- Currently requires that you install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
 
-### iOS Simulators  
-- Currently requires that you install and run WebDriverAgent manually
+## Development 👩‍💻
 
-## Development
+### Building 🛠️
 
-### Building
+Please refer to (docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
 
 ```bash
 make lint
@@ -163,11 +170,11 @@ make build
 make test
 ```
 
-## Support
+## Support 💬
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page. 
 
-Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today.
+Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today 💜
 
 To learn more about <a href="https://mobilenexthq.com/">Mobile Next</a> and what we're building, <a href="https://mobilenexthq.com/#newsletter">subscribe to our newsletter</a>.
 
