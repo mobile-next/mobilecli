@@ -34,7 +34,6 @@ jobs:
     - name: Download iOS ${{ matrix.ios_version }} runtime
       run: |
         xcodebuild -downloadPlatform iOS -buildVersion ${{ matrix.build_version }}
-      continue-on-error: true
     
     - name: Set up Go
       uses: actions/setup-go@v5
