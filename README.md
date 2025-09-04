@@ -142,8 +142,8 @@ mobilecli press-button --device <device-id> POWER
 - `HOME` - Home button
 - `BACK` - Back button (Android only)
 - `POWER` - Power button
-- `VOLUME_UP` - Volume up
-- `VOLUME_DOWN` - Volume down
+- `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
+- `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
 
 ## Platform-Specific Notes
 
