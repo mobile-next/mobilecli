@@ -45,6 +45,15 @@ func getAdbPath() string {
 		return adbPath + "/platform-tools/adb"
 	}
 
+	// try default Android SDK location on macOS
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" {
+		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
+		if _, err := os.Stat(defaultPath); err == nil {
+			return defaultPath
+		}
+	}
+
 	// best effort, look in path
 	return "adb"
 }
