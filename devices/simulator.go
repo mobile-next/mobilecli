@@ -205,13 +205,13 @@ func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
 }
 
 func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
-	installedApps, err := s.ListInstalledApps()
-	if err != nil {
-		return fmt.Errorf("failed to list installed apps: %v", err)
-	}
-
 	startTime := time.Now()
 	for {
+		installedApps, err := s.ListInstalledApps()
+		if err != nil {
+			return fmt.Errorf("failed to list installed apps: %v", err)
+		}
+
 		_, ok := installedApps[bundleID]
 		if ok {
 			return nil

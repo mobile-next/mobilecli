@@ -366,30 +366,6 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	return device, nil
 }
 
-// Legacy function kept for compatibility - now just calls the method
-func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
-	device, err := goios.GetDevice(udid)
-	if err != nil {
-		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", udid, err)
-	}
-
-	// Fallback to HTTP API only - no access to tunnel manager from standalone function
-	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
-	if err == nil {
-		device.UserspaceTUNPort = info.UserspaceTUNPort
-		device.UserspaceTUNHost = "localhost"
-		device.UserspaceTUN = info.UserspaceTUN
-		device, err = deviceWithRsdProvider(device, udid, info.Address, info.RsdPort)
-		if err != nil {
-			utils.Verbose("failed to get device with RSD provider: %v", err)
-		}
-	} else {
-		utils.Verbose("failed to get tunnel info for device %s: %v", udid, err)
-	}
-
-	return device, nil
-}
-
 func (d IOSDevice) LaunchApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
