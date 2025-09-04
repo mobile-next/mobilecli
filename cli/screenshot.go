@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/devices"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +78,7 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(screencaptureFormat, func(data []byte) bool {
+		err = targetDevice.StartScreenCapture(screencaptureFormat, devices.DefaultMJPEGQuality, devices.DefaultMJPEGScale, func(data []byte) bool {
 			_, writeErr := os.Stdout.Write(data)
 			if writeErr != nil {
 				fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)

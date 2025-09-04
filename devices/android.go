@@ -325,7 +325,7 @@ func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
-func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (d AndroidDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	if format != "mjpeg" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
@@ -342,7 +342,7 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 	}
 
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()

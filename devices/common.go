@@ -7,6 +7,13 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+const (
+	// Default MJPEG streaming quality (1-100)
+	DefaultMJPEGQuality = 80
+	// Default MJPEG streaming scale (0.1-1.0)
+	DefaultMJPEGScale = 1.0
+)
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -25,7 +32,7 @@ type ControllableDevice interface {
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
-	StartScreenCapture(format string, callback func([]byte) bool) error
+	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
 }
 
 // GetAllControllableDevices aggregates all known devices (iOS, Android, Simulators)

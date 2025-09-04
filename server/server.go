@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 const (
@@ -429,6 +430,17 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		return fmt.Errorf("format must be 'mjpeg' for screen capture")
 	}
 
+	// Set defaults if not provided
+	quality := screenCaptureParams.Quality
+	if quality == 0 {
+		quality = devices.DefaultMJPEGQuality
+	}
+
+	scale := screenCaptureParams.Scale
+	if scale == 0.0 {
+		scale = devices.DefaultMJPEGScale
+	}
+
 	err = targetDevice.StartAgent()
 	if err != nil {
 		return fmt.Errorf("error starting agent: %v", err)
@@ -441,7 +453,7 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 	w.Header().Set("Transfer-Encoding", "chunked")
 
 	// Start screen capture and stream to the response writer
-	err = targetDevice.StartScreenCapture(screenCaptureParams.Format, func(data []byte) bool {
+	err = targetDevice.StartScreenCapture(screenCaptureParams.Format, quality, scale, func(data []byte) bool {
 		_, writeErr := w.Write(data)
 		if writeErr != nil {
 			fmt.Println("Error writing data:", writeErr)
