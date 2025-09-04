@@ -55,8 +55,8 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
       const stdout = execSync(`xcrun simctl list devices | grep "${simulatorId}"`, 
         { encoding: 'utf8' });
       if (stdout.includes('(Booted)')) {
-        // Give it a bit more time to fully initialize
-        execSync('sleep 2');
+        // see if we can interact with status_bar, gets us closer to a functioning simulator
+        execSync(`xcrun simctl status_bar "${simulatorId}" list`);
         return;
       }
     } catch (error) {

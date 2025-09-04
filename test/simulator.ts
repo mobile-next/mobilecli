@@ -94,9 +94,7 @@ describe('iOS Simulator Tests', () => {
   });
 });
 
-// Screenshot test helper functions with descriptive English names
-
-function mobilecli(args: string, description: string): void {
+function mobilecli(args: string): void {
   const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
   const command = `${mobilecliBinary} ${args}`;
   
@@ -107,7 +105,7 @@ function mobilecli(args: string, description: string): void {
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (error: any) {
-    console.log(`${description} command failed: ${command}`);
+    console.log(`Command failed: ${command}`);
     if (error.stderr) {
       console.log(`Error stderr: ${error.stderr}`);
     }
@@ -122,10 +120,7 @@ function mobilecli(args: string, description: string): void {
 }
 
 function takeScreenshot(simulatorId: string, screenshotPath: string): void {
-  mobilecli(
-    `screenshot --device ${simulatorId} --format png --output ${screenshotPath}`,
-    'Screenshot'
-  );
+  mobilecli(`screenshot --device ${simulatorId} --format png --output ${screenshotPath}`);
 }
 
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
@@ -142,9 +137,6 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 }
 
 function openUrl(simulatorId: string, url: string): void {
-  mobilecli(
-    `url "${url}" --device ${simulatorId}`,
-    'URL'
-  );
+  mobilecli(`url "${url}" --device ${simulatorId}`);
 }
 
