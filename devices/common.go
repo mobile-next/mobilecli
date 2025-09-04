@@ -39,33 +39,29 @@ type ControllableDevice interface {
 // and returns them as a slice of ControllableDevice.
 func GetAllControllableDevices() ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
-	var errs []error
 
-	// Get Android devices
+	// get Android devices
 	androidDevices, err := GetAndroidDevices() // Assumes this now returns []ControllableDevice
 	if err != nil {
-		// Log or collect error, decide if it's fatal or if we continue
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
-		errs = append(errs, fmt.Errorf("android: %w", err))
 	} else {
 		allDevices = append(allDevices, androidDevices...)
 	}
 
-	// Get iOS real devices
+	// get iOS real devices
 	iosDevices, err := ListIOSDevices()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
-		errs = append(errs, fmt.Errorf("ios real: %w", err))
 	} else {
 		for _, device := range iosDevices {
 			allDevices = append(allDevices, &device)
 		}
 	}
 
+	// get iOS simulator devices
 	sims, err := GetBootedSimulators()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
-		errs = append(errs, fmt.Errorf("ios simulator: %w", err))
 	} else {
 		for _, sim := range sims {
 			allDevices = append(allDevices, &SimulatorDevice{
