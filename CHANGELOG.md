@@ -1,3 +1,9 @@
+## [0.0.20](https://github.com/mobile-next/mobilecli/releases/tag/0.0.20) (2025-09-04)
+
+* iOS: fixed potential race-condition in waiting for wda installation on simulator ([#41](https://github.com/mobile-next/mobilecli/pull/41))
+* Android: try $HOME/Library/Android if $ANDROID_HOME is not configured ([#40](https://github.com/mobile-next/mobilecli/pull/40))
+* Android: support --scale and --quality for `screencapture` mjpeg streaming ([#39](https://github.com/mobile-next/mobilecli/pull/39))
+
 ## [0.0.19](https://github.com/mobile-next/mobilecli/releases/tag/0.0.19) (2025-09-03)
 
 * General: run tests on iOS 16, 17 and 18 simulators upon pull-request ([#35](https://github.com/mobile-next/mobilecli/pull/35))
