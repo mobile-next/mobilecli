@@ -170,6 +170,17 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
+	// Try getting AVD name first (for emulators)
+	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
+	avdOutput, err := avdCmd.CombinedOutput()
+	if err == nil && len(avdOutput) > 0 {
+		avdName := strings.TrimSpace(string(avdOutput))
+		if avdName != "" {
+			return strings.ReplaceAll(avdName, "_", " ")
+		}
+	}
+
+	// Fall back to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {

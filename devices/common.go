@@ -35,13 +35,12 @@ type ControllableDevice interface {
 	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
 }
 
-// GetAllControllableDevices aggregates all known devices (iOS, Android, Simulators)
-// and returns them as a slice of ControllableDevice.
+// Aggregates all known devices (iOS, Android, Simulators)
 func GetAllControllableDevices() ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
 	// get Android devices
-	androidDevices, err := GetAndroidDevices() // Assumes this now returns []ControllableDevice
+	androidDevices, err := GetAndroidDevices()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 	} else {
