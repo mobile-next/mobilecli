@@ -216,6 +216,7 @@ func (d AndroidDevice) PressButton(key string) error {
 		"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
 		"BACKSPACE":   "KEYCODE_DEL",
 		"APP_SWITCH":  "KEYCODE_APP_SWITCH",
+		"POWER":       "KEYCODE_POWER",
 	}
 
 	keycode, exists := keyMap[key]
