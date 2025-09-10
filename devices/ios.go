@@ -300,11 +300,8 @@ func (d *IOSDevice) StartAgent() error {
 
 func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
-		utils.Verbose("no bundle ids specified, falling back to defaults")
+		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
-	}
-	if bundleID == "" || testRunnerBundleID == "" || xctestConfig == "" {
-		return fmt.Errorf("please specify either NONE of bundleid, testbundleid and xctestconfig or ALL of them. At least one was empty")
 	}
 	
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
@@ -316,7 +313,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	
-	// Start WDA in background using testmanagerd similar to go-ios runwda command
+	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
 		defer cancel()
 		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
@@ -328,12 +325,13 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 			Device:             device,
 			Listener:           testmanagerd.NewTestListener(io.Discard, io.Discard, "/tmp"),
 		})
+
 		if err != nil {
-			utils.Verbose("WDA process ended with error: %v", err)
+			utils.Verbose("WebDriverAgent process ended with error: %v", err)
 		}
 	}()
 
-	utils.Verbose("WDA launched in background")
+	utils.Verbose("WebDriverAgent launched in background")
 	return nil
 }
 
