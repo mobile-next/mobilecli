@@ -2,58 +2,58 @@
 
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/). 
 
-<h4 align="center">
-<a href="https://github.com/mobile-next/mobilecli">
+<p align="center">
+  <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
   </a>  
- <a href="https://github.com/mobile-next/mobilecli">
+  <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
   <a href="https://www.npmjs.com/package/@mobilenext/mobilecli">
     <img src="https://img.shields.io/npm/dm/@mobilenext/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
-<a href="https://github.com/mobile-next/mobilecli/releases">
+  <a href="https://github.com/mobile-next/mobilecli/releases">
     <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
   </a>
-<a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
+  <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
   </a> 
-  
 </p>
 
-<h4 align="center">
-<a href="http://mobilenexthq.com/join-slack">
-    <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
-</a>	
+<p align="center">
+  <a href="http://mobilenexthq.com/join-slack">
+      <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
+  </a>	
 </p>
 
 
 ## Features 🚀
 
-- **Device Management**: List and manage connected iOS/Android devices and simulators
-- **Screenshot Capture**: Take screenshots from any connected device with format options (PNG/JPEG)
-- **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
+- **Device Management**: List, manage, interactive with connected mobile devices
 - **Cross-Platform Support**: Works with iOS physical devices, iOS simulators, Android devices, and Android emulators
+- **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
+- **Screencapture video streaming**: Stream mjpeg video directly from device
+- **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App management**: Launch app, terminate apps. Install and uninstall coming next ⏭️
 
-## Installation 🪄
+## Installation 📦
 
-### Prerequisites 📋
-
+#### Prerequisites 📋
 - **Android SDK** with `adb` in PATH (for Android device support)
 - **Xcode Command Line Tools** (for iOS simulator support on macOS)
 
-### Install ⚡
+#### Run instantly with npx
+```bash
+npx @mobilenext/mobilecli@latest
+```
 
-Get started right now with `mobilecli`. 
-
+#### Install globally with npm
 ```bash
 npm install -g @mobilenext/mobilecli@latest
 ```
 
-### Install from Source 🛠️
-
+#### Install from Source 🛠️
 ```bash
 git clone https://github.com/mobile-next/mobilecli.git
 cd mobilecli
