@@ -1,3 +1,8 @@
+## [0.0.22](https://github.com/mobile-next/mobilecli/releases/tag/0.0.22) (2025-09-10)
+
+* iOS: launch wda on real devices if needed ([#45](https://github.com/mobile-next/mobilecli/pull/45))
+* iOS: automatically detect wda installed device, regardless on bundle identifier ([#45](https://github.com/mobile-next/mobilecli/pull/45))
+
 ## [0.0.21](https://github.com/mobile-next/mobilecli/releases/tag/0.0.21) (2025-09-08)
 
 * Android: return the avd name if emulator supports (eg 'Pixel 5' instead of 'sdk_gphone64_arm64') ([#42](https://github.com/mobile-next/mobilecli/pull/42))
