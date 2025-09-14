@@ -1,13 +1,16 @@
 package devices
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"github.com/danielpaulus/go-ios/ios/instruments"
+	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -137,9 +140,8 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	tunnelMgr := d.tunnelManager.GetTunnelManager()
 	tunnels, err := tunnelMgr.ListTunnels()
 	if err != nil {
-		// if no tunnels found, go-ios might return error
-		utils.Verbose("No tunnels found or failed to get tunnel infos: %v", err)
-		return []Tunnel{}, nil
+		// ListTunnels only errors on serious internal problems, not "no tunnels"
+		return nil, fmt.Errorf("failed to list tunnels: %w", err)
 	}
 
 	var result []Tunnel
@@ -253,9 +255,9 @@ func (d *IOSDevice) StartAgent() error {
 		}
 
 		if err != nil {
-			// launch WebDriverAgent
+			// launch WebDriverAgent using testmanagerd
 			utils.Verbose("Launching WebDriverAgent")
-			err = d.LaunchApp(webdriverBundleId)
+			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 			if err != nil {
 				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
 			}
@@ -293,6 +295,43 @@ func (d *IOSDevice) StartAgent() error {
 		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
 	}
 
+	return nil
+}
+
+func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) error {
+	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
+		utils.Verbose("No bundle ids specified, falling back to defaults")
+		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
+	}
+	
+	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// start WDA in background using testmanagerd similar to go-ios runwda command
+	go func() {
+		defer cancel()
+		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
+			BundleId:           bundleID,
+			TestRunnerBundleId: testRunnerBundleID,
+			XctestConfigName:   xctestConfig,
+			Env:                map[string]any{},
+			Args:               []string{},
+			Device:             device,
+			Listener:           testmanagerd.NewTestListener(io.Discard, io.Discard, "/tmp"),
+		})
+
+		if err != nil {
+			utils.Verbose("WebDriverAgent process ended with error: %v", err)
+		}
+	}()
+
+	utils.Verbose("WebDriverAgent launched in background")
 	return nil
 }
 
@@ -362,30 +401,6 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 			// If both fail, we'll just use the basic device info
 			// This will likely fail for iOS 17+ devices that require tunnels
 		}
-	}
-
-	return device, nil
-}
-
-// Legacy function kept for compatibility - now just calls the method
-func getEnhancedDevice(udid string) (goios.DeviceEntry, error) {
-	device, err := goios.GetDevice(udid)
-	if err != nil {
-		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", udid, err)
-	}
-
-	// Fallback to HTTP API only - no access to tunnel manager from standalone function
-	info, err := tunnel.TunnelInfoForDevice(device.Properties.SerialNumber, "localhost", 60105)
-	if err == nil {
-		device.UserspaceTUNPort = info.UserspaceTUNPort
-		device.UserspaceTUNHost = "localhost"
-		device.UserspaceTUN = info.UserspaceTUN
-		device, err = deviceWithRsdProvider(device, udid, info.Address, info.RsdPort)
-		if err != nil {
-			utils.Verbose("failed to get device with RSD provider: %v", err)
-		}
-	} else {
-		utils.Verbose("failed to get tunnel info for device %s: %v", udid, err)
 	}
 
 	return device, nil
@@ -547,7 +562,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	return d.mjpegClient.StartScreenCapture(format, callback)
 }
 

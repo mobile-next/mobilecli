@@ -45,6 +45,15 @@ func getAdbPath() string {
 		return adbPath + "/platform-tools/adb"
 	}
 
+	// try default Android SDK location on macOS
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" {
+		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
+		if _, err := os.Stat(defaultPath); err == nil {
+			return defaultPath
+		}
+	}
+
 	// best effort, look in path
 	return "adb"
 }
@@ -161,6 +170,17 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
+	// Try getting AVD name first (for emulators)
+	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
+	avdOutput, err := avdCmd.CombinedOutput()
+	if err == nil && len(avdOutput) > 0 {
+		avdName := strings.TrimSpace(string(avdOutput))
+		if avdName != "" {
+			return strings.ReplaceAll(avdName, "_", " ")
+		}
+	}
+
+	// Fall back to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
@@ -206,6 +226,8 @@ func (d AndroidDevice) PressButton(key string) error {
 		"DPAD_LEFT":   "KEYCODE_DPAD_LEFT",
 		"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
 		"BACKSPACE":   "KEYCODE_DEL",
+		"APP_SWITCH":  "KEYCODE_APP_SWITCH",
+		"POWER":       "KEYCODE_POWER",
 	}
 
 	keycode, exists := keyMap[key]
@@ -325,7 +347,7 @@ func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
-func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (d AndroidDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	if format != "mjpeg" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
@@ -342,7 +364,7 @@ func (d AndroidDevice) StartScreenCapture(format string, callback func([]byte) b
 	}
 
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer")
+	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()

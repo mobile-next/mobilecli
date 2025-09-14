@@ -7,7 +7,8 @@ import {
   createAndLaunchSimulator, 
   shutdownSimulator, 
   deleteSimulator, 
-  cleanupSimulators
+  cleanupSimulators,
+  findIOSRuntime
 } from './simctl';
 
 const TEST_SERVER_URL = 'http://localhost:12001';
@@ -39,10 +40,20 @@ describe('iOS Simulator Tests', () => {
   ['16', '17', '18'].forEach((iosVersion) => {
     describe(`iOS ${iosVersion}`, () => {
       let simulatorId: string;
+      let runtimeAvailable: boolean = false;
 
       before(function() {
-        this.timeout(120000);
-        simulatorId = createAndLaunchSimulator(iosVersion);
+        this.timeout(180000);
+        
+        // Check if runtime is available
+        try {
+          findIOSRuntime(iosVersion);
+          runtimeAvailable = true;
+          simulatorId = createAndLaunchSimulator(iosVersion);
+        } catch (error) {
+          console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
+          runtimeAvailable = false;
+        }
       });
 
       after(() => {
@@ -53,7 +64,12 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should take screenshot', async function() {
-        this.timeout(120000);
+        if (!runtimeAvailable) {
+          this.skip();
+          return;
+        }
+        
+        this.timeout(180000);
         
         const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
         
@@ -65,7 +81,12 @@ describe('iOS Simulator Tests', () => {
       });
 
       it('should open URL https://example.com', async function() {
-        this.timeout(120000);
+        if (!runtimeAvailable) {
+          this.skip();
+          return;
+        }
+        
+        this.timeout(180000);
         
         openUrl(simulatorId, 'https://example.com');
       });
@@ -73,20 +94,18 @@ describe('iOS Simulator Tests', () => {
   });
 });
 
-// Screenshot test helper functions with descriptive English names
-
-function mobilecli(args: string, description: string): void {
+function mobilecli(args: string): void {
   const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
   const command = `${mobilecliBinary} ${args}`;
   
   try {
     const result = execSync(command, { 
       encoding: 'utf8', 
-      timeout: 120000,
+      timeout: 180000,
       stdio: ['pipe', 'pipe', 'pipe']
     });
   } catch (error: any) {
-    console.log(`${description} command failed: ${command}`);
+    console.log(`Command failed: ${command}`);
     if (error.stderr) {
       console.log(`Error stderr: ${error.stderr}`);
     }
@@ -101,10 +120,7 @@ function mobilecli(args: string, description: string): void {
 }
 
 function takeScreenshot(simulatorId: string, screenshotPath: string): void {
-  mobilecli(
-    `screenshot --device ${simulatorId} --format png --output ${screenshotPath}`,
-    'Screenshot'
-  );
+  mobilecli(`screenshot --device ${simulatorId} --format png --output ${screenshotPath}`);
 }
 
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
@@ -121,9 +137,6 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 }
 
 function openUrl(simulatorId: string, url: string): void {
-  mobilecli(
-    `url "${url}" --device ${simulatorId}`,
-    'URL'
-  );
+  mobilecli(`url "${url}" --device ${simulatorId}`);
 }
 

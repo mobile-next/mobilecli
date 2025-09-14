@@ -205,13 +205,13 @@ func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
 }
 
 func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
-	installedApps, err := s.ListInstalledApps()
-	if err != nil {
-		return fmt.Errorf("failed to list installed apps: %v", err)
-	}
-
 	startTime := time.Now()
 	for {
+		installedApps, err := s.ListInstalledApps()
+		if err != nil {
+			return fmt.Errorf("failed to list installed apps: %v", err)
+		}
+
 		_, ok := installedApps[bundleID]
 		if ok {
 			return nil
@@ -403,7 +403,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s Simulator) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (s Simulator) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
 	return mjpegClient.StartScreenCapture(format, callback)
 }

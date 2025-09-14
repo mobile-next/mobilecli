@@ -223,6 +223,8 @@ jobs:
         chmod +x publish/npm/bin/*
         # setup npmrc
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
+        # copy README.md
+        cp README.md publish/npm
         # publish to npm
         cd publish/npm
         npm version "${{ github.ref_name }}" --no-git-tag-version

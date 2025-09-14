@@ -7,6 +7,13 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+const (
+	// Default MJPEG streaming quality (1-100)
+	DefaultMJPEGQuality = 80
+	// Default MJPEG streaming scale (0.1-1.0)
+	DefaultMJPEGScale = 1.0
+)
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -25,40 +32,35 @@ type ControllableDevice interface {
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
-	StartScreenCapture(format string, callback func([]byte) bool) error
+	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
 }
 
-// GetAllControllableDevices aggregates all known devices (iOS, Android, Simulators)
-// and returns them as a slice of ControllableDevice.
+// Aggregates all known devices (iOS, Android, Simulators)
 func GetAllControllableDevices() ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
-	var errs []error
 
-	// Get Android devices
-	androidDevices, err := GetAndroidDevices() // Assumes this now returns []ControllableDevice
+	// get Android devices
+	androidDevices, err := GetAndroidDevices()
 	if err != nil {
-		// Log or collect error, decide if it's fatal or if we continue
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
-		errs = append(errs, fmt.Errorf("android: %w", err))
 	} else {
 		allDevices = append(allDevices, androidDevices...)
 	}
 
-	// Get iOS real devices
+	// get iOS real devices
 	iosDevices, err := ListIOSDevices()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
-		errs = append(errs, fmt.Errorf("ios real: %w", err))
 	} else {
 		for _, device := range iosDevices {
 			allDevices = append(allDevices, &device)
 		}
 	}
 
+	// get iOS simulator devices
 	sims, err := GetBootedSimulators()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
-		errs = append(errs, fmt.Errorf("ios simulator: %w", err))
 	} else {
 		for _, sim := range sims {
 			allDevices = append(allDevices, &SimulatorDevice{

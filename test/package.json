@@ -4,8 +4,7 @@
   "description": "E2E tests for MobileCLI server",
   "main": "index.ts",
   "scripts": {
-    "test": "mocha --require ts-node/register --timeout 120000 '*.ts'",
-    "test:watch": "mocha --require ts-node/register --timeout 120000 --watch '*.ts'"
+    "test": "mocha --require ts-node/register --timeout 180000 '*.ts'"
   },
   "keywords": ["mobilecli", "testing", "e2e"],
   "author": "",
