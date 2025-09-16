@@ -1,10 +1,10 @@
 package devices
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"time"
+    "context"
+    "fmt"
+    "io"
+    "time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
@@ -19,17 +19,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	portForwarder *ios.PortForwarder
-)
-
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
+	OSVersion  string `json:"Version"`
 
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
 	mjpegClient   *mjpeg.WdaMjpegClient
+	// Keep port forwarders as fields to maintain their lifecycle
+	wdaPortForwarder   *ios.PortForwarder
+	mjpegPortForwarder *ios.PortForwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -38,6 +38,10 @@ func (d IOSDevice) ID() string {
 
 func (d IOSDevice) Name() string {
 	return d.DeviceName
+}
+
+func (d IOSDevice) Version() string {
+	return d.OSVersion
 }
 
 func (d IOSDevice) Platform() string {
@@ -61,6 +65,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	device := IOSDevice{
 		Udid:       udid,
 		DeviceName: allValues.Value.DeviceName,
+		OSVersion:  allValues.Value.ProductVersion,
 	}
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
@@ -240,8 +245,8 @@ func (d *IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to find available port: %w", err)
 		}
 
-		portForwarder = ios.NewPortForwarder(d.ID())
-		err = portForwarder.Forward(port, 8100)
+		d.wdaPortForwarder = ios.NewPortForwarder(d.ID())
+		err = d.wdaPortForwarder.Forward(port, 8100)
 		if err != nil {
 			return fmt.Errorf("failed to forward port: %w", err)
 		}
@@ -284,8 +289,8 @@ func (d *IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
 		}
 
-		portForwarderMjpeg := ios.NewPortForwarder(d.ID())
-		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
+		d.mjpegPortForwarder = ios.NewPortForwarder(d.ID())
+		err = d.mjpegPortForwarder.Forward(portMjpeg, 9100)
 		if err != nil {
 			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
 		}
@@ -413,6 +418,26 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 
 	log.SetLevel(log.WarnLevel)
 
+	// check if tunnel is running
+	tunnels, err := d.ListTunnels()
+	if err != nil {
+		return fmt.Errorf("failed to list tunnels: %w", err)
+	}
+
+	if len(tunnels) > 0 {
+		utils.Verbose("Tunnels available for this device: %v", tunnels)
+	}
+
+	if len(tunnels) == 0 {
+		utils.Verbose("No tunnels found, starting a new tunnel")
+		err = d.StartTunnel()
+		if err != nil {
+			return fmt.Errorf("failed to start tunnel: %w", err)
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
@@ -443,6 +468,26 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 	}
 
 	log.SetLevel(log.WarnLevel)
+
+	// check if tunnel is running
+	tunnels, err := d.ListTunnels()
+	if err != nil {
+		return fmt.Errorf("failed to list tunnels: %w", err)
+	}
+
+	if len(tunnels) > 0 {
+		utils.Verbose("Tunnels available for this device: %v", tunnels)
+	}
+
+	if len(tunnels) == 0 {
+		utils.Verbose("No tunnels found, starting a new tunnel")
+		err = d.StartTunnel()
+		if err != nil {
+			return fmt.Errorf("failed to start tunnel: %w", err)
+		}
+
+		time.Sleep(1 * time.Second)
+	}
 
 	device, err := d.getEnhancedDevice()
 	if err != nil {
@@ -553,6 +598,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
@@ -567,10 +613,11 @@ func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64,
 }
 
 func findAvailablePort() (int, error) {
-	for port := 8100; port <= 8199; port++ {
+	for port := 8101; port <= 8199; port++ {
 		if utils.IsPortAvailable("localhost", port) {
 			return port, nil
 		}
 	}
+
 	return 0, fmt.Errorf("no available ports found in range 8101-8199")
 }

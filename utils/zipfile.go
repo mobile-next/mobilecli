@@ -32,48 +32,55 @@ func unzipFile(zipPath, destDir string) error {
 	}
 	defer reader.Close()
 
-	for _, file := range reader.File {
-		path := filepath.Join(destDir, file.Name)
+    for _, file := range reader.File {
+        path := filepath.Join(destDir, file.Name)
 
-		// Validate path to prevent zip slip attacks
-		cleanPath := filepath.Clean(path)
-		cleanDestDir := filepath.Clean(destDir)
-		if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
-			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
-		}
+        // Validate path to prevent zip slip attacks
+        cleanPath := filepath.Clean(path)
+        cleanDestDir := filepath.Clean(destDir)
+        if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
+            return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
+        }
 
-		// Create directory tree
-		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, os.ModePerm)
-			continue
-		}
+        // Create directory tree
+        if file.FileInfo().IsDir() {
+            if err := os.MkdirAll(path, os.ModePerm); err != nil {
+                return err
+            }
+            continue
+        }
 
-		// Create directory for file if not exists
-		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
-			return err
-		}
+        // Create directory for file if not exists
+        if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+            return err
+        }
 
-		// Create file
-		outFile, err := os.Create(path)
-		if err != nil {
-			return err
-		}
+        // Open source (zip) and destination files and copy, closing immediately
+        rc, err := file.Open()
+        if err != nil {
+            return err
+        }
+        outFile, err := os.Create(path)
+        if err != nil {
+            rc.Close()
+            return err
+        }
 
-		// Open file in zip
-		rc, err := file.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
+        if _, err := io.Copy(outFile, rc); err != nil {
+            // Best-effort close before returning error
+            rc.Close()
+            outFile.Close()
+            return err
+        }
 
-		defer outFile.Close()
-		defer rc.Close()
-
-		_, err = io.Copy(outFile, rc)
-		if err != nil {
-			return err
-		}
-
-	}
-	return nil
+        // Close readers/writers promptly to avoid file descriptor buildup
+        if err := rc.Close(); err != nil {
+            outFile.Close()
+            return err
+        }
+        if err := outFile.Close(); err != nil {
+            return err
+        }
+    }
+    return nil
 }
