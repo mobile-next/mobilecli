@@ -66,13 +66,9 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		for _, sim := range sims {
 			simDevice := &SimulatorDevice{
 				Simulator: sim,
+				wdaClient: nil,
 			}
-			// Try to detect current WebDriverAgent port, fallback to nil client
-			if port, err := simDevice.getWdaPort(); err == nil {
-				simDevice.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
-			} else {
-				simDevice.wdaClient = nil // Will be set when StartAgent is called
-			}
+
 			allDevices = append(allDevices, simDevice)
 		}
 	}

@@ -79,7 +79,8 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 
 	if len(allDevices) == 1 {
 		device := allDevices[0]
-		// Cache the device for future use
+
+		// cache the device for future use
 		deviceCache[device.ID()] = device
 		return device, nil
 	}

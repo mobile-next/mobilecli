@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"os/exec"
 	"regexp"
@@ -59,10 +58,7 @@ func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 
-func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	if s.wdaClient == nil {
-		return nil, fmt.Errorf("WebDriverAgent not running - call StartAgent() first")
-	}
+func (s *SimulatorDevice) TakeScreenshot() ([]byte, error) {
 	return s.wdaClient.TakeScreenshot()
 }
 
@@ -330,8 +326,8 @@ func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
 	return ok, nil
 }
 
-func (s SimulatorDevice) StartAgent() error {
-	// First check if WebDriverAgent is already running
+func (s *SimulatorDevice) StartAgent() error {
+	// first check if WebDriverAgent is already running
 	if currentPort, err := s.getWdaPort(); err == nil {
 		log.Printf("WebDriverAgent is already running on port %d", currentPort)
 		// Update WDA client to use the current port and test connectivity
@@ -340,6 +336,7 @@ func (s SimulatorDevice) StartAgent() error {
 			log.Printf("WebDriverAgent is accessible on port %d", currentPort)
 			return nil // Already running and accessible
 		}
+
 		log.Printf("WebDriverAgent process found but not accessible via WDA client, will restart")
 	}
 
@@ -356,13 +353,13 @@ func (s SimulatorDevice) StartAgent() error {
 		}
 	}
 
-	// Find available ports
-	usePort, err := findAvailablePortInRange(10500, 10600)
+	// find available ports
+	usePort, err := utils.FindAvailablePortInRange(10500, 10600)
 	if err != nil {
 		return fmt.Errorf("failed to find available USE_PORT: %w", err)
 	}
 
-	mjpegPort, err := findAvailablePortInRange(10666, 10766)
+	mjpegPort, err := utils.FindAvailablePortInRange(10666, 10766)
 	if err != nil {
 		return fmt.Errorf("failed to find available MJPEG_SERVER_PORT: %w", err)
 	}
@@ -374,12 +371,13 @@ func (s SimulatorDevice) StartAgent() error {
 		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
 		"USE_PORT":          strconv.Itoa(usePort),
 	}
+
 	err = s.LaunchAppWithEnv(webdriverPackageName, env)
 	if err != nil {
 		return err
 	}
 
-	// Update WDA client to use the actual port
+	// update WDA client to use the actual port
 	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
 
 	err = s.wdaClient.WaitForAgent()
@@ -390,19 +388,19 @@ func (s SimulatorDevice) StartAgent() error {
 	return nil
 }
 
-func (s SimulatorDevice) PressButton(key string) error {
+func (s *SimulatorDevice) PressButton(key string) error {
 	return s.wdaClient.PressButton(key)
 }
 
-func (s SimulatorDevice) SendKeys(text string) error {
+func (s *SimulatorDevice) SendKeys(text string) error {
 	return s.wdaClient.SendKeys(text)
 }
 
-func (s SimulatorDevice) Tap(x, y int) error {
+func (s *SimulatorDevice) Tap(x, y int) error {
 	return s.wdaClient.Tap(x, y)
 }
 
-func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
+func (s *SimulatorDevice) Gesture(actions []wda.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
 
@@ -491,32 +489,9 @@ func (s Simulator) StartScreenCapture(format string, quality int, scale float64,
 	return mjpegClient.StartScreenCapture(format, callback)
 }
 
-// findAvailablePortInRange finds an available port in the given range
-func findAvailablePortInRange(startPort, endPort int) (int, error) {
-	// Try ports in random order to avoid conflicts
-	ports := make([]int, endPort-startPort+1)
-	for i := range ports {
-		ports[i] = startPort + i
-	}
-
-	// Shuffle the ports
-	for i := range ports {
-		j := rand.Intn(len(ports))
-		ports[i], ports[j] = ports[j], ports[i]
-	}
-
-	for _, port := range ports {
-		if utils.IsPortAvailable("localhost", port) {
-			return port, nil
-		}
-	}
-
-	return 0, fmt.Errorf("no available ports in range %d-%d", startPort, endPort)
-}
-
 // findWdaProcessForDevice finds the PID and environment for WebDriverAgent process for a specific simulator device
 func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
-	cmd := exec.Command("ps", "-o", "pid,command", "-E", "-ww", "-e")
+	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to run ps command: %w", err)
@@ -588,7 +563,7 @@ func extractEnvValue(output, envVar string) (string, error) {
 }
 
 // getWdaPort extracts the USE_PORT from WebDriverAgent process environment
-func (s SimulatorDevice) getWdaPort() (int, error) {
+func (s *SimulatorDevice) getWdaPort() (int, error) {
 	_, processInfo, err := findWdaProcessForDevice(s.UDID)
 	if err != nil {
 		return 0, err
@@ -608,7 +583,7 @@ func (s SimulatorDevice) getWdaPort() (int, error) {
 }
 
 // getWdaMjpegPort extracts the MJPEG_SERVER_PORT from WebDriverAgent process environment
-func (s SimulatorDevice) getWdaMjpegPort() (int, error) {
+func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
 	_, processInfo, err := findWdaProcessForDevice(s.UDID)
 	if err != nil {
 		return 0, err

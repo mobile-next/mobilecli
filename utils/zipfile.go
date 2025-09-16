@@ -40,10 +40,12 @@ func unzipFile(zipPath, destDir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to get absolute dest dir: %w", err)
 		}
+
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("failed to get absolute path: %w", err)
 		}
+
 		if !strings.HasPrefix(absPath, absDestDir+string(os.PathSeparator)) && absPath != absDestDir {
 			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, absPath)
 		}
@@ -66,6 +68,7 @@ func unzipFile(zipPath, destDir string) error {
 		if err != nil {
 			return err
 		}
+
 		outFile, err := os.Create(path)
 		if err != nil {
 			rc.Close()
@@ -84,9 +87,11 @@ func unzipFile(zipPath, destDir string) error {
 			outFile.Close()
 			return err
 		}
+
 		if err := outFile.Close(); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

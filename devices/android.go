@@ -176,7 +176,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// Try getting AVD name first (for emulators)
+	// try getting AVD name first (for emulators)
 	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
 	avdOutput, err := avdCmd.CombinedOutput()
 	if err == nil && len(avdOutput) > 0 {
@@ -186,7 +186,7 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// Fall back to product model
+	// fallback to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
@@ -260,9 +260,10 @@ func (d AndroidDevice) PressButton(key string) error {
 }
 
 func (d AndroidDevice) SendKeys(text string) error {
-	if text == "\b" {
+	switch text {
+	case "\b":
 		return d.PressButton("BACKSPACE")
-	} else if text == "\n" {
+	case "\n":
 		return d.PressButton("ENTER")
 	}
 
