@@ -260,46 +260,46 @@ func (d AndroidDevice) PressButton(key string) error {
 }
 
 func (d AndroidDevice) SendKeys(text string) error {
-    // Handle common control characters as keyevents
-    if text == "\b" {
-        return d.PressButton("BACKSPACE")
-    } else if text == "\n" {
-        return d.PressButton("ENTER")
-    }
+	// Handle common control characters as keyevents
+	if text == "\b" {
+		return d.PressButton("BACKSPACE")
+	} else if text == "\n" {
+		return d.PressButton("ENTER")
+	}
 
-    // Encode per adb 'input text' expectations:
-    // - Space as %s
-    // - Percent-encode all non-alphanumeric bytes to avoid misinterpretation
-    //   by the input command's escape parsing.
-    encoded := encodeAdbInput(text)
-    _, err := d.runAdbCommand("shell", "input", "text", encoded)
-    return err
+	// Encode per adb 'input text' expectations:
+	// - Space as %s
+	// - Percent-encode all non-alphanumeric bytes to avoid misinterpretation
+	//   by the input command's escape parsing.
+	encoded := encodeAdbInput(text)
+	_, err := d.runAdbCommand("shell", "input", "text", encoded)
+	return err
 }
 
 // encodeAdbInput converts an arbitrary string into a form suitable for
 // `adb shell input text` by replacing spaces with %s and percent-encoding
 // non-alphanumeric bytes. This avoids issues with special characters.
 func encodeAdbInput(s string) string {
-    // Work at the byte level to properly percent-encode UTF-8 sequences
-    var b strings.Builder
-    for i := 0; i < len(s); i++ {
-        c := s[i]
-        switch c {
-        case ' ':
-            b.WriteString("%s")
-        case '%':
-            // Always escape percent to avoid accidental escape sequences
-            b.WriteString("%25")
-        default:
-            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-                b.WriteByte(c)
-            } else {
-                // Percent-encode anything else
-                b.WriteString(fmt.Sprintf("%%%02X", c))
-            }
-        }
-    }
-    return b.String()
+	// Work at the byte level to properly percent-encode UTF-8 sequences
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case ' ':
+			b.WriteString("%s")
+		case '%':
+			// Always escape percent to avoid accidental escape sequences
+			b.WriteString("%25")
+		default:
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+				b.WriteByte(c)
+			} else {
+				// Percent-encode anything else
+				b.WriteString(fmt.Sprintf("%%%02X", c))
+			}
+		}
+	}
+	return b.String()
 }
 
 func (d AndroidDevice) OpenURL(url string) error {

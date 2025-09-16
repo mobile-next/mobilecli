@@ -32,7 +32,7 @@ func NewTunnelManager(udid string) (*TunnelManager, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create pair records directory: %w", err)
 	}
-	
+
 	pm, err := tunnel.NewPairRecordManager(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pair record manager: %w", err)

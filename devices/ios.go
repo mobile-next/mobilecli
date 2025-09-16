@@ -1,10 +1,10 @@
 package devices
 
 import (
-    "context"
-    "fmt"
-    "io"
-    "time"
+	"context"
+	"fmt"
+	"io"
+	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
@@ -304,7 +304,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
 	}
-	
+
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
 
 	device, err := d.getEnhancedDevice()
@@ -313,7 +313,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
 		defer cancel()
