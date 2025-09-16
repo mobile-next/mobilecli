@@ -64,10 +64,16 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 	} else {
 		for _, sim := range sims {
-			allDevices = append(allDevices, &SimulatorDevice{
+			simDevice := &SimulatorDevice{
 				Simulator: sim,
-				wdaClient: wda.NewWdaClient("localhost:8100"),
-			})
+			}
+			// Try to detect current WebDriverAgent port, fallback to nil client
+			if port, err := simDevice.getWdaPort(); err == nil {
+				simDevice.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
+			} else {
+				simDevice.wdaClient = nil // Will be set when StartAgent is called
+			}
+			allDevices = append(allDevices, simDevice)
 		}
 	}
 

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -57,6 +60,9 @@ func (s SimulatorDevice) DeviceType() string { return "simulator" }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
+	if s.wdaClient == nil {
+		return nil, fmt.Errorf("WebDriverAgent not running - call StartAgent() first")
+	}
 	return s.wdaClient.TakeScreenshot()
 }
 
@@ -166,6 +172,26 @@ func GetBootedSimulators() ([]Simulator, error) {
 func (s SimulatorDevice) LaunchApp(bundleID string) error {
 	_, err := runSimctl("launch", s.UDID, bundleID)
 	return err
+}
+
+func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
+	// Build simctl command
+	fullArgs := append([]string{"simctl", "launch"}, s.UDID, bundleID)
+	cmd := exec.Command("xcrun", fullArgs...)
+
+	// Set environment variables with SIMCTL_CHILD_ prefix for this command only
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("SIMCTL_CHILD_%s=%s", key, value))
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to launch app with env: %w", err)
+	}
+
+	_ = output // Suppress unused variable warning
+	return nil
 }
 
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
@@ -305,31 +331,60 @@ func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
 }
 
 func (s SimulatorDevice) StartAgent() error {
-	_, err := s.wdaClient.GetStatus()
+	// First check if WebDriverAgent is already running
+	if currentPort, err := s.getWdaPort(); err == nil {
+		log.Printf("WebDriverAgent is already running on port %d", currentPort)
+		// Update WDA client to use the current port and test connectivity
+		s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", currentPort))
+		if _, err := s.wdaClient.GetStatus(); err == nil {
+			log.Printf("WebDriverAgent is accessible on port %d", currentPort)
+			return nil // Already running and accessible
+		}
+		log.Printf("WebDriverAgent process found but not accessible via WDA client, will restart")
+	}
+
+	installed, err := s.IsWebDriverAgentInstalled()
 	if err != nil {
-		installed, err := s.IsWebDriverAgentInstalled()
-		if err != nil {
-			return err
-		}
+		return err
+	}
 
-		if !installed {
-			log.Printf("WebdriverAgent is not installed. Will try to install now")
-			err = s.InstallWebDriverAgent()
-			if err != nil {
-				return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
-			}
-		}
-
-		webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-		err = s.LaunchApp(webdriverPackageName)
+	if !installed {
+		log.Printf("WebdriverAgent is not installed. Will try to install now")
+		err = s.InstallWebDriverAgent()
 		if err != nil {
-			return err
+			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
 		}
+	}
 
-		err = s.wdaClient.WaitForAgent()
-		if err != nil {
-			return err
-		}
+	// Find available ports
+	usePort, err := findAvailablePortInRange(10500, 10600)
+	if err != nil {
+		return fmt.Errorf("failed to find available USE_PORT: %w", err)
+	}
+
+	mjpegPort, err := findAvailablePortInRange(10666, 10766)
+	if err != nil {
+		return fmt.Errorf("failed to find available MJPEG_SERVER_PORT: %w", err)
+	}
+
+	log.Printf("Starting WebDriverAgent with USE_PORT=%d and MJPEG_SERVER_PORT=%d", usePort, mjpegPort)
+
+	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
+	env := map[string]string{
+		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
+		"USE_PORT":          strconv.Itoa(usePort),
+	}
+	err = s.LaunchAppWithEnv(webdriverPackageName, env)
+	if err != nil {
+		return err
+	}
+
+	// Update WDA client to use the actual port
+	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
+
+	err = s.wdaClient.WaitForAgent()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -398,7 +453,18 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (s Simulator) Info() (*FullDeviceInfo, error) {
-	client := wda.NewWdaClient("localhost:8100")
+	// Find the current WDA port - fail if not found
+	var client *wda.WdaClient
+	if simDevice, ok := interface{}(s).(SimulatorDevice); ok {
+		port, err := simDevice.getWdaPort()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get WebDriverAgent port: %w", err)
+		}
+		client = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
+	} else {
+		return nil, fmt.Errorf("simulator device type assertion failed")
+	}
+
 	wdaSize, err := client.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
@@ -423,4 +489,140 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 func (s Simulator) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
 	return mjpegClient.StartScreenCapture(format, callback)
+}
+
+// findAvailablePortInRange finds an available port in the given range
+func findAvailablePortInRange(startPort, endPort int) (int, error) {
+	// Try ports in random order to avoid conflicts
+	ports := make([]int, endPort-startPort+1)
+	for i := range ports {
+		ports[i] = startPort + i
+	}
+
+	// Shuffle the ports
+	for i := range ports {
+		j := rand.Intn(len(ports))
+		ports[i], ports[j] = ports[j], ports[i]
+	}
+
+	for _, port := range ports {
+		if utils.IsPortAvailable("localhost", port) {
+			return port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no available ports in range %d-%d", startPort, endPort)
+}
+
+// findWdaProcessForDevice finds the PID and environment for WebDriverAgent process for a specific simulator device
+func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+	cmd := exec.Command("ps", "-o", "pid,command", "-E", "-ww", "-e")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to run ps command: %w", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
+
+	for _, line := range lines {
+		if strings.Contains(line, devicePath) && strings.Contains(line, "WebDriverAgentRunner-Runner") {
+			// Find the first space to separate PID from the rest
+			spaceIndex := strings.Index(line, " ")
+			if spaceIndex == -1 {
+				continue
+			}
+
+			pidStr := strings.TrimSpace(line[:spaceIndex])
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+
+			// The rest of the line contains command and environment
+			processInfo := line[spaceIndex+1:]
+			return pid, processInfo, nil
+		}
+	}
+
+	return 0, "", fmt.Errorf("WebDriverAgent process not found for device %s", deviceUDID)
+}
+
+// extractEnvValue extracts a specific environment variable value from ps eww output
+func extractEnvValue(output, envVar string) (string, error) {
+	// Look for " ENVVAR=" pattern (space + envvar + equals)
+	pattern := " " + envVar + "="
+	pos := strings.Index(output, pattern)
+	if pos == -1 {
+		// Also check if it's at the beginning of the line
+		pattern = envVar + "="
+		if strings.HasPrefix(output, pattern) {
+			pos = 0
+		} else {
+			return "", fmt.Errorf("%s not found in environment", envVar)
+		}
+	} else {
+		pos++ // Skip the leading space
+	}
+
+	// Find the start of the value (after the =)
+	valueStart := pos + len(envVar) + 1
+
+	// Find the end of the value (next space that precedes another env var)
+	valueEnd := len(output)
+	for i := valueStart; i < len(output); i++ {
+		if output[i] == ' ' {
+			// Check if what follows looks like another env var (WORD=)
+			j := i + 1
+			for j < len(output) && output[j] != ' ' && output[j] != '=' {
+				j++
+			}
+			if j < len(output) && output[j] == '=' {
+				valueEnd = i
+				break
+			}
+		}
+	}
+
+	return output[valueStart:valueEnd], nil
+}
+
+// getWdaPort extracts the USE_PORT from WebDriverAgent process environment
+func (s SimulatorDevice) getWdaPort() (int, error) {
+	_, processInfo, err := findWdaProcessForDevice(s.UDID)
+	if err != nil {
+		return 0, err
+	}
+
+	usePortStr, err := extractEnvValue(processInfo, "USE_PORT")
+	if err != nil {
+		return 0, err
+	}
+
+	port, err := strconv.Atoi(usePortStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid USE_PORT value: %s", usePortStr)
+	}
+
+	return port, nil
+}
+
+// getWdaMjpegPort extracts the MJPEG_SERVER_PORT from WebDriverAgent process environment
+func (s SimulatorDevice) getWdaMjpegPort() (int, error) {
+	_, processInfo, err := findWdaProcessForDevice(s.UDID)
+	if err != nil {
+		return 0, err
+	}
+
+	mjpegPortStr, err := extractEnvValue(processInfo, "MJPEG_SERVER_PORT")
+	if err != nil {
+		return 0, err
+	}
+
+	port, err := strconv.Atoi(mjpegPortStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid MJPEG_SERVER_PORT value: %s", mjpegPortStr)
+	}
+
+	return port, nil
 }
