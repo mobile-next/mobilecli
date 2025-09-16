@@ -36,10 +36,16 @@ func unzipFile(zipPath, destDir string) error {
 		path := filepath.Join(destDir, file.Name)
 
 		// Validate path to prevent zip slip attacks
-		cleanPath := filepath.Clean(path)
-		cleanDestDir := filepath.Clean(destDir)
-		if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
-			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
+		absDestDir, err := filepath.Abs(destDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute dest dir: %w", err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+		if !strings.HasPrefix(absPath, absDestDir+string(os.PathSeparator)) && absPath != absDestDir {
+			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, absPath)
 		}
 
 		// Create directory tree
