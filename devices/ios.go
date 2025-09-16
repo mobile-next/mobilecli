@@ -73,7 +73,6 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
 	}
 	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
 }
 
@@ -195,7 +194,24 @@ func (d *IOSDevice) StartAgent() error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	_, err := d.wdaClient.GetStatus()
+	// Always allocate a unique port for this device to avoid conflicts
+	port, err := findAvailablePort()
+	if err != nil {
+		return fmt.Errorf("failed to find available port: %w", err)
+	}
+
+	// Set up port forwarding first
+	d.wdaPortForwarder = ios.NewPortForwarder(d.ID())
+	err = d.wdaPortForwarder.Forward(port, 8100)
+	if err != nil {
+		return fmt.Errorf("failed to forward port: %w", err)
+	}
+
+	// Initialize WDA client with our unique port
+	d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+
+	// Now check if WDA is already running on this device through our port forwarding
+	_, err = d.wdaClient.GetStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
@@ -239,47 +255,27 @@ func (d *IOSDevice) StartAgent() error {
 			time.Sleep(1 * time.Second)
 		}
 
-		// check that forward proxy is running
-		port, err := findAvailablePort()
+		// launch WebDriverAgent using testmanagerd
+		utils.Verbose("Launching WebDriverAgent")
+		err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 		if err != nil {
-			return fmt.Errorf("failed to find available port: %w", err)
+			return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
 		}
 
-		d.wdaPortForwarder = ios.NewPortForwarder(d.ID())
-		err = d.wdaPortForwarder.Forward(port, 8100)
+		// wait for WebDriverAgent to start
+		utils.Verbose("Waiting for WebDriverAgent to start")
+		err = d.wdaClient.WaitForAgent()
 		if err != nil {
-			return fmt.Errorf("failed to forward port: %w", err)
+			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 		}
 
-		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+		// wait 1 second after pressing home, so we make sure wda is in the background
+		d.wdaClient.PressButton("HOME")
+		time.Sleep(1 * time.Second)
 
-		// check if wda is already running, now that we have a port forwarder set up
-		_, err = d.wdaClient.GetStatus()
-		if err == nil {
-			utils.Verbose("WebDriverAgent is already running")
-		}
-
-		if err != nil {
-			// launch WebDriverAgent using testmanagerd
-			utils.Verbose("Launching WebDriverAgent")
-			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
-			if err != nil {
-				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
-			}
-
-			// wait for WebDriverAgent to start
-			utils.Verbose("Waiting for WebDriverAgent to start")
-			err = d.wdaClient.WaitForAgent()
-			if err != nil {
-				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
-			}
-
-			// wait 1 second after pressing home, so we make sure wda is in the background
-			d.wdaClient.PressButton("HOME")
-			time.Sleep(1 * time.Second)
-
-			utils.Verbose("WebDriverAgent started")
-		}
+		utils.Verbose("WebDriverAgent started")
+	} else {
+		utils.Verbose("WebDriverAgent is already running on this device")
 	}
 
 	// assuming everything went well if we reached this point
