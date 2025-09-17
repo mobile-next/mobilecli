@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -35,10 +36,25 @@ type SimulatorDevice struct {
 	wdaClient *wda.WdaClient
 }
 
+// parseSimulatorVersion parses iOS version from simulator runtime string
+// e.g., "com.apple.CoreSimulator.SimRuntime.iOS-18-6" -> "18.6"
+func parseSimulatorVersion(runtime string) string {
+	// Use regex to extract iOS version from runtime string
+	re := regexp.MustCompile(`iOS-(\d+)-(\d+)`)
+	matches := re.FindStringSubmatch(runtime)
+	if len(matches) == 3 {
+		return matches[1] + "." + matches[2]
+	}
+
+	// Fallback: return the original runtime string if parsing fails
+	return runtime
+}
+
 func (s SimulatorDevice) ID() string         { return s.UDID }
 func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
 func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
+func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
 	return s.wdaClient.TakeScreenshot()
@@ -394,6 +410,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 			Name:     s.Name,
 			Platform: "ios",
 			Type:     "simulator",
+			Version:  parseSimulatorVersion(s.Runtime),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
