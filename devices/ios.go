@@ -19,17 +19,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	portForwarder *ios.PortForwarder
-)
-
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
+	OSVersion  string `json:"Version"`
 
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
 	mjpegClient   *mjpeg.WdaMjpegClient
+	// Keep port forwarders as fields to maintain their lifecycle
+	wdaPortForwarder   *ios.PortForwarder
+	mjpegPortForwarder *ios.PortForwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -38,6 +38,10 @@ func (d IOSDevice) ID() string {
 
 func (d IOSDevice) Name() string {
 	return d.DeviceName
+}
+
+func (d IOSDevice) Version() string {
+	return d.OSVersion
 }
 
 func (d IOSDevice) Platform() string {
@@ -61,6 +65,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	device := IOSDevice{
 		Udid:       udid,
 		DeviceName: allValues.Value.DeviceName,
+		OSVersion:  allValues.Value.ProductVersion,
 	}
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
@@ -68,7 +73,6 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
 	}
 	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
 }
 
@@ -190,7 +194,24 @@ func (d *IOSDevice) StartAgent() error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	_, err := d.wdaClient.GetStatus()
+	// Always allocate a unique port for this device to avoid conflicts
+	port, err := findAvailablePort()
+	if err != nil {
+		return fmt.Errorf("failed to find available port: %w", err)
+	}
+
+	// Set up port forwarding first
+	d.wdaPortForwarder = ios.NewPortForwarder(d.ID())
+	err = d.wdaPortForwarder.Forward(port, 8100)
+	if err != nil {
+		return fmt.Errorf("failed to forward port: %w", err)
+	}
+
+	// Initialize WDA client with our unique port
+	d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+
+	// Now check if WDA is already running on this device through our port forwarding
+	_, err = d.wdaClient.GetStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
@@ -234,47 +255,27 @@ func (d *IOSDevice) StartAgent() error {
 			time.Sleep(1 * time.Second)
 		}
 
-		// check that forward proxy is running
-		port, err := findAvailablePort()
+		// launch WebDriverAgent using testmanagerd
+		utils.Verbose("Launching WebDriverAgent")
+		err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 		if err != nil {
-			return fmt.Errorf("failed to find available port: %w", err)
+			return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
 		}
 
-		portForwarder = ios.NewPortForwarder(d.ID())
-		err = portForwarder.Forward(port, 8100)
+		// wait for WebDriverAgent to start
+		utils.Verbose("Waiting for WebDriverAgent to start")
+		err = d.wdaClient.WaitForAgent()
 		if err != nil {
-			return fmt.Errorf("failed to forward port: %w", err)
+			return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 		}
 
-		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+		// wait 1 second after pressing home, so we make sure wda is in the background
+		d.wdaClient.PressButton("HOME")
+		time.Sleep(1 * time.Second)
 
-		// check if wda is already running, now that we have a port forwarder set up
-		_, err = d.wdaClient.GetStatus()
-		if err == nil {
-			utils.Verbose("WebDriverAgent is already running")
-		}
-
-		if err != nil {
-			// launch WebDriverAgent using testmanagerd
-			utils.Verbose("Launching WebDriverAgent")
-			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
-			if err != nil {
-				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
-			}
-
-			// wait for WebDriverAgent to start
-			utils.Verbose("Waiting for WebDriverAgent to start")
-			err = d.wdaClient.WaitForAgent()
-			if err != nil {
-				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
-			}
-
-			// wait 1 second after pressing home, so we make sure wda is in the background
-			d.wdaClient.PressButton("HOME")
-			time.Sleep(1 * time.Second)
-
-			utils.Verbose("WebDriverAgent started")
-		}
+		utils.Verbose("WebDriverAgent started")
+	} else {
+		utils.Verbose("WebDriverAgent is already running on this device")
 	}
 
 	// assuming everything went well if we reached this point
@@ -284,8 +285,8 @@ func (d *IOSDevice) StartAgent() error {
 			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
 		}
 
-		portForwarderMjpeg := ios.NewPortForwarder(d.ID())
-		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
+		d.mjpegPortForwarder = ios.NewPortForwarder(d.ID())
+		err = d.mjpegPortForwarder.Forward(portMjpeg, 9100)
 		if err != nil {
 			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
 		}
@@ -303,7 +304,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
 	}
-	
+
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
 
 	device, err := d.getEnhancedDevice()
@@ -312,7 +313,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
 		defer cancel()
@@ -406,16 +407,38 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	return device, nil
 }
 
-func (d IOSDevice) LaunchApp(bundleID string) error {
+func (d *IOSDevice) ensureTunnelAndGetDevice() (goios.DeviceEntry, error) {
+	// check if tunnel is running
+	tunnels, err := d.ListTunnels()
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("failed to list tunnels: %w", err)
+	}
+
+	if len(tunnels) == 0 {
+		utils.Verbose("No tunnels found, starting a new tunnel")
+		err = d.StartTunnel()
+		if err != nil {
+			return goios.DeviceEntry{}, fmt.Errorf("failed to start tunnel: %w", err)
+		}
+
+		time.Sleep(1 * time.Second)
+	} else {
+		utils.Verbose("Tunnels available for this device: %v", tunnels)
+	}
+
+	return d.getEnhancedDevice()
+}
+
+func (d *IOSDevice) LaunchApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
 
 	log.SetLevel(log.WarnLevel)
 
-	device, err := d.getEnhancedDevice()
+	device, err := d.ensureTunnelAndGetDevice()
 	if err != nil {
-		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+		return err
 	}
 
 	pControl, err := instruments.NewProcessControl(device)
@@ -437,16 +460,16 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 	return nil
 }
 
-func (d IOSDevice) TerminateApp(bundleID string) error {
+func (d *IOSDevice) TerminateApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
 
 	log.SetLevel(log.WarnLevel)
 
-	device, err := d.getEnhancedDevice()
+	device, err := d.ensureTunnelAndGetDevice()
 	if err != nil {
-		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+		return err
 	}
 
 	pControl, err := instruments.NewProcessControl(device)
@@ -553,6 +576,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
@@ -567,10 +591,11 @@ func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64,
 }
 
 func findAvailablePort() (int, error) {
-	for port := 8100; port <= 8199; port++ {
+	for port := 8101; port <= 8199; port++ {
 		if utils.IsPortAvailable("localhost", port) {
 			return port, nil
 		}
 	}
+
 	return 0, fmt.Errorf("no available ports found in range 8101-8199")
 }

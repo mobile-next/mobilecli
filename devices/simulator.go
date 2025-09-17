@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -35,36 +37,52 @@ type SimulatorDevice struct {
 	wdaClient *wda.WdaClient
 }
 
+// parseSimulatorVersion parses iOS version from simulator runtime string
+// e.g., "com.apple.CoreSimulator.SimRuntime.iOS-18-6" -> "18.6"
+func parseSimulatorVersion(runtime string) string {
+	// Use regex to extract iOS version from runtime string
+	re := regexp.MustCompile(`iOS-(\d+)-(\d+)`)
+	matches := re.FindStringSubmatch(runtime)
+	if len(matches) == 3 {
+		return matches[1] + "." + matches[2]
+	}
+
+	// Fallback: return the original runtime string if parsing fails
+	return runtime
+}
+
 func (s SimulatorDevice) ID() string         { return s.UDID }
 func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
 func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
+func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 
-func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
+func (s *SimulatorDevice) TakeScreenshot() ([]byte, error) {
 	return s.wdaClient.TakeScreenshot()
 }
 
 // Reboot shuts down and then boots the iOS simulator.
 func (s SimulatorDevice) Reboot() error {
-	log.Printf("Attempting to reboot simulator: %s (%s)", s.Name(), s.UDID)
+	utils.Verbose("Attempting to reboot simulator: %s (%s)", s.Name(), s.UDID)
 
-	// Shutdown the simulator
-	log.Printf("SimulatorDevice: Shutting down %s...", s.UDID)
+	// shutdown the simulator
+	utils.Verbose("SimulatorDevice: Shutting down %s...", s.UDID)
 	output, err := runSimctl("shutdown", s.UDID)
 	if err != nil {
 		// Don't stop if shutdown fails for a simulator that might already be off
-		log.Printf("SimulatorDevice: Shutdown command for %s may have failed (could be already off): %v\nOutput: %s", s.UDID, err, string(output))
+		utils.Verbose("SimulatorDevice: Shutdown command for %s may have failed (could be already off): %v\nOutput: %s", s.UDID, err, string(output))
 	} else {
-		log.Printf("SimulatorDevice: Shutdown successful for %s.", s.UDID)
+		utils.Verbose("SimulatorDevice: Shutdown successful for %s.", s.UDID)
 	}
 
-	// Boot the simulator
-	log.Printf("SimulatorDevice: Booting %s...", s.UDID)
+	// boot the simulator
+	utils.Verbose("SimulatorDevice: Booting %s...", s.UDID)
 	output, err = runSimctl("boot", s.UDID)
 	if err != nil {
 		return fmt.Errorf("SimulatorDevice: failed to boot simulator %s: %v\nOutput: %s", s.UDID, err, string(output))
 	}
-	log.Printf("SimulatorDevice: Boot command successful for %s.", s.UDID)
+
+	utils.Verbose("SimulatorDevice: Boot command successful for %s.", s.UDID)
 	return nil
 }
 
@@ -76,6 +94,7 @@ func runSimctl(args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
 	}
+
 	return output, nil
 }
 
@@ -152,69 +171,65 @@ func (s SimulatorDevice) LaunchApp(bundleID string) error {
 	return err
 }
 
+func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
+	// Build simctl command
+	fullArgs := append([]string{"simctl", "launch"}, s.UDID, bundleID)
+	cmd := exec.Command("xcrun", fullArgs...)
+
+	// Set environment variables with SIMCTL_CHILD_ prefix for this command only
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("SIMCTL_CHILD_%s=%s", key, value))
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to launch app with env: %w", err)
+	}
+
+	_ = output // Suppress unused variable warning
+	return nil
+}
+
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	_, err := runSimctl("terminate", s.UDID, bundleID)
 	return err
 }
 
 func InstallApp(udid string, appPath string) error {
-	log.Printf("Installing app from %s to simulator %s", appPath, udid)
+	utils.Verbose("Installing app from %s to simulator %s", appPath, udid)
 	output, err := runSimctl("install", udid, appPath)
 	if err != nil {
 		return fmt.Errorf("failed to install app from %s: %v\n%s", appPath, err, output)
 	}
 
-	log.Printf("Successfully installed app from %s", appPath)
+	utils.Verbose("Successfully installed app from %s", appPath)
 	return nil
 }
 
 func UninstallApp(udid string, bundleID string) error {
-	log.Printf("Uninstalling app %s from simulator %s", bundleID, udid)
+	utils.Verbose("Uninstalling app %s from simulator %s", bundleID, udid)
 	output, err := runSimctl("uninstall", udid, bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to uninstall app %s: %v\n%s", bundleID, err, output)
 	}
 
-	log.Printf("Successfully uninstalled app %s", bundleID)
+	utils.Verbose("Successfully uninstalled app %s", bundleID)
 	return nil
-}
-
-func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
-	// use xcrun simctl
-	output, err := runSimctl("listapps", s.UDID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list installed apps: %v\n%s", err, output)
-	}
-
-	// convert output to json
-	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
-	cmd.Stdin = bytes.NewReader(output)
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert output to JSON: %v\n%s", err, output)
-	}
-
-	// parse json
-	var apps map[string]interface{}
-	err = json.Unmarshal(output, &apps)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %v\n%s", err, output)
-	}
-
-	return apps, nil
 }
 
 func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	startTime := time.Now()
 	for {
-		installedApps, err := s.ListInstalledApps()
+		installedApps, err := s.ListApps()
 		if err != nil {
 			return fmt.Errorf("failed to list installed apps: %v", err)
 		}
 
-		_, ok := installedApps[bundleID]
-		if ok {
-			return nil
+		for _, app := range installedApps {
+			if app.PackageName == bundleID {
+				return nil
+			}
 		}
 
 		if time.Since(startTime) > 10*time.Second {
@@ -234,7 +249,7 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	}
 	tmpFile.Close()
 
-	log.Printf("Downloading WebDriverAgent to: %s", tmpFile.Name())
+	utils.Verbose("Downloading WebDriverAgent to: %s", tmpFile.Name())
 
 	err = utils.DownloadFile(url, tmpFile.Name())
 	if err != nil {
@@ -254,7 +269,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 
 	defer os.Remove(file)
 
-	log.Printf("Downloaded WebDriverAgent to %s", file)
+	utils.Verbose("Downloaded WebDriverAgent to %s", file)
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
@@ -262,7 +277,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	}
 
 	defer os.RemoveAll(dir)
-	log.Printf("Unzipped WebDriverAgent to %s", dir)
+	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
 
 	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
 	if err != nil {
@@ -278,60 +293,96 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 }
 
 func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
-	installedApps, err := s.ListInstalledApps()
+	installedApps, err := s.ListApps()
 	if err != nil {
 		return false, err
 	}
 
 	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-	_, ok := installedApps[webdriverPackageName]
-	return ok, nil
+	for _, app := range installedApps {
+		if app.PackageName == webdriverPackageName {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
-func (s SimulatorDevice) StartAgent() error {
-	_, err := s.wdaClient.GetStatus()
+func (s *SimulatorDevice) StartAgent() error {
+	// first check if WebDriverAgent is already running
+	if currentPort, err := s.getWdaPort(); err == nil {
+		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
+
+		// update WDA client to use the current port and test connectivity
+		s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", currentPort))
+		if _, err := s.wdaClient.GetStatus(); err == nil {
+			utils.Verbose("WebDriverAgent is accessible on port %d", currentPort)
+			return nil // Already running and accessible
+		}
+
+		utils.Verbose("WebDriverAgent process found but not accessible via WDA client, will restart")
+	}
+
+	installed, err := s.IsWebDriverAgentInstalled()
 	if err != nil {
-		installed, err := s.IsWebDriverAgentInstalled()
-		if err != nil {
-			return err
-		}
+		return err
+	}
 
-		if !installed {
-			log.Printf("WebdriverAgent is not installed. Will try to install now")
-			err = s.InstallWebDriverAgent()
-			if err != nil {
-				return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
-			}
-		}
-
-		webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-		err = s.LaunchApp(webdriverPackageName)
+	if !installed {
+		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
+		err = s.InstallWebDriverAgent()
 		if err != nil {
-			return err
+			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
 		}
+	}
 
-		err = s.wdaClient.WaitForAgent()
-		if err != nil {
-			return err
-		}
+	// find available ports
+	usePort, err := utils.FindAvailablePortInRange(10500, 10600)
+	if err != nil {
+		return fmt.Errorf("failed to find available USE_PORT: %w", err)
+	}
+
+	mjpegPort, err := utils.FindAvailablePortInRange(10666, 10766)
+	if err != nil {
+		return fmt.Errorf("failed to find available MJPEG_SERVER_PORT: %w", err)
+	}
+
+	utils.Verbose("Starting WebDriverAgent with USE_PORT=%d and MJPEG_SERVER_PORT=%d", usePort, mjpegPort)
+
+	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
+	env := map[string]string{
+		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
+		"USE_PORT":          strconv.Itoa(usePort),
+	}
+
+	err = s.LaunchAppWithEnv(webdriverPackageName, env)
+	if err != nil {
+		return err
+	}
+
+	// update WDA client to use the actual port
+	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
+
+	err = s.wdaClient.WaitForAgent()
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (s SimulatorDevice) PressButton(key string) error {
+func (s *SimulatorDevice) PressButton(key string) error {
 	return s.wdaClient.PressButton(key)
 }
 
-func (s SimulatorDevice) SendKeys(text string) error {
+func (s *SimulatorDevice) SendKeys(text string) error {
 	return s.wdaClient.SendKeys(text)
 }
 
-func (s SimulatorDevice) Tap(x, y int) error {
+func (s *SimulatorDevice) Tap(x, y int) error {
 	return s.wdaClient.Tap(x, y)
 }
 
-func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
+func (s *SimulatorDevice) Gesture(actions []wda.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
 
@@ -381,8 +432,13 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (s Simulator) Info() (*FullDeviceInfo, error) {
-	client := wda.NewWdaClient("localhost:8100")
+func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
+	port, err := s.getWdaPort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get WebDriverAgent port for info: %w", err)
+	}
+	client := wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
+
 	wdaSize, err := client.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
@@ -390,10 +446,11 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 
 	return &FullDeviceInfo{
 		DeviceInfo: DeviceInfo{
-			ID:       s.UDID,
-			Name:     s.Name,
-			Platform: "ios",
-			Type:     "simulator",
+			ID:       s.ID(),
+			Name:     s.Name(),
+			Platform: s.Platform(),
+			Type:     s.DeviceType(),
+			Version:  s.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
@@ -403,7 +460,124 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s Simulator) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
-	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
+func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+	port, err := s.getWdaMjpegPort()
+	if err != nil {
+		return fmt.Errorf("failed to get WDA MJPEG port for screen capture: %w", err)
+	}
+	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", port))
 	return mjpegClient.StartScreenCapture(format, callback)
+}
+
+// findWdaProcessForDevice finds the PID and environment for WebDriverAgent process for a specific simulator device
+func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to run ps command: %w", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
+
+	for _, line := range lines {
+		if strings.Contains(line, devicePath) && strings.Contains(line, "WebDriverAgentRunner-Runner") {
+			// Find the first space to separate PID from the rest
+			spaceIndex := strings.Index(line, " ")
+			if spaceIndex == -1 {
+				continue
+			}
+
+			pidStr := strings.TrimSpace(line[:spaceIndex])
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+
+			// The rest of the line contains command and environment
+			processInfo := line[spaceIndex+1:]
+			return pid, processInfo, nil
+		}
+	}
+
+	return 0, "", fmt.Errorf("WebDriverAgent process not found for device %s", deviceUDID)
+}
+
+// extractEnvValue extracts a specific environment variable value from ps eww output
+func extractEnvValue(output, envVar string) (string, error) {
+	// Look for " ENVVAR=" pattern (space + envvar + equals)
+	pattern := " " + envVar + "="
+	pos := strings.Index(output, pattern)
+	if pos == -1 {
+		// Also check if it's at the beginning of the line
+		pattern = envVar + "="
+		if strings.HasPrefix(output, pattern) {
+			pos = 0
+		} else {
+			return "", fmt.Errorf("%s not found in environment", envVar)
+		}
+	} else {
+		pos++ // Skip the leading space
+	}
+
+	// Find the start of the value (after the =)
+	valueStart := pos + len(envVar) + 1
+
+	// Find the end of the value (next space that precedes another env var)
+	valueEnd := len(output)
+	for i := valueStart; i < len(output); i++ {
+		if output[i] == ' ' {
+			// Check if what follows looks like another env var (WORD=)
+			j := i + 1
+			for j < len(output) && output[j] != ' ' && output[j] != '=' {
+				j++
+			}
+			if j < len(output) && output[j] == '=' {
+				valueEnd = i
+				break
+			}
+		}
+	}
+
+	return output[valueStart:valueEnd], nil
+}
+
+// getWdaPort extracts the USE_PORT from WebDriverAgent process environment
+func (s *SimulatorDevice) getWdaPort() (int, error) {
+	_, processInfo, err := findWdaProcessForDevice(s.UDID)
+	if err != nil {
+		return 0, err
+	}
+
+	usePortStr, err := extractEnvValue(processInfo, "USE_PORT")
+	if err != nil {
+		return 0, err
+	}
+
+	port, err := strconv.Atoi(usePortStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid USE_PORT value: %s", usePortStr)
+	}
+
+	return port, nil
+}
+
+// getWdaMjpegPort extracts the MJPEG_SERVER_PORT from WebDriverAgent process environment
+func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
+	_, processInfo, err := findWdaProcessForDevice(s.UDID)
+	if err != nil {
+		return 0, err
+	}
+
+	mjpegPortStr, err := extractEnvValue(processInfo, "MJPEG_SERVER_PORT")
+	if err != nil {
+		return 0, err
+	}
+
+	port, err := strconv.Atoi(mjpegPortStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid MJPEG_SERVER_PORT value: %s", mjpegPortStr)
+	}
+
+	return port, nil
 }

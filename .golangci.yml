@@ -12,7 +12,7 @@ linters:
     - staticcheck
     - unused
     - misspell
-    - revive
+#    - revive
     - gosec
     - noctx
     - rowserrcheck

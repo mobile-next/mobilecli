@@ -36,15 +36,25 @@ func unzipFile(zipPath, destDir string) error {
 		path := filepath.Join(destDir, file.Name)
 
 		// Validate path to prevent zip slip attacks
-		cleanPath := filepath.Clean(path)
-		cleanDestDir := filepath.Clean(destDir)
-		if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
-			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
+		absDestDir, err := filepath.Abs(destDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute dest dir: %w", err)
+		}
+
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+
+		if !strings.HasPrefix(absPath, absDestDir+string(os.PathSeparator)) && absPath != absDestDir {
+			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, absPath)
 		}
 
 		// Create directory tree
 		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, os.ModePerm)
+			if err := os.MkdirAll(path, os.ModePerm); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -53,27 +63,35 @@ func unzipFile(zipPath, destDir string) error {
 			return err
 		}
 
-		// Create file
-		outFile, err := os.Create(path)
+		// Open source (zip) and destination files and copy, closing immediately
+		rc, err := file.Open()
 		if err != nil {
 			return err
 		}
 
-		// Open file in zip
-		rc, err := file.Open()
+		outFile, err := os.Create(path)
 		if err != nil {
+			rc.Close()
+			return err
+		}
+
+		if _, err := io.Copy(outFile, rc); err != nil {
+			// Best-effort close before returning error
+			rc.Close()
 			outFile.Close()
 			return err
 		}
 
-		defer outFile.Close()
-		defer rc.Close()
-
-		_, err = io.Copy(outFile, rc)
-		if err != nil {
+		// Close readers/writers promptly to avoid file descriptor buildup
+		if err := rc.Close(); err != nil {
+			outFile.Close()
 			return err
 		}
 
+		if err := outFile.Close(); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }

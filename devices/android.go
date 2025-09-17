@@ -15,8 +15,9 @@ import (
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
-	id   string
-	name string
+	id      string
+	name    string
+	version string
 }
 
 func (d AndroidDevice) ID() string {
@@ -25,6 +26,10 @@ func (d AndroidDevice) ID() string {
 
 func (d AndroidDevice) Name() string {
 	return d.name
+}
+
+func (d AndroidDevice) Version() string {
+	return d.version
 }
 
 func (d AndroidDevice) Platform() string {
@@ -159,8 +164,9 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 			status := parts[1]
 			if status == "device" {
 				devices = append(devices, AndroidDevice{
-					id:   deviceID,
-					name: getAndroidDeviceName(deviceID),
+					id:      deviceID,
+					name:    getAndroidDeviceName(deviceID),
+					version: getAndroidDeviceVersion(deviceID),
 				})
 			}
 		}
@@ -170,7 +176,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// Try getting AVD name first (for emulators)
+	// try getting AVD name first (for emulators)
 	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
 	avdOutput, err := avdCmd.CombinedOutput()
 	if err == nil && len(avdOutput) > 0 {
@@ -180,7 +186,7 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// Fall back to product model
+	// fallback to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
@@ -188,6 +194,16 @@ func getAndroidDeviceName(deviceID string) string {
 	}
 
 	return deviceID
+}
+
+func getAndroidDeviceVersion(deviceID string) string {
+	versionCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.build.version.release")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err == nil && len(versionOutput) > 0 {
+		return strings.TrimSpace(string(versionOutput))
+	}
+
+	return ""
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
@@ -244,9 +260,10 @@ func (d AndroidDevice) PressButton(key string) error {
 }
 
 func (d AndroidDevice) SendKeys(text string) error {
-	if text == "\b" {
+	switch text {
+	case "\b":
 		return d.PressButton("BACKSPACE")
-	} else if text == "\n" {
+	case "\n":
 		return d.PressButton("ENTER")
 	}
 
@@ -325,6 +342,7 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  widthInt,

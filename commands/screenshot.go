@@ -28,48 +28,44 @@ type ScreenshotResponse struct {
 
 // ScreenshotCommand takes a screenshot of the specified device
 func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
-	// Find the target device
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	// Set default format
 	if req.Format == "" {
 		req.Format = "png"
 	}
 
-	// Validate format
 	req.Format = strings.ToLower(req.Format)
 	if req.Format != "png" && req.Format != "jpeg" {
 		return NewErrorResponse(fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", req.Format))
 	}
 
-	// Validate JPEG quality
 	if req.Format == "jpeg" {
 		if req.Quality < 1 || req.Quality > 100 {
 			req.Quality = 90 // Default quality
 		}
 	}
 
-	// Start agent if needed
+	// start agent if needed
 	err = targetDevice.StartAgent()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Take screenshot
 	imageBytes, err := targetDevice.TakeScreenshot()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
 	}
 
-	// Convert to JPEG if requested
+	// convert to JPEG if requested
 	if req.Format == "jpeg" {
 		convertedBytes, err := utils.ConvertPngToJpeg(imageBytes, req.Quality)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("error converting to JPEG: %v", err))
 		}
+
 		imageBytes = convertedBytes
 	}
 
@@ -77,12 +73,11 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		Format: req.Format,
 	}
 
-	// Handle output
 	if req.OutputPath == "-" {
-		// Return as base64 data for stdout
+		// return as base64 data for stdout
 		response.Data = base64.StdEncoding.EncodeToString(imageBytes)
 	} else {
-		// Save to file
+		// save to file
 		var finalPath string
 		if req.OutputPath != "" {
 			finalPath, err = filepath.Abs(req.OutputPath)
@@ -90,7 +85,6 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 				return NewErrorResponse(fmt.Errorf("invalid output path: %v", err))
 			}
 		} else {
-			// Default filename generation
 			timestamp := time.Now().Format("20060102150405")
 			safeDeviceID := strings.ReplaceAll(targetDevice.ID(), ":", "_")
 			extension := "png"
@@ -104,7 +98,6 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 			}
 		}
 
-		// Write file
 		err = os.WriteFile(finalPath, imageBytes, 0o644)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("error writing file: %v", err))

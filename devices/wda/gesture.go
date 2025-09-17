@@ -6,31 +6,23 @@ import (
 )
 
 func (c *WdaClient) Gesture(actions []TapAction) error {
-	sessionId, err := c.CreateSession()
-	if err != nil {
-		return err
-	}
-
-	defer c.DeleteSession(sessionId)
-
-	data := ActionsRequest{
-		Actions: []Pointer{
-			{
-				Type: "pointer",
-				ID:   "finger1",
-				Parameters: PointerParameters{
-					PointerType: "touch",
+	return c.withSession(func(sessionId string) error {
+		data := ActionsRequest{
+			Actions: []Pointer{
+				{
+					Type: "pointer",
+					ID:   "finger1",
+					Parameters: PointerParameters{
+						PointerType: "touch",
+					},
+					Actions: actions,
 				},
-				Actions: actions,
 			},
-		},
-	}
+		}
 
-	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
-	if err != nil {
+		_, err := c.PostEndpoint(fmt.Sprintf("session/%s/actions", sessionId), data)
 		return err
-	}
-	return nil
+	})
 }
 
 func (c *WdaClient) GestureFromJSON(jsonData []byte) error {
