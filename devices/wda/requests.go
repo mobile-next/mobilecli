@@ -153,3 +153,14 @@ func (c *WdaClient) DeleteSession(sessionId string) error {
 	}
 	return nil
 }
+
+func (c *WdaClient) withSession(action func(sessionId string) error) error {
+	sessionId, err := c.CreateSession()
+	if err != nil {
+		return err
+	}
+
+	defer c.DeleteSession(sessionId)
+
+	return action(sessionId)
+}

@@ -21,22 +21,17 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("unsupported button: %s", key)
 	}
 
-	sessionId, err := c.CreateSession()
-	if err != nil {
-		return fmt.Errorf("failed to create session: %v", err)
-	}
+	return c.withSession(func(sessionId string) error {
+		data := map[string]interface{}{
+			"name": translatedKey,
+		}
 
-	defer c.DeleteSession(sessionId)
+		_, err := c.PostEndpoint(fmt.Sprintf("session/%s/wda/pressButton", sessionId), data)
+		if err != nil {
+			return fmt.Errorf("failed to press button: %v", err)
+		}
 
-	data := map[string]interface{}{
-		"name": translatedKey,
-	}
-
-	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/wda/pressButton", sessionId), data)
-	if err != nil {
-		return fmt.Errorf("failed to press button: %v", err)
-	}
-
-	log.Printf("press button response: %v", data)
-	return nil
+		log.Printf("press button response: %v", data)
+		return nil
+	})
 }

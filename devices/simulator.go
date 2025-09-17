@@ -217,42 +217,18 @@ func UninstallApp(udid string, bundleID string) error {
 	return nil
 }
 
-func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
-	// use xcrun simctl
-	output, err := runSimctl("listapps", s.UDID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list installed apps: %v\n%s", err, output)
-	}
-
-	// convert output to json
-	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
-	cmd.Stdin = bytes.NewReader(output)
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert output to JSON: %v\n%s", err, output)
-	}
-
-	// parse json
-	var apps map[string]interface{}
-	err = json.Unmarshal(output, &apps)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %v\n%s", err, output)
-	}
-
-	return apps, nil
-}
-
 func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	startTime := time.Now()
 	for {
-		installedApps, err := s.ListInstalledApps()
+		installedApps, err := s.ListApps()
 		if err != nil {
 			return fmt.Errorf("failed to list installed apps: %v", err)
 		}
 
-		_, ok := installedApps[bundleID]
-		if ok {
-			return nil
+		for _, app := range installedApps {
+			if app.PackageName == bundleID {
+				return nil
+			}
 		}
 
 		if time.Since(startTime) > 10*time.Second {
@@ -316,14 +292,18 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 }
 
 func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
-	installedApps, err := s.ListInstalledApps()
+	installedApps, err := s.ListApps()
 	if err != nil {
 		return false, err
 	}
 
 	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-	_, ok := installedApps[webdriverPackageName]
-	return ok, nil
+	for _, app := range installedApps {
+		if app.PackageName == webdriverPackageName {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *SimulatorDevice) StartAgent() error {
@@ -450,18 +430,12 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (s Simulator) Info() (*FullDeviceInfo, error) {
-	// Find the current WDA port - fail if not found
-	var client *wda.WdaClient
-	if simDevice, ok := interface{}(s).(SimulatorDevice); ok {
-		port, err := simDevice.getWdaPort()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get WebDriverAgent port: %w", err)
-		}
-		client = wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
-	} else {
-		return nil, fmt.Errorf("simulator device type assertion failed")
+func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
+	port, err := s.getWdaPort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get WebDriverAgent port for info: %w", err)
 	}
+	client := wda.NewWdaClient(fmt.Sprintf("localhost:%d", port))
 
 	wdaSize, err := client.GetWindowSize()
 	if err != nil {
@@ -470,11 +444,11 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 
 	return &FullDeviceInfo{
 		DeviceInfo: DeviceInfo{
-			ID:       s.UDID,
-			Name:     s.Name,
-			Platform: "ios",
-			Type:     "simulator",
-			Version:  parseSimulatorVersion(s.Runtime),
+			ID:       s.ID(),
+			Name:     s.Name(),
+			Platform: s.Platform(),
+			Type:     s.DeviceType(),
+			Version:  s.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
@@ -484,8 +458,12 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s Simulator) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
-	mjpegClient := mjpeg.NewWdaMjpegClient("http://localhost:9100")
+func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+	port, err := s.getWdaMjpegPort()
+	if err != nil {
+		return fmt.Errorf("failed to get WDA MJPEG port for screen capture: %w", err)
+	}
+	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", port))
 	return mjpegClient.StartScreenCapture(format, callback)
 }
 

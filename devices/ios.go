@@ -407,36 +407,38 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	return device, nil
 }
 
-func (d IOSDevice) LaunchApp(bundleID string) error {
-	if bundleID == "" {
-		return fmt.Errorf("bundleID cannot be empty")
-	}
-
-	log.SetLevel(log.WarnLevel)
-
+func (d *IOSDevice) ensureTunnelAndGetDevice() (goios.DeviceEntry, error) {
 	// check if tunnel is running
 	tunnels, err := d.ListTunnels()
 	if err != nil {
-		return fmt.Errorf("failed to list tunnels: %w", err)
-	}
-
-	if len(tunnels) > 0 {
-		utils.Verbose("Tunnels available for this device: %v", tunnels)
+		return goios.DeviceEntry{}, fmt.Errorf("failed to list tunnels: %w", err)
 	}
 
 	if len(tunnels) == 0 {
 		utils.Verbose("No tunnels found, starting a new tunnel")
 		err = d.StartTunnel()
 		if err != nil {
-			return fmt.Errorf("failed to start tunnel: %w", err)
+			return goios.DeviceEntry{}, fmt.Errorf("failed to start tunnel: %w", err)
 		}
 
 		time.Sleep(1 * time.Second)
+	} else {
+		utils.Verbose("Tunnels available for this device: %v", tunnels)
 	}
 
-	device, err := d.getEnhancedDevice()
+	return d.getEnhancedDevice()
+}
+
+func (d *IOSDevice) LaunchApp(bundleID string) error {
+	if bundleID == "" {
+		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.ensureTunnelAndGetDevice()
 	if err != nil {
-		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+		return err
 	}
 
 	pControl, err := instruments.NewProcessControl(device)
@@ -458,36 +460,16 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 	return nil
 }
 
-func (d IOSDevice) TerminateApp(bundleID string) error {
+func (d *IOSDevice) TerminateApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
 
 	log.SetLevel(log.WarnLevel)
 
-	// check if tunnel is running
-	tunnels, err := d.ListTunnels()
+	device, err := d.ensureTunnelAndGetDevice()
 	if err != nil {
-		return fmt.Errorf("failed to list tunnels: %w", err)
-	}
-
-	if len(tunnels) > 0 {
-		utils.Verbose("Tunnels available for this device: %v", tunnels)
-	}
-
-	if len(tunnels) == 0 {
-		utils.Verbose("No tunnels found, starting a new tunnel")
-		err = d.StartTunnel()
-		if err != nil {
-			return fmt.Errorf("failed to start tunnel: %w", err)
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	device, err := d.getEnhancedDevice()
-	if err != nil {
-		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+		return err
 	}
 
 	pControl, err := instruments.NewProcessControl(device)
