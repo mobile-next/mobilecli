@@ -459,3 +459,7 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 	utils.Verbose("DeviceKit successfully installed")
 	return nil
 }
+
+func (d AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	return nil, fmt.Errorf("DumpSource not implemented for Android devices")
+}

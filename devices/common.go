@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -13,6 +14,11 @@ const (
 	// Default MJPEG streaming scale (0.1-1.0)
 	DefaultMJPEGScale = 1.0
 )
+
+// ScreenElementRect represents the rectangle coordinates and dimensions
+// Re-export types for backward compatibility
+type ScreenElementRect = types.ScreenElementRect
+type ScreenElement = types.ScreenElement
 
 type ControllableDevice interface {
 	ID() string
@@ -33,6 +39,7 @@ type ControllableDevice interface {
 	ListApps() ([]InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
+	DumpSource() ([]ScreenElement, error)
 }
 
 // Aggregates all known devices (iOS, Android, Simulators)

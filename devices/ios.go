@@ -574,3 +574,7 @@ func findAvailablePort() (int, error) {
 	}
 	return 0, fmt.Errorf("no available ports found in range 8101-8199")
 }
+
+func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
+	return d.wdaClient.GetSourceElements()
+}

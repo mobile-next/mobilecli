@@ -585,3 +585,7 @@ func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
 
 	return port, nil
 }
+
+func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
+	return s.wdaClient.GetSourceElements()
+}
