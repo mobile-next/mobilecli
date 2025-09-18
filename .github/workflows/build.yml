@@ -151,7 +151,7 @@ jobs:
       matrix:
         include:
           - ios_version: '16'
-            runner: macos-13
+            runner: macos-13-arm64
             xcode_version: '14.3.1'
           - ios_version: '17'
             runner: macos-14
