@@ -232,10 +232,13 @@ jobs:
         mv mobilecli-darwin mobilecli
         chmod +x mobilecli
 
+    - name: Switch to Xcode 14.3.1
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: 14.3.1
+
     - name: Launch simulator first
       run: |
-        # for macos-13, we need to switch to Xcode 14.3.1 first
-        xcode-select -s /Applications/Xcode_14.3.1.app
         xcrun simctl list runtimes
         xcodebuild -runFirstLaunch
 
