@@ -12,7 +12,7 @@ func (c *WdaClient) PressButton(key string) error {
 		"HOME":        "home",
 	}
 
-	if key == "enter" {
+	if key == "ENTER" {
 		return c.SendKeys("\n")
 	}
 
