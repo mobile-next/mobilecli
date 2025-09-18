@@ -14,14 +14,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        ios_version: ['16', '17', '18']
-        include:
-          - ios_version: '16'
-            build_version: '20E247'
-          - ios_version: '17'
-            build_version: '21F79'
-          - ios_version: '18'
-            build_version: '22G86'
+        ios_version: ['16', '17', '18', '26']
       fail-fast: false
     
     steps:
@@ -29,12 +22,9 @@ jobs:
 
     - name: Launch simulator first
       run: |
+        xcrun simctl list runtimes
         xcodebuild -runFirstLaunch
 
-    - name: Download iOS ${{ matrix.ios_version }} runtime
-      run: |
-        xcodebuild -downloadPlatform iOS -buildVersion ${{ matrix.build_version }}
-    
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -44,12 +34,8 @@ jobs:
       run: |
         make
 
-    - name: Install dependencies
-      run: |
-        cd test
-        npm install
-
     - name: Run tests for iOS ${{ matrix.ios_version }}
       run: |
         cd test
+        npm install
         npm run test -- --grep "iOS ${{ matrix.ios_version }}"
