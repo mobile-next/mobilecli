@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -62,25 +61,25 @@ func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
 
 // Reboot shuts down and then boots the iOS simulator.
 func (s SimulatorDevice) Reboot() error {
-	log.Printf("Attempting to reboot simulator: %s (%s)", s.Name(), s.UDID)
+	utils.Verbose("Attempting to reboot simulator: %s (%s)", s.Name(), s.UDID)
 
 	// Shutdown the simulator
-	log.Printf("SimulatorDevice: Shutting down %s...", s.UDID)
+	utils.Verbose("SimulatorDevice: Shutting down %s...", s.UDID)
 	output, err := runSimctl("shutdown", s.UDID)
 	if err != nil {
 		// Don't stop if shutdown fails for a simulator that might already be off
-		log.Printf("SimulatorDevice: Shutdown command for %s may have failed (could be already off): %v\nOutput: %s", s.UDID, err, string(output))
+		utils.Verbose("SimulatorDevice: Shutdown command for %s may have failed (could be already off): %v\nOutput: %s", s.UDID, err, string(output))
 	} else {
-		log.Printf("SimulatorDevice: Shutdown successful for %s.", s.UDID)
+		utils.Verbose("SimulatorDevice: Shutdown successful for %s.", s.UDID)
 	}
 
 	// Boot the simulator
-	log.Printf("SimulatorDevice: Booting %s...", s.UDID)
+	utils.Verbose("SimulatorDevice: Booting %s...", s.UDID)
 	output, err = runSimctl("boot", s.UDID)
 	if err != nil {
 		return fmt.Errorf("SimulatorDevice: failed to boot simulator %s: %v\nOutput: %s", s.UDID, err, string(output))
 	}
-	log.Printf("SimulatorDevice: Boot command successful for %s.", s.UDID)
+	utils.Verbose("SimulatorDevice: Boot command successful for %s.", s.UDID)
 	return nil
 }
 
@@ -174,24 +173,24 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 }
 
 func InstallApp(udid string, appPath string) error {
-	log.Printf("Installing app from %s to simulator %s", appPath, udid)
+	utils.Verbose("Installing app from %s to simulator %s", appPath, udid)
 	output, err := runSimctl("install", udid, appPath)
 	if err != nil {
 		return fmt.Errorf("failed to install app from %s: %v\n%s", appPath, err, output)
 	}
 
-	log.Printf("Successfully installed app from %s", appPath)
+	utils.Verbose("Successfully installed app from %s", appPath)
 	return nil
 }
 
 func UninstallApp(udid string, bundleID string) error {
-	log.Printf("Uninstalling app %s from simulator %s", bundleID, udid)
+	utils.Verbose("Uninstalling app %s from simulator %s", bundleID, udid)
 	output, err := runSimctl("uninstall", udid, bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to uninstall app %s: %v\n%s", bundleID, err, output)
 	}
 
-	log.Printf("Successfully uninstalled app %s", bundleID)
+	utils.Verbose("Successfully uninstalled app %s", bundleID)
 	return nil
 }
 
@@ -250,7 +249,7 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	}
 	tmpFile.Close()
 
-	log.Printf("Downloading WebDriverAgent to: %s", tmpFile.Name())
+	utils.Verbose("Downloading WebDriverAgent to: %s", tmpFile.Name())
 
 	err = utils.DownloadFile(url, tmpFile.Name())
 	if err != nil {
@@ -270,7 +269,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 
 	defer os.Remove(file)
 
-	log.Printf("Downloaded WebDriverAgent to %s", file)
+	utils.Verbose("Downloaded WebDriverAgent to %s", file)
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
@@ -278,7 +277,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	}
 
 	defer os.RemoveAll(dir)
-	log.Printf("Unzipped WebDriverAgent to %s", dir)
+	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
 
 	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
 	if err != nil {
@@ -313,7 +312,7 @@ func (s SimulatorDevice) StartAgent() error {
 		}
 
 		if !installed {
-			log.Printf("WebdriverAgent is not installed. Will try to install now")
+			utils.Verbose("WebdriverAgent is not installed. Will try to install now")
 			err = s.InstallWebDriverAgent()
 			if err != nil {
 				return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)

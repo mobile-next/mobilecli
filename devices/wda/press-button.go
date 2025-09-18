@@ -2,7 +2,8 @@ package wda
 
 import (
 	"fmt"
-	"log"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 func (c *WdaClient) PressButton(key string) error {
@@ -37,6 +38,6 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("failed to press button: %v", err)
 	}
 
-	log.Printf("press button response: %v", data)
+	utils.Verbose("press button response: %v", data)
 	return nil
 }
