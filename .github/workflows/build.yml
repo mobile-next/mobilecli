@@ -11,7 +11,7 @@ on:
 
 jobs:
 
-  test_and_lint:
+  lint_and_unittest:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck -show verbose ./... || true
   
-    - name: Test
+    - name: Run Unit Tests
       run: |
         make build test
             
@@ -143,6 +143,101 @@ jobs:
         name: windows-build
         path: |
           mobilecli-windows-amd64.exe
+
+  ios_simulator_test_18_26:
+    runs-on: macos-latest
+    needs: [build_on_macos]
+    strategy:
+      matrix:
+        ios_version: ['18', '26']
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download macos build
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-build
+        path: .
+
+    - name: Make mobilecli executable
+      run: chmod +x mobilecli-darwin
+
+    - name: Launch simulator first
+      run: |
+        xcrun simctl list runtimes
+        xcodebuild -runFirstLaunch
+
+    - name: Run tests for iOS ${{ matrix.ios_version }}
+      run: |
+        cd test
+        npm install
+        npm run test -- --grep "iOS ${{ matrix.ios_version }}"
+
+  ios_simulator_test_17:
+    runs-on: macos-14
+    needs: [build_on_macos]
+    strategy:
+      matrix:
+        ios_version: ['17']
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download macos build
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-build
+        path: .
+
+    - name: Make mobilecli executable
+      run: |
+        find .
+        chmod +x mobilecli-darwin
+
+    - name: Launch simulator first
+      run: |
+        xcrun simctl list runtimes
+        xcodebuild -runFirstLaunch
+
+    - name: Run tests for iOS ${{ matrix.ios_version }}
+      run: |
+        cd test
+        npm install
+        npm run test -- --grep "iOS ${{ matrix.ios_version }}"
+
+  ios_simulator_test_16:
+    runs-on: macos-13
+    needs: [build_on_macos]
+    strategy:
+      matrix:
+        ios_version: ['16']
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download macos build
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-build
+        path: .
+
+    - name: Make mobilecli executable
+      run: chmod +x mobilecli-darwin
+
+    - name: Launch simulator first
+      run: |
+        xcrun simctl list runtimes
+        xcodebuild -runFirstLaunch
+
+    - name: Run tests for iOS ${{ matrix.ios_version }}
+      run: |
+        cd test
+        npm install
+        npm run test -- --grep "iOS ${{ matrix.ios_version }}"
 
   publish:
 
