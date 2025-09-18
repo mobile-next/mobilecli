@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        ios_version: ['16', '17', '18', '26']
+        ios_version: ['16', '17', '18.6', '26.0']
       fail-fast: false
     
     steps:
