@@ -162,7 +162,9 @@ jobs:
         path: .
 
     - name: Make mobilecli executable
-      run: chmod +x mobilecli-darwin
+      run: |
+        mv mobilecli-darwin mobilecli
+        chmod +x mobilecli
 
     - name: Launch simulator first
       run: |
@@ -194,8 +196,8 @@ jobs:
 
     - name: Make mobilecli executable
       run: |
-        find .
-        chmod +x mobilecli-darwin
+        mv mobilecli-darwin mobilecli
+        chmod +x mobilecli
 
     - name: Launch simulator first
       run: |
@@ -226,10 +228,14 @@ jobs:
         path: .
 
     - name: Make mobilecli executable
-      run: chmod +x mobilecli-darwin
+      run: |
+        mv mobilecli-darwin mobilecli
+        chmod +x mobilecli
 
     - name: Launch simulator first
       run: |
+        # for macos-13, we need to switch to Xcode 14.3.1 first
+        xcode-select -s /Applications/Xcode_14.3.1.app
         xcrun simctl list runtimes
         xcodebuild -runFirstLaunch
 
