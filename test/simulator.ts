@@ -37,7 +37,7 @@ describe('iOS Simulator Tests', () => {
     cleanupSimulators();
   });
 
-  ['16', '17', '18'].forEach((iosVersion) => {
+  ['18.6', '26.0'].forEach((iosVersion) => {
     describe(`iOS ${iosVersion}`, () => {
       let simulatorId: string;
       let runtimeAvailable: boolean = false;
