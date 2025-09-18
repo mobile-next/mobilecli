@@ -11,7 +11,7 @@ on:
 
 jobs:
 
-  lint_and_unittest:
+  test_and_lint:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
