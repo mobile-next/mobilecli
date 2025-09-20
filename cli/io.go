@@ -53,6 +53,44 @@ var ioTapCmd = &cobra.Command{
 	},
 }
 
+var ioLongPressCmd = &cobra.Command{
+	Use:   "longpress [x,y]",
+	Short: "Long press on a device screen at the given coordinates",
+	Long:  `Sends a long press event to the specified device at the given x,y coordinates. Coordinates should be provided as a single string "x,y".`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		coordsStr := args[0]
+		parts := strings.Split(coordsStr, ",")
+		if len(parts) != 2 {
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
+		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+		y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+
+		if errX != nil || errY != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+			printJson(response)
+			return fmt.Errorf(response.Error)
+		}
+
+		req := commands.LongPressRequest{
+			DeviceID: deviceId,
+			X:        x,
+			Y:        y,
+		}
+
+		response := commands.LongPressCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
 var ioButtonCmd = &cobra.Command{
 	Use:   "button [button_name]",
 	Short: "Press a hardware button on a device",
@@ -98,11 +136,13 @@ func init() {
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
+	ioCmd.AddCommand(ioLongPressCmd)
 	ioCmd.AddCommand(ioButtonCmd)
 	ioCmd.AddCommand(ioTextCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
+	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 }

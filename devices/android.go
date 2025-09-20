@@ -116,6 +116,16 @@ func (d AndroidDevice) Tap(x, y int) error {
 	return nil
 }
 
+// LongPress simulates a long press at (x, y) on the Android device.
+func (d AndroidDevice) LongPress(x, y int) error {
+	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), "500")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
 
