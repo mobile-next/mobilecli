@@ -36,7 +36,7 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck -show verbose ./... || true
   
-    - name: Test
+    - name: Run Unit Tests
       run: |
         make build test
             
@@ -144,12 +144,57 @@ jobs:
         path: |
           mobilecli-windows-amd64.exe
 
+  ios_simulator_test:
+    runs-on: ${{ matrix.runner }}
+    needs: [build_on_macos]
+    strategy:
+      matrix:
+        include:
+          - ios_version: '17'
+            runner: macos-14
+          - ios_version: '18'
+            runner: macos-latest
+          - ios_version: '26'
+            runner: macos-latest
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download macos build
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-build
+        path: .
+
+    - name: Make mobilecli executable
+      run: |
+        mv mobilecli-darwin mobilecli
+        chmod +x mobilecli
+
+    - name: Switch to Xcode ${{ matrix.xcode_version }}
+      if: matrix.xcode_version
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: ${{ matrix.xcode_version }}
+
+    - name: Launch simulator first
+      run: |
+        xcrun simctl list runtimes
+        xcodebuild -runFirstLaunch
+
+    - name: Run tests for iOS ${{ matrix.ios_version }}
+      run: |
+        cd test
+        npm install
+        npm run test -- --grep "iOS ${{ matrix.ios_version }}"
+
   publish:
 
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build_on_linux, build_on_macos, build_on_windows]
+    needs: [build_on_linux, build_on_macos, build_on_windows, ios_simulator_test]
     steps:
     - uses: actions/checkout@v4
 
