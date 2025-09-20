@@ -1,6 +1,7 @@
 package mjpeg
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,7 @@ func (c *WdaMjpegClient) StartScreenCapture(format string, callback func([]byte)
 		Timeout: 0, // No timeout for long-lived streaming requests
 	}
 
-	req, err := http.NewRequest("GET", c.baseURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", c.baseURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

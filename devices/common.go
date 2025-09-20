@@ -19,6 +19,7 @@ type ControllableDevice interface {
 	Name() string
 	Platform() string   // e.g., "ios", "android"
 	DeviceType() string // e.g., "real", "simulator", "emulator"
+	Version() string    // OS version
 
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
@@ -80,6 +81,7 @@ type DeviceInfo struct {
 	Name     string `json:"name"`
 	Platform string `json:"platform"`
 	Type     string `json:"type"`
+	Version  string `json:"version"`
 }
 
 type ScreenSize struct {
@@ -107,6 +109,7 @@ func GetDeviceInfoList() ([]DeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		}
 	}
 

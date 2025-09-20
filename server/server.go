@@ -11,6 +11,7 @@ import (
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 const (
@@ -101,7 +102,6 @@ func StartServer(addr string, enableCORS bool) error {
 	var handler http.Handler = mux
 	if enableCORS {
 		handler = corsMiddleware(mux)
-		log.Printf("CORS enabled")
 	}
 
 	server := &http.Server{
@@ -112,7 +112,7 @@ func StartServer(addr string, enableCORS bool) error {
 		IdleTimeout:  IdleTimeout,
 	}
 
-	log.Printf("Starting server on http://%s...", server.Addr)
+	utils.Info("Starting server on http://%s...", server.Addr)
 	return server.ListenAndServe()
 }
 
@@ -138,7 +138,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, string(req.Params))
+	utils.Info("Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, string(req.Params))
 
 	var result interface{}
 	var err error

@@ -1,3 +1,10 @@
+## [0.0.23](https://github.com/mobile-next/mobilecli/releases/tag/0.0.23) (2025-09-18)
+
+* General: all logs moved to --verbose ([#48](https://github.com/mobile-next/mobilecli/pull/48))
+* iOS: fixed "ENTER" io button command ([#50](https://github.com/mobile-next/mobilecli/pull/50))
+* iOS: added version to device list response, for both real devices and simulators ([#51](https://github.com/mobile-next/mobilecli/pull/51))
+* Android: added OS version to device list response (eg "16") ([#51](https://github.com/mobile-next/mobilecli/pull/51))
+
 ## [0.0.22](https://github.com/mobile-next/mobilecli/releases/tag/0.0.22) (2025-09-10)
 
 * iOS: launch wda on real devices if needed ([#45](https://github.com/mobile-next/mobilecli/pull/45))

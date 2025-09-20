@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
@@ -117,11 +118,11 @@ func (c *WdaClient) WaitForAgent() error {
 		case <-ticker.C:
 			_, err := c.GetStatus()
 			if err != nil {
-				log.Printf("WebDriverAgent not ready yet: %v", err)
+				utils.Verbose("WebDriverAgent not ready yet: %v", err)
 				continue
 			}
 
-			log.Printf("WebDriverAgent is ready!")
+			utils.Verbose("WebDriverAgent is ready!")
 			return nil
 		}
 	}
