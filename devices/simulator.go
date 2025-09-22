@@ -346,6 +346,10 @@ func (s SimulatorDevice) Tap(x, y int) error {
 	return s.wdaClient.Tap(x, y)
 }
 
+func (s SimulatorDevice) LongPress(x, y int) error {
+	return s.wdaClient.LongPress(x, y)
+}
+
 func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
