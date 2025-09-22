@@ -529,59 +529,40 @@ func extractEnvValue(output, envVar string) (string, error) {
 	// Find the start of the value (after the =)
 	valueStart := pos + len(envVar) + 1
 
-	// Find the end of the value (next space that precedes another env var)
-	valueEnd := len(output)
-	for i := valueStart; i < len(output); i++ {
-		if output[i] == ' ' {
-			// Check if what follows looks like another env var (WORD=)
-			j := i + 1
-			for j < len(output) && output[j] != ' ' && output[j] != '=' {
-				j++
-			}
-			if j < len(output) && output[j] == '=' {
-				valueEnd = i
-				break
-			}
-		}
+	// Find the end of the value (next space)
+	valueEnd := strings.Index(output[valueStart:], " ")
+	if valueEnd == -1 {
+		valueEnd = len(output)
+	} else {
+		valueEnd += valueStart
 	}
 
 	return output[valueStart:valueEnd], nil
 }
 
-func (s *SimulatorDevice) getWdaPort() (int, error) {
+func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
 	_, processInfo, err := findWdaProcessForDevice(s.UDID)
 	if err != nil {
 		return 0, err
 	}
 
-	usePortStr, err := extractEnvValue(processInfo, "USE_PORT")
+	portStr, err := extractEnvValue(processInfo, envVar)
 	if err != nil {
 		return 0, err
 	}
 
-	port, err := strconv.Atoi(usePortStr)
+	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid USE_PORT value: %s", usePortStr)
+		return 0, fmt.Errorf("invalid %s value: %s", envVar, portStr)
 	}
 
 	return port, nil
 }
 
+func (s *SimulatorDevice) getWdaPort() (int, error) {
+	return s.getWdaEnvPort("USE_PORT")
+}
+
 func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
-	_, processInfo, err := findWdaProcessForDevice(s.UDID)
-	if err != nil {
-		return 0, err
-	}
-
-	mjpegPortStr, err := extractEnvValue(processInfo, "MJPEG_SERVER_PORT")
-	if err != nil {
-		return 0, err
-	}
-
-	port, err := strconv.Atoi(mjpegPortStr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid MJPEG_SERVER_PORT value: %s", mjpegPortStr)
-	}
-
-	return port, nil
+	return s.getWdaEnvPort("MJPEG_SERVER_PORT")
 }
