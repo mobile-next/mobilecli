@@ -38,6 +38,9 @@ export function createSimulator(name: string, deviceType: string, runtime: strin
 export function bootSimulator(simulatorId: string): void {
   try {
     execSync(`xcrun simctl boot "${simulatorId}"`, { encoding: 'utf8' });
+
+    // wait for simulator to finish loading as much as possible
+    execSync(`xcrun simctl bootstatus "${simulatorId}"`, { encoding: 'utf8' });
   } catch (error) {
     // Simulator might already be booted, check if it's actually an error
     const errorMessage = (error as Error).message;
