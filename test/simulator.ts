@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { 
   createAndLaunchSimulator, 
+  printAllLogsFromSimulator,
   shutdownSimulator, 
   deleteSimulator, 
   cleanupSimulators,
@@ -58,6 +59,7 @@ describe('iOS Simulator Tests', () => {
 
       after(() => {
         if (simulatorId) {
+          printAllLogsFromSimulator(simulatorId);
           shutdownSimulator(simulatorId);
           deleteSimulator(simulatorId);
         }
