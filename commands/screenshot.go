@@ -105,7 +105,7 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		}
 
 		// Write file
-		err = os.WriteFile(finalPath, imageBytes, 0o644)
+		err = os.WriteFile(finalPath, imageBytes, 0o600)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("error writing file: %v", err))
 		}

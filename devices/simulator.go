@@ -276,13 +276,13 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	utils.Verbose("Downloading WebDriverAgent to: %s", tmpFile.Name())
 
 	err = utils.DownloadFile(url, tmpFile.Name())
 	if err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
 

@@ -44,12 +44,12 @@ func unzipFile(zipPath, destDir string) error {
 
 		// Create directory tree
 		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, os.ModePerm)
+			os.MkdirAll(path, 0750)
 			continue
 		}
 
 		// Create directory for file if not exists
-		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 			return err
 		}
 

@@ -270,9 +270,10 @@ func (d AndroidDevice) PressButton(key string) error {
 }
 
 func (d AndroidDevice) SendKeys(text string) error {
-	if text == "\b" {
+	switch text {
+	case "\b":
 		return d.PressButton("BACKSPACE")
-	} else if text == "\n" {
+	case "\n":
 		return d.PressButton("ENTER")
 	}
 
