@@ -419,7 +419,7 @@ func (d AndroidDevice) StartScreenCapture(format string, quality int, scale floa
 		}
 	}
 
-	cmd.Process.Kill()
+	_ = cmd.Process.Kill()
 	return nil
 }
 

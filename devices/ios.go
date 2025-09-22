@@ -280,7 +280,7 @@ func (d *IOSDevice) StartAgent() error {
 			}
 
 			// wait 1 second after pressing home, so we make sure wda is in the background
-			d.wdaClient.PressButton("HOME")
+			_ = d.wdaClient.PressButton("HOME")
 			time.Sleep(1 * time.Second)
 
 			utils.Verbose("WebDriverAgent started")
