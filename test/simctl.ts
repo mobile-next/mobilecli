@@ -70,6 +70,15 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
   throw new Error(`Simulator did not boot within ${timeout}ms`);
 }
 
+export function printAllLogsFromSimulator(simulatorId: string): void {
+  try {
+    const output = execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {maxBuffer: 64 * 1024 * 1024}).toString();
+    console.log("Simulator logs:\n" + output);
+  } catch (error) {
+    console.warn(`Warning: Failed to print logs from simulator ${simulatorId}: ${error}`);
+  }
+}
+
 export function shutdownSimulator(simulatorId: string): void {
   try {
     execSync(`xcrun simctl shutdown "${simulatorId}"`, { encoding: 'utf8' });

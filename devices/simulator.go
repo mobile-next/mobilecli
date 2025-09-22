@@ -579,6 +579,10 @@ func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
 	return port, nil
 }
 
+func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
+	return s.wdaClient.GetSourceElements()
+}
+
 func (s *SimulatorDevice) getWdaPort() (int, error) {
 	return s.getWdaEnvPort("USE_PORT")
 }

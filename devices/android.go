@@ -1,15 +1,18 @@
 package devices
 
 import (
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -485,4 +488,138 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 
 	utils.Verbose("DeviceKit successfully installed")
 	return nil
+}
+
+type uiAutomatorXmlNode struct {
+	XMLName     xml.Name               `xml:"node"`
+	Class       string                 `xml:"class,attr"`
+	Text        string                 `xml:"text,attr"`
+	Bounds      string                 `xml:"bounds,attr"`
+	Hint        string                 `xml:"hint,attr"`
+	Focused     string                 `xml:"focused,attr"`
+	ContentDesc string                 `xml:"content-desc,attr"`
+	ResourceID  string                 `xml:"resource-id,attr"`
+	Nodes       []uiAutomatorXmlNode   `xml:"node"`
+}
+
+type uiAutomatorXml struct {
+	XMLName   xml.Name `xml:"hierarchy"`
+	RootNode  uiAutomatorXmlNode `xml:"node"`
+}
+
+func (d AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
+	re := regexp.MustCompile(`^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$`)
+	matches := re.FindStringSubmatch(bounds)
+
+	if len(matches) != 5 {
+		return types.ScreenElementRect{}
+	}
+
+	left, _ := strconv.Atoi(matches[1])
+	top, _ := strconv.Atoi(matches[2])
+	right, _ := strconv.Atoi(matches[3])
+	bottom, _ := strconv.Atoi(matches[4])
+
+	return types.ScreenElementRect{
+		X:      left,
+		Y:      top,
+		Width:  right - left,
+		Height: bottom - top,
+	}
+}
+
+func (d AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenElement {
+	var elements []types.ScreenElement
+
+	// recursively process child nodes
+	for _, childNode := range node.Nodes {
+		childElements := d.collectElements(childNode)
+		elements = append(elements, childElements...)
+	}
+
+	// process current node if it has text, content-desc, or hint
+	if node.Text != "" || node.ContentDesc != "" || node.Hint != "" {
+		rect := d.getScreenElementRect(node.Bounds)
+
+		// only include elements with positive width and height
+		if rect.Width > 0 && rect.Height > 0 {
+			element := types.ScreenElement{
+				Type: node.Class,
+				Text: &node.Text,
+				Rect: rect,
+			}
+
+			// set label from content-desc or hint
+			if node.ContentDesc != "" {
+				element.Label = &node.ContentDesc
+			} else if node.Hint != "" {
+				element.Label = &node.Hint
+			}
+
+			// set focused if true
+			if node.Focused == "true" {
+				focused := true
+				element.Focused = &focused
+			}
+
+			// set identifier from resource-id
+			if node.ResourceID != "" {
+				element.Identifier = &node.ResourceID
+			}
+
+			// default type if class is empty
+			if element.Type == "" {
+				element.Type = "text"
+			}
+
+			elements = append(elements, element)
+		}
+	}
+
+	return elements
+}
+
+func (d AndroidDevice) getUiAutomatorDump() (string, error) {
+	for tries := 0; tries < 10; tries++ {
+		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
+		if err != nil {
+			return "", fmt.Errorf("failed to run uiautomator dump: %v", err)
+		}
+
+		dump := string(output)
+
+		// check for known error condition
+		if strings.Contains(dump, "null root node returned by UiTestAutomationBridge") {
+			continue
+		}
+
+		// find the start of XML content
+		xmlStart := strings.Index(dump, "<?xml")
+		if xmlStart == -1 {
+			return "", fmt.Errorf("no XML content found in uiautomator dump")
+		}
+
+		return dump[xmlStart:], nil
+	}
+
+	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
+}
+
+func (d AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	// get the XML dump from uiautomator
+	xmlContent, err := d.getUiAutomatorDump()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get uiautomator dump: %w", err)
+	}
+
+	// parse the XML
+	var uiXml uiAutomatorXml
+	if err := xml.Unmarshal([]byte(xmlContent), &uiXml); err != nil {
+		return nil, fmt.Errorf("failed to parse uiautomator XML: %w", err)
+	}
+
+	// collect elements from the hierarchy
+	elements := d.collectElements(uiXml.RootNode)
+
+	return elements, nil
 }
