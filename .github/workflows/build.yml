@@ -189,6 +189,11 @@ jobs:
         npm install
         npm run test -- --grep "iOS ${{ matrix.ios_version }}"
 
+    - name: Collect simulator logs on failure
+      if: failure()
+      run: |
+        xcrun simctl spawn booted log show -last 1m
+
   publish:
 
     runs-on: ubuntu-latest
