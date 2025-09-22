@@ -26,6 +26,7 @@ var (
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
+	OSVersion  string `json:"Version"`
 
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
@@ -38,6 +39,10 @@ func (d IOSDevice) ID() string {
 
 func (d IOSDevice) Name() string {
 	return d.DeviceName
+}
+
+func (d IOSDevice) Version() string {
+	return d.OSVersion
 }
 
 func (d IOSDevice) Platform() string {
@@ -61,6 +66,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	device := IOSDevice{
 		Udid:       udid,
 		DeviceName: allValues.Value.DeviceName,
+		OSVersion:  allValues.Value.ProductVersion,
 	}
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
@@ -115,6 +121,10 @@ func (d IOSDevice) Reboot() error {
 
 func (d IOSDevice) Tap(x, y int) error {
 	return d.wdaClient.Tap(x, y)
+}
+
+func (d IOSDevice) LongPress(x, y int) error {
+	return d.wdaClient.LongPress(x, y)
 }
 
 func (d IOSDevice) Gesture(actions []wda.TapAction) error {
@@ -553,6 +563,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,

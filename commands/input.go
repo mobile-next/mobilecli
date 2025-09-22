@@ -14,6 +14,13 @@ type TapRequest struct {
 	Y        int    `json:"y"`
 }
 
+// LongPressRequest represents the parameters for a long press command
+type LongPressRequest struct {
+	DeviceID string `json:"deviceId"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+}
+
 // TextRequest represents the parameters for a text input command
 type TextRequest struct {
 	DeviceID string `json:"deviceId"`
@@ -55,6 +62,32 @@ func TapCommand(req TapRequest) *CommandResponse {
 
 	return NewSuccessResponse(map[string]interface{}{
 		"message": fmt.Sprintf("Tapped on device %s at (%d,%d)", targetDevice.ID(), req.X, req.Y),
+	})
+}
+
+// LongPressCommand performs a long press operation on the specified device
+func LongPressCommand(req LongPressRequest) *CommandResponse {
+	if req.X < 0 || req.Y < 0 {
+		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+	}
+
+	err = targetDevice.LongPress(req.X, req.Y)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to long press on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]interface{}{
+		"message": fmt.Sprintf("Long pressed on device %s at (%d,%d)", targetDevice.ID(), req.X, req.Y),
 	})
 }
 

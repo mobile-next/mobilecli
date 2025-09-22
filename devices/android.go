@@ -15,8 +15,9 @@ import (
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
-	id   string
-	name string
+	id      string
+	name    string
+	version string
 }
 
 func (d AndroidDevice) ID() string {
@@ -25,6 +26,10 @@ func (d AndroidDevice) ID() string {
 
 func (d AndroidDevice) Name() string {
 	return d.name
+}
+
+func (d AndroidDevice) Version() string {
+	return d.version
 }
 
 func (d AndroidDevice) Platform() string {
@@ -111,6 +116,16 @@ func (d AndroidDevice) Tap(x, y int) error {
 	return nil
 }
 
+// LongPress simulates a long press at (x, y) on the Android device.
+func (d AndroidDevice) LongPress(x, y int) error {
+	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), "500")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
 
@@ -159,8 +174,9 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 			status := parts[1]
 			if status == "device" {
 				devices = append(devices, AndroidDevice{
-					id:   deviceID,
-					name: getAndroidDeviceName(deviceID),
+					id:      deviceID,
+					name:    getAndroidDeviceName(deviceID),
+					version: getAndroidDeviceVersion(deviceID),
 				})
 			}
 		}
@@ -188,6 +204,16 @@ func getAndroidDeviceName(deviceID string) string {
 	}
 
 	return deviceID
+}
+
+func getAndroidDeviceVersion(deviceID string) string {
+	versionCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.build.version.release")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err == nil && len(versionOutput) > 0 {
+		return strings.TrimSpace(string(versionOutput))
+	}
+
+	return ""
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
@@ -325,6 +351,7 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
+			Version:  d.Version(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  widthInt,
