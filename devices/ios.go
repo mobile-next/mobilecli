@@ -123,6 +123,10 @@ func (d IOSDevice) Tap(x, y int) error {
 	return d.wdaClient.Tap(x, y)
 }
 
+func (d IOSDevice) LongPress(x, y int) error {
+	return d.wdaClient.LongPress(x, y)
+}
+
 func (d IOSDevice) Gesture(actions []wda.TapAction) error {
 	return d.wdaClient.Gesture(actions)
 }
@@ -276,7 +280,7 @@ func (d *IOSDevice) StartAgent() error {
 			}
 
 			// wait 1 second after pressing home, so we make sure wda is in the background
-			d.wdaClient.PressButton("HOME")
+			_ = d.wdaClient.PressButton("HOME")
 			time.Sleep(1 * time.Second)
 
 			utils.Verbose("WebDriverAgent started")

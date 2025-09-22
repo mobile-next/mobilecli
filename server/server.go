@@ -152,6 +152,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		err = handleScreenCapture(w, req.Params)
 	case "io_tap":
 		result, err = handleIoTap(req.Params)
+	case "io_longpress":
+		result, err = handleIoLongPress(req.Params)
 	case "io_text":
 		result, err = handleIoText(req.Params)
 	case "io_button":
@@ -233,6 +235,12 @@ type IoTapParams struct {
 	Y        int    `json:"y"`
 }
 
+type IoLongPressParams struct {
+	DeviceID string `json:"deviceId"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+}
+
 func handleIoTap(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
@@ -250,6 +258,30 @@ func handleIoTap(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.TapCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleIoLongPress(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
+	}
+
+	var ioLongPressParams IoLongPressParams
+	if err := json.Unmarshal(params, &ioLongPressParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
+	}
+
+	req := commands.LongPressRequest{
+		DeviceID: ioLongPressParams.DeviceID,
+		X:        ioLongPressParams.X,
+		Y:        ioLongPressParams.Y,
+	}
+
+	response := commands.LongPressCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf(response.Error)
 	}

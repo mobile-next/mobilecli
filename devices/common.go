@@ -30,6 +30,7 @@ type ControllableDevice interface {
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
 	Tap(x, y int) error
+	LongPress(x, y int) error
 	Gesture(actions []wda.TapAction) error
 	StartAgent() error
 	SendKeys(text string) error
