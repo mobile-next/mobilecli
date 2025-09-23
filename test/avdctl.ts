@@ -78,7 +78,7 @@ export function launchEmulator(emulatorName: string): void {
 	}
 }
 
-export function waitForEmulatorReady(emulatorName: string, timeout: number = 120000): string {
+export function waitForEmulatorReady(emulatorName: string, timeout: number = 180000): string {
 	const startTime = Date.now();
 	let deviceId = '';
 
