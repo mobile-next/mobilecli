@@ -221,6 +221,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
@@ -246,11 +252,24 @@ jobs:
         mv mobilecli-linux-amd64 mobilecli
         chmod +x mobilecli
 
-    - name: Run tests for Android API ${{ matrix.api_level }}
-      run: |
+    - run: |
         cd test
-        npm install
-        npm run test -- --grep "Android API ${{ matrix.api_level }}"
+	npm install
+
+    - name: run tests
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: ${{ matrix.api_level }}
+        force-avd-creation: false
+        emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+        disable-animations: true
+	script: npm run test -- --grep "Android API ${{ matrix.api_level }}"
+
+#    - name: Run tests for Android API ${{ matrix.api_level }}
+#      run: |
+#        cd test
+#        npm install
+#        npm run test -- --grep "Android API ${{ matrix.api_level }}"
 
   publish:
 
