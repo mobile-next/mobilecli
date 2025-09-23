@@ -75,8 +75,9 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
 
 export function printAllLogsFromSimulator(simulatorId: string): void {
   try {
-    const output = execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {maxBuffer: 64 * 1024 * 1024}).toString();
-    console.log("Simulator logs:\n" + output);
+    execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {
+      stdio: 'inherit'
+    });
   } catch (error) {
     console.warn(`Warning: Failed to print logs from simulator ${simulatorId}: ${error}`);
   }
