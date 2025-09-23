@@ -252,9 +252,10 @@ jobs:
         mv mobilecli-linux-amd64 mobilecli
         chmod +x mobilecli
 
-    - run: |
+    - name: npm install
+      run: |
         cd test
-	npm install
+        npm install
 
     - name: run tests
       uses: reactivecircus/android-emulator-runner@v2
