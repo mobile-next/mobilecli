@@ -39,6 +39,8 @@ type ControllableDevice interface {
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)
+	InstallApp(path string) error
+	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
 	DumpSource() ([]ScreenElement, error)
