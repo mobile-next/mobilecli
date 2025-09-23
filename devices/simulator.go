@@ -590,3 +590,60 @@ func (s *SimulatorDevice) getWdaPort() (int, error) {
 func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
 	return s.getWdaEnvPort("MJPEG_SERVER_PORT")
 }
+
+func (s SimulatorDevice) InstallApp(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat path: %v", err)
+	}
+
+	if info.IsDir() {
+		return InstallApp(s.UDID, path)
+	}
+
+	if strings.HasSuffix(path, ".zip") {
+		tmpDir, err := utils.Unzip(path)
+		if err != nil {
+			return fmt.Errorf("failed to unzip: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		entries, err := os.ReadDir(tmpDir)
+		if err != nil {
+			return fmt.Errorf("failed to read unzipped dir: %v", err)
+		}
+
+		for _, entry := range entries {
+			if strings.HasSuffix(entry.Name(), ".app") {
+				appPath := tmpDir + "/" + entry.Name()
+				return InstallApp(s.UDID, appPath)
+			}
+		}
+
+		return fmt.Errorf("no .app bundle found in zip file")
+	}
+
+	return InstallApp(s.UDID, path)
+}
+
+func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+	installedApps, err := s.ListInstalledApps()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list installed apps: %v", err)
+	}
+
+	if _, exists := installedApps[packageName]; !exists {
+		return nil, fmt.Errorf("package %s is not installed", packageName)
+	}
+
+	appInfo := &InstalledAppInfo{
+		PackageName: packageName,
+	}
+
+	err = UninstallApp(s.UDID, packageName)
+	if err != nil {
+		return nil, err
+	}
+
+	return appInfo, nil
+}

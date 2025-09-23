@@ -71,16 +71,58 @@ var appsListCmd = &cobra.Command{
 	},
 }
 
+var appsInstallCmd = &cobra.Command{
+	Use:   "install [path]",
+	Short: "Install an app on a device",
+	Long:  `Installs an app on the specified device from the given path (.apk for Android, .app for iOS).`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.InstallAppRequest{
+			DeviceID: deviceId,
+			Path:     args[0],
+		}
+
+		response := commands.InstallAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
+var appsUninstallCmd = &cobra.Command{
+	Use:   "uninstall [package_name]",
+	Short: "Uninstall an app from a device",
+	Long:  `Uninstalls an app from the specified device using its package name.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.UninstallAppRequest{
+			DeviceID:    deviceId,
+			PackageName: args[0],
+		}
+
+		response := commands.UninstallAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf(response.Error)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(appsCmd)
 
-	// add apps subcommands
 	appsCmd.AddCommand(appsLaunchCmd)
 	appsCmd.AddCommand(appsTerminateCmd)
 	appsCmd.AddCommand(appsListCmd)
+	appsCmd.AddCommand(appsInstallCmd)
+	appsCmd.AddCommand(appsUninstallCmd)
 
-	// apps command flags
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
+	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")
+	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
 }

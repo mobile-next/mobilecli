@@ -624,3 +624,33 @@ func (d AndroidDevice) DumpSource() ([]ScreenElement, error) {
 
 	return elements, nil
 }
+
+func (d AndroidDevice) InstallApp(path string) error {
+	output, err := d.runAdbCommand("install", "-r", path)
+	if err != nil {
+		return fmt.Errorf("failed to install app: %v\nOutput: %s", err, string(output))
+	}
+
+	if strings.Contains(string(output), "Success") {
+		return nil
+	}
+
+	return fmt.Errorf("installation failed: %s", string(output))
+}
+
+func (d AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+	appInfo := &InstalledAppInfo{
+		PackageName: packageName,
+	}
+
+	output, err := d.runAdbCommand("uninstall", packageName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to uninstall app: %v\nOutput: %s", err, string(output))
+	}
+
+	if !strings.Contains(string(output), "Success") {
+		return nil, fmt.Errorf("uninstallation failed: %s", string(output))
+	}
+
+	return appInfo, nil
+}
