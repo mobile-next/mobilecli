@@ -201,6 +201,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android SDK components
+      run: |
+        yes | sdkmanager --licenses
+        sdkmanager "platform-tools" "platforms;android-${{ matrix.api_level }}"
+        sdkmanager "system-images;android-${{ matrix.api_level }};google_apis;x86_64"
+        sdkmanager "emulator"
+
     - name: Download linux build
       uses: actions/download-artifact@v4
       with:
