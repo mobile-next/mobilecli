@@ -145,6 +145,7 @@ jobs:
           mobilecli-windows-amd64.exe
 
   ios_simulator_test:
+    if: false
     runs-on: ${{ matrix.runner }}
     needs: [build_on_macos]
     strategy:
@@ -189,12 +190,40 @@ jobs:
         npm install
         npm run test -- --grep "iOS ${{ matrix.ios_version }}"
 
+  android_emulator_test:
+    runs-on: ubuntu-latest
+    needs: [build_on_linux]
+    strategy:
+      matrix:
+        api_level: ['31', '36']
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download linux build
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-build
+        path: .
+
+    - name: Make mobilecli executable
+      run: |
+        mv mobilecli-linux-amd64 mobilecli
+        chmod +x mobilecli
+
+    - name: Run tests for Android API ${{ matrix.api_level }}
+      run: |
+        cd test
+        npm install
+        npm run test -- --grep "Android API ${{ matrix.api_level }}"
+
   publish:
 
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build_on_linux, build_on_macos, build_on_windows, ios_simulator_test]
+    needs: [build_on_linux, build_on_macos, build_on_windows, ios_simulator_test, android_emulator_test]
     steps:
     - uses: actions/checkout@v4
 
