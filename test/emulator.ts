@@ -53,7 +53,7 @@ describe('Android Emulator Tests', () => {
 					systemImageAvailable = true;
 
 					console.log(`Creating and launching Android API ${apiLevel} emulator...`);
-					const result = createAndLaunchEmulator(apiLevel, 'pixel_9');
+					const result = createAndLaunchEmulator(apiLevel, 'pixel');
 					emulatorName = result.name;
 					deviceId = result.deviceId;
 					console.log(`Emulator ready: ${emulatorName} (${deviceId})`);

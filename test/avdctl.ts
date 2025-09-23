@@ -46,7 +46,7 @@ export function findAndroidSystemImage(apiLevel: string): string {
 	}
 }
 
-export function createEmulator(name: string, systemImage: string, deviceProfile: string = 'pixel_9'): string {
+export function createEmulator(name: string, systemImage: string, deviceProfile: string = 'pixel'): string {
 	try {
 		// First check if AVD already exists
 		const existingAvds = execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' });
@@ -54,51 +54,14 @@ export function createEmulator(name: string, systemImage: string, deviceProfile:
 			throw new Error(`AVD ${name} already exists`);
 		}
 
-		// Create the AVD using avdmanager if available, otherwise create manually
-		try {
-			execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`,
-				{ encoding: 'utf8' });
-		} catch (avdError) {
-			// If avdmanager is not available, we'll use the existing AVD as a template
-			console.warn('avdmanager not found, will clone existing AVD configuration');
-			cloneExistingAvd(name, deviceProfile);
-		}
+		// Create the AVD using avdmanager
+		execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`,
+			{ encoding: 'utf8' });
 
 		createdEmulators.push(name);
 		return name;
 	} catch (error) {
 		throw new Error(`Failed to create emulator: ${error}`);
-	}
-}
-
-function cloneExistingAvd(newName: string, deviceProfile: string): void {
-	try {
-		// Use existing Pixel AVD as template if available
-		const existingAvds = execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' });
-		const templateAvd = existingAvds.split('\n').find(avd => avd.includes('Pixel')) || 'Pixel_6';
-
-		// Copy AVD configuration files
-		const homeDir = process.env.HOME;
-		const avdDir = `${homeDir}/.android/avd`;
-
-		execSync(`cp -r "${avdDir}/${templateAvd}.avd" "${avdDir}/${newName}.avd"`);
-		execSync(`cp "${avdDir}/${templateAvd}.ini" "${avdDir}/${newName}.ini"`);
-
-		// Update the .ini file to point to the new AVD
-		const iniContent = execSync(`cat "${avdDir}/${newName}.ini"`, { encoding: 'utf8' });
-		const updatedIni = iniContent.replace(new RegExp(templateAvd, 'g'), newName);
-		execSync(`echo '${updatedIni}' > "${avdDir}/${newName}.ini"`);
-
-		// Update config.ini in the AVD directory
-		const configPath = `${avdDir}/${newName}.avd/config.ini`;
-		const configContent = execSync(`cat "${configPath}"`, { encoding: 'utf8' });
-		const updatedConfig = configContent
-			.replace(/AvdId=.*/g, `AvdId=${newName}`)
-			.replace(/avd.ini.displayname=.*/g, `avd.ini.displayname=${newName}`);
-		execSync(`echo '${updatedConfig}' > "${configPath}"`);
-
-	} catch (error) {
-		throw new Error(`Failed to clone existing AVD: ${error}`);
 	}
 }
 
@@ -187,7 +150,7 @@ export function deleteEmulator(emulatorName: string): void {
 	}
 }
 
-export function createAndLaunchEmulator(apiLevel: string = '36', deviceProfile: string = 'pixel_9'): { name: string, deviceId: string } {
+export function createAndLaunchEmulator(apiLevel: string = '36', deviceProfile: string = 'pixel'): { name: string, deviceId: string } {
 	const systemImage = findAndroidSystemImage(apiLevel);
 	const emulatorName = `Test-Android-${apiLevel}-${Date.now()}`;
 
