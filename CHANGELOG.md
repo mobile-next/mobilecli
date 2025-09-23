@@ -1,3 +1,11 @@
+## [0.0.24](https://github.com/mobile-next/mobilecli/releases/tag/0.0.23) (2025-09-23)
+
+* iOS: support longpress ([#54](https://github.com/mobile-next/mobilecli/pull/54))
+* iOS: dump ui hierarchy using wda's /source ([#53](https://github.com/mobile-next/mobilecli/pull/53))
+* iOS: launch wda on different ports, to enable multiple simulators and real devices on the same host ([#52](https://github.com/mobile-next/mobilecli/pull/52))
+* Android: support longpress ([#54](https://github.com/mobile-next/mobilecli/pull/54))
+* Android: dump ui hierarchy using uiautomator ([#53](https://github.com/mobile-next/mobilecli/pull/53))
+
 ## [0.0.23](https://github.com/mobile-next/mobilecli/releases/tag/0.0.23) (2025-09-18)
 
 * General: all logs moved to --verbose ([#48](https://github.com/mobile-next/mobilecli/pull/48))
