@@ -74,7 +74,7 @@ var appsListCmd = &cobra.Command{
 var appsInstallCmd = &cobra.Command{
 	Use:   "install [path]",
 	Short: "Install an app on a device",
-	Long:  `Installs an app on the specified device from the given path (.apk for Android, .app for iOS).`,
+	Long:  `Installs an app on the specified device from the given path (.apk for Android, .zip for iOS Simulator, and .ipa for iOS).`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.InstallAppRequest{
@@ -92,9 +92,9 @@ var appsInstallCmd = &cobra.Command{
 }
 
 var appsUninstallCmd = &cobra.Command{
-	Use:   "uninstall [package_name]",
+	Use:   "uninstall [bundle_id]",
 	Short: "Uninstall an app from a device",
-	Long:  `Uninstalls an app from the specified device using its package name.`,
+	Long:  `Uninstalls an app from the specified device using its bundle ID.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.UninstallAppRequest{
