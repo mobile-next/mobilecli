@@ -12,6 +12,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
+	"github.com/danielpaulus/go-ios/ios/zipconduit"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
@@ -588,4 +589,52 @@ func findAvailablePort() (int, error) {
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.wdaClient.GetSourceElements()
+}
+
+func (d IOSDevice) InstallApp(path string) error {
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	svc, err := zipconduit.New(device)
+	if err != nil {
+		return fmt.Errorf("zipconduit failed: %w", err)
+	}
+	defer svc.Close()
+
+	err = svc.SendFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to install app: %w", err)
+	}
+
+	return nil
+}
+
+func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+	log.SetLevel(log.WarnLevel)
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get enhanced device connection: %w", err)
+	}
+
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return nil, fmt.Errorf("installationproxy failed: %w", err)
+	}
+	defer svc.Close()
+
+	appInfo := &InstalledAppInfo{
+		PackageName: packageName,
+	}
+
+	err = svc.Uninstall(packageName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to uninstall app: %w", err)
+	}
+
+	return appInfo, nil
 }

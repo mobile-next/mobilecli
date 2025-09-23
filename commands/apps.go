@@ -71,3 +71,51 @@ func ListAppsCommand(req ListAppsRequest) *CommandResponse {
 
 	return NewSuccessResponse(apps)
 }
+
+type InstallAppRequest struct {
+	DeviceID string `json:"deviceId"`
+	Path     string `json:"path"`
+}
+
+func InstallAppCommand(req InstallAppRequest) *CommandResponse {
+	if req.Path == "" {
+		return NewErrorResponse(fmt.Errorf("path is required"))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	err = targetDevice.InstallApp(req.Path)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]interface{}{
+		"message": fmt.Sprintf("Installed app from '%s' on device %s", req.Path, targetDevice.ID()),
+	})
+}
+
+type UninstallAppRequest struct {
+	DeviceID    string `json:"deviceId"`
+	PackageName string `json:"packageName"`
+}
+
+func UninstallAppCommand(req UninstallAppRequest) *CommandResponse {
+	if req.PackageName == "" {
+		return NewErrorResponse(fmt.Errorf("package name is required"))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	appInfo, err := targetDevice.UninstallApp(req.PackageName)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to uninstall app on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(appInfo)
+}
