@@ -1,6 +1,6 @@
 module github.com/mobile-next/mobilecli
 
-go 1.25.0
+go 1.24.7
 
 require (
 	github.com/danielpaulus/go-ios v1.0.182

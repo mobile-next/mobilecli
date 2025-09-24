@@ -195,7 +195,7 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 func handleDevicesList() (interface{}, error) {
 	response := commands.DevicesCommand()
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 	return response.Data, nil
 }
@@ -215,7 +215,7 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 
 	response := commands.ScreenshotCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	// Convert the response data to the expected server format
@@ -259,7 +259,7 @@ func handleIoTap(params json.RawMessage) (interface{}, error) {
 
 	response := commands.TapCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -283,7 +283,7 @@ func handleIoLongPress(params json.RawMessage) (interface{}, error) {
 
 	response := commands.LongPressCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -311,7 +311,7 @@ func handleIoText(params json.RawMessage) (interface{}, error) {
 
 	response := commands.TextCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -353,7 +353,7 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 
 	response := commands.ButtonCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -376,7 +376,7 @@ func handleIoGesture(params json.RawMessage) (interface{}, error) {
 
 	response := commands.GestureCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -399,7 +399,7 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 
 	response := commands.URLCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
@@ -417,7 +417,7 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 
 	response := commands.InfoCommand(infoParams.DeviceID)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return response.Data, nil
