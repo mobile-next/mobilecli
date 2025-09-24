@@ -272,7 +272,7 @@ jobs:
         force-avd-creation: false
         emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
         disable-animations: true
-	target: google_apis
+        target: google_apis
         script: npm run test -- --grep "Android API ${{ matrix.api_level }}"
 
 #    - name: Run tests for Android API ${{ matrix.api_level }}
