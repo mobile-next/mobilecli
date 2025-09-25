@@ -164,6 +164,10 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleURL(req.Params)
 	case "device_info":
 		result, err = handleDeviceInfo(req.Params)
+	case "io_orientation_get":
+		result, err = handleIoOrientationGet(req.Params)
+	case "io_orientation_set":
+		result, err = handleIoOrientationSet(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -336,6 +340,15 @@ type InfoParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
+type IoOrientationGetParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type IoOrientationSetParams struct {
+	DeviceID    string `json:"deviceId"`
+	Orientation string `json:"orientation"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -421,6 +434,51 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 	}
 
 	return response.Data, nil
+}
+
+func handleIoOrientationGet(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var orientationGetParams IoOrientationGetParams
+	if err := json.Unmarshal(params, &orientationGetParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+	}
+
+	req := commands.OrientationGetRequest{
+		DeviceID: orientationGetParams.DeviceID,
+	}
+
+	response := commands.OrientationGetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, orientation")
+	}
+
+	var orientationSetParams IoOrientationSetParams
+	if err := json.Unmarshal(params, &orientationSetParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, orientation", err)
+	}
+
+	req := commands.OrientationSetRequest{
+		DeviceID:    orientationSetParams.DeviceID,
+		Orientation: orientationSetParams.Orientation,
+	}
+
+	response := commands.OrientationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf(response.Error)
+	}
+
+	return okResponse, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
