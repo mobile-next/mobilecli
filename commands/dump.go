@@ -5,18 +5,18 @@ import (
 	"github.com/mobile-next/mobilecli/devices"
 )
 
-// DumpSourceRequest represents the parameters for dumping source tree
-type DumpSourceRequest struct {
+// DumpUIRequest represents the parameters for dumping UI tree
+type DumpUIRequest struct {
 	DeviceID string `json:"deviceId"`
 }
 
-// DumpSourceResponse represents the response for a dump source command
-type DumpSourceResponse struct {
+// DumpUIResponse represents the response for a dump UI command
+type DumpUIResponse struct {
 	Elements []devices.ScreenElement `json:"elements"`
 }
 
-// DumpSourceCommand starts an agent and dumps the source tree from the specified device
-func DumpSourceCommand(req DumpSourceRequest) *CommandResponse {
+// DumpUICommand starts an agent and dumps the UI tree from the specified device
+func DumpUICommand(req DumpUIRequest) *CommandResponse {
 	// Find the target device
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
@@ -29,13 +29,13 @@ func DumpSourceCommand(req DumpSourceRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Dump source tree from the device
+	// Dump UI tree from the device
 	elements, err := targetDevice.DumpSource()
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to dump source from device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %v", targetDevice.ID(), err))
 	}
 
-	response := DumpSourceResponse{
+	response := DumpUIResponse{
 		Elements: elements,
 	}
 
