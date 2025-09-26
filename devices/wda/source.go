@@ -3,7 +3,6 @@ package wda
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -85,9 +84,6 @@ func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get source: %v", err)
 	}
 
-	// print the response for debugging
-	log.Printf("WDA source response: %+v", result)
-
 	return result, nil
 }
 
@@ -101,7 +97,6 @@ func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
 
 	utils.Verbose("WDA source response: %+v", result)
 
-	// the WDA response should have a "value" field containing the source tree
 	valueInterface, ok := result["value"]
 	if !ok {
 		return nil, fmt.Errorf("no 'value' field found in WDA response")
@@ -118,10 +113,7 @@ func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
 		return nil, fmt.Errorf("failed to parse source tree: %v", err)
 	}
 
-	// filter and return the elements
 	elements := filterSourceElements(sourceTree)
-	log.Printf("Found %d filtered screen elements", len(elements))
-
 	return elements, nil
 }
 

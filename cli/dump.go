@@ -10,19 +10,19 @@ import (
 var dumpCmd = &cobra.Command{
 	Use:   "dump",
 	Short: "Dump operations with devices",
-	Long:  `Perform dump operations like source tree extraction from devices.`,
+	Long:  `Perform dump operations like UI tree extraction from devices.`,
 }
 
-var dumpSourceCmd = &cobra.Command{
-	Use:   "source",
-	Short: "Dump source tree from a device",
-	Long:  `Starts an agent and dumps the source tree from the specified device.`,
+var dumpUICmd = &cobra.Command{
+	Use:   "ui",
+	Short: "Dump UI tree from a device",
+	Long:  `Starts an agent and dumps the UI tree from the specified device.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		req := commands.DumpSourceRequest{
+		req := commands.DumpUIRequest{
 			DeviceID: deviceId,
 		}
 
-		response := commands.DumpSourceCommand(req)
+		response := commands.DumpUICommand(req)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
@@ -36,8 +36,8 @@ func init() {
 	rootCmd.AddCommand(dumpCmd)
 
 	// add dump subcommands
-	dumpCmd.AddCommand(dumpSourceCmd)
+	dumpCmd.AddCommand(dumpUICmd)
 
-	// dump source command flags
-	dumpSourceCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump source tree from")
+	// dump ui command flags
+	dumpUICmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
 }
