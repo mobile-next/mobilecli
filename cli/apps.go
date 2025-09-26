@@ -27,7 +27,7 @@ var appsLaunchCmd = &cobra.Command{
 		response := commands.LaunchAppCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -47,7 +47,7 @@ var appsTerminateCmd = &cobra.Command{
 		response := commands.TerminateAppCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -65,7 +65,7 @@ var appsListCmd = &cobra.Command{
 		response := commands.ListAppsCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -85,7 +85,7 @@ var appsInstallCmd = &cobra.Command{
 		response := commands.InstallAppCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -105,7 +105,7 @@ var appsUninstallCmd = &cobra.Command{
 		response := commands.UninstallAppCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},

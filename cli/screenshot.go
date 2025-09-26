@@ -43,7 +43,7 @@ var screenshotCmd = &cobra.Command{
 		// Print JSON response
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -58,7 +58,7 @@ var screencaptureCmd = &cobra.Command{
 		if screencaptureFormat != "mjpeg" {
 			response := commands.NewErrorResponse(fmt.Errorf("format must be 'mjpeg' for screen capture"))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		// Find the target device
@@ -66,7 +66,7 @@ var screencaptureCmd = &cobra.Command{
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		// Start agent
@@ -74,7 +74,7 @@ var screencaptureCmd = &cobra.Command{
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		// Start screen capture and stream to stdout
@@ -90,7 +90,7 @@ var screencaptureCmd = &cobra.Command{
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting screen capture: %v", err))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil

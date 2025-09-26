@@ -25,7 +25,7 @@ var dumpSourceCmd = &cobra.Command{
 		response := commands.DumpSourceCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil

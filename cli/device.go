@@ -25,7 +25,7 @@ var deviceRebootCmd = &cobra.Command{
 		response := commands.RebootCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil
@@ -40,7 +40,7 @@ var deviceInfoCmd = &cobra.Command{
 		response := commands.InfoCommand(deviceId)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
