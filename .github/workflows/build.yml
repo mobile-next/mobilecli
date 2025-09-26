@@ -5,7 +5,7 @@ on:
   push:
     branches: [ "main" ]
     tags:
-      - "*.*.*" 
+      - "*.*.*"
   pull_request:
     branches: [ "main" ]
 
@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -30,21 +30,21 @@ jobs:
       run: |
         go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.2
         make lint || true
-  
+
     - name: Security scan
       run: |
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck -show verbose ./... || true
-  
+
     - name: Run Unit Tests
       run: |
         make build test
-            
+
   build_on_macos:
 
     runs-on: macos-latest
     permissions:
-      contents: read    
+      contents: read
     needs: [test_and_lint]
     steps:
     - uses: actions/checkout@v4
@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    needs: [test_and_lint]      
+    needs: [test_and_lint]
     steps:
     - uses: actions/checkout@v4
 
@@ -102,8 +102,8 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' main.go
-  
+        sed -i '' 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
+
     - name: Build
       run: |
         GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
@@ -132,11 +132,18 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Set version
+      if: github.ref_type == 'tag'
+      run: |
+        sed -i '' 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
+
     - name: Build
       run: |
         go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
       env:
         GOARCH: amd64
+
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
@@ -217,7 +224,7 @@ jobs:
         path: mobilecli-windows
 
     - name: Zip builds
-      if: github.ref_type == 'tag'    
+      if: github.ref_type == 'tag'
       run: |
         mkdir dist
         cd dist
@@ -254,7 +261,7 @@ jobs:
         name: Version ${{ github.ref_name }}
         files: |
           mobilecli-*.zip
-  
+
     - name: Publish
       if: github.ref_type == 'tag'
       env:
