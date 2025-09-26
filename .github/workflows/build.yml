@@ -152,17 +152,14 @@ jobs:
           mobilecli-windows-amd64.exe
 
   ios_simulator_test:
-    runs-on: ${{ matrix.runner }}
+    runs-on: self-hosted
     needs: [build_on_macos]
     strategy:
       matrix:
         include:
           - ios_version: '17'
-            runner: macos-14
           - ios_version: '18'
-            runner: macos-latest
           - ios_version: '26'
-            runner: macos-latest
       fail-fast: false
 
     steps:
