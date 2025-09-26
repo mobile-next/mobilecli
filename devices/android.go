@@ -670,9 +670,9 @@ func (d AndroidDevice) GetOrientation() (string, error) {
 
 	// convert Android rotation values to string
 	switch rotation {
-	case 0, 2: // portrait or upside down portrait
+	case 0:
 		return "portrait", nil
-	case 1, 3: // landscape left or landscape right
+	case 1:
 		return "landscape", nil
 	default:
 		return "portrait", nil // default to portrait
