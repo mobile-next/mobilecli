@@ -25,7 +25,7 @@ var deviceRebootCmd = &cobra.Command{
 		response := commands.RebootCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil
@@ -40,8 +40,54 @@ var deviceInfoCmd = &cobra.Command{
 		response := commands.InfoCommand(deviceId)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
+		return nil
+	},
+}
+
+var orientationCmd = &cobra.Command{
+	Use:   "orientation",
+	Short: "Device orientation commands",
+	Long:  `Commands for getting and setting device orientation.`,
+}
+
+var orientationGetCmd = &cobra.Command{
+	Use:   "get",
+	Short: "Get current device orientation",
+	Long:  `Get the current orientation of the device (portrait or landscape).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.OrientationGetRequest{
+			DeviceID: deviceId,
+		}
+
+		response := commands.OrientationGetCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		return nil
+	},
+}
+
+var orientationSetCmd = &cobra.Command{
+	Use:   "set [orientation]",
+	Short: "Set device orientation",
+	Long:  `Set the device orientation to portrait or landscape.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.OrientationSetRequest{
+			DeviceID:    deviceId,
+			Orientation: args[0],
+		}
+
+		response := commands.OrientationSetCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+
 		return nil
 	},
 }
@@ -52,8 +98,15 @@ func init() {
 	// add device subcommands
 	deviceCmd.AddCommand(deviceRebootCmd)
 	deviceCmd.AddCommand(deviceInfoCmd)
+	deviceCmd.AddCommand(orientationCmd)
+
+	// add orientation subcommands
+	orientationCmd.AddCommand(orientationGetCmd)
+	orientationCmd.AddCommand(orientationSetCmd)
 
 	// device command flags
 	deviceRebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
 	deviceInfoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
+	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
+	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
 }

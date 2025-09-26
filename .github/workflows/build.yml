@@ -122,7 +122,7 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' main.go
+        sed -i 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
 
     - name: Build
       run: |
@@ -152,11 +152,18 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Set version
+      if: github.ref_type == 'tag'
+      run: |
+        sed -i 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
+
     - name: Build
       run: |
         go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
       env:
         GOARCH: amd64
+
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:

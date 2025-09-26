@@ -10,9 +10,6 @@ var (
 
 func SetVerbose(verbose bool) {
 	isVerbose = verbose
-	if verbose {
-		// log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
-	}
 }
 
 func IsVerbose() bool {

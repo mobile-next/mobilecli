@@ -21,7 +21,7 @@ var urlCmd = &cobra.Command{
 		response := commands.URLCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
