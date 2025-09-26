@@ -452,7 +452,7 @@ func handleIoOrientationGet(params json.RawMessage) (interface{}, error) {
 
 	response := commands.OrientationGetCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return response.Data, nil
@@ -475,7 +475,7 @@ func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
 
 	response := commands.OrientationSetCommand(req)
 	if response.Status == "error" {
-		return nil, fmt.Errorf(response.Error)
+		return nil, fmt.Errorf("%s", response.Error)
 	}
 
 	return okResponse, nil
