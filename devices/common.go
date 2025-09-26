@@ -44,6 +44,8 @@ type ControllableDevice interface {
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
 	DumpSource() ([]ScreenElement, error)
+	GetOrientation() (string, error)
+	SetOrientation(orientation string) error
 }
 
 // Aggregates all known devices (iOS, Android, Simulators)

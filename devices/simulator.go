@@ -647,3 +647,13 @@ func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, er
 
 	return appInfo, nil
 }
+
+// GetOrientation gets the current device orientation
+func (s SimulatorDevice) GetOrientation() (string, error) {
+	return s.wdaClient.GetOrientation()
+}
+
+// SetOrientation sets the device orientation
+func (s SimulatorDevice) SetOrientation(orientation string) error {
+	return s.wdaClient.SetOrientation(orientation)
+}
