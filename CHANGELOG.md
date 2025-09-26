@@ -1,4 +1,13 @@
-## [0.0.24](https://github.com/mobile-next/mobilecli/releases/tag/0.0.23) (2025-09-23)
+## [0.0.25](https://github.com/mobile-next/mobilecli/releases/tag/0.0.25) (2025-09-26)
+
+* General: fixed '--version' on windows and linux distributables ([#69](https://github.com/mobile-next/mobilecli/pull/69))
+* General: renamed 'dump source' to 'dump ui' ([#68](https://github.com/mobile-next/mobilecli/pull/68))
+* General: upgraded golang to 1.24.7 ([#66](https://github.com/mobile-next/mobilecli/pull/66))
+* iOS: support orientation get and set to 'landscape' and 'portrait' ([#67](https://github.com/mobile-next/mobilecli/pull/67))
+* iOS: removed a printf in 'dump ui' that was tainting the json output ([#68](https://github.com/mobile-next/mobilecli/pull/68))
+* Android: support orientation get and set to 'landscape' and 'portrait' ([#67](https://github.com/mobile-next/mobilecli/pull/67))
+
+## [0.0.24](https://github.com/mobile-next/mobilecli/releases/tag/0.0.24) (2025-09-23)
 
 * iOS: support longpress ([#54](https://github.com/mobile-next/mobilecli/pull/54))
 * iOS: dump ui hierarchy using wda's /source ([#53](https://github.com/mobile-next/mobilecli/pull/53))
