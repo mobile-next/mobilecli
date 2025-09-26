@@ -465,7 +465,7 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	apkPath := filepath.Join(tempDir, "devicekit.apk")
 

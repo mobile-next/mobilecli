@@ -8,7 +8,7 @@ func (c *WdaClient) OpenURL(url string) error {
 		return err
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := map[string]interface{}{
 		"url": url,

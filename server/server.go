@@ -193,7 +193,7 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func handleDevicesList() (interface{}, error) {
@@ -493,17 +493,17 @@ func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message s
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func sendBanner(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(okResponse)
+	_ = json.NewEncoder(w).Encode(okResponse)
 }
 
 func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 
-	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
 
 	var screenCaptureParams commands.ScreenCaptureRequest
 	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {

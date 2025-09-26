@@ -22,7 +22,7 @@ func GetLatestReleaseDownloadURL(repo string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch latest release: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)

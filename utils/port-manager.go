@@ -13,7 +13,7 @@ func IsPortAvailable(host string, port int) bool {
 		return false
 	}
 
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	return true
 }
 
