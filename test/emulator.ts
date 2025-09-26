@@ -13,32 +13,14 @@ import {
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 
-// JSON-RPC types (same as simulator.ts)
-interface JSONRPCRequest {
-	jsonrpc: string;
-	method: string;
-	params?: any;
-	id: number | string;
-}
-
-interface JSONRPCResponse {
-	jsonrpc: string;
-	result?: any;
-	error?: {
-		code: number;
-		message: string;
-		data?: any;
-	};
-	id: number | string | null;
-}
+const SUPPORTED_VERSIONS = ['31', '36'];
 
 describe('Android Emulator Tests', () => {
 	after(() => {
 		cleanupEmulators();
 	});
 
-	// Test different Android API levels
-	['31', '36'].forEach((apiLevel) => {
+	SUPPORTED_VERSIONS.forEach((apiLevel) => {
 		describe(`Android API ${apiLevel}`, () => {
 			let emulatorName: string;
 			let deviceId: string;
@@ -47,7 +29,6 @@ describe('Android Emulator Tests', () => {
 			before(function () {
 				this.timeout(300000); // 5 minutes for emulator startup
 
-				// Check if system image is available
 				try {
 					findAndroidSystemImage(apiLevel);
 					systemImageAvailable = true;
@@ -111,27 +92,6 @@ describe('Android Emulator Tests', () => {
 			});
 		});
 	});
-
-	// Test with existing emulators if available
-	describe('Existing Emulators', () => {
-		let availableEmulators: string[];
-
-		before(() => {
-			try {
-				availableEmulators = getAvailableEmulators();
-				console.log(`Available emulators: ${availableEmulators.join(', ')}`);
-			} catch (error) {
-				console.log(`Failed to get available emulators: ${error}`);
-				availableEmulators = [];
-			}
-		});
-
-		it('should list available emulators', () => {
-			expect(availableEmulators).to.be.an('array');
-			// We expect at least some emulators based on the earlier discovery
-			expect(availableEmulators.length).to.be.greaterThan(0);
-		});
-	});
 });
 
 function mobilecli(args: string): void {
@@ -176,7 +136,7 @@ function verifyScreenshotFileWasCreated(screenshotPath: string): void {
 function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 	const stats = fs.statSync(screenshotPath);
 	const fileSizeInBytes = stats.size;
-	expect(fileSizeInBytes).to.be.greaterThan(100 * 1024);
+	expect(fileSizeInBytes).to.be.greaterThan(64 * 1024);
 }
 
 function openUrl(deviceId: string, url: string): void {

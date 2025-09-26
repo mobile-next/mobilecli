@@ -46,17 +46,19 @@ export function findAndroidSystemImage(apiLevel: string): string {
 	}
 }
 
+function listAvds(): Array<String> {
+	return execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' })
+		.toString()
+		.split("\n");
+}
+
 export function createEmulator(name: string, systemImage: string, deviceProfile: string = 'pixel'): string {
 	try {
-		// First check if AVD already exists
-		const existingAvds = execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' });
-		if (existingAvds.includes(name)) {
+		if (listAvds().includes(name)) {
 			throw new Error(`AVD ${name} already exists`);
 		}
 
-		// Create the AVD using avdmanager
-		execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`,
-			{ encoding: 'utf8' });
+		execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`, { encoding: 'utf8' });
 
 		createdEmulators.push(name);
 		return name;
@@ -67,12 +69,10 @@ export function createEmulator(name: string, systemImage: string, deviceProfile:
 
 export function launchEmulator(emulatorName: string): void {
 	try {
-		// Launch emulator in background
 		execSync(`${EMULATOR_PATH} -avd "${emulatorName}" -no-snapshot-save -wipe-data > /dev/null 2>&1 &`,
 			{ encoding: 'utf8' });
 
-		// Give it a moment to start
-		execSync('sleep 3');
+		execSync('sleep 60');
 	} catch (error) {
 		throw new Error(`Failed to launch emulator: ${error}`);
 	}
@@ -88,7 +88,9 @@ export function waitForEmulatorReady(emulatorName: string, timeout: number = 180
 		try {
 			// Check if emulator is listed in adb devices
 			const devices = execSync(`${ADB_PATH} devices`, { encoding: 'utf8' });
-			const deviceLines = devices.split('\n').filter(line => line.includes('device') && !line.includes('List'));
+			const deviceLines = devices
+				.split('\n')
+				.filter(line => line.includes('device') && !line.includes('List'));
 
 			for (const line of deviceLines) {
 				const parts = line.split('\t');
@@ -120,7 +122,6 @@ export function waitForEmulatorReady(emulatorName: string, timeout: number = 180
 
 export function shutdownEmulator(deviceId: string): void {
 	try {
-		// Try graceful shutdown first
 		execSync(`${ADB_PATH} -s ${deviceId} emu kill`, { encoding: 'utf8' });
 	} catch (error) {
 		try {
@@ -157,10 +158,7 @@ export function createAndLaunchEmulator(apiLevel: string = '36', deviceProfile: 
 	console.log(`Creating Android API ${apiLevel} emulator ${emulatorName}...`);
 	createEmulator(emulatorName, systemImage, deviceProfile);
 
-	console.log(`Launching emulator ${emulatorName}...`);
 	launchEmulator(emulatorName);
-
-	console.log('Waiting for emulator to be ready...');
 	const deviceId = waitForEmulatorReady(emulatorName);
 
 	console.log(`Emulator ${emulatorName} is ready with device ID ${deviceId}!`);
