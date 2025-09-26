@@ -654,3 +654,56 @@ func (d AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, erro
 
 	return appInfo, nil
 }
+
+// GetOrientation gets the current device orientation
+func (d AndroidDevice) GetOrientation() (string, error) {
+	output, err := d.runAdbCommand("shell", "settings", "get", "system", "user_rotation")
+	if err != nil {
+		return "", fmt.Errorf("failed to get orientation: %v", err)
+	}
+
+	rotationStr := strings.TrimSpace(string(output))
+	rotation, err := strconv.Atoi(rotationStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse orientation value '%s': %v", rotationStr, err)
+	}
+
+	// convert Android rotation values to string
+	switch rotation {
+	case 0, 2:
+		return "portrait", nil
+	case 1, 3:
+		return "landscape", nil
+	default:
+		return "portrait", nil // default to portrait
+	}
+}
+
+// SetOrientation sets the device orientation
+func (d AndroidDevice) SetOrientation(orientation string) error {
+	if orientation != "portrait" && orientation != "landscape" {
+		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
+	}
+
+	var androidRotation int
+	switch orientation {
+	case "portrait":
+		androidRotation = 0
+	case "landscape":
+		androidRotation = 1 // landscape left
+	}
+
+	// disable auto-rotation first
+	_, err := d.runAdbCommand("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+	if err != nil {
+		return fmt.Errorf("failed to disable auto-rotation: %v", err)
+	}
+
+	// set the orientation
+	_, err = d.runAdbCommand("shell", "content", "insert", "--uri", "content://settings/system", "--bind", "name:s:user_rotation", "--bind", fmt.Sprintf("value:i:%d", androidRotation))
+	if err != nil {
+		return fmt.Errorf("failed to set orientation: %v", err)
+	}
+
+	return nil
+}

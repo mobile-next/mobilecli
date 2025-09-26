@@ -638,3 +638,13 @@ func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 
 	return appInfo, nil
 }
+
+// GetOrientation gets the current device orientation
+func (d IOSDevice) GetOrientation() (string, error) {
+	return d.wdaClient.GetOrientation()
+}
+
+// SetOrientation sets the device orientation
+func (d IOSDevice) SetOrientation(orientation string) error {
+	return d.wdaClient.SetOrientation(orientation)
+}

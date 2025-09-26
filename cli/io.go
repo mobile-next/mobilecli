@@ -26,7 +26,7 @@ var ioTapCmd = &cobra.Command{
 		if len(parts) != 2 {
 			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -35,7 +35,7 @@ var ioTapCmd = &cobra.Command{
 		if errX != nil || errY != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		req := commands.TapRequest{
@@ -47,7 +47,7 @@ var ioTapCmd = &cobra.Command{
 		response := commands.TapCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -64,7 +64,7 @@ var ioLongPressCmd = &cobra.Command{
 		if len(parts) != 2 {
 			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -73,7 +73,7 @@ var ioLongPressCmd = &cobra.Command{
 		if errX != nil || errY != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
 			printJson(response)
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		req := commands.LongPressRequest{
@@ -85,7 +85,7 @@ var ioLongPressCmd = &cobra.Command{
 		response := commands.LongPressCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -105,7 +105,7 @@ var ioButtonCmd = &cobra.Command{
 		response := commands.ButtonCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
@@ -125,7 +125,7 @@ var ioTextCmd = &cobra.Command{
 		response := commands.TextCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 		return nil
 	},
