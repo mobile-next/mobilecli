@@ -455,7 +455,7 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 	// Find the target device
 	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
 	if err != nil {
-		return fmt.Errorf("error finding device: %v", err)
+		return fmt.Errorf("error finding device: %w", err)
 	}
 
 	if screenCaptureParams.Format == "" || screenCaptureParams.Format != "mjpeg" {
@@ -475,7 +475,7 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 
 	err = targetDevice.StartAgent()
 	if err != nil {
-		return fmt.Errorf("error starting agent: %v", err)
+		return fmt.Errorf("error starting agent: %w", err)
 	}
 
 	// Set headers for streaming response
