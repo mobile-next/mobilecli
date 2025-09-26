@@ -7,13 +7,13 @@ export function findIOSRuntime(majorVersion: string): string {
   try {
     const stdout = execSync('xcrun simctl list runtimes', { encoding: 'utf8' });
     const lines = stdout.split('\n');
-    const matchingLines = lines.filter(line => 
-      line.includes(`iOS ${majorVersion}.`) && 
+    const matchingLines = lines.filter(line =>
+      line.includes(`iOS ${majorVersion}.`) &&
       line.includes('com.apple.CoreSimulator.SimRuntime.')
     );
-    
+
     const runtime = matchingLines[0]?.split(' ').pop();
-    
+
     if (!runtime) {
       throw new Error(`No iOS ${majorVersion} runtime found`);
     }
@@ -25,7 +25,7 @@ export function findIOSRuntime(majorVersion: string): string {
 
 export function createSimulator(name: string, deviceType: string, runtime: string): string {
   try {
-    const stdout = execSync(`xcrun simctl create "${name}" "${deviceType}" "${runtime}"`, 
+    const stdout = execSync(`xcrun simctl create "${name}" "${deviceType}" "${runtime}"`,
       { encoding: 'utf8' });
     const simulatorId = stdout.trim();
     createdSimulators.push(simulatorId);
@@ -37,7 +37,8 @@ export function createSimulator(name: string, deviceType: string, runtime: strin
 
 export function bootSimulator(simulatorId: string): void {
   try {
-    execSync(`xcrun simctl boot "${simulatorId}"`, { encoding: 'utf8' });
+    execSync(`xcrun simctl boot "${simulatorId}"`, { stdio: 'inherit', });
+    execSync(`xcrun simctl bootstatus "${simulatorId}"`, { stdio: 'inherit', });
   } catch (error) {
     // Simulator might already be booted, check if it's actually an error
     const errorMessage = (error as Error).message;
@@ -49,10 +50,10 @@ export function bootSimulator(simulatorId: string): void {
 
 export function waitForSimulatorReady(simulatorId: string, timeout: number = 30000): void {
   const startTime = Date.now();
-  
+
   while (Date.now() - startTime < timeout) {
     try {
-      const stdout = execSync(`xcrun simctl list devices | grep "${simulatorId}"`, 
+      const stdout = execSync(`xcrun simctl list devices | grep "${simulatorId}"`,
         { encoding: 'utf8' });
       if (stdout.includes('(Booted)')) {
         // see if we can interact with status_bar, gets us closer to a functioning simulator
@@ -62,18 +63,17 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
     } catch (error) {
       // Continue waiting
     }
-    
+
     // Wait 1 second before next attempt
     execSync('sleep 1');
   }
-  
+
   throw new Error(`Simulator did not boot within ${timeout}ms`);
 }
 
 export function printAllLogsFromSimulator(simulatorId: string): void {
   try {
-    const output = execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {maxBuffer: 64 * 1024 * 1024}).toString();
-    console.log("Simulator logs:\n" + output);
+    execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {stdio: 'inherit'});
   } catch (error) {
     console.warn(`Warning: Failed to print logs from simulator ${simulatorId}: ${error}`);
   }
@@ -100,16 +100,16 @@ export function deleteSimulator(simulatorId: string): void {
 export function createAndLaunchSimulator(iosVersion: string, deviceType: string = 'iPhone 14'): string {
   const runtime = findIOSRuntime(iosVersion);
   const simulatorName = `Test-iOS-${iosVersion}-${Date.now()}`;
-  
+
   // console.log(`Creating iOS ${iosVersion} simulator with runtime ${runtime}...`);
   const simulatorId = createSimulator(simulatorName, deviceType, runtime);
-  
+
   // console.log(`Booting simulator ${simulatorId}...`);
   bootSimulator(simulatorId);
-  
+
   // console.log('Waiting for simulator to be ready...');
   waitForSimulatorReady(simulatorId);
-  
+
   // console.log(`Simulator ${simulatorId} is ready!`);
   return simulatorId;
 }

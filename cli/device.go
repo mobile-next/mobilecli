@@ -64,7 +64,7 @@ var orientationGetCmd = &cobra.Command{
 		response := commands.OrientationGetCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil
@@ -85,7 +85,7 @@ var orientationSetCmd = &cobra.Command{
 		response := commands.OrientationSetCommand(req)
 		printJson(response)
 		if response.Status == "error" {
-			return fmt.Errorf(response.Error)
+			return fmt.Errorf("%s", response.Error)
 		}
 
 		return nil
