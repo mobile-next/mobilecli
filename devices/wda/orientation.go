@@ -27,11 +27,11 @@ func (c *WdaClient) GetOrientation() (string, error) {
 	switch value {
 	case "PORTRAIT":
 		return "portrait", nil
-	case "LANDSCAPE", "UIA_DEVICE_ORIENTATION_LANDSCAPELEFT":
-		return "landscape", nil
-	case "PORTRAIT_UPSIDEDOWN", "UIA_DEVICE_ORIENTATION_PORTRAIT_UPSIDEDOWN":
+	case "PORTRAIT_UPSIDEDOWN":
 		return "portrait", nil
-	case "LANDSCAPERIGHT", "UIA_DEVICE_ORIENTATION_LANDSCAPERIGHT":
+	case "LANDSCAPE":
+		return "landscape", nil
+	case "LANDSCAPERIGHT":
 		return "landscape", nil
 	default:
 		return "portrait", nil // default to portrait
