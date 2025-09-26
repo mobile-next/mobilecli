@@ -1,19 +1,19 @@
 export interface JSONRPCRequest {
-  jsonrpc: string;
-  method: string;
-  params?: any;
-  id: number | string;
+	jsonrpc: string;
+	method: string;
+	params?: any;
+	id: number | string;
 }
 
 export interface JSONRPCResponse {
-  jsonrpc: string;
-  result?: any;
-  error?: {
-    code: number;
-    message: string;
-    data?: any;
-  };
-  id: number | string | null;
+	jsonrpc: string;
+	result?: any;
+	error?: {
+		code: number;
+		message: string;
+		data?: any;
+	};
+	id: number | string | null;
 }
 
 export const ErrCodeParseError = -32700;
