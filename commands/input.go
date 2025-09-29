@@ -39,6 +39,15 @@ type GestureRequest struct {
 	Actions  []interface{} `json:"actions"`
 }
 
+// SwipeRequest represents the parameters for a swipe command
+type SwipeRequest struct {
+	DeviceID string `json:"deviceId"`
+	X1       int    `json:"x1"`
+	Y1       int    `json:"y1"`
+	X2       int    `json:"x2"`
+	Y2       int    `json:"y2"`
+}
+
 // TapCommand performs a tap operation on the specified device
 func TapCommand(req TapRequest) *CommandResponse {
 	if req.X < 0 || req.Y < 0 {
@@ -181,5 +190,31 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 
 	return NewSuccessResponse(map[string]interface{}{
 		"message": fmt.Sprintf("Performed gesture on device %s with %d actions", targetDevice.ID(), len(req.Actions)),
+	})
+}
+
+// SwipeCommand performs a swipe operation on the specified device
+func SwipeCommand(req SwipeRequest) *CommandResponse {
+	if req.X1 < 0 || req.Y1 < 0 || req.X2 < 0 || req.Y2 < 0 {
+		return NewErrorResponse(fmt.Errorf("all coordinates must be non-negative, got x1=%d, y1=%d, x2=%d, y2=%d", req.X1, req.Y1, req.X2, req.Y2))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+	}
+
+	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to swipe on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]interface{}{
+		"message": fmt.Sprintf("Swiped on device %s from (%d,%d) to (%d,%d)", targetDevice.ID(), req.X1, req.Y1, req.X2, req.Y2),
 	})
 }
