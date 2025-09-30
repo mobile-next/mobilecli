@@ -129,6 +129,16 @@ func (d AndroidDevice) LongPress(x, y int) error {
 	return nil
 }
 
+// Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device with 1000ms duration.
+func (d AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
+	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), "1000")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
 
