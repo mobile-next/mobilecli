@@ -468,9 +468,13 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (s Simulator) Info() (*FullDeviceInfo, error) {
-	client := wda.NewWdaClient("localhost:8100")
-	wdaSize, err := client.GetWindowSize()
+func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
+	err := s.StartAgent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent: %w", err)
+	}
+
+	wdaSize, err := s.wdaClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -478,7 +482,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	return &FullDeviceInfo{
 		DeviceInfo: DeviceInfo{
 			ID:       s.UDID,
-			Name:     s.Name,
+			Name:     s.Simulator.Name,
 			Platform: "ios",
 			Type:     "simulator",
 			Version:  parseSimulatorVersion(s.Runtime),
