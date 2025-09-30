@@ -1,3 +1,9 @@
+## [0.0.26](https://github.com/mobile-next/mobilecli/releases/tag/0.0.26) (2025-09-30)
+
+* iOS: Added swipe command, use "mobilecli io swipe" ([#72](https://github.com/mobile-next/mobilecli/pull/72))
+* Simlator: Fixed 'mobilecli device info', it requires wda prior ([#73](https://github.com/mobile-next/mobilecli/pull/73))
+* Android: Added swipe command, use "mobilecli io swipe" ([#72](https://github.com/mobile-next/mobilecli/pull/72))
+
 ## [0.0.25](https://github.com/mobile-next/mobilecli/releases/tag/0.0.25) (2025-09-26)
 
 * General: fixed '--version' on windows and linux distributables ([#69](https://github.com/mobile-next/mobilecli/pull/69))
