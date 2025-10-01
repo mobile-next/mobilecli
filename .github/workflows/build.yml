@@ -211,6 +211,9 @@ jobs:
         xcrun simctl list runtimes
         xcodebuild -runFirstLaunch
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+
     - name: Run tests for iOS ${{ matrix.ios_version }}
       run: |
         cd test
