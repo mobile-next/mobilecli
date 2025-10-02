@@ -20,7 +20,7 @@ func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
 		return nil, err
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	response, err := c.GetEndpoint(fmt.Sprintf("session/%s/wda/screen", sessionId))
 	if err != nil {

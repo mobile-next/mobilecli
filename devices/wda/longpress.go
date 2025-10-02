@@ -11,7 +11,7 @@ func (c *WdaClient) LongPress(x, y int) error {
 		return err
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := ActionsRequest{
 		Actions: []Pointer{

@@ -30,7 +30,7 @@ func unzipFile(zipPath, destDir string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	for _, file := range reader.File {
 		// Disallow absolute paths and ".." traversal in the archive entry name
@@ -47,7 +47,7 @@ func unzipFile(zipPath, destDir string) error {
 
 		// Create directory tree
 		if file.FileInfo().IsDir() {
-			os.MkdirAll(path, 0750)
+			_ = os.MkdirAll(path, 0750)
 			continue
 		}
 
@@ -65,12 +65,12 @@ func unzipFile(zipPath, destDir string) error {
 		// Open file in zip
 		rc, err := file.Open()
 		if err != nil {
-			outFile.Close()
+			_ = outFile.Close()
 			return err
 		}
 
-		defer outFile.Close()
-		defer rc.Close()
+		defer func() { _ = outFile.Close() }()
+		defer func() { _ = rc.Close() }()
 
 		_, err = io.Copy(outFile, rc)
 		if err != nil {

@@ -27,7 +27,7 @@ func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch endpoint %s: %v", endpoint, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
@@ -65,7 +65,7 @@ func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]
 		return nil, fmt.Errorf("failed to post to endpoint %s: %v", endpoint, err)
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -91,7 +91,7 @@ func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]interface{}, err
 		return nil, fmt.Errorf("failed to delete endpoint %s: %v", endpoint, err)
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

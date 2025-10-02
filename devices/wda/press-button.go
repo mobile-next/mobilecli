@@ -27,7 +27,7 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := map[string]interface{}{
 		"name": translatedKey,

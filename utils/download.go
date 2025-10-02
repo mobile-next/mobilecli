@@ -13,7 +13,7 @@ func DownloadFile(url, localPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download file: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -23,7 +23,7 @@ func DownloadFile(url, localPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := io.Copy(file, resp.Body); err != nil {
 		return fmt.Errorf("failed to write file: %v", err)

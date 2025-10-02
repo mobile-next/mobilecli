@@ -33,9 +33,9 @@ func TestDownloadFile_HTTPError(t *testing.T) {
 	// Create test server that returns 404
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Not Found"))
+		_, _ = w.Write([]byte("Not Found"))
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	tmpFile := filepath.Join(t.TempDir(), "download_test.txt")
 	err := DownloadFile(server.URL, tmpFile)
