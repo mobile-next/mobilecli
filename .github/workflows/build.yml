@@ -329,7 +329,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    needs: [build_on_windows, server_test, ios_simulator_test, android_emulator_test, build_on_linux, build_on_macos]
+    needs: [build_on_windows, build_on_linux, build_on_macos, server_test]
     steps:
     - uses: actions/checkout@v4
 
