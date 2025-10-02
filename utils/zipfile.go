@@ -33,13 +33,16 @@ func unzipFile(zipPath, destDir string) error {
 	defer reader.Close()
 
 	for _, file := range reader.File {
-		path := filepath.Join(destDir, file.Name)
+		// Disallow absolute paths and ".." traversal in the archive entry name
+		if filepath.IsAbs(file.Name) || strings.Contains(file.Name, "..") {
+			return fmt.Errorf("illegal file path in archive: %s", file.Name)
+		}
 
-		// Validate path to prevent zip slip attacks
-		cleanPath := filepath.Clean(path)
-		cleanDestDir := filepath.Clean(destDir)
-		if !strings.HasPrefix(cleanPath, cleanDestDir+string(os.PathSeparator)) && cleanPath != cleanDestDir {
-			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, cleanPath)
+		path := filepath.Join(destDir, file.Name)
+		// Ensure the resulting path is within destDir using filepath.Rel
+		relPath, err := filepath.Rel(destDir, path)
+		if err != nil || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) || relPath == ".." {
+			return fmt.Errorf("path traversal attempt: %s resolves to %s", file.Name, path)
 		}
 
 		// Create directory tree
