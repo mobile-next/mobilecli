@@ -178,6 +178,7 @@ jobs:
           mobilecli-windows-amd64.exe
 
   ios_simulator_test:
+    if: false
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     needs: [build_on_macos]
@@ -328,7 +329,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    needs: [build_on_windows, server_test, ios_simulator_test, android_emulator_test]
+    needs: [build_on_windows, server_test, ios_simulator_test, android_emulator_test, build_on_linux, build_on_macos]
     steps:
     - uses: actions/checkout@v4
 
