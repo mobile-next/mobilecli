@@ -414,6 +414,10 @@ func (s SimulatorDevice) LongPress(x, y int) error {
 	return s.wdaClient.LongPress(x, y)
 }
 
+func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
+	return s.wdaClient.Swipe(x1, y1, x2, y2)
+}
+
 func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
@@ -464,9 +468,13 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (s Simulator) Info() (*FullDeviceInfo, error) {
-	client := wda.NewWdaClient("localhost:8100")
-	wdaSize, err := client.GetWindowSize()
+func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
+	err := s.StartAgent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent: %w", err)
+	}
+
+	wdaSize, err := s.wdaClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -474,7 +482,7 @@ func (s Simulator) Info() (*FullDeviceInfo, error) {
 	return &FullDeviceInfo{
 		DeviceInfo: DeviceInfo{
 			ID:       s.UDID,
-			Name:     s.Name,
+			Name:     s.Simulator.Name,
 			Platform: "ios",
 			Type:     "simulator",
 			Version:  parseSimulatorVersion(s.Runtime),

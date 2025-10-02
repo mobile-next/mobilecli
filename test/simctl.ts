@@ -2,15 +2,12 @@ import { execSync } from 'child_process';
 
 let createdSimulators: string[] = []; // Track created simulators for cleanup
 
-// Simulator management functions
 export function findIOSRuntime(majorVersion: string): string {
   try {
-    const stdout = execSync('xcrun simctl list runtimes', { encoding: 'utf8' });
-    const lines = stdout.split('\n');
-    const matchingLines = lines.filter(line =>
-      line.includes(`iOS ${majorVersion}.`) &&
-      line.includes('com.apple.CoreSimulator.SimRuntime.')
-    );
+    const matchingLines = execSync('xcrun simctl list runtimes', { encoding: 'utf8' })
+	.toString()
+	.split('\n')
+        .filter(line => line.includes(`iOS ${majorVersion}.`) && line.includes('com.apple.CoreSimulator.SimRuntime.'));
 
     const runtime = matchingLines[0]?.split(' ').pop();
 
@@ -25,8 +22,7 @@ export function findIOSRuntime(majorVersion: string): string {
 
 export function createSimulator(name: string, deviceType: string, runtime: string): string {
   try {
-    const stdout = execSync(`xcrun simctl create "${name}" "${deviceType}" "${runtime}"`,
-      { encoding: 'utf8' });
+    const stdout = execSync(`xcrun simctl create "${name}" "${deviceType}" "${runtime}"`, { encoding: 'utf8' }).toString();
     const simulatorId = stdout.trim();
     createdSimulators.push(simulatorId);
     return simulatorId;
@@ -38,7 +34,7 @@ export function createSimulator(name: string, deviceType: string, runtime: strin
 export function bootSimulator(simulatorId: string): void {
   try {
     execSync(`xcrun simctl boot "${simulatorId}"`, { stdio: 'inherit', });
-    execSync(`xcrun simctl bootstatus "${simulatorId}"`, { stdio: 'inherit', });
+    execSync(`xcrun simctl bootstatus "${simulatorId}"`, { stdio: 'ignore', });
   } catch (error) {
     // Simulator might already be booted, check if it's actually an error
     const errorMessage = (error as Error).message;
@@ -56,8 +52,8 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
       const stdout = execSync(`xcrun simctl list devices | grep "${simulatorId}"`,
         { encoding: 'utf8' });
       if (stdout.includes('(Booted)')) {
-        // see if we can interact with status_bar, gets us closer to a functioning simulator
-        execSync(`xcrun simctl status_bar "${simulatorId}" list`);
+        // verify simulator is actually ready by taking a screenshot
+        execSync(`xcrun simctl io "${simulatorId}" screenshot /dev/null`);
         return;
       }
     } catch (error) {
@@ -73,7 +69,9 @@ export function waitForSimulatorReady(simulatorId: string, timeout: number = 300
 
 export function printAllLogsFromSimulator(simulatorId: string): void {
   try {
-    execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m`, {stdio: 'inherit'});
+    execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m >/tmp/${simulatorId}.txt`, {
+      stdio: 'inherit'
+    });
   } catch (error) {
     console.warn(`Warning: Failed to print logs from simulator ${simulatorId}: ${error}`);
   }

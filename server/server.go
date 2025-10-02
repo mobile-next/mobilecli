@@ -158,6 +158,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoText(req.Params)
 	case "io_button":
 		result, err = handleIoButton(req.Params)
+	case "io_swipe":
+		result, err = handleIoSwipe(req.Params)
 	case "io_gesture":
 		result, err = handleIoGesture(req.Params)
 	case "url":
@@ -245,6 +247,14 @@ type IoLongPressParams struct {
 	Y        int    `json:"y"`
 }
 
+type IoSwipeParams struct {
+	DeviceID string `json:"deviceId"`
+	X1       int    `json:"x1"`
+	Y1       int    `json:"y1"`
+	X2       int    `json:"x2"`
+	Y2       int    `json:"y2"`
+}
+
 func handleIoTap(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
@@ -286,6 +296,49 @@ func handleIoLongPress(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.LongPressCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleIoSwipe(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x1, y1, x2, y2")
+	}
+
+	var ioSwipeParams IoSwipeParams
+	if err := json.Unmarshal(params, &ioSwipeParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x1, y1, x2, y2", err)
+	}
+
+	if ioSwipeParams.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	// validate that coordinates are provided (x1,y1,x2,y2 must be present)
+	var rawParams map[string]interface{}
+	if err := json.Unmarshal(params, &rawParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters format")
+	}
+
+	requiredFields := []string{"x1", "y1", "x2", "y2"}
+	for _, field := range requiredFields {
+		if _, exists := rawParams[field]; !exists {
+			return nil, fmt.Errorf("'%s' is required", field)
+		}
+	}
+
+	req := commands.SwipeRequest{
+		DeviceID: ioSwipeParams.DeviceID,
+		X1:       ioSwipeParams.X1,
+		Y1:       ioSwipeParams.Y1,
+		X2:       ioSwipeParams.X2,
+		Y2:       ioSwipeParams.Y2,
+	}
+
+	response := commands.SwipeCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

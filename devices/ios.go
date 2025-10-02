@@ -128,6 +128,10 @@ func (d IOSDevice) LongPress(x, y int) error {
 	return d.wdaClient.LongPress(x, y)
 }
 
+func (d IOSDevice) Swipe(x1, y1, x2, y2 int) error {
+	return d.wdaClient.Swipe(x1, y1, x2, y2)
+}
+
 func (d IOSDevice) Gesture(actions []wda.TapAction) error {
 	return d.wdaClient.Gesture(actions)
 }
