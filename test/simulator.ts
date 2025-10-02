@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
@@ -76,18 +76,17 @@ describe('iOS Simulator Tests', () => {
 	});
 });
 
-function mobilecli(args: string): void {
+function mobilecli(args: string[]): void {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
-	const command = `${mobilecliBinary} ${args}`;
 
 	try {
-		const result = execSync(command, {
+		const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
 			encoding: 'utf8',
 			timeout: 180000,
 			stdio: ['pipe', 'pipe', 'pipe']
 		});
 	} catch (error: any) {
-		console.log(`Command failed: ${command}`);
+		console.log(`Command failed: ${mobilecliBinary} ${JSON.stringify(args)}`);
 		if (error.stderr) {
 			console.log(`Error stderr: ${error.stderr}`);
 		}
@@ -102,7 +101,7 @@ function mobilecli(args: string): void {
 }
 
 function takeScreenshot(simulatorId: string, screenshotPath: string): void {
-	mobilecli(`screenshot --device ${simulatorId} --format png --output ${screenshotPath}`);
+	mobilecli(['screenshot', '--device', simulatorId, '--format', 'png', '--output', screenshotPath]);
 }
 
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
@@ -119,6 +118,6 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 }
 
 function openUrl(simulatorId: string, url: string): void {
-	mobilecli(`url "${url}" --device ${simulatorId}`);
+	mobilecli(['url', url, '--device', simulatorId]);
 }
 

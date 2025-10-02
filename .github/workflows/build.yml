@@ -13,6 +13,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
 
@@ -27,6 +28,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
 
@@ -47,6 +49,7 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
 
@@ -63,6 +66,7 @@ jobs:
   build_on_macos:
 
     runs-on: macos-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     needs: [test, lint, security]
@@ -103,6 +107,7 @@ jobs:
   build_on_linux:
 
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     needs: [test, lint, security]
@@ -143,6 +148,7 @@ jobs:
   build_on_windows:
 
     runs-on: windows-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     needs: [test, lint, security]
@@ -173,6 +179,7 @@ jobs:
 
   ios_simulator_test:
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     needs: [build_on_macos]
     strategy:
       matrix:
@@ -218,6 +225,7 @@ jobs:
 
   server_test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build_on_linux]
     steps:
     - uses: actions/checkout@v4
@@ -242,6 +250,7 @@ jobs:
   android_emulator_test:
     if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build_on_linux]
     strategy:
       matrix:
@@ -316,9 +325,10 @@ jobs:
   publish:
 
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
-    needs: [build_on_linux, build_on_macos, build_on_windows, ios_simulator_test, server_test, android_emulator_test]
+    needs: [build_on_linux, build_on_macos, build_on_windows, server_test, ios_simulator_test, android_emulator_test]
     steps:
     - uses: actions/checkout@v4
 
