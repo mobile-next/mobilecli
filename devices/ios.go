@@ -74,6 +74,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	if err != nil {
 		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
 	}
+
 	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
 	return device, nil
@@ -318,7 +319,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
 	}
-	
+
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
 
 	device, err := d.getEnhancedDevice()
@@ -327,7 +328,7 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
 		defer cancel()

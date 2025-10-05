@@ -481,6 +481,16 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
 	}
 
+	targetDevice, err := commands.FindDeviceOrAutoSelect(infoParams.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	err = targetDevice.StartAgent()
+	if err != nil {
+		return nil, fmt.Errorf("error starting agent: %w", err)
+	}
+
 	response := commands.InfoCommand(infoParams.DeviceID)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
