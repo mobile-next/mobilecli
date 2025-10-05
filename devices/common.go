@@ -13,6 +13,8 @@ const (
 	DefaultMJPEGQuality = 80
 	// Default MJPEG streaming scale (0.1-1.0)
 	DefaultMJPEGScale = 1.0
+	// Default MJPEG streaming framerate (frames per second)
+	DefaultMJPEGFramerate = 30
 )
 
 // ScreenElementRect represents the rectangle coordinates and dimensions

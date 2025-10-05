@@ -154,23 +154,3 @@ func (c *WdaClient) DeleteSession(sessionId string) error {
 	}
 	return nil
 }
-
-func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
-	// create wda session
-	sessionId, err := c.CreateSession()
-	if err != nil {
-		return fmt.Errorf("failed to create wda session: %w", err)
-	}
-	defer c.DeleteSession(sessionId)
-
-	// post settings to appium endpoint
-	endpoint := fmt.Sprintf("session/%s/appium/settings", sessionId)
-	_, err = c.PostEndpoint(endpoint, map[string]interface{}{
-		"settings": settings,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set appium settings: %w", err)
-	}
-
-	return nil
-}

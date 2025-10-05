@@ -502,11 +502,9 @@ func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale f
 	}
 
 	// configure mjpeg framerate
-	err = s.wdaClient.SetAppiumSettings(map[string]interface{}{
-		"mjpegServerFramerate": 30,
-	})
+	err = s.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
 	if err != nil {
-		return fmt.Errorf("failed to set mjpeg framerate: %w", err)
+		return err
 	}
 
 	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
