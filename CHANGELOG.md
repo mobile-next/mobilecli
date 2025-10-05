@@ -1,7 +1,13 @@
+## [0.0.27](https://github.com/mobile-next/mobilecli/releases/tag/0.0.27) (2025-10-05)
+
+* General: Fix potential zip-split security issue when unpacking wda ([#76](https://github.com/mobile-next/mobilecli/pull/76))
+* iOS: Set MJPEG server to stream at 30 fps instead of default 10 ([#78](https://github.com/mobile-next/mobilecli/pull/78))
+* iOS: Fix buggy 'device info' on an iOS device when wda wasn't running prior ([#77](https://github.com/mobile-next/mobilecli/pull/77))
+
 ## [0.0.26](https://github.com/mobile-next/mobilecli/releases/tag/0.0.26) (2025-10-02)
 
 * iOS: Added swipe command, use "mobilecli io swipe" ([#72](https://github.com/mobile-next/mobilecli/pull/72))
-* Simlator: Fixed 'mobilecli device info', it requires wda prior ([#73](https://github.com/mobile-next/mobilecli/pull/73))
+* Simulator: Fixed 'mobilecli device info', it requires wda prior ([#73](https://github.com/mobile-next/mobilecli/pull/73))
 * Android: Added swipe command, use "mobilecli io swipe" ([#72](https://github.com/mobile-next/mobilecli/pull/72))
 
 ## [0.0.25](https://github.com/mobile-next/mobilecli/releases/tag/0.0.25) (2025-09-26)
