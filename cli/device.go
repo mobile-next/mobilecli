@@ -37,6 +37,23 @@ var deviceInfoCmd = &cobra.Command{
 	Short: "Get device info",
 	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		// Find the target device
+		targetDevice, err := commands.FindDeviceOrAutoSelect(deviceId)
+		if err != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		// Start agent
+		err = targetDevice.StartAgent()
+		if err != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
 		response := commands.InfoCommand(deviceId)
 		printJson(response)
 		if response.Status == "error" {

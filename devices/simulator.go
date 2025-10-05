@@ -469,11 +469,6 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
-	err := s.StartAgent()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start agent: %w", err)
-	}
-
 	wdaSize, err := s.wdaClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
