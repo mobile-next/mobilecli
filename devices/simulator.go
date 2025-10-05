@@ -496,6 +496,12 @@ func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale f
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
 	}
 
+	// configure mjpeg framerate
+	err = s.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
+	if err != nil {
+		return err
+	}
+
 	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
 	return mjpegClient.StartScreenCapture(format, callback)
 }

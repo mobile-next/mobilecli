@@ -580,6 +580,12 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+	// configure mjpeg framerate
+	err := d.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
+	if err != nil {
+		return err
+	}
+
 	return d.mjpegClient.StartScreenCapture(format, callback)
 }
 
