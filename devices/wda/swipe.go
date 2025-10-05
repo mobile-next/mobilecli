@@ -11,7 +11,7 @@ func (c *WdaClient) Swipe(x1, y1, x2, y2 int) error {
 		return err
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := ActionsRequest{
 		Actions: []Pointer{

@@ -296,7 +296,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
 
-	defer os.Remove(file)
+	defer func() { _ = os.Remove(file) }()
 
 	utils.Verbose("Downloaded WebDriverAgent to %s", file)
 
@@ -305,7 +305,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to unzip WebDriverAgent: %v", err)
 	}
 
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
 
 	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
@@ -614,7 +614,7 @@ func (s SimulatorDevice) InstallApp(path string) error {
 		if err != nil {
 			return fmt.Errorf("failed to unzip: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		entries, err := os.ReadDir(tmpDir)
 		if err != nil {

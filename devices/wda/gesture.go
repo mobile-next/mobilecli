@@ -11,7 +11,7 @@ func (c *WdaClient) Gesture(actions []TapAction) error {
 		return err
 	}
 
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := ActionsRequest{
 		Actions: []Pointer{

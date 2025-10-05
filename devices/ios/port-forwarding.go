@@ -31,6 +31,14 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 		return fmt.Errorf("port forwarding is already running from %d to %d", pf.srcPort, pf.dstPort)
 	}
 
+	if srcPort < 0 || srcPort > 65535 {
+		return fmt.Errorf("invalid source port %d: must be between 0 and 65535", srcPort)
+	}
+
+	if dstPort < 0 || dstPort > 65535 {
+		return fmt.Errorf("invalid destination port %d: must be between 0 and 65535", dstPort)
+	}
+
 	pf.srcPort = srcPort
 	pf.dstPort = dstPort
 

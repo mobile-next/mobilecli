@@ -38,7 +38,7 @@ func TestIsPortAvailable_PortInUse(t *testing.T) {
 	// Create a listener to occupy a port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "Failed to create test listener")
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	// Get the actual port that was assigned
 	addr := listener.Addr().(*net.TCPAddr)

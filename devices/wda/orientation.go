@@ -10,7 +10,7 @@ func (c *WdaClient) GetOrientation() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	endpoint := fmt.Sprintf("session/%s/orientation", sessionId)
 	response, err := c.GetEndpoint(endpoint)
@@ -48,7 +48,7 @@ func (c *WdaClient) SetOrientation(orientation string) error {
 	if err != nil {
 		return err
 	}
-	defer c.DeleteSession(sessionId)
+	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	// convert simplified orientation to WDA format
 	wdaOrientation := "PORTRAIT"

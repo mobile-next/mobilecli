@@ -359,7 +359,7 @@ func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string
 	if err != nil {
 		return goios.DeviceEntry{}, fmt.Errorf("could not connect to RSD: %w", err)
 	}
-	defer rsdService.Close()
+	defer func() { _ = rsdService.Close() }()
 
 	rsdProvider, err := rsdService.Handshake()
 	if err != nil {
@@ -437,7 +437,7 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 	if err != nil {
 		return fmt.Errorf("processcontrol failed: %w", err)
 	}
-	defer pControl.Close()
+	defer func() { _ = pControl.Close() }()
 
 	opts := map[string]any{}
 	args := []interface{}{}
@@ -468,13 +468,13 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 	if err != nil {
 		return fmt.Errorf("processcontrol failed: %w", err)
 	}
-	defer pControl.Close()
+	defer func() { _ = pControl.Close() }()
 
 	svc, err := installationproxy.New(device)
 	if err != nil {
 		return fmt.Errorf("installationproxy failed: %w", err)
 	}
-	defer svc.Close()
+	defer func() { svc.Close() }()
 
 	response, err := svc.BrowseAllApps()
 	if err != nil {
@@ -496,7 +496,7 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 	if err != nil {
 		return fmt.Errorf("failed opening deviceInfoService for getting process list: %w", err)
 	}
-	defer service.Close()
+	defer func() { service.Close() }()
 
 	processList, err := service.ProcessList()
 	if err != nil {
@@ -537,7 +537,7 @@ func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("installationproxy failed: %w", err)
 	}
-	defer svc.Close()
+	defer func() { svc.Close() }()
 
 	response, err := svc.BrowseAllApps()
 	if err != nil {
@@ -607,7 +607,7 @@ func (d IOSDevice) InstallApp(path string) error {
 	if err != nil {
 		return fmt.Errorf("zipconduit failed: %w", err)
 	}
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	err = svc.SendFile(path)
 	if err != nil {
@@ -629,7 +629,7 @@ func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("installationproxy failed: %w", err)
 	}
-	defer svc.Close()
+	defer func() { svc.Close() }()
 
 	appInfo := &InstalledAppInfo{
 		PackageName: packageName,
