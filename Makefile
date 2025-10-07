@@ -4,7 +4,7 @@ all: build
 
 build:
 	go mod tidy
-	go build -ldflags="-s -w"
+	CGO_ENABLED=0 go build -ldflags="-s -w"
 
 test:
 	go test ./... -v -race

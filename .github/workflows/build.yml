@@ -131,8 +131,8 @@ jobs:
 
     - name: Build
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-linux-amd64
+        CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
+        CGO_ENABLED=0 GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-linux-amd64
         ./mobilecli-linux-amd64 --version
 
     - name: Upload macos build artifact
