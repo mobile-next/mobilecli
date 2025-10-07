@@ -99,10 +99,10 @@ jobs:
         security unlock-keychain -p "" build.keychain-db
 
         echo -n "$APPLE_WWDR_CERT" | base64 --decode > apple_wwdr.cer
-        security import apple_wwdr.cer -k build.keychain-db -T /usr/bin/codesign
+        security import apple_wwdr.cer -k build.keychain-db -A
 
         echo -n "$DEVELOPER_ID_APPLICATION_CERT" | base64 --decode > certificate.p12
-        security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+        security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -t cert -f pkcs12 -A
         security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain-db
 
         # List identities to verify import
