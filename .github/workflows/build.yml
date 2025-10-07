@@ -120,10 +120,10 @@ jobs:
         lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
         rm mobilecli-arm64 mobilecli-amd64
         ./mobilecli-darwin --version
-	# codesign this binary
-	codesign --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime ./mobilecli
-	# make sure spctl passes
-	spctl -a -vv -t install ./mobilecli-darwin
+        # codesign this binary
+        codesign --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime ./mobilecli
+        # make sure spctl passes
+        spctl -a -vv -t install ./mobilecli-darwin
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
