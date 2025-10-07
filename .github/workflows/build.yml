@@ -103,11 +103,6 @@ jobs:
 
         echo -n "$DEVELOPER_ID_APPLICATION_CERT" | base64 --decode > certificate.p12
         security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -A -t cert -f pkcs12
-
-    - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
-
-    - run: |
         security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain-db
 
         # List identities to verify import
