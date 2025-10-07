@@ -1,3 +1,7 @@
+## [0.0.28](https://github.com/mobile-next/mobilecli/releases/tag/0.0.28) (2025-10-07)
+
+* General: Statically linked binaries for linux ([#79](https://github.com/mobile-next/mobilecli/pull/79))
+
 ## [0.0.27](https://github.com/mobile-next/mobilecli/releases/tag/0.0.27) (2025-10-05)
 
 * General: Fix potential zip-split security issue when unpacking wda ([#76](https://github.com/mobile-next/mobilecli/pull/76))
