@@ -98,17 +98,22 @@ jobs:
         security default-keychain -s build.keychain
         security unlock-keychain -p "" build.keychain
 
+	echo "step1"
         echo -n "$APPLE_WWDR_CERT" | base64 --decode > apple_wwdr.cer
         security import apple_wwdr.cer -k build.keychain -T /usr/bin/codesign
 
+	echo "step2"
         echo -n "$DEVELOPER_ID_APPLICATION_CERT" | base64 --decode > certificate.p12
         security import certificate.p12 -k build.keychain -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -A -t cert -f pkcs12
 
+	echo "step3"
         security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
 
         # List identities to verify import
+	echo "step4"
         security find-identity -v -p codesigning
 
+	echo "step5"
         security default-keychain -s build.keychain
 
     - name: Build
