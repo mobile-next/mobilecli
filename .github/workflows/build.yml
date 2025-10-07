@@ -102,7 +102,7 @@ jobs:
         security import apple_wwdr.cer -k build.keychain-db -T /usr/bin/codesign
 
         echo -n "$DEVELOPER_ID_APPLICATION_CERT" | base64 --decode > certificate.p12
-        security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -A -t cert -f pkcs12
+        security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -t cert -f pkcs12
         security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain-db
 
         # List identities to verify import
