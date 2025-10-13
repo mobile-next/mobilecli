@@ -87,13 +87,42 @@ jobs:
       run: |
         sed -i '' 's/version = \"dev\"/version = \"${{ github.ref_name }}\"/' cli/root.go
 
+    - name: Import certificates and provisioning profile
+      env:
+        APPLE_WWDR_CERT: ${{ secrets.APPLE_WWDR_CERT }}
+        DEVELOPER_ID_APPLICATION_CERT: ${{ secrets.DEVELOPER_ID_APPLICATION_CERT }}
+        DEVELOPER_ID_APPLICATION_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
+      run: |
+        # Create keychain
+        security create-keychain -p "" build.keychain-db
+        security default-keychain -s build.keychain-db
+        security unlock-keychain -p "" build.keychain-db
+
+        echo -n "$APPLE_WWDR_CERT" | base64 --decode > apple_wwdr.cer
+        security import apple_wwdr.cer -k build.keychain-db -A
+
+        echo -n "$DEVELOPER_ID_APPLICATION_CERT" | base64 --decode > certificate.p12
+        security import certificate.p12 -k build.keychain-db -P "$DEVELOPER_ID_APPLICATION_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -t cert -f pkcs12 -A
+        security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain-db
+
+        # List identities to verify import
+        security find-identity -v -p codesigning
+
+        security default-keychain -s build.keychain-db
+
     - name: Build
+      env:
+        CODE_SIGN_IDENTITY: ${{ secrets.CODE_SIGN_IDENTITY }}
       run: |
         GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
         GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-amd64
         lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
         rm mobilecli-arm64 mobilecli-amd64
         ./mobilecli-darwin --version
+        # codesign this binary
+        codesign --sign "$CODE_SIGN_IDENTITY" --timestamp --options runtime ./mobilecli-darwin
+        # make sure spctl passes
+        spctl -a -vv -t install ./mobilecli-darwin
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
