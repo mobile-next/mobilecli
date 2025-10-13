@@ -152,10 +152,16 @@ func GetSimulators() ([]Simulator, error) {
 	return filteredDevices, nil
 }
 
-func filterSimulatorsByState(simulators []Simulator, state string) []Simulator {
+func filterSimulatorsByRootDirectory(simulators []Simulator) []Simulator {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
 	var filteredDevices []Simulator
 	for _, device := range simulators {
-		if device.State == state {
+		rootPath := fmt.Sprintf("%s/Library/Developer/CoreSimulator/Devices/%s/data/Root", homeDir, device.UDID)
+		if _, err := os.Stat(rootPath); err == nil {
 			filteredDevices = append(filteredDevices, device)
 		}
 	}
@@ -168,7 +174,7 @@ func GetBootedSimulators() ([]Simulator, error) {
 		return nil, err
 	}
 
-	return filterSimulatorsByState(simulators, "Booted"), nil
+	return filterSimulatorsByRootDirectory(simulators), nil
 }
 
 func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
@@ -332,7 +338,50 @@ func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
 	return ok, nil
 }
 
+func (s *SimulatorDevice) getState() (string, error) {
+	simulators, err := GetSimulators()
+	if err != nil {
+		return "", err
+	}
+
+	for _, sim := range simulators {
+		if sim.UDID == s.UDID {
+			return sim.State, nil
+		}
+	}
+
+	return "", fmt.Errorf("simulator %s not found", s.UDID)
+}
+
+func (s *SimulatorDevice) bootSimulator() error {
+	utils.Verbose("Booting simulator %s...", s.UDID)
+	output, err := runSimctl("boot", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to boot simulator %s: %v\n%s", s.UDID, err, output)
+	}
+	utils.Verbose("Waiting for simulator to finish booting...")
+	output, err = runSimctl("bootstatus", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to wait for boot status %s: %v\n%s", s.UDID, err, output)
+	}
+	utils.Verbose("Simulator booted successfully")
+	return nil
+}
+
 func (s *SimulatorDevice) StartAgent() error {
+	// check if simulator is shutdown and boot it if needed
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %v", err)
+	}
+
+	if state == "Shutdown" {
+		err = s.bootSimulator()
+		if err != nil {
+			return err
+		}
+	}
+
 	if currentPort, err := s.getWdaPort(); err == nil {
 		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
 		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
