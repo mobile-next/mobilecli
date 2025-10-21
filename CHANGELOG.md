@@ -1,3 +1,7 @@
+## [0.0.29](https://github.com/mobile-next/mobilecli/releases/tag/0.0.29) (2025-10-21)
+
+* General: Split mac binaries into arm64 and amd64 for smaller packages ([06d7e89](https://github.com/mobile-next/mobilecli/commit/06d7e89e5cb94848ed0a12f74c80726b81c15947))
+
 ## [0.0.28](https://github.com/mobile-next/mobilecli/releases/tag/0.0.28) (2025-10-07)
 
 * General: Statically linked binaries for linux ([#79](https://github.com/mobile-next/mobilecli/pull/79))
