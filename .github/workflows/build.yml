@@ -89,18 +89,17 @@ jobs:
 
     - name: Build
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-amd64
-        lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
-        rm mobilecli-arm64 mobilecli-amd64
-        ./mobilecli-darwin --version
+        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-darwin-arm64
+        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-darwin-amd64
+        ./mobilecli-darwin-arm64 --version
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
       with:
         name: macos-build
         path: |
-          mobilecli-darwin
+          mobilecli-darwin-arm64
+          mobilecli-darwin-amd64
         retention-days: 1
         overwrite: true
 
@@ -204,7 +203,7 @@ jobs:
 
     - name: Make mobilecli executable
       run: |
-        mv mobilecli-darwin mobilecli
+        mv mobilecli-darwin-arm64 mobilecli
         chmod +x mobilecli
 
     - name: Switch to Xcode ${{ matrix.xcode_version }}
@@ -356,9 +355,14 @@ jobs:
       run: |
         mkdir dist
         cd dist
-        # mac
-        cp ../mobilecli-darwin/mobilecli-darwin mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-macos.zip mobilecli
+        # macos-arm64
+        cp ../mobilecli-darwin/mobilecli-darwin-arm64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-macos-arm64.zip mobilecli
+        rm -f mobilecli
+
+        # macos-amd64
+        cp ../mobilecli-darwin/mobilecli-darwin-amd64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-macos-amd64.zip mobilecli
         rm -f mobilecli
 
         # linux-amd64
@@ -396,7 +400,8 @@ jobs:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
         # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin publish/npm/bin
+        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
+        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
         mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
