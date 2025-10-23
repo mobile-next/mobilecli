@@ -73,7 +73,7 @@ func (d AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 }
 
 func (d AndroidDevice) TakeScreenshot() ([]byte, error) {
-	byteData, err := d.runAdbCommand("shell", "screencap", "-p")
+	byteData, err := d.runAdbCommand("exec-out", "screencap", "-p")
 	if err != nil {
 		return nil, fmt.Errorf("failed to take screenshot: %v", err)
 	}
@@ -384,7 +384,8 @@ func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 
 	// remove the "package:" prefix
 	appPath := strings.TrimPrefix(string(output), "package:")
-	appPath = strings.TrimSuffix(appPath, "\n")
+	// trim all whitespace including \r\n (CRLF on Windows)
+	appPath = strings.TrimSpace(appPath)
 	return appPath, nil
 }
 
