@@ -1,3 +1,9 @@
+## [0.0.30](https://github.com/mobile-next/mobilecli/releases/tag/0.0.30) (2025-10-23)
+
+* General: Do not attempt fetching iOS simulators if not running on macos ([#85](https://github.com/mobile-next/mobilecli/pull/85))
+* iOS: Skip tunnel creation if running on iOS 16.x and below ([#84](https://github.com/mobile-next/mobilecli/pull/84))
+* Android: CRLF was getting in the way of mjpeg and screenshots on Windows ([#85](https://github.com/mobile-next/mobilecli/pull/85))
+
 ## [0.0.29](https://github.com/mobile-next/mobilecli/releases/tag/0.0.29) (2025-10-21)
 
 * General: Split mac binaries into arm64 and amd64 for smaller packages ([06d7e89](https://github.com/mobile-next/mobilecli/commit/06d7e89e5cb94848ed0a12f74c80726b81c15947))
