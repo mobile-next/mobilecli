@@ -406,7 +406,7 @@ func (d AndroidDevice) StartScreenCapture(format string, quality int, scale floa
 	}
 
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
+	cmdArgs := append([]string{"-s", d.id}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
