@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"regexp"
@@ -163,6 +164,11 @@ func filterSimulatorsByState(simulators []Simulator, state string) []Simulator {
 }
 
 func GetBootedSimulators() ([]Simulator, error) {
+	// simulators only available on macOS
+	if runtime.GOOS != "darwin" {
+		return []Simulator{}, nil
+	}
+
 	simulators, err := GetSimulators()
 	if err != nil {
 		return nil, err
