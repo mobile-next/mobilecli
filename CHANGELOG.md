@@ -1,8 +1,12 @@
+## [0.0.31](https://github.com/mobile-next/mobilecli/releases/tag/0.0.31) (2025-10-23)
+
+* Android: CRLF was getting in the way of mjpeg on Windows ([#86](https://github.com/mobile-next/mobilecli/pull/86))
+
 ## [0.0.30](https://github.com/mobile-next/mobilecli/releases/tag/0.0.30) (2025-10-23)
 
 * General: Do not attempt fetching iOS simulators if not running on macos ([#85](https://github.com/mobile-next/mobilecli/pull/85))
 * iOS: Skip tunnel creation if running on iOS 16.x and below ([#84](https://github.com/mobile-next/mobilecli/pull/84))
-* Android: CRLF was getting in the way of mjpeg and screenshots on Windows ([#85](https://github.com/mobile-next/mobilecli/pull/85))
+* Android: CRLF was getting in the way of screenshots on Windows ([#85](https://github.com/mobile-next/mobilecli/pull/85))
 
 ## [0.0.29](https://github.com/mobile-next/mobilecli/releases/tag/0.0.29) (2025-10-21)
 
