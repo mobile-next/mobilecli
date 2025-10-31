@@ -323,7 +323,7 @@ jobs:
 #        npm run test -- --grep "Android API ${{ matrix.api_level }}"
 
   publish:
-
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -351,7 +351,6 @@ jobs:
         path: mobilecli-windows
 
     - name: Zip builds
-      if: github.ref_type == 'tag'
       run: |
         mkdir dist
         cd dist
@@ -385,7 +384,6 @@ jobs:
         rm -rf dist
 
     - name: Upload to GitHub Release
-      if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -395,7 +393,6 @@ jobs:
           mobilecli-*.zip
 
     - name: Publish
-      if: github.ref_type == 'tag'
       env:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
