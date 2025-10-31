@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func (d AndroidDevice) DeviceType() string {
 func getAdbPath() string {
 	adbPath := os.Getenv("ANDROID_HOME")
 	if adbPath != "" {
-		return adbPath + "/platform-tools/adb"
+		return filepath.Join(adbPath, "platform-tools", "adb")
 	}
 
 	// try default Android SDK location on macOS
@@ -59,6 +60,26 @@ func getAdbPath() string {
 		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
 		if _, err := os.Stat(defaultPath); err == nil {
 			return defaultPath
+		}
+	}
+
+	// try default Android SDK location on Windows
+	if runtime.GOOS == "windows" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData != "" {
+			defaultPath := filepath.Join(localAppData, "Android", "Sdk", "platform-tools", "adb.exe")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
+		}
+
+		// fallback to USERPROFILE on Windows
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
 		}
 	}
 
