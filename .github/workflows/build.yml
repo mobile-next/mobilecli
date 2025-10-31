@@ -21,6 +21,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+        cache: true
 
     - name: Run Unit Tests
       run: |
@@ -37,6 +38,12 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
+
+    - name: Cache Go tools
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-go-tools-${{ hashFiles('.github/workflows/build.yml') }}
 
     - name: Install dependencies
       run: |
@@ -57,6 +64,13 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+        cache: true
+
+    - name: Cache Go tools
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-go-tools-${{ hashFiles('.github/workflows/build.yml') }}
 
     - name: Security scan
       run: |
@@ -77,6 +91,13 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+        cache: true
+
+    - name: Cache Go tools
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-go-tools-${{ hashFiles('.github/workflows/build.yml') }}
 
     - name: Install dependencies
       run: |
@@ -117,6 +138,13 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+        cache: true
+
+    - name: Cache Go tools
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-go-tools-${{ hashFiles('.github/workflows/build.yml') }}
 
     - name: Install dependencies
       run: |
@@ -157,6 +185,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+        cache: true
 
     - name: Set version
       if: github.ref_type == 'tag'
