@@ -7,7 +7,14 @@ let binary;
 
 switch (process.platform) {
 	case "darwin":
-		binary = "mobilecli-darwin";
+		switch (process.arch) {
+			case "arm64":
+				binary = "mobilecli-darwin-arm64";
+				break;
+			case "x64":
+				binary = "mobilecli-darwin-amd64";
+				break;
+		}
 		break;
 
 	case "linux":
