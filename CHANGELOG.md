@@ -1,3 +1,7 @@
+## [0.0.33](https://github.com/mobile-next/mobilecli/releases/tag/0.0.33) (2025-11-01)
+
+* General: Fix launching mobilecli using npx on macos after split to arm64/amd64 ([#91](https://github.com/mobile-next/mobilecli/pull/91))
+
 ## [0.0.32](https://github.com/mobile-next/mobilecli/releases/tag/0.0.32) (2025-11-01)
 
 * General: Use USERPROFILE and LOCALAPPDATA on Windows to locate adb.exe without relying on PATH ([#88](https://github.com/mobile-next/mobilecli/pull/88))
