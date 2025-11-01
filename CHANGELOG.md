@@ -1,3 +1,7 @@
+## [0.0.32](https://github.com/mobile-next/mobilecli/releases/tag/0.0.32) (2025-11-01)
+
+* General: Use USERPROFILE and LOCALAPPDATA on Windows to locate adb.exe without relying on PATH ([#88](https://github.com/mobile-next/mobilecli/pull/88))
+
 ## [0.0.31](https://github.com/mobile-next/mobilecli/releases/tag/0.0.31) (2025-10-23)
 
 * Android: CRLF was getting in the way of mjpeg on Windows ([#86](https://github.com/mobile-next/mobilecli/pull/86))
