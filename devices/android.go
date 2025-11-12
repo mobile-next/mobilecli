@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -349,18 +350,21 @@ func matchesAVDName(avdName, deviceName string) bool {
 }
 
 // waitForEmulatorBootComplete waits for an emulator to appear and be fully booted
-func (d *AndroidDevice) waitForEmulatorBootComplete(avdName string, maxWaitTime time.Duration) (string, error) {
-	checkInterval := 2 * time.Second
-	startTime := time.Now()
+func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName string) (string, error) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
 	for {
-		if time.Since(startTime) > maxWaitTime {
-			return "", fmt.Errorf("emulator failed to start within %v", maxWaitTime)
-		}
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("emulator boot cancelled: %w", ctx.Err())
+		case <-ticker.C:
+			// check if emulator is in device list
+			devices, err := GetAndroidDevices()
+			if err != nil {
+				continue // keep trying
+			}
 
-		// check if emulator is in device list
-		devices, err := GetAndroidDevices()
-		if err == nil {
 			for _, device := range devices {
 				// check if this is our emulator by matching the AVD name
 				if device.Platform() == "android" && device.DeviceType() == "emulator" {
@@ -375,8 +379,6 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(avdName string, maxWaitTime 
 				}
 			}
 		}
-
-		time.Sleep(checkInterval)
 	}
 }
 
@@ -384,17 +386,30 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(avdName string, maxWaitTime 
 func (d *AndroidDevice) startEmulator() error {
 	utils.Verbose("Starting Android emulator: %s", d.id)
 
+	// create context with timeout for the entire boot process
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
 	// launch emulator in background
-	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
+	cmd := exec.CommandContext(ctx, getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
 	err := cmd.Start()
 	if err != nil {
-		return fmt.Errorf("failed to start emulator: %v", err)
+		return fmt.Errorf("failed to start emulator: %w", err)
 	}
+
+	// monitor context cancellation to clean up the process
+	go func() {
+		<-ctx.Done()
+		if cmd.Process != nil && ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("Boot timeout exceeded, killing emulator process")
+			_ = cmd.Process.Kill()
+		}
+	}()
 
 	utils.Verbose("Waiting for emulator to boot...")
 
 	// wait for emulator to boot and get its actual device ID
-	deviceID, err := d.waitForEmulatorBootComplete(d.id, 120*time.Second)
+	deviceID, err := d.waitForEmulatorBootComplete(ctx, d.id)
 	if err != nil {
 		return err
 	}

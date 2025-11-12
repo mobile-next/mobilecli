@@ -5,8 +5,8 @@ import (
 )
 
 // DevicesCommand lists all connected devices
-func DevicesCommand(showAll bool, platform string, deviceType string) *CommandResponse {
-	deviceInfoList, err := devices.GetDeviceInfoList(showAll, platform, deviceType)
+func DevicesCommand(opts devices.DeviceListOptions) *CommandResponse {
+	deviceInfoList, err := devices.GetDeviceInfoList(opts)
 	if err != nil {
 		return NewErrorResponse(err)
 	}

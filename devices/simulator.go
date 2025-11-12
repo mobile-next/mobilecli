@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"regexp"
@@ -159,22 +158,6 @@ func GetSimulators() ([]Simulator, error) {
 	return filteredDevices, nil
 }
 
-func filterSimulatorsByRootDirectory(simulators []Simulator) []Simulator {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-
-	var filteredDevices []Simulator
-	for _, device := range simulators {
-		rootPath := fmt.Sprintf("%s/Library/Developer/CoreSimulator/Devices/%s/data/Root", homeDir, device.UDID)
-		if _, err := os.Stat(rootPath); err == nil {
-			filteredDevices = append(filteredDevices, device)
-		}
-	}
-	return filteredDevices
-}
-
 // filterSimulatorsByDownloadsDirectory filters simulators that have been booted at least once
 // by checking if the Downloads directory exists
 func filterSimulatorsByDownloadsDirectory(simulators []Simulator) []Simulator {
@@ -191,20 +174,6 @@ func filterSimulatorsByDownloadsDirectory(simulators []Simulator) []Simulator {
 		}
 	}
 	return filteredDevices
-}
-
-func GetBootedSimulators() ([]Simulator, error) {
-	// simulators only available on macOS
-	if runtime.GOOS != "darwin" {
-		return []Simulator{}, nil
-	}
-
-	simulators, err := GetSimulators()
-	if err != nil {
-		return nil, err
-	}
-
-	return filterSimulatorsByRootDirectory(simulators), nil
 }
 
 func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
@@ -387,12 +356,12 @@ func (s *SimulatorDevice) bootSimulator() error {
 	utils.Verbose("Booting simulator %s...", s.UDID)
 	output, err := runSimctl("boot", s.UDID)
 	if err != nil {
-		return fmt.Errorf("failed to boot simulator %s: %v\n%s", s.UDID, err, output)
+		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 	}
 	utils.Verbose("Waiting for simulator to finish booting...")
 	output, err = runSimctl("bootstatus", s.UDID)
 	if err != nil {
-		return fmt.Errorf("failed to wait for boot status %s: %v\n%s", s.UDID, err, output)
+		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
 	utils.Verbose("Simulator booted successfully")
 	return nil
@@ -402,7 +371,7 @@ func (s *SimulatorDevice) StartAgent() error {
 	// check simulator state and boot if needed
 	state, err := s.getState()
 	if err != nil {
-		return fmt.Errorf("failed to get simulator state: %v", err)
+		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
 	switch state {
@@ -418,7 +387,7 @@ func (s *SimulatorDevice) StartAgent() error {
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %v\n%s", err, output)
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
 		utils.Verbose("Simulator booted successfully")
 	case "ShuttingDown":

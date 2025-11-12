@@ -109,6 +109,13 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 }
 
 // DeviceInfo represents the JSON-friendly device information
+// DeviceListOptions configures device listing behavior
+type DeviceListOptions struct {
+	ShowAll    bool
+	Platform   string
+	DeviceType string
+}
+
 type DeviceInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -130,10 +137,10 @@ type FullDeviceInfo struct {
 }
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
-func GetDeviceInfoList(showAll bool, platform string, deviceType string) ([]DeviceInfo, error) {
-	devices, err := GetAllControllableDevices(showAll)
+func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
+	devices, err := GetAllControllableDevices(opts.ShowAll)
 	if err != nil {
-		return nil, fmt.Errorf("error getting devices: %v", err)
+		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
 
 	deviceInfoList := make([]DeviceInfo, 0, len(devices))
@@ -141,17 +148,17 @@ func GetDeviceInfoList(showAll bool, platform string, deviceType string) ([]Devi
 		state := d.State()
 
 		// filter offline devices unless showAll is true
-		if !showAll && state == "offline" {
+		if !opts.ShowAll && state == "offline" {
 			continue
 		}
 
 		// filter by platform if specified
-		if platform != "" && d.Platform() != platform {
+		if opts.Platform != "" && d.Platform() != opts.Platform {
 			continue
 		}
 
 		// filter by device type if specified
-		if deviceType != "" && d.DeviceType() != deviceType {
+		if opts.DeviceType != "" && d.DeviceType() != opts.DeviceType {
 			continue
 		}
 
