@@ -175,6 +175,24 @@ func filterSimulatorsByRootDirectory(simulators []Simulator) []Simulator {
 	return filteredDevices
 }
 
+// filterSimulatorsByDownloadsDirectory filters simulators that have been booted at least once
+// by checking if the Downloads directory exists
+func filterSimulatorsByDownloadsDirectory(simulators []Simulator) []Simulator {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	var filteredDevices []Simulator
+	for _, device := range simulators {
+		downloadsPath := fmt.Sprintf("%s/Library/Developer/CoreSimulator/Devices/%s/data/Downloads", homeDir, device.UDID)
+		if _, err := os.Stat(downloadsPath); err == nil {
+			filteredDevices = append(filteredDevices, device)
+		}
+	}
+	return filteredDevices
+}
+
 func GetBootedSimulators() ([]Simulator, error) {
 	// simulators only available on macOS
 	if runtime.GOOS != "darwin" {

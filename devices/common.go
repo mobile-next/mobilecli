@@ -79,7 +79,9 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 	} else {
-		for _, sim := range sims {
+		// filter to only include simulators that have been booted at least once
+		filteredSims := filterSimulatorsByDownloadsDirectory(sims)
+		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
 				wdaClient: nil,
