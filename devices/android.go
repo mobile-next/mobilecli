@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func (d AndroidDevice) DeviceType() string {
 func getAdbPath() string {
 	adbPath := os.Getenv("ANDROID_HOME")
 	if adbPath != "" {
-		return adbPath + "/platform-tools/adb"
+		return filepath.Join(adbPath, "platform-tools", "adb")
 	}
 
 	// try default Android SDK location on macOS
@@ -59,6 +60,26 @@ func getAdbPath() string {
 		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
 		if _, err := os.Stat(defaultPath); err == nil {
 			return defaultPath
+		}
+	}
+
+	// try default Android SDK location on Windows
+	if runtime.GOOS == "windows" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData != "" {
+			defaultPath := filepath.Join(localAppData, "Android", "Sdk", "platform-tools", "adb.exe")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
+		}
+
+		// fallback to USERPROFILE on Windows
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
 		}
 	}
 
@@ -73,7 +94,7 @@ func (d AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 }
 
 func (d AndroidDevice) TakeScreenshot() ([]byte, error) {
-	byteData, err := d.runAdbCommand("shell", "screencap", "-p")
+	byteData, err := d.runAdbCommand("exec-out", "screencap", "-p")
 	if err != nil {
 		return nil, fmt.Errorf("failed to take screenshot: %v", err)
 	}
@@ -384,7 +405,8 @@ func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 
 	// remove the "package:" prefix
 	appPath := strings.TrimPrefix(string(output), "package:")
-	appPath = strings.TrimSuffix(appPath, "\n")
+	// trim all whitespace including \r\n (CRLF on Windows)
+	appPath = strings.TrimSpace(appPath)
 	return appPath, nil
 }
 
@@ -405,7 +427,7 @@ func (d AndroidDevice) StartScreenCapture(format string, quality int, scale floa
 	}
 
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.id}, "shell", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
+	cmdArgs := append([]string{"-s", d.id}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()

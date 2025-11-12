@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
@@ -177,16 +179,52 @@ func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
 	return result, nil
 }
 
-func (d *IOSDevice) StartTunnel() error {
-	return d.tunnelManager.StartTunnel()
-}
-
 func (d *IOSDevice) StartTunnelWithCallback(onProcessDied func(error)) error {
 	return d.tunnelManager.StartTunnelWithCallback(onProcessDied)
 }
 
-func (d *IOSDevice) StopTunnel() error {
+func (d *IOSDevice) stopTunnel() error {
 	return d.tunnelManager.StopTunnel()
+}
+
+func (d *IOSDevice) requiresTunnel() bool {
+	parts := strings.Split(d.OSVersion, ".")
+	if len(parts) == 0 {
+		return false
+	}
+
+	majorVersion, err := strconv.Atoi(parts[0])
+	if err != nil {
+		utils.Verbose("failed to parse iOS version %s: %v", d.OSVersion, err)
+		return false
+	}
+
+	return majorVersion >= 17
+}
+
+func (d *IOSDevice) startTunnel() error {
+	if !d.requiresTunnel() {
+		return nil
+	}
+
+	tunnels, err := d.ListTunnels()
+	if err != nil {
+		return fmt.Errorf("failed to list tunnels: %w", err)
+	}
+
+	if len(tunnels) > 0 {
+		utils.Verbose("Tunnels available for this device: %v", tunnels)
+		return nil
+	}
+
+	utils.Verbose("No tunnels found, starting a new tunnel")
+	err = d.tunnelManager.StartTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
+	time.Sleep(1 * time.Second)
+	return nil
 }
 
 func (d *IOSDevice) StartAgent() error {
@@ -230,24 +268,10 @@ func (d *IOSDevice) StartAgent() error {
 			return fmt.Errorf("WebDriverAgent is not installed")
 		}
 
-		// check if tunnel is running
-		tunnels, err := d.ListTunnels()
+		// start tunnel if needed (only for iOS 17+)
+		err = d.startTunnel()
 		if err != nil {
-			return fmt.Errorf("failed to list tunnels: %w", err)
-		}
-
-		if len(tunnels) > 0 {
-			utils.Verbose("Tunnels available for this device: %v", tunnels)
-		}
-
-		if len(tunnels) == 0 {
-			utils.Verbose("No tunnels found, starting a new tunnel")
-			err = d.StartTunnel()
-			if err != nil {
-				return fmt.Errorf("failed to start tunnel: %w", err)
-			}
-
-			time.Sleep(1 * time.Second)
+			return err
 		}
 
 		// check that forward proxy is running

@@ -89,18 +89,17 @@ jobs:
 
     - name: Build
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-amd64
-        lipo mobilecli-arm64 mobilecli-amd64 -create -output mobilecli-darwin
-        rm mobilecli-arm64 mobilecli-amd64
-        ./mobilecli-darwin --version
+        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-darwin-arm64
+        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-darwin-amd64
+        ./mobilecli-darwin-arm64 --version
 
     - name: Upload macos build artifact
       uses: actions/upload-artifact@v4
       with:
         name: macos-build
         path: |
-          mobilecli-darwin
+          mobilecli-darwin-arm64
+          mobilecli-darwin-amd64
         retention-days: 1
         overwrite: true
 
@@ -204,7 +203,7 @@ jobs:
 
     - name: Make mobilecli executable
       run: |
-        mv mobilecli-darwin mobilecli
+        mv mobilecli-darwin-arm64 mobilecli
         chmod +x mobilecli
 
     - name: Switch to Xcode ${{ matrix.xcode_version }}
@@ -324,7 +323,7 @@ jobs:
 #        npm run test -- --grep "Android API ${{ matrix.api_level }}"
 
   publish:
-
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -352,13 +351,17 @@ jobs:
         path: mobilecli-windows
 
     - name: Zip builds
-      if: github.ref_type == 'tag'
       run: |
         mkdir dist
         cd dist
-        # mac
-        cp ../mobilecli-darwin/mobilecli-darwin mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-macos.zip mobilecli
+        # macos-arm64
+        cp ../mobilecli-darwin/mobilecli-darwin-arm64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-macos-arm64.zip mobilecli
+        rm -f mobilecli
+
+        # macos-amd64
+        cp ../mobilecli-darwin/mobilecli-darwin-amd64 mobilecli
+        zip -9 ../mobilecli-${{ github.ref_name }}-macos-amd64.zip mobilecli
         rm -f mobilecli
 
         # linux-amd64
@@ -381,7 +384,6 @@ jobs:
         rm -rf dist
 
     - name: Upload to GitHub Release
-      if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -391,12 +393,12 @@ jobs:
           mobilecli-*.zip
 
     - name: Publish
-      if: github.ref_type == 'tag'
       env:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
         # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin publish/npm/bin
+        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
+        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
         mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
