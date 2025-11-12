@@ -161,7 +161,7 @@ func getOfflineAndroidEmulators(onlineDeviceIDs map[string]bool) ([]Controllable
 				version = info.APILevel
 			}
 
-			offlineDevices = append(offlineDevices, AndroidDevice{
+			offlineDevices = append(offlineDevices, &AndroidDevice{
 				id:      avdName,
 				name:    displayName,
 				version: version,

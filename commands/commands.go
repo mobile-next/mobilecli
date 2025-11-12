@@ -44,8 +44,8 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 		return device, nil
 	}
 
-	// Get all devices and find the one we want
-	allDevices, err := devices.GetAllControllableDevices()
+	// Get all devices including offline ones and find the one we want
+	allDevices, err := devices.GetAllControllableDevicesWithOptions(true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}
