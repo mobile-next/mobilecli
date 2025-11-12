@@ -45,7 +45,7 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	}
 
 	// Get all devices including offline ones and find the one we want
-	allDevices, err := devices.GetAllControllableDevicesWithOptions(true)
+	allDevices, err := devices.GetAllControllableDevices(true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}
@@ -68,7 +68,7 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	}
 
 	// Get all devices for auto-selection
-	allDevices, err := devices.GetAllControllableDevices()
+	allDevices, err := devices.GetAllControllableDevices(false)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}

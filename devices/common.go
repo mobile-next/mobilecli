@@ -52,13 +52,8 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 }
 
-// Aggregates all known devices (iOS, Android, Simulators)
-func GetAllControllableDevices() ([]ControllableDevice, error) {
-	return GetAllControllableDevicesWithOptions(false)
-}
-
-// GetAllControllableDevicesWithOptions aggregates all known devices with options
-func GetAllControllableDevicesWithOptions(includeOffline bool) ([]ControllableDevice, error) {
+// GetAllControllableDevices aggregates all known devices with options
+func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
 	// get Android devices
@@ -136,7 +131,7 @@ type FullDeviceInfo struct {
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(showAll bool, platform string, deviceType string) ([]DeviceInfo, error) {
-	devices, err := GetAllControllableDevicesWithOptions(showAll)
+	devices, err := GetAllControllableDevices(showAll)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}
