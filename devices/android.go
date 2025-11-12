@@ -339,6 +339,44 @@ func (d *AndroidDevice) StartAgent() error {
 	return nil
 }
 
+// matchesAVDName checks if a device name matches an AVD name (pure function)
+func matchesAVDName(avdName, deviceName string) bool {
+	normalizedAVD := strings.ReplaceAll(avdName, "_", " ")
+	return normalizedAVD == deviceName || avdName == deviceName
+}
+
+// waitForEmulatorBootComplete waits for an emulator to appear and be fully booted
+func (d *AndroidDevice) waitForEmulatorBootComplete(avdName string, maxWaitTime time.Duration) (string, error) {
+	checkInterval := 2 * time.Second
+	startTime := time.Now()
+
+	for {
+		if time.Since(startTime) > maxWaitTime {
+			return "", fmt.Errorf("emulator failed to start within %v", maxWaitTime)
+		}
+
+		// check if emulator is in device list
+		devices, err := GetAndroidDevices()
+		if err == nil {
+			for _, device := range devices {
+				// check if this is our emulator by matching the AVD name
+				if device.Platform() == "android" && device.DeviceType() == "emulator" {
+					deviceName := getAndroidDeviceName(device.ID())
+					if matchesAVDName(avdName, deviceName) {
+						// found our emulator, check if it's fully booted
+						bootComplete, _ := d.checkBootComplete(device.ID())
+						if bootComplete {
+							return device.ID(), nil
+						}
+					}
+				}
+			}
+		}
+
+		time.Sleep(checkInterval)
+	}
+}
+
 // startEmulator launches an offline Android emulator and waits for it to be ready
 func (d *AndroidDevice) startEmulator() error {
 	utils.Verbose("Starting Android emulator: %s", d.id)
@@ -352,41 +390,17 @@ func (d *AndroidDevice) startEmulator() error {
 
 	utils.Verbose("Waiting for emulator to boot...")
 
-	// wait for emulator to appear in adb devices and be fully booted
-	maxWaitTime := 120 * time.Second
-	checkInterval := 2 * time.Second
-	startTime := time.Now()
-
-	for {
-		if time.Since(startTime) > maxWaitTime {
-			return fmt.Errorf("emulator failed to start within %v", maxWaitTime)
-		}
-
-		// check if emulator is in device list
-		devices, err := GetAndroidDevices()
-		if err == nil {
-			for _, device := range devices {
-				// check if this is our emulator by matching the AVD name
-				if device.Platform() == "android" && device.DeviceType() == "emulator" {
-					deviceName := getAndroidDeviceName(device.ID())
-					// match AVD name with device name
-					if strings.ReplaceAll(d.id, "_", " ") == deviceName || d.id == deviceName {
-						// found our emulator, check if it's fully booted
-						bootComplete, _ := d.checkBootComplete(device.ID())
-						if bootComplete {
-							utils.Verbose("Emulator booted successfully: %s", device.ID())
-							// update our device ID to the actual emulator-XXXX ID
-							d.id = device.ID()
-							d.state = "online"
-							return nil
-						}
-					}
-				}
-			}
-		}
-
-		time.Sleep(checkInterval)
+	// wait for emulator to boot and get its actual device ID
+	deviceID, err := d.waitForEmulatorBootComplete(d.id, 120*time.Second)
+	if err != nil {
+		return err
 	}
+
+	utils.Verbose("Emulator booted successfully: %s", deviceID)
+	// update our device ID to the actual emulator-XXXX ID
+	d.id = deviceID
+	d.state = "online"
+	return nil
 }
 
 // checkBootComplete checks if an emulator has finished booting

@@ -136,8 +136,7 @@ func getOfflineAndroidEmulators(onlineDeviceIDs map[string]bool) ([]Controllable
 		isOnline := false
 		for deviceID := range onlineDeviceIDs {
 			deviceName := getAndroidDeviceName(deviceID)
-			// compare with spaces instead of underscores
-			if strings.ReplaceAll(avdName, "_", " ") == deviceName || avdName == deviceName {
+			if matchesAVDName(avdName, deviceName) {
 				isOnline = true
 				break
 			}
