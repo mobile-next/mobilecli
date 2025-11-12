@@ -98,6 +98,7 @@ func getAdbPath() string {
 		if runtime.GOOS == "windows" {
 			adbPath += ".exe"
 		}
+
 		return adbPath
 	}
 
@@ -113,6 +114,7 @@ func getAvdManagerPath() string {
 		if runtime.GOOS == "windows" {
 			avdPath += ".bat"
 		}
+
 		if _, err := os.Stat(avdPath); err == nil {
 			return avdPath
 		}
@@ -122,6 +124,7 @@ func getAvdManagerPath() string {
 		if runtime.GOOS == "windows" {
 			avdPath += ".bat"
 		}
+
 		if _, err := os.Stat(avdPath); err == nil {
 			return avdPath
 		}
@@ -281,7 +284,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// Try getting AVD name first (for emulators)
+	// try getting AVD name first (for emulators)
 	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
 	avdOutput, err := avdCmd.CombinedOutput()
 	if err == nil && len(avdOutput) > 0 {
@@ -291,7 +294,7 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// Fall back to product model
+	// fall back to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
@@ -665,20 +668,20 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 }
 
 type uiAutomatorXmlNode struct {
-	XMLName     xml.Name               `xml:"node"`
-	Class       string                 `xml:"class,attr"`
-	Text        string                 `xml:"text,attr"`
-	Bounds      string                 `xml:"bounds,attr"`
-	Hint        string                 `xml:"hint,attr"`
-	Focused     string                 `xml:"focused,attr"`
-	ContentDesc string                 `xml:"content-desc,attr"`
-	ResourceID  string                 `xml:"resource-id,attr"`
-	Nodes       []uiAutomatorXmlNode   `xml:"node"`
+	XMLName     xml.Name             `xml:"node"`
+	Class       string               `xml:"class,attr"`
+	Text        string               `xml:"text,attr"`
+	Bounds      string               `xml:"bounds,attr"`
+	Hint        string               `xml:"hint,attr"`
+	Focused     string               `xml:"focused,attr"`
+	ContentDesc string               `xml:"content-desc,attr"`
+	ResourceID  string               `xml:"resource-id,attr"`
+	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
 type uiAutomatorXml struct {
-	XMLName   xml.Name `xml:"hierarchy"`
-	RootNode  uiAutomatorXmlNode `xml:"node"`
+	XMLName  xml.Name           `xml:"hierarchy"`
+	RootNode uiAutomatorXmlNode `xml:"node"`
 }
 
 func (d AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
