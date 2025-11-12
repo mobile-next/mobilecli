@@ -16,7 +16,7 @@ var devicesCmd = &cobra.Command{
 	Short: "List connected devices",
 	Long:  `List all connected iOS and Android devices, both real devices and simulators/emulators.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.DevicesCommand(showAllDevices)
+		response := commands.DevicesCommand(showAllDevices, platform, deviceType)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)

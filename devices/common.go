@@ -135,7 +135,7 @@ type FullDeviceInfo struct {
 }
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
-func GetDeviceInfoList(showAll bool) ([]DeviceInfo, error) {
+func GetDeviceInfoList(showAll bool, platform string, deviceType string) ([]DeviceInfo, error) {
 	devices, err := GetAllControllableDevicesWithOptions(showAll)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
@@ -147,6 +147,16 @@ func GetDeviceInfoList(showAll bool) ([]DeviceInfo, error) {
 
 		// filter offline devices unless showAll is true
 		if !showAll && state == "offline" {
+			continue
+		}
+
+		// filter by platform if specified
+		if platform != "" && d.Platform() != platform {
+			continue
+		}
+
+		// filter by device type if specified
+		if deviceType != "" && d.DeviceType() != deviceType {
 			continue
 		}
 

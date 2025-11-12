@@ -199,8 +199,8 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 }
 
 func handleDevicesList() (interface{}, error) {
-	// server always shows all devices by default
-	response := commands.DevicesCommand(true)
+	// server always shows all devices by default (no platform or type filtering)
+	response := commands.DevicesCommand(true, "", "")
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
