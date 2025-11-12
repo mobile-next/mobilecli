@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/mobile-next/mobilecli/assets"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
@@ -373,12 +374,11 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		return fmt.Errorf("failed to modify Info.plist: %w", err)
 	}
 
-	// copy icon file
-	iconSource := "mobile-next-logo.png"
+	// write embedded icon file
 	iconDest := appDir + "/AppIcon.png"
-	err = utils.CopyFile(iconSource, iconDest)
+	err = os.WriteFile(iconDest, assets.AppIconData, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to copy icon: %w", err)
+		return fmt.Errorf("failed to write icon: %w", err)
 	}
 
 	// add icon configuration to plist
