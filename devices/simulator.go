@@ -399,17 +399,32 @@ func (s *SimulatorDevice) bootSimulator() error {
 }
 
 func (s *SimulatorDevice) StartAgent() error {
-	// check if simulator is shutdown and boot it if needed
+	// check simulator state and boot if needed
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %v", err)
 	}
 
-	if state == "Shutdown" {
-		err = s.bootSimulator()
-		if err != nil {
+	switch state {
+	case "Booted":
+		// already booted, continue to WDA
+	case "Shutdown":
+		// boot the simulator
+		if err := s.bootSimulator(); err != nil {
 			return err
 		}
+	case "Booting":
+		// simulator is already booting, just wait for it to finish
+		utils.Verbose("Simulator is booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %v\n%s", err, output)
+		}
+		utils.Verbose("Simulator booted successfully")
+	case "ShuttingDown":
+		return fmt.Errorf("simulator is shutting down, please try again")
+	default:
+		return fmt.Errorf("unexpected simulator state: %s", state)
 	}
 
 	if currentPort, err := s.getWdaPort(); err == nil {
