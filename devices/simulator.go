@@ -64,6 +64,12 @@ func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
 func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
+func (s SimulatorDevice) State() string {
+	if s.Simulator.State == "Booted" {
+		return "online"
+	}
+	return "offline"
+}
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
 	return s.wdaClient.TakeScreenshot()

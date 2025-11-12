@@ -48,6 +48,10 @@ func (d AndroidDevice) DeviceType() string {
 	}
 }
 
+func (d AndroidDevice) State() string {
+	return "online"
+}
+
 func getAdbPath() string {
 	adbPath := os.Getenv("ANDROID_HOME")
 	if adbPath != "" {
