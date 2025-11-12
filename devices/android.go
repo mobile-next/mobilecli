@@ -22,6 +22,7 @@ type AndroidDevice struct {
 	id      string
 	name    string
 	version string
+	state   string // "online" or "offline"
 }
 
 func (d AndroidDevice) ID() string {
@@ -41,7 +42,7 @@ func (d AndroidDevice) Platform() string {
 }
 
 func (d AndroidDevice) DeviceType() string {
-	if strings.HasPrefix(d.id, "emulator-") {
+	if strings.HasPrefix(d.id, "emulator-") || d.state == "offline" {
 		return "emulator"
 	} else {
 		return "real"
@@ -49,19 +50,19 @@ func (d AndroidDevice) DeviceType() string {
 }
 
 func (d AndroidDevice) State() string {
-	return "online"
+	return d.state
 }
 
-func getAdbPath() string {
-	adbPath := os.Getenv("ANDROID_HOME")
-	if adbPath != "" {
-		return filepath.Join(adbPath, "platform-tools", "adb")
+func getAndroidSdkPath() string {
+	sdkPath := os.Getenv("ANDROID_HOME")
+	if sdkPath != "" {
+		return sdkPath
 	}
 
 	// try default Android SDK location on macOS
 	homeDir := os.Getenv("HOME")
 	if homeDir != "" {
-		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
+		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk")
 		if _, err := os.Stat(defaultPath); err == nil {
 			return defaultPath
 		}
@@ -71,7 +72,7 @@ func getAdbPath() string {
 	if runtime.GOOS == "windows" {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		if localAppData != "" {
-			defaultPath := filepath.Join(localAppData, "Android", "Sdk", "platform-tools", "adb.exe")
+			defaultPath := filepath.Join(localAppData, "Android", "Sdk")
 			if _, err := os.Stat(defaultPath); err == nil {
 				return defaultPath
 			}
@@ -80,15 +81,70 @@ func getAdbPath() string {
 		// fallback to USERPROFILE on Windows
 		userProfile := os.Getenv("USERPROFILE")
 		if userProfile != "" {
-			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe")
+			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk")
 			if _, err := os.Stat(defaultPath); err == nil {
 				return defaultPath
 			}
 		}
 	}
 
+	return ""
+}
+
+func getAdbPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		adbPath := filepath.Join(sdkPath, "platform-tools", "adb")
+		if runtime.GOOS == "windows" {
+			adbPath += ".exe"
+		}
+		return adbPath
+	}
+
 	// best effort, look in path
 	return "adb"
+}
+
+func getAvdManagerPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		// try cmdline-tools/latest first
+		avdPath := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "avdmanager")
+		if runtime.GOOS == "windows" {
+			avdPath += ".bat"
+		}
+		if _, err := os.Stat(avdPath); err == nil {
+			return avdPath
+		}
+
+		// fallback to tools/bin (older SDK layout)
+		avdPath = filepath.Join(sdkPath, "tools", "bin", "avdmanager")
+		if runtime.GOOS == "windows" {
+			avdPath += ".bat"
+		}
+		if _, err := os.Stat(avdPath); err == nil {
+			return avdPath
+		}
+	}
+
+	// best effort, look in path
+	return "avdmanager"
+}
+
+func getEmulatorPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
+		if runtime.GOOS == "windows" {
+			emulatorPath += ".exe"
+		}
+		if _, err := os.Stat(emulatorPath); err == nil {
+			return emulatorPath
+		}
+	}
+
+	// best effort, look in path
+	return "emulator"
 }
 
 func (d AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
@@ -215,6 +271,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 					id:      deviceID,
 					name:    getAndroidDeviceName(deviceID),
 					version: getAndroidDeviceVersion(deviceID),
+					state:   "online",
 				})
 			}
 		}

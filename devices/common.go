@@ -54,6 +54,11 @@ type ControllableDevice interface {
 
 // Aggregates all known devices (iOS, Android, Simulators)
 func GetAllControllableDevices() ([]ControllableDevice, error) {
+	return GetAllControllableDevicesWithOptions(false)
+}
+
+// GetAllControllableDevicesWithOptions aggregates all known devices with options
+func GetAllControllableDevicesWithOptions(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
 	// get Android devices
@@ -62,6 +67,22 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 	} else {
 		allDevices = append(allDevices, androidDevices...)
+	}
+
+	// get offline Android emulators if requested
+	if includeOffline {
+		// build map of online device IDs for quick lookup
+		onlineDeviceIDs := make(map[string]bool)
+		for _, device := range androidDevices {
+			onlineDeviceIDs[device.ID()] = true
+		}
+
+		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
+		if err != nil {
+			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
+		} else {
+			allDevices = append(allDevices, offlineEmulators...)
+		}
 	}
 
 	// get iOS real devices
@@ -115,7 +136,7 @@ type FullDeviceInfo struct {
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(showAll bool) ([]DeviceInfo, error) {
-	devices, err := GetAllControllableDevices()
+	devices, err := GetAllControllableDevicesWithOptions(showAll)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}
