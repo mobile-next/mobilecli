@@ -73,18 +73,26 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return nil, fmt.Errorf("error getting devices: %v", err)
 	}
 
-	if len(allDevices) == 0 {
-		return nil, fmt.Errorf("no devices found")
+	// filter to only online devices for auto-selection
+	var onlineDevices []devices.ControllableDevice
+	for _, d := range allDevices {
+		if d.State() == "online" {
+			onlineDevices = append(onlineDevices, d)
+		}
 	}
 
-	if len(allDevices) == 1 {
-		device := allDevices[0]
+	if len(onlineDevices) == 0 {
+		return nil, fmt.Errorf("no online devices found")
+	}
+
+	if len(onlineDevices) == 1 {
+		device := onlineDevices[0]
 		// Cache the device for future use
 		deviceCache[device.ID()] = device
 		return device, nil
 	}
 
-	err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(allDevices), getDeviceIDList(allDevices))
+	err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
 	return nil, err
 }
 
