@@ -386,18 +386,18 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 func (d *AndroidDevice) startEmulator() error {
 	utils.Verbose("Starting Android emulator: %s", d.id)
 
-	// create context with timeout for the entire boot process
+	// create context with timeout for the boot wait process
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// launch emulator in background
-	cmd := exec.CommandContext(ctx, getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
+	// launch emulator in background without context (so it persists after function returns)
+	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
 	}
 
-	// monitor context cancellation to clean up the process
+	// monitor context cancellation to clean up the process only on timeout
 	go func() {
 		<-ctx.Done()
 		if cmd.Process != nil && ctx.Err() == context.DeadlineExceeded {
@@ -411,6 +411,10 @@ func (d *AndroidDevice) startEmulator() error {
 	// wait for emulator to boot and get its actual device ID
 	deviceID, err := d.waitForEmulatorBootComplete(ctx, d.id)
 	if err != nil {
+		// if boot failed, kill the emulator process
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 		return err
 	}
 
