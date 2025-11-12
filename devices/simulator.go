@@ -120,6 +120,23 @@ func modifyPlist(plistPath, key, value string) error {
 	return nil
 }
 
+// addIconToPlist adds the CFBundleIconFiles array to the plist
+func addIconToPlist(plistPath string) error {
+	// insert CFBundleIconFiles as array
+	cmd := exec.Command("plutil", "-insert", "CFBundleIconFiles", "-array", plistPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to insert CFBundleIconFiles: %v\n%s", err, output)
+	}
+
+	// insert AppIcon.png as first element in the array
+	cmd = exec.Command("plutil", "-insert", "CFBundleIconFiles.0", "-string", "AppIcon.png", plistPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to insert AppIcon.png: %v\n%s", err, output)
+	}
+
+	return nil
+}
+
 // getSimulators executes 'xcrun simctl list --json' and returns the parsed response
 func GetSimulators() ([]Simulator, error) {
 	output, err := runSimctl("list", "--json")
@@ -336,14 +353,30 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	defer func() { _ = os.RemoveAll(dir) }()
 	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
 
+	appDir := dir + "/WebDriverAgentRunner-Runner.app"
+	infoPlistPath := appDir + "/Info.plist"
+
 	// modify info.plist to add CFBundleDisplayName
-	infoPlistPath := dir + "/WebDriverAgentRunner-Runner.app/Info.plist"
 	err = modifyPlist(infoPlistPath, "CFBundleDisplayName", "Mobile Next Kit")
 	if err != nil {
 		return fmt.Errorf("failed to modify Info.plist: %v", err)
 	}
 
-	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
+	// copy icon file
+	iconSource := "mobile-next-logo.png"
+	iconDest := appDir + "/AppIcon.png"
+	err = utils.CopyFile(iconSource, iconDest)
+	if err != nil {
+		return fmt.Errorf("failed to copy icon: %v", err)
+	}
+
+	// add icon configuration to plist
+	err = addIconToPlist(infoPlistPath)
+	if err != nil {
+		return fmt.Errorf("failed to add icon to plist: %v", err)
+	}
+
+	err = InstallApp(s.UDID, appDir)
 	if err != nil {
 		return fmt.Errorf("failed to install WebDriverAgent: %v", err)
 	}
