@@ -104,6 +104,22 @@ func runSimctl(args ...string) ([]byte, error) {
 	return output, nil
 }
 
+// modifyPlist modifies a plist file using plutil to add or replace a key-value pair
+func modifyPlist(plistPath, key, value string) error {
+	// try to replace first (if key exists)
+	cmd := exec.Command("plutil", "-replace", key, "-string", value, plistPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// if replace failed, try to insert (key doesn't exist)
+		cmd = exec.Command("plutil", "-insert", key, "-string", value, plistPath)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to modify plist: %v\n%s", err, output)
+		}
+	}
+	return nil
+}
+
 // getSimulators executes 'xcrun simctl list --json' and returns the parsed response
 func GetSimulators() ([]Simulator, error) {
 	output, err := runSimctl("list", "--json")
@@ -292,6 +308,12 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 		return "", fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
 
+	// log file size
+	fileInfo, err := os.Stat(tmpFile.Name())
+	if err == nil {
+		utils.Verbose("Downloaded %d bytes", fileInfo.Size())
+	}
+
 	return tmpFile.Name(), nil
 }
 
@@ -313,6 +335,13 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 
 	defer func() { _ = os.RemoveAll(dir) }()
 	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
+
+	// modify info.plist to add CFBundleDisplayName
+	infoPlistPath := dir + "/WebDriverAgentRunner-Runner.app/Info.plist"
+	err = modifyPlist(infoPlistPath, "CFBundleDisplayName", "Mobile Next Kit")
+	if err != nil {
+		return fmt.Errorf("failed to modify Info.plist: %v", err)
+	}
 
 	err = InstallApp(s.UDID, dir+"/WebDriverAgentRunner-Runner.app")
 	if err != nil {
