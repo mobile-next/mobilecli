@@ -104,17 +104,24 @@ func runSimctl(args ...string) ([]byte, error) {
 	return output, nil
 }
 
+// modifyPlistInput contains parameters for modifying a plist file
+type modifyPlistInput struct {
+	plistPath string
+	key       string
+	value     string
+}
+
 // modifyPlist modifies a plist file using plutil to add or replace a key-value pair
-func modifyPlist(plistPath, key, value string) error {
+func modifyPlist(input modifyPlistInput) error {
 	// try to replace first (if key exists)
-	cmd := exec.Command("plutil", "-replace", key, "-string", value, plistPath)
+	cmd := exec.Command("plutil", "-replace", input.key, "-string", input.value, input.plistPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// if replace failed, try to insert (key doesn't exist)
-		cmd = exec.Command("plutil", "-insert", key, "-string", value, plistPath)
+		cmd = exec.Command("plutil", "-insert", input.key, "-string", input.value, input.plistPath)
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to modify plist: %v\n%s", err, output)
+			return fmt.Errorf("failed to modify plist: %w\n%s", err, output)
 		}
 	}
 	return nil
@@ -125,13 +132,13 @@ func addIconToPlist(plistPath string) error {
 	// insert CFBundleIconFiles as array
 	cmd := exec.Command("plutil", "-insert", "CFBundleIconFiles", "-array", plistPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert CFBundleIconFiles: %v\n%s", err, output)
+		return fmt.Errorf("failed to insert CFBundleIconFiles: %w\n%s", err, output)
 	}
 
 	// insert AppIcon.png as first element in the array
 	cmd = exec.Command("plutil", "-insert", "CFBundleIconFiles.0", "-string", "AppIcon.png", plistPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert AppIcon.png: %v\n%s", err, output)
+		return fmt.Errorf("failed to insert AppIcon.png: %w\n%s", err, output)
 	}
 
 	return nil
@@ -322,7 +329,7 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	err = utils.DownloadFile(url, tmpFile.Name())
 	if err != nil {
 		_ = os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to download WebDriverAgent: %v", err)
+		return "", fmt.Errorf("failed to download WebDriverAgent: %w", err)
 	}
 
 	// log file size
@@ -357,9 +364,13 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	infoPlistPath := appDir + "/Info.plist"
 
 	// modify info.plist to add CFBundleDisplayName
-	err = modifyPlist(infoPlistPath, "CFBundleDisplayName", "Mobile Next Kit")
+	err = modifyPlist(modifyPlistInput{
+		plistPath: infoPlistPath,
+		key:       "CFBundleDisplayName",
+		value:     "Mobile Next Kit",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to modify Info.plist: %v", err)
+		return fmt.Errorf("failed to modify Info.plist: %w", err)
 	}
 
 	// copy icon file
@@ -367,23 +378,23 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	iconDest := appDir + "/AppIcon.png"
 	err = utils.CopyFile(iconSource, iconDest)
 	if err != nil {
-		return fmt.Errorf("failed to copy icon: %v", err)
+		return fmt.Errorf("failed to copy icon: %w", err)
 	}
 
 	// add icon configuration to plist
 	err = addIconToPlist(infoPlistPath)
 	if err != nil {
-		return fmt.Errorf("failed to add icon to plist: %v", err)
+		return fmt.Errorf("failed to add icon to plist: %w", err)
 	}
 
 	err = InstallApp(s.UDID, appDir)
 	if err != nil {
-		return fmt.Errorf("failed to install WebDriverAgent: %v", err)
+		return fmt.Errorf("failed to install WebDriverAgent: %w", err)
 	}
 
 	err = s.WaitUntilAppExists("com.facebook.WebDriverAgentRunner.xctrunner")
 	if err != nil {
-		return fmt.Errorf("failed to wait for WebDriverAgent to be installed: %v", err)
+		return fmt.Errorf("failed to wait for WebDriverAgent to be installed: %w", err)
 	}
 
 	return nil
