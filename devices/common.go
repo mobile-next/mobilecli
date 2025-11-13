@@ -28,6 +28,7 @@ type ControllableDevice interface {
 	Platform() string   // e.g., "ios", "android"
 	DeviceType() string // e.g., "real", "simulator", "emulator"
 	Version() string    // OS version
+	State() string      // e.g., "online", "offline"
 
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
@@ -51,8 +52,8 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 }
 
-// Aggregates all known devices (iOS, Android, Simulators)
-func GetAllControllableDevices() ([]ControllableDevice, error) {
+// GetAllControllableDevices aggregates all known devices with options
+func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
 	// get Android devices
@@ -61,6 +62,22 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 	} else {
 		allDevices = append(allDevices, androidDevices...)
+	}
+
+	// get offline Android emulators if requested
+	if includeOffline {
+		// build map of online device IDs for quick lookup
+		onlineDeviceIDs := make(map[string]bool)
+		for _, device := range androidDevices {
+			onlineDeviceIDs[device.ID()] = true
+		}
+
+		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
+		if err != nil {
+			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
+		} else {
+			allDevices = append(allDevices, offlineEmulators...)
+		}
 	}
 
 	// get iOS real devices
@@ -73,12 +90,14 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 		}
 	}
 
-	// get iOS simulator devices
-	sims, err := GetBootedSimulators()
+	// get iOS simulator devices (all simulators, not just booted ones)
+	sims, err := GetSimulators()
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 	} else {
-		for _, sim := range sims {
+		// filter to only include simulators that have been booted at least once
+		filteredSims := filterSimulatorsByDownloadsDirectory(sims)
+		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
 				wdaClient: nil,
@@ -90,12 +109,20 @@ func GetAllControllableDevices() ([]ControllableDevice, error) {
 }
 
 // DeviceInfo represents the JSON-friendly device information
+// DeviceListOptions configures device listing behavior
+type DeviceListOptions struct {
+	ShowAll    bool
+	Platform   string
+	DeviceType string
+}
+
 type DeviceInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Platform string `json:"platform"`
 	Type     string `json:"type"`
 	Version  string `json:"version"`
+	State    string `json:"state"`
 }
 
 type ScreenSize struct {
@@ -110,21 +137,39 @@ type FullDeviceInfo struct {
 }
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
-func GetDeviceInfoList() ([]DeviceInfo, error) {
-	devices, err := GetAllControllableDevices()
+func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
+	devices, err := GetAllControllableDevices(opts.ShowAll)
 	if err != nil {
-		return nil, fmt.Errorf("error getting devices: %v", err)
+		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
 
-	deviceInfoList := make([]DeviceInfo, len(devices))
-	for i, d := range devices {
-		deviceInfoList[i] = DeviceInfo{
+	deviceInfoList := make([]DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		state := d.State()
+
+		// filter offline devices unless showAll is true
+		if !opts.ShowAll && state == "offline" {
+			continue
+		}
+
+		// filter by platform if specified
+		if opts.Platform != "" && d.Platform() != opts.Platform {
+			continue
+		}
+
+		// filter by device type if specified
+		if opts.DeviceType != "" && d.DeviceType() != opts.DeviceType {
+			continue
+		}
+
+		deviceInfoList = append(deviceInfoList, DeviceInfo{
 			ID:       d.ID(),
 			Name:     d.Name(),
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
-		}
+			State:    state,
+		})
 	}
 
 	return deviceInfoList, nil

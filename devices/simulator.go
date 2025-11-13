@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"regexp"
@@ -65,6 +64,12 @@ func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
 func (s SimulatorDevice) Platform() string   { return "ios" }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
+func (s SimulatorDevice) State() string {
+	if s.Simulator.State == "Booted" {
+		return "online"
+	}
+	return "offline"
+}
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
 	return s.wdaClient.TakeScreenshot()
@@ -194,28 +199,22 @@ func GetSimulators() ([]Simulator, error) {
 	return filteredDevices, nil
 }
 
-func filterSimulatorsByState(simulators []Simulator, state string) []Simulator {
+// filterSimulatorsByDownloadsDirectory filters simulators that have been booted at least once
+// by checking if the Downloads directory exists
+func filterSimulatorsByDownloadsDirectory(simulators []Simulator) []Simulator {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
 	var filteredDevices []Simulator
 	for _, device := range simulators {
-		if device.State == state {
+		downloadsPath := fmt.Sprintf("%s/Library/Developer/CoreSimulator/Devices/%s/data/Downloads", homeDir, device.UDID)
+		if _, err := os.Stat(downloadsPath); err == nil {
 			filteredDevices = append(filteredDevices, device)
 		}
 	}
 	return filteredDevices
-}
-
-func GetBootedSimulators() ([]Simulator, error) {
-	// simulators only available on macOS
-	if runtime.GOOS != "darwin" {
-		return []Simulator{}, nil
-	}
-
-	simulators, err := GetSimulators()
-	if err != nil {
-		return nil, err
-	}
-
-	return filterSimulatorsByState(simulators, "Booted"), nil
 }
 
 func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
@@ -411,7 +410,65 @@ func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
 	return ok, nil
 }
 
+func (s *SimulatorDevice) getState() (string, error) {
+	simulators, err := GetSimulators()
+	if err != nil {
+		return "", err
+	}
+
+	for _, sim := range simulators {
+		if sim.UDID == s.UDID {
+			return sim.State, nil
+		}
+	}
+
+	return "", fmt.Errorf("simulator %s not found", s.UDID)
+}
+
+func (s *SimulatorDevice) bootSimulator() error {
+	utils.Verbose("Booting simulator %s...", s.UDID)
+	output, err := runSimctl("boot", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
+	}
+	utils.Verbose("Waiting for simulator to finish booting...")
+	output, err = runSimctl("bootstatus", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
+	}
+	utils.Verbose("Simulator booted successfully")
+	return nil
+}
+
 func (s *SimulatorDevice) StartAgent() error {
+	// check simulator state and boot if needed
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
+	}
+
+	switch state {
+	case "Booted":
+		// already booted, continue to WDA
+	case "Shutdown":
+		// boot the simulator
+		if err := s.bootSimulator(); err != nil {
+			return err
+		}
+	case "Booting":
+		// simulator is already booting, just wait for it to finish
+		utils.Verbose("Simulator is booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+		}
+		utils.Verbose("Simulator booted successfully")
+	case "ShuttingDown":
+		return fmt.Errorf("simulator is shutting down, please try again")
+	default:
+		return fmt.Errorf("unexpected simulator state: %s", state)
+	}
+
 	if currentPort, err := s.getWdaPort(); err == nil {
 		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
 		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)

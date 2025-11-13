@@ -56,6 +56,10 @@ func (d IOSDevice) DeviceType() string {
 	return "real"
 }
 
+func (d IOSDevice) State() string {
+	return "online"
+}
+
 func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	log.SetLevel(log.WarnLevel)
 

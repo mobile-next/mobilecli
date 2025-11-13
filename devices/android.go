@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -22,42 +23,47 @@ type AndroidDevice struct {
 	id      string
 	name    string
 	version string
+	state   string // "online" or "offline"
 }
 
-func (d AndroidDevice) ID() string {
+func (d *AndroidDevice) ID() string {
 	return d.id
 }
 
-func (d AndroidDevice) Name() string {
+func (d *AndroidDevice) Name() string {
 	return d.name
 }
 
-func (d AndroidDevice) Version() string {
+func (d *AndroidDevice) Version() string {
 	return d.version
 }
 
-func (d AndroidDevice) Platform() string {
+func (d *AndroidDevice) Platform() string {
 	return "android"
 }
 
-func (d AndroidDevice) DeviceType() string {
-	if strings.HasPrefix(d.id, "emulator-") {
+func (d *AndroidDevice) DeviceType() string {
+	if strings.HasPrefix(d.id, "emulator-") || d.state == "offline" {
 		return "emulator"
 	} else {
 		return "real"
 	}
 }
 
-func getAdbPath() string {
-	adbPath := os.Getenv("ANDROID_HOME")
-	if adbPath != "" {
-		return filepath.Join(adbPath, "platform-tools", "adb")
+func (d *AndroidDevice) State() string {
+	return d.state
+}
+
+func getAndroidSdkPath() string {
+	sdkPath := os.Getenv("ANDROID_HOME")
+	if sdkPath != "" {
+		return sdkPath
 	}
 
 	// try default Android SDK location on macOS
 	homeDir := os.Getenv("HOME")
 	if homeDir != "" {
-		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk", "platform-tools", "adb")
+		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk")
 		if _, err := os.Stat(defaultPath); err == nil {
 			return defaultPath
 		}
@@ -67,7 +73,7 @@ func getAdbPath() string {
 	if runtime.GOOS == "windows" {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		if localAppData != "" {
-			defaultPath := filepath.Join(localAppData, "Android", "Sdk", "platform-tools", "adb.exe")
+			defaultPath := filepath.Join(localAppData, "Android", "Sdk")
 			if _, err := os.Stat(defaultPath); err == nil {
 				return defaultPath
 			}
@@ -76,24 +82,82 @@ func getAdbPath() string {
 		// fallback to USERPROFILE on Windows
 		userProfile := os.Getenv("USERPROFILE")
 		if userProfile != "" {
-			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe")
+			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk")
 			if _, err := os.Stat(defaultPath); err == nil {
 				return defaultPath
 			}
 		}
 	}
 
+	return ""
+}
+
+func getAdbPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		adbPath := filepath.Join(sdkPath, "platform-tools", "adb")
+		if runtime.GOOS == "windows" {
+			adbPath += ".exe"
+		}
+
+		return adbPath
+	}
+
 	// best effort, look in path
 	return "adb"
 }
 
-func (d AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
+func getAvdManagerPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		// try cmdline-tools/latest first
+		avdPath := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "avdmanager")
+		if runtime.GOOS == "windows" {
+			avdPath += ".bat"
+		}
+
+		if _, err := os.Stat(avdPath); err == nil {
+			return avdPath
+		}
+
+		// fallback to tools/bin (older SDK layout)
+		avdPath = filepath.Join(sdkPath, "tools", "bin", "avdmanager")
+		if runtime.GOOS == "windows" {
+			avdPath += ".bat"
+		}
+
+		if _, err := os.Stat(avdPath); err == nil {
+			return avdPath
+		}
+	}
+
+	// best effort, look in path
+	return "avdmanager"
+}
+
+func getEmulatorPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
+		if runtime.GOOS == "windows" {
+			emulatorPath += ".exe"
+		}
+		if _, err := os.Stat(emulatorPath); err == nil {
+			return emulatorPath
+		}
+	}
+
+	// best effort, look in path
+	return "emulator"
+}
+
+func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	cmdArgs := append([]string{"-s", d.id}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
 }
 
-func (d AndroidDevice) TakeScreenshot() ([]byte, error) {
+func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
 	byteData, err := d.runAdbCommand("exec-out", "screencap", "-p")
 	if err != nil {
 		return nil, fmt.Errorf("failed to take screenshot: %v", err)
@@ -102,7 +166,7 @@ func (d AndroidDevice) TakeScreenshot() ([]byte, error) {
 	return byteData, nil
 }
 
-func (d AndroidDevice) LaunchApp(bundleID string) error {
+func (d *AndroidDevice) LaunchApp(bundleID string) error {
 	output, err := d.runAdbCommand("shell", "monkey", "-p", bundleID, "-c", "android.intent.category.LAUNCHER", "1")
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %v\nOutput: %s", bundleID, err, string(output))
@@ -111,7 +175,7 @@ func (d AndroidDevice) LaunchApp(bundleID string) error {
 	return nil
 }
 
-func (d AndroidDevice) TerminateApp(bundleID string) error {
+func (d *AndroidDevice) TerminateApp(bundleID string) error {
 	output, err := d.runAdbCommand("shell", "am", "force-stop", bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to terminate app %s: %v\nOutput: %s", bundleID, err, string(output))
@@ -121,7 +185,7 @@ func (d AndroidDevice) TerminateApp(bundleID string) error {
 }
 
 // Reboot reboots the Android device/emulator using `adb reboot`.
-func (d AndroidDevice) Reboot() error {
+func (d *AndroidDevice) Reboot() error {
 	_, err := d.runAdbCommand("reboot")
 	if err != nil {
 		return err
@@ -131,7 +195,7 @@ func (d AndroidDevice) Reboot() error {
 }
 
 // Tap simulates a tap at (x, y) on the Android device.
-func (d AndroidDevice) Tap(x, y int) error {
+func (d *AndroidDevice) Tap(x, y int) error {
 	_, err := d.runAdbCommand("shell", "input", "tap", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y))
 	if err != nil {
 		return err
@@ -141,7 +205,7 @@ func (d AndroidDevice) Tap(x, y int) error {
 }
 
 // LongPress simulates a long press at (x, y) on the Android device.
-func (d AndroidDevice) LongPress(x, y int) error {
+func (d *AndroidDevice) LongPress(x, y int) error {
 	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), "500")
 	if err != nil {
 		return err
@@ -151,7 +215,7 @@ func (d AndroidDevice) LongPress(x, y int) error {
 }
 
 // Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device with 1000ms duration.
-func (d AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
+func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), "1000")
 	if err != nil {
 		return err
@@ -161,7 +225,7 @@ func (d AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 }
 
 // Gesture performs a sequence of touch actions on the Android device
-func (d AndroidDevice) Gesture(actions []wda.TapAction) error {
+func (d *AndroidDevice) Gesture(actions []wda.TapAction) error {
 
 	x := 0
 	y := 0
@@ -207,10 +271,11 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 			deviceID := parts[0]
 			status := parts[1]
 			if status == "device" {
-				devices = append(devices, AndroidDevice{
+				devices = append(devices, &AndroidDevice{
 					id:      deviceID,
 					name:    getAndroidDeviceName(deviceID),
 					version: getAndroidDeviceVersion(deviceID),
+					state:   "online",
 				})
 			}
 		}
@@ -220,7 +285,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// Try getting AVD name first (for emulators)
+	// try getting AVD name first (for emulators)
 	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
 	avdOutput, err := avdCmd.CombinedOutput()
 	if err == nil && len(avdOutput) > 0 {
@@ -230,7 +295,7 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// Fall back to product model
+	// fall back to product model
 	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
 	modelOutput, err := modelCmd.CombinedOutput()
 	if err == nil && len(modelOutput) > 0 {
@@ -268,12 +333,110 @@ func GetAndroidDevices() ([]ControllableDevice, error) { // Changed return type
 	return androidDevices, nil
 }
 
-func (d AndroidDevice) StartAgent() error {
-	// android doesn't need an agent to be started
+func (d *AndroidDevice) StartAgent() error {
+	// if device is offline, it's an emulator that needs to be started
+	if d.state == "offline" {
+		return d.startEmulator()
+	}
+
+	// android doesn't need an agent to be started for online devices
 	return nil
 }
 
-func (d AndroidDevice) PressButton(key string) error {
+// matchesAVDName checks if a device name matches an AVD name (pure function)
+func matchesAVDName(avdName, deviceName string) bool {
+	normalizedAVD := strings.ReplaceAll(avdName, "_", " ")
+	return normalizedAVD == deviceName || avdName == deviceName
+}
+
+// waitForEmulatorBootComplete waits for an emulator to appear and be fully booted
+func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName string) (string, error) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("emulator boot cancelled: %w", ctx.Err())
+		case <-ticker.C:
+			// check if emulator is in device list
+			devices, err := GetAndroidDevices()
+			if err != nil {
+				continue // keep trying
+			}
+
+			for _, device := range devices {
+				// check if this is our emulator by matching the AVD name
+				if device.Platform() == "android" && device.DeviceType() == "emulator" {
+					deviceName := getAndroidDeviceName(device.ID())
+					if matchesAVDName(avdName, deviceName) {
+						// found our emulator, check if it's fully booted
+						bootComplete, _ := d.checkBootComplete(device.ID())
+						if bootComplete {
+							return device.ID(), nil
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// startEmulator launches an offline Android emulator and waits for it to be ready
+func (d *AndroidDevice) startEmulator() error {
+	utils.Verbose("Starting Android emulator: %s", d.id)
+
+	// create context with timeout for the boot wait process
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// launch emulator in background without context (so it persists after function returns)
+	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
+	err := cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start emulator: %w", err)
+	}
+
+	// monitor context cancellation to clean up the process only on timeout
+	go func() {
+		<-ctx.Done()
+		if cmd.Process != nil && ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("Boot timeout exceeded, killing emulator process")
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	utils.Verbose("Waiting for emulator to boot...")
+
+	// wait for emulator to boot and get its actual device ID
+	deviceID, err := d.waitForEmulatorBootComplete(ctx, d.id)
+	if err != nil {
+		// if boot failed, kill the emulator process
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return err
+	}
+
+	utils.Verbose("Emulator booted successfully: %s", deviceID)
+	// update our device ID to the actual emulator-XXXX ID
+	d.id = deviceID
+	d.state = "online"
+	return nil
+}
+
+// checkBootComplete checks if an emulator has finished booting
+func (d *AndroidDevice) checkBootComplete(deviceID string) (bool, error) {
+	cmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "sys.boot_completed")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(string(output)) == "1", nil
+}
+
+func (d *AndroidDevice) PressButton(key string) error {
 	keyMap := map[string]string{
 		"HOME":        "KEYCODE_HOME",
 		"BACK":        "KEYCODE_BACK",
@@ -303,7 +466,7 @@ func (d AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
-func (d AndroidDevice) SendKeys(text string) error {
+func (d *AndroidDevice) SendKeys(text string) error {
 	switch text {
 	case "\b":
 		return d.PressButton("BACKSPACE")
@@ -316,7 +479,7 @@ func (d AndroidDevice) SendKeys(text string) error {
 	return err
 }
 
-func (d AndroidDevice) OpenURL(url string) error {
+func (d *AndroidDevice) OpenURL(url string) error {
 	output, err := d.runAdbCommand("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url)
 	if err != nil {
 		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
@@ -325,7 +488,7 @@ func (d AndroidDevice) OpenURL(url string) error {
 	return nil
 }
 
-func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
+func (d *AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 	output, err := d.runAdbCommand("shell", "cmd", "package", "query-activities", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
@@ -357,7 +520,7 @@ func (d AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
+func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 
 	// run adb shell wm size
 	output, err := d.runAdbCommand("shell", "wm", "size")
@@ -396,7 +559,7 @@ func (d AndroidDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
+func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 	output, err := d.runAdbCommand("shell", "pm", "path", packageName)
 	if err != nil {
 		// best effort (pm path will return error code 1)
@@ -410,7 +573,7 @@ func (d AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
-func (d AndroidDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+func (d *AndroidDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
 	if format != "mjpeg" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
 	}
@@ -459,7 +622,7 @@ func (d AndroidDevice) StartScreenCapture(format string, quality int, scale floa
 	return nil
 }
 
-func (d AndroidDevice) installPackage(apkPath string) error {
+func (d *AndroidDevice) installPackage(apkPath string) error {
 	output, err := d.runAdbCommand("install", apkPath)
 	if err != nil {
 		return fmt.Errorf("failed to install package: %v\nOutput: %s", err, string(output))
@@ -472,7 +635,7 @@ func (d AndroidDevice) installPackage(apkPath string) error {
 	return fmt.Errorf("installation failed: %s", string(output))
 }
 
-func (d AndroidDevice) EnsureDeviceKitInstalled() error {
+func (d *AndroidDevice) EnsureDeviceKitInstalled() error {
 	packageName := "com.mobilenext.devicekit"
 
 	appPath, err := d.GetAppPath(packageName)
@@ -524,23 +687,23 @@ func (d AndroidDevice) EnsureDeviceKitInstalled() error {
 }
 
 type uiAutomatorXmlNode struct {
-	XMLName     xml.Name               `xml:"node"`
-	Class       string                 `xml:"class,attr"`
-	Text        string                 `xml:"text,attr"`
-	Bounds      string                 `xml:"bounds,attr"`
-	Hint        string                 `xml:"hint,attr"`
-	Focused     string                 `xml:"focused,attr"`
-	ContentDesc string                 `xml:"content-desc,attr"`
-	ResourceID  string                 `xml:"resource-id,attr"`
-	Nodes       []uiAutomatorXmlNode   `xml:"node"`
+	XMLName     xml.Name             `xml:"node"`
+	Class       string               `xml:"class,attr"`
+	Text        string               `xml:"text,attr"`
+	Bounds      string               `xml:"bounds,attr"`
+	Hint        string               `xml:"hint,attr"`
+	Focused     string               `xml:"focused,attr"`
+	ContentDesc string               `xml:"content-desc,attr"`
+	ResourceID  string               `xml:"resource-id,attr"`
+	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
 type uiAutomatorXml struct {
-	XMLName   xml.Name `xml:"hierarchy"`
-	RootNode  uiAutomatorXmlNode `xml:"node"`
+	XMLName  xml.Name           `xml:"hierarchy"`
+	RootNode uiAutomatorXmlNode `xml:"node"`
 }
 
-func (d AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
+func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
 	re := regexp.MustCompile(`^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$`)
 	matches := re.FindStringSubmatch(bounds)
 
@@ -561,7 +724,7 @@ func (d AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRe
 	}
 }
 
-func (d AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenElement {
+func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenElement {
 	var elements []types.ScreenElement
 
 	// recursively process child nodes
@@ -612,7 +775,7 @@ func (d AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenEl
 	return elements
 }
 
-func (d AndroidDevice) getUiAutomatorDump() (string, error) {
+func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	for tries := 0; tries < 10; tries++ {
 		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
 		if err != nil {
@@ -638,7 +801,7 @@ func (d AndroidDevice) getUiAutomatorDump() (string, error) {
 	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
 }
 
-func (d AndroidDevice) DumpSource() ([]ScreenElement, error) {
+func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 	// get the XML dump from uiautomator
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
@@ -657,7 +820,7 @@ func (d AndroidDevice) DumpSource() ([]ScreenElement, error) {
 	return elements, nil
 }
 
-func (d AndroidDevice) InstallApp(path string) error {
+func (d *AndroidDevice) InstallApp(path string) error {
 	output, err := d.runAdbCommand("install", "-r", path)
 	if err != nil {
 		return fmt.Errorf("failed to install app: %v\nOutput: %s", err, string(output))
@@ -670,7 +833,7 @@ func (d AndroidDevice) InstallApp(path string) error {
 	return fmt.Errorf("installation failed: %s", string(output))
 }
 
-func (d AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	appInfo := &InstalledAppInfo{
 		PackageName: packageName,
 	}
@@ -688,7 +851,7 @@ func (d AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, erro
 }
 
 // GetOrientation gets the current device orientation
-func (d AndroidDevice) GetOrientation() (string, error) {
+func (d *AndroidDevice) GetOrientation() (string, error) {
 	output, err := d.runAdbCommand("shell", "settings", "get", "system", "user_rotation")
 	if err != nil {
 		return "", fmt.Errorf("failed to get orientation: %v", err)
@@ -712,7 +875,7 @@ func (d AndroidDevice) GetOrientation() (string, error) {
 }
 
 // SetOrientation sets the device orientation
-func (d AndroidDevice) SetOrientation(orientation string) error {
+func (d *AndroidDevice) SetOrientation(orientation string) error {
 	if orientation != "portrait" && orientation != "landscape" {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}
