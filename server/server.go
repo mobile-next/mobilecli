@@ -208,7 +208,7 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 func handleDevicesList(params json.RawMessage) (interface{}, error) {
 	// default to showing all devices if no params provided
 	opts := devices.DeviceListOptions{
-		IncludeOffline: true,
+		IncludeOffline: false,
 		Platform:       "",
 		DeviceType:     "",
 	}
