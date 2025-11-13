@@ -1,3 +1,10 @@
+## [0.0.34](https://github.com/mobile-next/mobilecli/releases/tag/0.0.34) (2025-11-13)
+
+* General: Support --type and --platform in list devices command ([#81](https://github.com/mobile-next/mobilecli/pull/81))
+* iOS: List simulators that have been initialized once (they boot fast) in "devices --all" ([#81](https://github.com/mobile-next/mobilecli/pull/81))
+* iOS: Add an icon and a display name for installed webdriveragent ([#93](https://github.com/mobile-next/mobilecli/pull/93))
+* Android: List offline emulators in "devices --all" ([#81](https://github.com/mobile-next/mobilecli/pull/81))
+
 ## [0.0.33](https://github.com/mobile-next/mobilecli/releases/tag/0.0.33) (2025-11-01)
 
 * General: Fix launching mobilecli using npx on macos after split to arm64/amd64 ([#91](https://github.com/mobile-next/mobilecli/pull/91))
