@@ -66,6 +66,13 @@ type ScreenshotParams struct {
 	Quality  int    `json:"quality,omitempty"` // 1-100, only used for JPEG
 }
 
+// DevicesParams represents the parameters for the devices request
+type DevicesParams struct {
+	IncludeOffline bool   `json:"includeOffline,omitempty"`
+	Platform       string `json:"platform,omitempty"`
+	Type           string `json:"type,omitempty"`
+}
+
 // corsMiddleware handles CORS preflight requests and adds CORS headers to responses.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +152,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Method {
 	case "devices":
-		result, err = handleDevicesList()
+		result, err = handleDevicesList(req.Params)
 	case "screenshot":
 		result, err = handleScreenshot(req.Params)
 	case "screencapture":
@@ -198,13 +205,26 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func handleDevicesList() (interface{}, error) {
-	// server always shows all devices by default (no platform or type filtering)
+func handleDevicesList(params json.RawMessage) (interface{}, error) {
+	// default to showing all devices if no params provided
 	opts := devices.DeviceListOptions{
-		ShowAll:    true,
-		Platform:   "",
-		DeviceType: "",
+		IncludeOffline: false,
+		Platform:       "",
+		DeviceType:     "",
 	}
+
+	// parse params if provided
+	if len(params) > 0 {
+		var devicesParams DevicesParams
+		if err := json.Unmarshal(params, &devicesParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w", err)
+		}
+
+		opts.IncludeOffline = devicesParams.IncludeOffline
+		opts.Platform = devicesParams.Platform
+		opts.DeviceType = devicesParams.Type
+	}
+
 	response := commands.DevicesCommand(opts)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
