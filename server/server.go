@@ -217,7 +217,7 @@ func handleDevicesList(params json.RawMessage) (interface{}, error) {
 	if len(params) > 0 {
 		var devicesParams DevicesParams
 		if err := json.Unmarshal(params, &devicesParams); err != nil {
-			return nil, fmt.Errorf("invalid parameters: %v", err)
+			return nil, fmt.Errorf("invalid parameters: %w", err)
 		}
 
 		opts.IncludeOffline = devicesParams.IncludeOffline
