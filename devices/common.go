@@ -111,9 +111,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 // DeviceInfo represents the JSON-friendly device information
 // DeviceListOptions configures device listing behavior
 type DeviceListOptions struct {
-	ShowAll    bool
-	Platform   string
-	DeviceType string
+	IncludeOffline bool
+	Platform       string
+	DeviceType     string
 }
 
 type DeviceInfo struct {
@@ -138,7 +138,7 @@ type FullDeviceInfo struct {
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
-	devices, err := GetAllControllableDevices(opts.ShowAll)
+	devices, err := GetAllControllableDevices(opts.IncludeOffline)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
@@ -147,8 +147,8 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 	for _, d := range devices {
 		state := d.State()
 
-		// filter offline devices unless showAll is true
-		if !opts.ShowAll && state == "offline" {
+		// filter offline devices unless includeOffline is true
+		if !opts.IncludeOffline && state == "offline" {
 			continue
 		}
 

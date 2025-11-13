@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	showAllDevices bool
+	includeOfflineDevices bool
 )
 
 var devicesCmd = &cobra.Command{
@@ -18,9 +18,9 @@ var devicesCmd = &cobra.Command{
 	Long:  `List all connected iOS and Android devices, both real devices and simulators/emulators.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := devices.DeviceListOptions{
-			ShowAll:    showAllDevices,
-			Platform:   platform,
-			DeviceType: deviceType,
+			IncludeOffline: includeOfflineDevices,
+			Platform:       platform,
+			DeviceType:     deviceType,
 		}
 		response := commands.DevicesCommand(opts)
 		printJson(response)
@@ -37,5 +37,5 @@ func init() {
 	// devices command flags
 	devicesCmd.Flags().StringVar(&platform, "platform", "", "target platform (ios or android)")
 	devicesCmd.Flags().StringVar(&deviceType, "type", "", "filter by device type (real or simulator/emulator)")
-	devicesCmd.Flags().BoolVar(&showAllDevices, "all", false, "show all devices including offline ones")
+	devicesCmd.Flags().BoolVar(&includeOfflineDevices, "include-offline", false, "include offline emulators and simulators")
 }
