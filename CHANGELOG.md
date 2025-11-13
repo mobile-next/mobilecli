@@ -1,3 +1,8 @@
+## [0.0.35](https://github.com/mobile-next/mobilecli/releases/tag/0.0.35) (2025-11-13)
+
+* General: Support "type", "platform" and "includeOffline" in jsonrpc for 'devices' command ([#94](https://github.com/mobile-next/mobilecli/pull/94))
+* General: Changed "devices --all" to "devices --include-offline" for consistency and clarity ([#94](https://github.com/mobile-next/mobilecli/pull/94))
+
 ## [0.0.34](https://github.com/mobile-next/mobilecli/releases/tag/0.0.34) (2025-11-13)
 
 * General: Support --type and --platform in list devices command ([#81](https://github.com/mobile-next/mobilecli/pull/81))
