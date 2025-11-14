@@ -1,3 +1,8 @@
+## [0.0.36](https://github.com/mobile-next/mobilecli/releases/tag/0.0.36) (2025-11-14)
+
+* General: Progammatically boot and shutdown emulators and simulators ([#95](https://github.com/mobile-next/mobilecli/pull/95))
+* General: Offline devices need to be booted manually prior to use ([#95](https://github.com/mobile-next/mobilecli/pull/95))
+
 ## [0.0.35](https://github.com/mobile-next/mobilecli/releases/tag/0.0.35) (2025-11-13)
 
 * General: Support "type", "platform" and "includeOffline" in jsonrpc for 'devices' command ([#94](https://github.com/mobile-next/mobilecli/pull/94))
