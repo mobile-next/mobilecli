@@ -127,6 +127,14 @@ func (d IOSDevice) Reboot() error {
 	return nil
 }
 
+func (d IOSDevice) Boot() error {
+	return fmt.Errorf("boot is not supported for real iOS devices")
+}
+
+func (d IOSDevice) Shutdown() error {
+	return fmt.Errorf("shutdown is not supported for real iOS devices")
+}
+
 func (d IOSDevice) Tap(x, y int) error {
 	return d.wdaClient.Tap(x, y)
 }

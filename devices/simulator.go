@@ -425,7 +425,28 @@ func (s *SimulatorDevice) getState() (string, error) {
 	return "", fmt.Errorf("simulator %s not found", s.UDID)
 }
 
-func (s *SimulatorDevice) bootSimulator() error {
+// Boot boots the iOS simulator
+func (s *SimulatorDevice) Boot() error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
+	}
+
+	if state == "Booted" {
+		return fmt.Errorf("simulator is already running")
+	}
+
+	if state == "Booting" {
+		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+		}
+		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = "Booted"
+		return nil
+	}
+
 	utils.Verbose("Booting simulator %s...", s.UDID)
 	output, err := runSimctl("boot", s.UDID)
 	if err != nil {
@@ -437,11 +458,33 @@ func (s *SimulatorDevice) bootSimulator() error {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
 	utils.Verbose("Simulator booted successfully")
+	s.Simulator.State = "Booted"
+	return nil
+}
+
+// Shutdown shuts down the iOS simulator
+func (s *SimulatorDevice) Shutdown() error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
+	}
+
+	if state == "Shutdown" {
+		return fmt.Errorf("simulator is already offline")
+	}
+
+	utils.Verbose("Shutting down simulator %s...", s.UDID)
+	output, err := runSimctl("shutdown", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to shutdown simulator %s: %w\n%s", s.UDID, err, output)
+	}
+	utils.Verbose("Simulator shut down successfully")
+	s.Simulator.State = "Shutdown"
 	return nil
 }
 
 func (s *SimulatorDevice) StartAgent() error {
-	// check simulator state and boot if needed
+	// check simulator state - it must be booted
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
@@ -451,10 +494,8 @@ func (s *SimulatorDevice) StartAgent() error {
 	case "Booted":
 		// already booted, continue to WDA
 	case "Shutdown":
-		// boot the simulator
-		if err := s.bootSimulator(); err != nil {
-			return err
-		}
+		// simulator is offline, user should boot it first
+		return fmt.Errorf("simulator is offline, use 'mobilecli device boot %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
@@ -463,6 +504,7 @@ func (s *SimulatorDevice) StartAgent() error {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
 		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = "Booted"
 	case "ShuttingDown":
 		return fmt.Errorf("simulator is shutting down, please try again")
 	default:

@@ -20,10 +20,11 @@ import (
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
-	id      string
-	name    string
-	version string
-	state   string // "online" or "offline"
+	id          string
+	name        string
+	version     string
+	state       string // "online" or "offline"
+	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
 }
 
 func (d *AndroidDevice) ID() string {
@@ -43,7 +44,8 @@ func (d *AndroidDevice) Platform() string {
 }
 
 func (d *AndroidDevice) DeviceType() string {
-	if strings.HasPrefix(d.id, "emulator-") || d.state == "offline" {
+	// check transportID for online devices, or state for offline
+	if strings.HasPrefix(d.transportID, "emulator-") || d.state == "offline" {
 		return "emulator"
 	} else {
 		return "real"
@@ -152,7 +154,12 @@ func getEmulatorPath() string {
 }
 
 func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
-	cmdArgs := append([]string{"-s", d.id}, args...)
+	// use transportID for online devices (e.g., "emulator-5554"), or id for offline
+	deviceID := d.id
+	if d.transportID != "" {
+		deviceID = d.transportID
+	}
+	cmdArgs := append([]string{"-s", deviceID}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
 }
@@ -191,6 +198,27 @@ func (d *AndroidDevice) Reboot() error {
 		return err
 	}
 
+	return nil
+}
+
+// Shutdown shuts down the Android emulator
+func (d *AndroidDevice) Shutdown() error {
+	if d.DeviceType() != "emulator" {
+		return fmt.Errorf("shutdown is only supported for emulators")
+	}
+
+	if d.state == "offline" {
+		return fmt.Errorf("emulator is already offline")
+	}
+
+	// use emu kill command for graceful shutdown
+	_, err := d.runAdbCommand("emu", "kill")
+	if err != nil {
+		return fmt.Errorf("failed to shutdown emulator: %w", err)
+	}
+
+	d.state = "offline"
+	d.transportID = ""
 	return nil
 }
 
@@ -268,14 +296,25 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 		line := strings.TrimSpace(lines[i])
 		parts := strings.Fields(line)
 		if len(parts) == 2 {
-			deviceID := parts[0]
+			transportID := parts[0]
 			status := parts[1]
 			if status == "device" {
+				deviceID := transportID
+
+				// for emulators, use AVD name as the consistent ID
+				if strings.HasPrefix(transportID, "emulator-") {
+					avdName := getAVDName(transportID)
+					if avdName != "" {
+						deviceID = avdName
+					}
+				}
+
 				devices = append(devices, &AndroidDevice{
-					id:      deviceID,
-					name:    getAndroidDeviceName(deviceID),
-					version: getAndroidDeviceVersion(deviceID),
-					state:   "online",
+					id:          deviceID,
+					transportID: transportID,
+					name:        getAndroidDeviceName(transportID),
+					version:     getAndroidDeviceVersion(transportID),
+					state:       "online",
 				})
 			}
 		}
@@ -284,15 +323,22 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 	return devices
 }
 
-func getAndroidDeviceName(deviceID string) string {
-	// try getting AVD name first (for emulators)
-	avdCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.boot.qemu.avd_name")
+// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
+func getAVDName(transportID string) string {
+	avdCmd := exec.Command(getAdbPath(), "-s", transportID, "shell", "getprop", "ro.boot.qemu.avd_name")
 	avdOutput, err := avdCmd.CombinedOutput()
 	if err == nil && len(avdOutput) > 0 {
 		avdName := strings.TrimSpace(string(avdOutput))
-		if avdName != "" {
-			return strings.ReplaceAll(avdName, "_", " ")
-		}
+		return avdName
+	}
+	return ""
+}
+
+func getAndroidDeviceName(deviceID string) string {
+	// try getting AVD name first (for emulators)
+	avdName := getAVDName(deviceID)
+	if avdName != "" {
+		return strings.ReplaceAll(avdName, "_", " ")
 	}
 
 	// fall back to product model
@@ -316,7 +362,7 @@ func getAndroidDeviceVersion(deviceID string) string {
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
-func GetAndroidDevices() ([]ControllableDevice, error) { // Changed return type
+func GetAndroidDevices() ([]ControllableDevice, error) {
 	command := exec.Command(getAdbPath(), "devices")
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -334,9 +380,9 @@ func GetAndroidDevices() ([]ControllableDevice, error) { // Changed return type
 }
 
 func (d *AndroidDevice) StartAgent() error {
-	// if device is offline, it's an emulator that needs to be started
+	// if device is offline, return error - user should use 'device boot' command
 	if d.state == "offline" {
-		return d.startEmulator()
+		return fmt.Errorf("device is offline, use 'mobilecli device boot %s' to start the emulator", d.id)
 	}
 
 	// android doesn't need an agent to be started for online devices
@@ -368,12 +414,19 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 			for _, device := range devices {
 				// check if this is our emulator by matching the AVD name
 				if device.Platform() == "android" && device.DeviceType() == "emulator" {
-					deviceName := getAndroidDeviceName(device.ID())
-					if matchesAVDName(avdName, deviceName) {
+					// device.ID() now returns the AVD name for emulators
+					if device.ID() == avdName || matchesAVDName(avdName, device.Name()) {
 						// found our emulator, check if it's fully booted
-						bootComplete, _ := d.checkBootComplete(device.ID())
-						if bootComplete {
-							return device.ID(), nil
+						// need to get the transport ID for the boot check
+						if androidDev, ok := device.(*AndroidDevice); ok {
+							transportID := androidDev.transportID
+							if transportID == "" {
+								transportID = androidDev.id
+							}
+							bootComplete, _ := d.checkBootComplete(transportID)
+							if bootComplete {
+								return androidDev.transportID, nil
+							}
 						}
 					}
 				}
@@ -382,8 +435,11 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 	}
 }
 
-// startEmulator launches an offline Android emulator and waits for it to be ready
-func (d *AndroidDevice) startEmulator() error {
+// Boot launches an offline Android emulator and waits for it to be ready
+func (d *AndroidDevice) Boot() error {
+	if d.state != "offline" {
+		return fmt.Errorf("emulator is already running")
+	}
 	utils.Verbose("Starting Android emulator: %s", d.id)
 
 	// create context with timeout for the boot wait process
@@ -418,9 +474,10 @@ func (d *AndroidDevice) startEmulator() error {
 		return err
 	}
 
-	utils.Verbose("Emulator booted successfully: %s", deviceID)
-	// update our device ID to the actual emulator-XXXX ID
-	d.id = deviceID
+	utils.Verbose("Emulator booted successfully with transport ID: %s", deviceID)
+	// update our transport ID to the actual emulator-XXXX ID
+	// the device ID (d.id) is already set to the AVD name and should not change
+	d.transportID = deviceID
 	d.state = "online"
 	return nil
 }

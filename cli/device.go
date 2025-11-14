@@ -109,12 +109,52 @@ var orientationSetCmd = &cobra.Command{
 	},
 }
 
+var deviceBootCmd = &cobra.Command{
+	Use:   "boot",
+	Short: "Boot a simulator or emulator",
+	Long:  `Boots a specified offline simulator or emulator.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.BootRequest{
+			DeviceID: deviceId,
+		}
+
+		response := commands.BootCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		return nil
+	},
+}
+
+var deviceShutdownCmd = &cobra.Command{
+	Use:   "shutdown",
+	Short: "Shutdown a simulator or emulator",
+	Long:  `Shuts down a specified simulator or emulator.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ShutdownRequest{
+			DeviceID: deviceId,
+		}
+
+		response := commands.ShutdownCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(deviceCmd)
 
 	// add device subcommands
 	deviceCmd.AddCommand(deviceRebootCmd)
 	deviceCmd.AddCommand(deviceInfoCmd)
+	deviceCmd.AddCommand(deviceBootCmd)
+	deviceCmd.AddCommand(deviceShutdownCmd)
 	deviceCmd.AddCommand(orientationCmd)
 
 	// add orientation subcommands
@@ -124,6 +164,8 @@ func init() {
 	// device command flags
 	deviceRebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
 	deviceInfoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
+	deviceBootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to boot")
+	deviceShutdownCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to shutdown")
 	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
 }

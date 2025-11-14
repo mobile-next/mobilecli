@@ -177,6 +177,10 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleIoOrientationGet(req.Params)
 	case "io_orientation_set":
 		result, err = handleIoOrientationSet(req.Params)
+	case "device_boot":
+		result, err = handleDeviceBoot(w, req.Params)
+	case "device_shutdown":
+		result, err = handleDeviceShutdown(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -428,6 +432,14 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+type DeviceBootParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type DeviceShutdownParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -568,6 +580,53 @@ func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
 	}
 
 	return okResponse, nil
+}
+
+func handleDeviceBoot(w http.ResponseWriter, params json.RawMessage) (interface{}, error) {
+	// extend write deadline for boot operations (can take up to 2 minutes)
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
+
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var bootParams DeviceBootParams
+	if err := json.Unmarshal(params, &bootParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+	}
+
+	req := commands.BootRequest{
+		DeviceID: bootParams.DeviceID,
+	}
+
+	response := commands.BootCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleDeviceShutdown(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var shutdownParams DeviceShutdownParams
+	if err := json.Unmarshal(params, &shutdownParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+	}
+
+	req := commands.ShutdownRequest{
+		DeviceID: shutdownParams.DeviceID,
+	}
+
+	response := commands.ShutdownCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
