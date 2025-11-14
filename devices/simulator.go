@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
-	"regexp"
 	"time"
 
 	"github.com/mobile-next/mobilecli/assets"
@@ -369,6 +369,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 		key:       "CFBundleDisplayName",
 		value:     "Mobile Next Kit",
 	})
+
 	if err != nil {
 		return fmt.Errorf("failed to modify Info.plist: %w", err)
 	}
@@ -442,6 +443,7 @@ func (s *SimulatorDevice) Boot() error {
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
+
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
 		return nil
@@ -452,11 +454,13 @@ func (s *SimulatorDevice) Boot() error {
 	if err != nil {
 		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 	}
+
 	utils.Verbose("Waiting for simulator to finish booting...")
 	output, err = runSimctl("bootstatus", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
+
 	utils.Verbose("Simulator booted successfully")
 	s.Simulator.State = "Booted"
 	return nil
@@ -478,6 +482,7 @@ func (s *SimulatorDevice) Shutdown() error {
 	if err != nil {
 		return fmt.Errorf("failed to shutdown simulator %s: %w\n%s", s.UDID, err, output)
 	}
+
 	utils.Verbose("Simulator shut down successfully")
 	s.Simulator.State = "Shutdown"
 	return nil
