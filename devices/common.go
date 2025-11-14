@@ -32,6 +32,8 @@ type ControllableDevice interface {
 
 	TakeScreenshot() ([]byte, error)
 	Reboot() error
+	Boot() error     // boot simulator/emulator
+	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y int) error
 	Swipe(x1, y1, x2, y2 int) error

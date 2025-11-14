@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
-	"regexp"
 	"time"
 
 	"github.com/mobile-next/mobilecli/assets"
@@ -108,46 +108,6 @@ func runSimctl(args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
 	}
 	return output, nil
-}
-
-// modifyPlistInput contains parameters for modifying a plist file
-type modifyPlistInput struct {
-	plistPath string
-	key       string
-	value     string
-}
-
-// modifyPlist modifies a plist file using plutil to add or replace a key-value pair
-func modifyPlist(input modifyPlistInput) error {
-	// try to replace first (if key exists)
-	cmd := exec.Command("plutil", "-replace", input.key, "-string", input.value, input.plistPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// if replace failed, try to insert (key doesn't exist)
-		cmd = exec.Command("plutil", "-insert", input.key, "-string", input.value, input.plistPath)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to modify plist: %w\n%s", err, output)
-		}
-	}
-	return nil
-}
-
-// addIconToPlist adds the CFBundleIconFiles array to the plist
-func addIconToPlist(plistPath string) error {
-	// insert CFBundleIconFiles as array
-	cmd := exec.Command("plutil", "-insert", "CFBundleIconFiles", "-array", plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert CFBundleIconFiles: %w\n%s", err, output)
-	}
-
-	// insert AppIcon.png as first element in the array
-	cmd = exec.Command("plutil", "-insert", "CFBundleIconFiles.0", "-string", "AppIcon.png", plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert AppIcon.png: %w\n%s", err, output)
-	}
-
-	return nil
 }
 
 // getSimulators executes 'xcrun simctl list --json' and returns the parsed response
@@ -364,11 +324,12 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	infoPlistPath := appDir + "/Info.plist"
 
 	// modify info.plist to add CFBundleDisplayName
-	err = modifyPlist(modifyPlistInput{
-		plistPath: infoPlistPath,
-		key:       "CFBundleDisplayName",
-		value:     "Mobile Next Kit",
+	err = utils.ModifyPlist(utils.ModifyPlistInput{
+		PlistPath: infoPlistPath,
+		Key:       "CFBundleDisplayName",
+		Value:     "Mobile Next Kit",
 	})
+
 	if err != nil {
 		return fmt.Errorf("failed to modify Info.plist: %w", err)
 	}
@@ -381,7 +342,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	}
 
 	// add icon configuration to plist
-	err = addIconToPlist(infoPlistPath)
+	err = utils.AddBundleIconFilesToPlist(infoPlistPath)
 	if err != nil {
 		return fmt.Errorf("failed to add icon to plist: %w", err)
 	}
@@ -425,23 +386,70 @@ func (s *SimulatorDevice) getState() (string, error) {
 	return "", fmt.Errorf("simulator %s not found", s.UDID)
 }
 
-func (s *SimulatorDevice) bootSimulator() error {
+// Boot boots the iOS simulator
+func (s *SimulatorDevice) Boot() error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
+	}
+
+	if state == "Booted" {
+		return fmt.Errorf("simulator is already running")
+	}
+
+	if state == "Booting" {
+		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+		}
+
+		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = "Booted"
+		return nil
+	}
+
 	utils.Verbose("Booting simulator %s...", s.UDID)
 	output, err := runSimctl("boot", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 	}
+
 	utils.Verbose("Waiting for simulator to finish booting...")
 	output, err = runSimctl("bootstatus", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
+
 	utils.Verbose("Simulator booted successfully")
+	s.Simulator.State = "Booted"
+	return nil
+}
+
+// Shutdown shuts down the iOS simulator
+func (s *SimulatorDevice) Shutdown() error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
+	}
+
+	if state == "Shutdown" {
+		return fmt.Errorf("simulator is already offline")
+	}
+
+	utils.Verbose("Shutting down simulator %s...", s.UDID)
+	output, err := runSimctl("shutdown", s.UDID)
+	if err != nil {
+		return fmt.Errorf("failed to shutdown simulator %s: %w\n%s", s.UDID, err, output)
+	}
+
+	utils.Verbose("Simulator shut down successfully")
+	s.Simulator.State = "Shutdown"
 	return nil
 }
 
 func (s *SimulatorDevice) StartAgent() error {
-	// check simulator state and boot if needed
+	// check simulator state - it must be booted
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
@@ -451,10 +459,8 @@ func (s *SimulatorDevice) StartAgent() error {
 	case "Booted":
 		// already booted, continue to WDA
 	case "Shutdown":
-		// boot the simulator
-		if err := s.bootSimulator(); err != nil {
-			return err
-		}
+		// simulator is offline, user should boot it first
+		return fmt.Errorf("simulator is offline, use 'mobilecli device boot %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
@@ -463,6 +469,7 @@ func (s *SimulatorDevice) StartAgent() error {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
 		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = "Booted"
 	case "ShuttingDown":
 		return fmt.Errorf("simulator is shutting down, please try again")
 	default:

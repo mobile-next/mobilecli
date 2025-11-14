@@ -31,6 +31,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 
 - **Device Management**: List, manage, interactive with connected mobile devices
 - **Cross-Platform Support**: Works with iOS physical devices, iOS simulators, Android devices, and Android emulators
+- **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
 - **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
 - **Screencapture video streaming**: Stream mjpeg video directly from device
@@ -81,8 +82,11 @@ brew install --cask android-platform-tools
 ### List Connected Devices 🔍
 
 ```bash
-# List all connected devices and simulators to your local or remote server
+# List all online devices and simulators
 mobilecli devices
+
+# List all devices including offline emulators and simulators
+mobilecli devices --include-offline
 ```
 
 Example output:
@@ -92,16 +96,27 @@ Example output:
     "id": "12345678-1234567890ABCDEF",
     "name": "iPhone 15",
     "platform": "ios",
-    "type": "real"
+    "type": "real",
+    "state": "online"
   },
   {
-    "id": "emulator-5554",
-    "name": "Pixel_7_API_34",
-    "platform": "android", 
-    "type": "emulator"
+    "id": "Pixel_6",
+    "name": "Pixel 6",
+    "platform": "android",
+    "type": "emulator",
+    "state": "online"
+  },
+  {
+    "id": "iPhone_13",
+    "name": "iPhone 13",
+    "platform": "ios",
+    "type": "simulator",
+    "state": "offline"
   }
 ]
 ```
+
+**Note**: Offline emulators and simulators can be booted using the `mobilecli device boot` command.
 
 ### Take Screenshots 📸
 
@@ -130,6 +145,12 @@ Note that screencapture is one way. You will have to use `io tap` commands to ta
 ### Device Control 🎮
 
 ```bash
+# Boot an offline emulator or simulator
+mobilecli device boot --device <device-id>
+
+# Shutdown a running emulator or simulator
+mobilecli device shutdown --device <device-id>
+
 # Reboot a device
 mobilecli device reboot --device <device-id>
 

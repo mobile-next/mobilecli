@@ -102,7 +102,7 @@ func getAVDDetails() (map[string]AVDInfo, error) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// if avdmanager fails, return empty map
-		utils.Verbose("Failed to get AVD details: %v", err)
+		utils.Verbose("Failed to get AVD details: %w", err)
 		return make(map[string]AVDInfo), nil
 	}
 
