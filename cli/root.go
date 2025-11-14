@@ -11,12 +11,12 @@ import (
 
 const version = "dev"
 
-const logo = "\x1b[92m ███╗   ███╗  ██████╗  ██████╗  ██╗ ██╗      ███████╗      ██████╗ ██╗      ██╗\x1b[39m\n" +
-	"\x1b[92m ████╗ ████║ ██╔═══██╗ ██╔══██╗ ██║ ██║      ██╔════╝     ██╔════╝ ██║      ██║\x1b[39m\n" +
-	"\x1b[92m ██╔████╔██║ ██║   ██║ ██████╔╝ ██║ ██║      █████╗       ██║      ██║      ██║\x1b[39m\n" +
-	"\x1b[92m ██║╚██╔╝██║ ██║   ██║ ██╔══██╗ ██║ ██║      ██╔══╝       ██║      ██║      ██║\x1b[39m\n" +
-	"\x1b[92m ██║ ╚═╝ ██║ ╚██████╔╝ ██████╔╝ ██║ ███████╗ ███████╗     ╚██████╗ ███████╗ ██║\x1b[39m\n" +
-	"\x1b[92m ╚═╝     ╚═╝  ╚═════╝  ╚═════╝  ╚═╝ ╚══════╝ ╚══════╝      ╚═════╝ ╚══════╝ ╚═╝\x1b[39m\n"
+const logo = "\x1b[92m ███╗   ███╗  ██████╗  ██████╗  ██╗ ██╗      ███████╗  ██████╗ ██╗      ██╗\x1b[39m\n" +
+	"\x1b[92m ████╗ ████║ ██╔═══██╗ ██╔══██╗ ██║ ██║      ██╔════╝ ██╔════╝ ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██╔████╔██║ ██║   ██║ ██████╔╝ ██║ ██║      █████╗   ██║      ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██║╚██╔╝██║ ██║   ██║ ██╔══██╗ ██║ ██║      ██╔══╝   ██║      ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██║ ╚═╝ ██║ ╚██████╔╝ ██████╔╝ ██║ ███████╗ ███████  ╚██████╗ ███████╗ ██║\x1b[39m\n" +
+	"\x1b[92m ╚═╝     ╚═╝  ╚═════╝  ╚═════╝  ╚═╝ ╚══════╝ ╚══════╝  ╚═════╝ ╚══════╝ ╚═╝\x1b[39m\n"
 
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
@@ -38,6 +38,7 @@ func initConfig() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&deviceId, "device", "", "Device ID (get from 'mobilecli devices' command)")
 }
 
 // Execute runs the root command
