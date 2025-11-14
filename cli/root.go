@@ -11,11 +11,18 @@ import (
 
 const version = "dev"
 
+const logo = "\x1b[92m ███╗   ███╗  ██████╗  ██████╗  ██╗ ██╗      ███████╗      ██████╗ ██╗      ██╗\x1b[39m\n" +
+	"\x1b[92m ████╗ ████║ ██╔═══██╗ ██╔══██╗ ██║ ██║      ██╔════╝     ██╔════╝ ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██╔████╔██║ ██║   ██║ ██████╔╝ ██║ ██║      █████╗       ██║      ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██║╚██╔╝██║ ██║   ██║ ██╔══██╗ ██║ ██║      ██╔══╝       ██║      ██║      ██║\x1b[39m\n" +
+	"\x1b[92m ██║ ╚═╝ ██║ ╚██████╔╝ ██████╔╝ ██║ ███████╗ ███████╗     ╚██████╗ ███████╗ ██║\x1b[39m\n" +
+	"\x1b[92m ╚═╝     ╚═╝  ╚═════╝  ╚═════╝  ╚═╝ ╚══════╝ ╚══════╝      ╚═════╝ ╚══════╝ ╚═╝\x1b[39m\n"
+
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
 	Use:   "mobilecli",
 	Short: "A cross-platform iOS/Android device automation tool",
-	Long:  `A universal tool for managing iOS and Android devices`,
+	Long:  logo + "\n\nA universal tool for managing iOS and Android devices",
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
