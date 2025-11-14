@@ -110,46 +110,6 @@ func runSimctl(args ...string) ([]byte, error) {
 	return output, nil
 }
 
-// modifyPlistInput contains parameters for modifying a plist file
-type modifyPlistInput struct {
-	plistPath string
-	key       string
-	value     string
-}
-
-// modifyPlist modifies a plist file using plutil to add or replace a key-value pair
-func modifyPlist(input modifyPlistInput) error {
-	// try to replace first (if key exists)
-	cmd := exec.Command("plutil", "-replace", input.key, "-string", input.value, input.plistPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// if replace failed, try to insert (key doesn't exist)
-		cmd = exec.Command("plutil", "-insert", input.key, "-string", input.value, input.plistPath)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to modify plist: %w\n%s", err, output)
-		}
-	}
-	return nil
-}
-
-// addIconToPlist adds the CFBundleIconFiles array to the plist
-func addIconToPlist(plistPath string) error {
-	// insert CFBundleIconFiles as array
-	cmd := exec.Command("plutil", "-insert", "CFBundleIconFiles", "-array", plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert CFBundleIconFiles: %w\n%s", err, output)
-	}
-
-	// insert AppIcon.png as first element in the array
-	cmd = exec.Command("plutil", "-insert", "CFBundleIconFiles.0", "-string", "AppIcon.png", plistPath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to insert AppIcon.png: %w\n%s", err, output)
-	}
-
-	return nil
-}
-
 // getSimulators executes 'xcrun simctl list --json' and returns the parsed response
 func GetSimulators() ([]Simulator, error) {
 	output, err := runSimctl("list", "--json")
@@ -364,10 +324,10 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	infoPlistPath := appDir + "/Info.plist"
 
 	// modify info.plist to add CFBundleDisplayName
-	err = modifyPlist(modifyPlistInput{
-		plistPath: infoPlistPath,
-		key:       "CFBundleDisplayName",
-		value:     "Mobile Next Kit",
+	err = utils.ModifyPlist(utils.ModifyPlistInput{
+		PlistPath: infoPlistPath,
+		Key:       "CFBundleDisplayName",
+		Value:     "Mobile Next Kit",
 	})
 
 	if err != nil {
@@ -382,7 +342,7 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	}
 
 	// add icon configuration to plist
-	err = addIconToPlist(infoPlistPath)
+	err = utils.AddBundleIconFilesToPlist(infoPlistPath)
 	if err != nil {
 		return fmt.Errorf("failed to add icon to plist: %w", err)
 	}
