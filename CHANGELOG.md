@@ -1,3 +1,9 @@
+## [0.0.37](https://github.com/mobile-next/mobilecli/releases/tag/0.0.37) (2025-11-15)
+
+* General: New and more detailed --help ([#96](https://github.com/mobile-next/mobilecli/pull/96))
+* General: Make device_reboot available through jsonrpc ([#97](https://github.com/mobile-next/mobilecli/pull/97))
+* Android: Translate Android API levels to Android release versions in device list ([#98](https://github.com/mobile-next/mobilecli/pull/98))
+
 ## [0.0.36](https://github.com/mobile-next/mobilecli/releases/tag/0.0.36) (2025-11-14)
 
 * General: Progammatically boot and shutdown emulators and simulators ([#95](https://github.com/mobile-next/mobilecli/pull/95))
