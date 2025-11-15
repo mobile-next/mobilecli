@@ -181,6 +181,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleDeviceBoot(w, req.Params)
 	case "device_shutdown":
 		result, err = handleDeviceShutdown(req.Params)
+	case "device_reboot":
+		result, err = handleDeviceReboot(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -440,6 +442,10 @@ type DeviceShutdownParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
+type DeviceRebootParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -622,6 +628,28 @@ func handleDeviceShutdown(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ShutdownCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleDeviceReboot(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var rebootParams DeviceRebootParams
+	if err := json.Unmarshal(params, &rebootParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+	}
+
+	req := commands.RebootRequest{
+		DeviceID: rebootParams.DeviceID,
+	}
+
+	response := commands.RebootCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
