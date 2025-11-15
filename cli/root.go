@@ -30,10 +30,10 @@ var rootCmd = &cobra.Command{
   # List all devices including offline ones
   mobilecli devices --include-offline --platform ios --type simulator
 
-  # Boot an offline device
+  # Boot an offline emulator/simulator device
   mobilecli device boot --device <device-id>
 
-  # Shutdown a running device
+  # Shutdown a running emulator/simulator device
   mobilecli device shutdown --device <device-id>
 
   # Reboot a device
@@ -70,7 +70,7 @@ SCREEN & MEDIA:
   mobilecli screenshot --device <device-id> -o screen.jpg -f jpeg -q 85
 
   # Stream screen capture (MJPEG)
-  mobilecli screencapture --device <device-id> -f mjpeg > stream.mjpeg
+  mobilecli screencapture --device <device-id> -f mjpeg | ffplay -
 
 INPUT/OUTPUT:
   # Tap at coordinates
