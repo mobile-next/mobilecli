@@ -71,16 +71,15 @@ func parseAVDManagerOutput(output string) map[string]AVDInfo {
 
 			// extract API level from "Based on:" line
 			// format: "Android 12.0 ("S") Tag/ABI: google_apis/arm64-v8a" or "Android API 36 Tag/ABI: ..."
-			if strings.Contains(basedOn, "API") {
-				re := regexp.MustCompile(`API\s+(\d+)`)
-				matches := re.FindStringSubmatch(basedOn)
-				if len(matches) > 1 {
-					currentAVD.APILevel = matches[1]
-				}
+			// try API format first (e.g., "API 36")
+			re := regexp.MustCompile(`API\s+(\d+)`)
+			matches := re.FindStringSubmatch(basedOn)
+			if len(matches) > 1 {
+				currentAVD.APILevel = matches[1]
 			} else {
-				// try to extract version number for named versions like "12.0"
-				re := regexp.MustCompile(`Android\s+(\d+\.\d+)`)
-				matches := re.FindStringSubmatch(basedOn)
+				// try version number format (e.g., "Android 12", "Android 12.0", "Android 12.1.1")
+				re = regexp.MustCompile(`Android\s+(\d+(?:\.\d+)*)`)
+				matches = re.FindStringSubmatch(basedOn)
 				if len(matches) > 1 {
 					currentAVD.APILevel = matches[1]
 				}
