@@ -18,6 +18,35 @@ type AVDInfo struct {
 	APILevel string
 }
 
+// apiLevelToVersion maps Android API levels to version strings
+var apiLevelToVersion = map[string]string{
+	"36": "16.0",
+	"35": "15.0",
+	"34": "14.0",
+	"33": "13.0",
+	"32": "12.1", // Android 12L
+	"31": "12.0",
+	"30": "11.0",
+	"29": "10.0",
+	"28": "9.0",
+	"27": "8.1",
+	"26": "8.0",
+	"25": "7.1",
+	"24": "7.0",
+	"23": "6.0",
+	"22": "5.1",
+	"21": "5.0",
+}
+
+// convertAPILevelToVersion converts an API level to Android version string
+func convertAPILevelToVersion(apiLevel string) string {
+	if version, ok := apiLevelToVersion[apiLevel]; ok {
+		return version
+	}
+	// if no mapping found, return the API level as-is
+	return apiLevel
+}
+
 // listAllAVDs retrieves all available AVDs using emulator -list-avds
 func listAllAVDs() ([]string, error) {
 	cmd := exec.Command(getEmulatorPath(), "-list-avds")
@@ -156,7 +185,7 @@ func getOfflineAndroidEmulators(onlineDeviceIDs map[string]bool) ([]Controllable
 					}
 					displayName = strings.ReplaceAll(displayName, "_", " ")
 				}
-				version = info.APILevel
+				version = convertAPILevelToVersion(info.APILevel)
 			}
 
 			offlineDevices = append(offlineDevices, &AndroidDevice{
