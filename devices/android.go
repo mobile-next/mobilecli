@@ -447,7 +447,7 @@ func (d *AndroidDevice) Boot() error {
 	defer cancel()
 
 	// launch emulator in background without context (so it persists after function returns)
-	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
+	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-window")
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
