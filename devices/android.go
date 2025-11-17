@@ -153,12 +153,17 @@ func getEmulatorPath() string {
 	return "emulator"
 }
 
-func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
-	// use transportID for online devices (e.g., "emulator-5554"), or id for offline
-	deviceID := d.id
+// getAdbIdentifier returns the correct device identifier for adb commands
+// uses transportID for online devices (e.g., "emulator-5554"), or id for offline
+func (d *AndroidDevice) getAdbIdentifier() string {
 	if d.transportID != "" {
-		deviceID = d.transportID
+		return d.transportID
 	}
+	return d.id
+}
+
+func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
+	deviceID := d.getAdbIdentifier()
 	cmdArgs := append([]string{"-s", deviceID}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
@@ -647,7 +652,8 @@ func (d *AndroidDevice) StartScreenCapture(format string, quality int, scale flo
 	}
 
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.id}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
+	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
