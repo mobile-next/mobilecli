@@ -1,3 +1,7 @@
+## [0.0.38](https://github.com/mobile-next/mobilecli/releases/tag/0.0.38) (2025-11-17)
+
+* Android: Fix broken adb access to emulator-%d ([#100](https://github.com/mobile-next/mobilecli/pull/100))
+
 ## [0.0.37](https://github.com/mobile-next/mobilecli/releases/tag/0.0.37) (2025-11-15)
 
 * General: New and more detailed --help ([#96](https://github.com/mobile-next/mobilecli/pull/96))
