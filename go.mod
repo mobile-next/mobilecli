@@ -9,7 +9,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 )
 
-replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.48.2
+replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.49.1
 
 require (
 	github.com/Masterminds/semver v1.5.0 // indirect
@@ -30,7 +30,7 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/tadglines/go-pkgs v0.0.0-20210623144937-b983b20f54f9 // indirect
 	go.mozilla.org/pkcs7 v0.0.0-20210826202110-33d05740a352 // indirect
-	go.uber.org/mock v0.4.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
 	golang.org/x/mod v0.27.0 // indirect
