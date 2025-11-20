@@ -502,6 +502,12 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 
 	log.SetLevel(log.WarnLevel)
 
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
