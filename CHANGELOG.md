@@ -1,3 +1,7 @@
+## [0.0.40](https://github.com/mobile-next/mobilecli/releases/tag/0.0.40) (2025-11-20)
+
+* iOS: Start tunnel before apps launch and terminate on iOS 17+ ([#106](https://github.com/mobile-next/mobilecli/pull/106))
+
 ## [0.0.39](https://github.com/mobile-next/mobilecli/releases/tag/0.0.39) (2025-11-20)
 
 * General: Bump glob from 10.4.5 to 10.5.0 in /test ([#105](https://github.com/mobile-next/mobilecli/pull/105))
