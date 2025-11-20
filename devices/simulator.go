@@ -460,7 +460,7 @@ func (s *SimulatorDevice) StartAgent() error {
 		// already booted, continue to WDA
 	case "Shutdown":
 		// simulator is offline, user should boot it first
-		return fmt.Errorf("simulator is offline, use 'mobilecli device boot %s' to start the simulator", s.UDID)
+		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
