@@ -387,7 +387,7 @@ func GetAndroidDevices() ([]ControllableDevice, error) {
 func (d *AndroidDevice) StartAgent() error {
 	// if device is offline, return error - user should use 'device boot' command
 	if d.state == "offline" {
-		return fmt.Errorf("device is offline, use 'mobilecli device boot %s' to start the emulator", d.id)
+		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
 	}
 
 	// android doesn't need an agent to be started for online devices
