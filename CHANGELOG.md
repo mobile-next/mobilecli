@@ -1,3 +1,11 @@
+## [0.0.39](https://github.com/mobile-next/mobilecli/releases/tag/0.0.39) (2025-11-20)
+
+* General: Bump glob from 10.4.5 to 10.5.0 in /test ([#105](https://github.com/mobile-next/mobilecli/pull/105))
+* General: Bump golang.org/x/crypto from 0.41.0 to 0.45.0 ([#104](https://github.com/mobile-next/mobilecli/pull/104))
+* General: Bump js-yaml from 4.1.0 to 4.1.1 in /test ([042098c](https://github.com/mobile-next/mobilecli/commit/042098c))
+* General: Upgrade golang to 1.25.0 ([#102](https://github.com/mobile-next/mobilecli/pull/102))
+* General: Update go-quic to 0.49.1 ([5510c06](https://github.com/mobile-next/mobilecli/commit/5510c06))
+
 ## [0.0.38](https://github.com/mobile-next/mobilecli/releases/tag/0.0.38) (2025-11-17)
 
 * Android: Fix broken adb access to emulator-%d ([#100](https://github.com/mobile-next/mobilecli/pull/100))
