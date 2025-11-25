@@ -10,6 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	screencaptureScale float64
+)
+
 var screenshotCmd = &cobra.Command{
 	Use:   "screenshot",
 	Short: "Take a screenshot of a connected device",
@@ -81,11 +85,17 @@ var screencaptureCmd = &cobra.Command{
 			return fmt.Errorf("%s", response.Error)
 		}
 
+		// set defaults if not provided
+		scale := screencaptureScale
+		if scale == 0.0 {
+			scale = devices.DefaultMJPEGScale
+		}
+
 		// Start screen capture and stream to stdout
 		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 			Format:  screencaptureFormat,
 			Quality: devices.DefaultMJPEGQuality,
-			Scale:   devices.DefaultMJPEGScale,
+			Scale:   scale,
 			OnProgress: func(message string) {
 				fmt.Fprintf(os.Stderr, "%s\n", message)
 			},
@@ -122,4 +132,5 @@ func init() {
 	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
 	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
+	screencaptureCmd.Flags().Float64Var(&screencaptureScale, "scale", 0, "Scale factor for screen capture (0 for default)")
 }
