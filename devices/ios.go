@@ -239,7 +239,7 @@ func (d *IOSDevice) startTunnel() error {
 	return nil
 }
 
-func (d *IOSDevice) StartAgent() error {
+func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 	// starting an agent on a real device requires quite a few things to happen in the right order:
 	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
@@ -277,7 +277,14 @@ func (d *IOSDevice) StartAgent() error {
 		}
 
 		if webdriverBundleId == "" {
+			if config.OnProgress != nil {
+				config.OnProgress("Installing WebDriverAgent")
+			}
 			return fmt.Errorf("WebDriverAgent is not installed")
+		}
+
+		if config.OnProgress != nil {
+			config.OnProgress("Starting tunnel")
 		}
 
 		// start tunnel if needed (only for iOS 17+)
@@ -307,11 +314,19 @@ func (d *IOSDevice) StartAgent() error {
 		}
 
 		if err != nil {
+			if config.OnProgress != nil {
+				config.OnProgress("Launching WebDriverAgent")
+			}
+
 			// launch WebDriverAgent using testmanagerd
 			utils.Verbose("Launching WebDriverAgent")
 			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 			if err != nil {
 				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+			}
+
+			if config.OnProgress != nil {
+				config.OnProgress("Waiting for agent to start")
 			}
 
 			// wait for WebDriverAgent to start
@@ -627,14 +642,18 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// configure mjpeg framerate
 	err := d.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
 	if err != nil {
 		return err
 	}
 
-	return d.mjpegClient.StartScreenCapture(format, callback)
+	if config.OnProgress != nil {
+		config.OnProgress("Starting video stream")
+	}
+
+	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
 func findAvailablePort() (int, error) {

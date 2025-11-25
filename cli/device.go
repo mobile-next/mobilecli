@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/devices"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +48,7 @@ var deviceInfoCmd = &cobra.Command{
 		}
 
 		// Start agent
-		err = targetDevice.StartAgent()
+		err = targetDevice.StartAgent(devices.StartAgentConfig{})
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
 			printJson(response)

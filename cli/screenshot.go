@@ -70,7 +70,11 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Start agent
-		err = targetDevice.StartAgent()
+		err = targetDevice.StartAgent(devices.StartAgentConfig{
+			OnProgress: func(message string) {
+				fmt.Fprintf(os.Stderr, "%s\n", message)
+			},
+		})
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
 			printJson(response)
@@ -78,13 +82,21 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(screencaptureFormat, devices.DefaultMJPEGQuality, devices.DefaultMJPEGScale, func(data []byte) bool {
-			_, writeErr := os.Stdout.Write(data)
-			if writeErr != nil {
-				fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
-				return false
-			}
-			return true
+		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+			Format:  screencaptureFormat,
+			Quality: devices.DefaultMJPEGQuality,
+			Scale:   devices.DefaultMJPEGScale,
+			OnProgress: func(message string) {
+				fmt.Fprintf(os.Stderr, "%s\n", message)
+			},
+			OnData: func(data []byte) bool {
+				_, writeErr := os.Stdout.Write(data)
+				if writeErr != nil {
+					fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
+					return false
+				}
+				return true
+			},
 		})
 
 		if err != nil {
