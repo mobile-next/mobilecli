@@ -9,6 +9,7 @@ import (
 type WdaClient struct {
 	baseURL    string
 	httpClient *http.Client
+	sessionId  string
 }
 
 func NewWdaClient(hostPort string) *WdaClient {

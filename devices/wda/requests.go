@@ -143,6 +143,22 @@ func (c *WdaClient) CreateSession() (string, error) {
 
 	// log.Printf("createSession response: %v", response)
 	sessionId := response["sessionId"].(string)
+	fmt.Println("gilm: %v", sessionId)
+	return sessionId, nil
+}
+
+// GetOrCreateSession returns cached session or creates a new one
+func (c *WdaClient) GetOrCreateSession() (string, error) {
+	if c.sessionId != "" {
+		return c.sessionId, nil
+	}
+
+	sessionId, err := c.CreateSession()
+	if err != nil {
+		return "", err
+	}
+
+	c.sessionId = sessionId
 	return sessionId, nil
 }
 
