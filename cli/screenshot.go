@@ -95,6 +95,7 @@ var screencaptureCmd = &cobra.Command{
 		// Start screen capture and stream to stdout
 		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 			Format:  screencaptureFormat,
+			Scale:   scale,
 			Quality: devices.DefaultMJPEGQuality,
 			OnProgress: func(message string) {
 				utils.Verbose(message)
