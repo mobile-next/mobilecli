@@ -2,7 +2,6 @@ package devices
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -15,6 +14,7 @@ type AVDInfo struct {
 	Name     string
 	Device   string
 	APILevel string
+	AvdId    string
 }
 
 // apiLevelToVersion maps Android API levels to version strings
@@ -46,28 +46,6 @@ func convertAPILevelToVersion(apiLevel string) string {
 	return apiLevel
 }
 
-// listAllAVDs retrieves all available AVDs using emulator -list-avds
-func listAllAVDs() ([]string, error) {
-	cmd := exec.Command(getEmulatorPath(), "-list-avds")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// if emulator command fails, return empty list (SDK might not be installed)
-		utils.Verbose("Failed to list AVDs: %v", err)
-		return []string{}, nil
-	}
-
-	var avdNames []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			avdNames = append(avdNames, line)
-		}
-	}
-
-	return avdNames, nil
-}
-
 // getAVDDetails retrieves AVD information by reading .ini files directly
 func getAVDDetails() (map[string]AVDInfo, error) {
 	avdMap := make(map[string]AVDInfo)
@@ -86,6 +64,9 @@ func getAVDDetails() (map[string]AVDInfo, error) {
 	}
 
 	for _, iniFile := range matches {
+		// extract avd name from .ini filename
+		avdName := strings.TrimSuffix(filepath.Base(iniFile), ".ini")
+
 		// read the .ini file to get the path
 		iniConfig, err := ini.Load(iniFile)
 		if err != nil {
@@ -115,13 +96,14 @@ func getAVDDetails() (map[string]AVDInfo, error) {
 		target := configData.Section("").Key("target").String()
 		apiLevel := strings.TrimPrefix(target, "android-")
 
-		// extract avd name from .ini filename
-		avdName := strings.TrimSuffix(filepath.Base(iniFile), ".ini")
+		// get AvdId for matching with online devices
+		avdId := configData.Section("").Key("AvdId").String()
 
 		avdMap[avdName] = AVDInfo{
 			Name:     displayName,
 			Device:   displayName,
 			APILevel: apiLevel,
+			AvdId:    avdId,
 		}
 	}
 
@@ -132,52 +114,36 @@ func getAVDDetails() (map[string]AVDInfo, error) {
 func getOfflineAndroidEmulators(onlineDeviceIDs map[string]bool) ([]ControllableDevice, error) {
 	var offlineDevices []ControllableDevice
 
-	// get list of all AVDs
-	avdNames, err := listAllAVDs()
-	if err != nil {
-		return offlineDevices, err
-	}
-
-	if len(avdNames) == 0 {
-		return offlineDevices, nil
-	}
-
-	// get detailed info about AVDs
+	// get detailed info about AVDs by reading .ini files directly
 	avdDetails, err := getAVDDetails()
 	if err != nil {
 		return offlineDevices, err
 	}
 
+	if len(avdDetails) == 0 {
+		return offlineDevices, nil
+	}
+
 	// create offline device entries for AVDs that are not running
-	for _, avdName := range avdNames {
-		// check if this AVD is already online
-		// online emulators have device name in getprop ro.boot.qemu.avd_name
-		isOnline := false
-		for deviceID := range onlineDeviceIDs {
-			deviceName := getAndroidDeviceName(deviceID)
-			if matchesAVDName(avdName, deviceName) {
-				isOnline = true
-				break
-			}
-		}
+	for avdName, info := range avdDetails {
+		// check if this AVD is already online by checking if AvdId is in online device IDs
+		// the avdName from the .ini file should match the device ID when online
+		_, isOnline := onlineDeviceIDs[info.AvdId]
 
 		if !isOnline {
-			info, hasDetails := avdDetails[avdName]
 			displayName := strings.ReplaceAll(avdName, "_", " ")
 			version := ""
 
-			if hasDetails {
-				if info.Device != "" {
-					// use device name if available (e.g., "pixel_6 (Google)")
-					displayName = info.Device
-					// clean up the device name
-					if idx := strings.Index(displayName, "("); idx > 0 {
-						displayName = strings.TrimSpace(displayName[:idx])
-					}
-					displayName = strings.ReplaceAll(displayName, "_", " ")
+			if info.Device != "" {
+				// use device name if available (e.g., "pixel_6 (Google)")
+				displayName = info.Device
+				// clean up the device name
+				if idx := strings.Index(displayName, "("); idx > 0 {
+					displayName = strings.TrimSpace(displayName[:idx])
 				}
-				version = convertAPILevelToVersion(info.APILevel)
+				displayName = strings.ReplaceAll(displayName, "_", " ")
 			}
+			version = convertAPILevelToVersion(info.APILevel)
 
 			offlineDevices = append(offlineDevices, &AndroidDevice{
 				id:      avdName,
