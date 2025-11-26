@@ -277,9 +277,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		if webdriverBundleId == "" {
-			if config.OnProgress != nil {
-				config.OnProgress("Installing WebDriverAgent")
-			}
 			return fmt.Errorf("WebDriverAgent is not installed")
 		}
 
