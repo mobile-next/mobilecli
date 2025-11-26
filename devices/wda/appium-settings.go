@@ -4,11 +4,10 @@ import "fmt"
 
 func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
 	// create wda session
-	sessionId, err := c.CreateSession()
+	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
 		return fmt.Errorf("failed to create wda session: %w", err)
 	}
-	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	// post settings to appium endpoint
 	endpoint := fmt.Sprintf("session/%s/appium/settings", sessionId)

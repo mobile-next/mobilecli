@@ -15,12 +15,10 @@ type WindowSize struct {
 }
 
 func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
-	sessionId, err := c.CreateSession()
+	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
 		return nil, err
 	}
-
-	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	response, err := c.GetEndpoint(fmt.Sprintf("session/%s/wda/screen", sessionId))
 	if err != nil {
