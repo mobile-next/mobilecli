@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -53,7 +54,7 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 	}
 
 	// Start agent if needed
-	err = targetDevice.StartAgent()
+	err = targetDevice.StartAgent(devices.StartAgentConfig{})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
