@@ -1,20 +1,19 @@
 package devices
 
 import (
+	"os"
 	"os/exec"
-	"regexp"
+	"path/filepath"
 	"strings"
 
 	"github.com/mobile-next/mobilecli/utils"
+	"gopkg.in/ini.v1"
 )
 
 // AVDInfo represents information about an Android Virtual Device
 type AVDInfo struct {
 	Name     string
 	Device   string
-	Path     string
-	Target   string
-	BasedOn  string
 	APILevel string
 }
 
@@ -69,72 +68,64 @@ func listAllAVDs() ([]string, error) {
 	return avdNames, nil
 }
 
-// parseAVDManagerOutput parses the output of 'avdmanager list avd' and extracts detailed info
-func parseAVDManagerOutput(output string) map[string]AVDInfo {
+// getAVDDetails retrieves AVD information by reading .ini files directly
+func getAVDDetails() (map[string]AVDInfo, error) {
 	avdMap := make(map[string]AVDInfo)
-	lines := strings.Split(output, "\n")
 
-	var currentAVD AVDInfo
-	var currentName string
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return avdMap, err
+	}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	avdDir := filepath.Join(homeDir, ".android", "avd")
+	pattern := filepath.Join(avdDir, "*.ini")
 
-		if strings.HasPrefix(line, "Name:") {
-			// save previous AVD if exists
-			if currentName != "" {
-				avdMap[currentName] = currentAVD
-			}
-			// start new AVD
-			currentName = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
-			currentAVD = AVDInfo{Name: currentName}
-		} else if strings.HasPrefix(line, "Device:") {
-			currentAVD.Device = strings.TrimSpace(strings.TrimPrefix(line, "Device:"))
-		} else if strings.HasPrefix(line, "Path:") {
-			currentAVD.Path = strings.TrimSpace(strings.TrimPrefix(line, "Path:"))
-		} else if strings.HasPrefix(line, "Target:") {
-			currentAVD.Target = strings.TrimSpace(strings.TrimPrefix(line, "Target:"))
-		} else if strings.HasPrefix(line, "Based on:") {
-			basedOn := strings.TrimSpace(strings.TrimPrefix(line, "Based on:"))
-			currentAVD.BasedOn = basedOn
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return avdMap, err
+	}
 
-			// extract API level from "Based on:" line
-			// format: "Android 12.0 ("S") Tag/ABI: google_apis/arm64-v8a" or "Android API 36 Tag/ABI: ..."
-			// try API format first (e.g., "API 36")
-			re := regexp.MustCompile(`API\s+(\d+)`)
-			matches := re.FindStringSubmatch(basedOn)
-			if len(matches) > 1 {
-				currentAVD.APILevel = matches[1]
-			} else {
-				// try version number format (e.g., "Android 12", "Android 12.0", "Android 12.1.1")
-				re = regexp.MustCompile(`Android\s+(\d+(?:\.\d+)*)`)
-				matches = re.FindStringSubmatch(basedOn)
-				if len(matches) > 1 {
-					currentAVD.APILevel = matches[1]
-				}
-			}
+	for _, iniFile := range matches {
+		// read the .ini file to get the path
+		iniConfig, err := ini.Load(iniFile)
+		if err != nil {
+			utils.Verbose("Failed to read %s: %v", iniFile, err)
+			continue
+		}
+
+		avdPath := iniConfig.Section("").Key("path").String()
+		if avdPath == "" {
+			continue
+		}
+
+		// read the config.ini inside the .avd directory
+		configPath := filepath.Join(avdPath, "config.ini")
+		configData, err := ini.Load(configPath)
+		if err != nil {
+			utils.Verbose("Failed to read %s: %v", configPath, err)
+			continue
+		}
+
+		displayName := configData.Section("").Key("avd.ini.displayname").String()
+		if displayName == "" {
+			continue
+		}
+
+		// extract API level from target (e.g., "android-31" -> "31")
+		target := configData.Section("").Key("target").String()
+		apiLevel := strings.TrimPrefix(target, "android-")
+
+		// extract avd name from .ini filename
+		avdName := strings.TrimSuffix(filepath.Base(iniFile), ".ini")
+
+		avdMap[avdName] = AVDInfo{
+			Name:     displayName,
+			Device:   displayName,
+			APILevel: apiLevel,
 		}
 	}
 
-	// save last AVD
-	if currentName != "" {
-		avdMap[currentName] = currentAVD
-	}
-
-	return avdMap
-}
-
-// getAVDDetails retrieves detailed information about all AVDs
-func getAVDDetails() (map[string]AVDInfo, error) {
-	cmd := exec.Command(getAvdManagerPath(), "list", "avd")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// if avdmanager fails, return empty map
-		utils.Verbose("Failed to get AVD details: %w", err)
-		return make(map[string]AVDInfo), nil
-	}
-
-	return parseAVDManagerOutput(string(output)), nil
+	return avdMap, nil
 }
 
 // getOfflineAndroidEmulators returns a list of offline Android emulators (AVDs not currently running)
