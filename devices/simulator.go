@@ -505,7 +505,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	if !installed {
 		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
 		if config.OnProgress != nil {
-			config.OnProgress("Installing WebDriverAgent on Simulator")
+			config.OnProgress("Installing Agent on Simulator")
 		}
 
 		err = s.InstallWebDriverAgent(config.OnProgress)
@@ -517,7 +517,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	if config.OnProgress != nil {
-		config.OnProgress("Starting WebDriverAgent")
+		config.OnProgress("Starting Agent")
 	}
 
 	// find available ports
