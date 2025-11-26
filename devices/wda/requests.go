@@ -143,14 +143,26 @@ func (c *WdaClient) CreateSession() (string, error) {
 
 	// log.Printf("createSession response: %v", response)
 	sessionId := response["sessionId"].(string)
-	fmt.Println("gilm: %v", sessionId)
 	return sessionId, nil
+}
+
+// isSessionStillValid checks if a session is still valid
+func (c *WdaClient) isSessionStillValid(sessionId string) bool {
+	endpoint := fmt.Sprintf("session/%s", sessionId)
+	_, err := c.GetEndpoint(endpoint)
+	return err == nil
 }
 
 // GetOrCreateSession returns cached session or creates a new one
 func (c *WdaClient) GetOrCreateSession() (string, error) {
+	// if we have a cached session, validate it first
 	if c.sessionId != "" {
-		return c.sessionId, nil
+		if c.isSessionStillValid(c.sessionId) {
+			return c.sessionId, nil
+		}
+		// session is invalid, clear it and create a new one
+		utils.Verbose("cached session %s is invalid, creating new session", c.sessionId)
+		c.sessionId = ""
 	}
 
 	sessionId, err := c.CreateSession()
