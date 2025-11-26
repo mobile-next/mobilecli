@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
+	"howett.net/plist"
 )
 
 const (
@@ -29,6 +31,14 @@ type AppInfo struct {
 	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
 	CFBundleDisplayName string `json:"CFBundleDisplayName"`
 	CFBundleVersion     string `json:"CFBundleVersion"`
+}
+
+// devicePlist represents the structure of device.plist
+type devicePlist struct {
+	UDID    string `plist:"UDID"`
+	Name    string `plist:"name"`
+	Runtime string `plist:"runtime"`
+	State   int    `plist:"state"`
 }
 
 // Simulator represents an iOS simulator device
@@ -110,53 +120,58 @@ func runSimctl(args ...string) ([]byte, error) {
 	return output, nil
 }
 
-// getSimulators executes 'xcrun simctl list --json' and returns the parsed response
+// getSimulators reads simulator information from the filesystem
 func GetSimulators() ([]Simulator, error) {
-	output, err := runSimctl("list", "--json")
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute xcrun simctl list: %w", err)
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	var simulators map[string]interface{}
-	if err := json.Unmarshal(output, &simulators); err != nil {
-		return nil, fmt.Errorf("failed to parse simulator list JSON: %w", err)
+	devicesPath := filepath.Join(homeDir, "Library", "Developer", "CoreSimulator", "Devices")
+	entries, err := os.ReadDir(devicesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read devices directory: %w", err)
 	}
 
-	devices, ok := simulators["devices"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected format in simulator list: devices not found or not a map")
-	}
+	var simulators []Simulator
 
-	var filteredDevices []Simulator
-
-	for runtimeName, deviceList := range devices {
-		deviceArray, ok := deviceList.([]interface{})
-		if !ok {
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
 
-		for _, device := range deviceArray {
-			deviceMap, ok := device.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			name, _ := deviceMap["name"].(string)
-			udid, _ := deviceMap["udid"].(string)
-			state, _ := deviceMap["state"].(string)
-
-			simulator := Simulator{
-				Name:    name,
-				UDID:    udid,
-				State:   state,
-				Runtime: runtimeName,
-			}
-
-			filteredDevices = append(filteredDevices, simulator)
+		plistPath := filepath.Join(devicesPath, entry.Name(), "device.plist")
+		data, err := os.ReadFile(plistPath)
+		if err != nil {
+			// skip devices without device.plist
+			continue
 		}
+
+		var device devicePlist
+		if _, err := plist.Unmarshal(data, &device); err != nil {
+			// skip devices with invalid plist
+			continue
+		}
+
+		// convert state integer to string
+		// state 1 = Shutdown (offline)
+		// state 3 = Booted (online)
+		stateStr := "Shutdown"
+		if device.State == 3 {
+			stateStr = "Booted"
+		}
+
+		simulator := Simulator{
+			Name:    device.Name,
+			UDID:    device.UDID,
+			State:   stateStr,
+			Runtime: device.Runtime,
+		}
+
+		simulators = append(simulators, simulator)
 	}
 
-	return filteredDevices, nil
+	return simulators, nil
 }
 
 // filterSimulatorsByDownloadsDirectory filters simulators that have been booted at least once

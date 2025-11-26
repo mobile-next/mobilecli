@@ -8,6 +8,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/ini.v1 v1.67.0
+	howett.net/plist v0.0.0-20200419221736-3b63eb3a43b5
 )
 
 replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.49.1
@@ -44,6 +45,5 @@ require (
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20240405191320-0878b34101b5 // indirect
-	howett.net/plist v0.0.0-20200419221736-3b63eb3a43b5 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.2.0 // indirect
 )
