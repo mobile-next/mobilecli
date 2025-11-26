@@ -59,7 +59,9 @@ func (d *AndroidDevice) State() string {
 func getAndroidSdkPath() string {
 	sdkPath := os.Getenv("ANDROID_HOME")
 	if sdkPath != "" {
-		return sdkPath
+		if _, err := os.Stat(sdkPath); err == nil {
+			return sdkPath
+		}
 	}
 
 	// try default Android SDK location on macOS
