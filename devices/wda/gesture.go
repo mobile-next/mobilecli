@@ -6,12 +6,10 @@ import (
 )
 
 func (c *WdaClient) Gesture(actions []TapAction) error {
-	sessionId, err := c.CreateSession()
+	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
 		return err
 	}
-
-	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := ActionsRequest{
 		Actions: []Pointer{

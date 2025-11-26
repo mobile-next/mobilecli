@@ -22,12 +22,10 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("unsupported button: %s", key)
 	}
 
-	sessionId, err := c.CreateSession()
+	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
-
-	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	data := map[string]interface{}{
 		"name": translatedKey,

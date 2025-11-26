@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 // OrientationGetRequest represents the request for getting device orientation
@@ -28,7 +30,7 @@ func OrientationGetCommand(req OrientationGetRequest) *CommandResponse {
 	}
 
 	// start agent if needed
-	err = device.StartAgent()
+	err = device.StartAgent(devices.StartAgentConfig{})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", device.ID(), err))
 	}
@@ -58,7 +60,7 @@ func OrientationSetCommand(req OrientationSetRequest) *CommandResponse {
 	}
 
 	// start agent if needed
-	err = device.StartAgent()
+	err = device.StartAgent(devices.StartAgentConfig{})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", device.ID(), err))
 	}

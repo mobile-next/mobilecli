@@ -531,7 +531,7 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("error finding device: %w", err)
 	}
 
-	err = targetDevice.StartAgent()
+	err = targetDevice.StartAgent(devices.StartAgentConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("error starting agent: %w", err)
 	}
@@ -708,30 +708,55 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		scale = devices.DefaultMJPEGScale
 	}
 
-	err = targetDevice.StartAgent()
-	if err != nil {
-		return fmt.Errorf("error starting agent: %w", err)
-	}
-
 	// Set headers for streaming response
 	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// Start screen capture and stream to the response writer
-	err = targetDevice.StartScreenCapture(screenCaptureParams.Format, quality, scale, func(data []byte) bool {
-		_, writeErr := w.Write(data)
-		if writeErr != nil {
-			fmt.Println("Error writing data:", writeErr)
-			return false
+	// progress callback sends JSON-RPC notifications through the MJPEG stream
+	progressCallback := func(message string) {
+		notification := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "notification/message",
+			"params": map[string]string{
+				"message": message,
+			},
 		}
-
+		statusJSON, _ := json.Marshal(notification)
+		mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
+		_, _ = w.Write([]byte(mimeMessage))
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
+	}
 
-		return true
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		OnProgress: progressCallback,
+	})
+	if err != nil {
+		return fmt.Errorf("error starting agent: %w", err)
+	}
+
+	// Start screen capture and stream to the response writer
+	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+		Format:  screenCaptureParams.Format,
+		Quality: quality,
+		Scale:   scale,
+		OnProgress: progressCallback,
+		OnData: func(data []byte) bool {
+			_, writeErr := w.Write(data)
+			if writeErr != nil {
+				fmt.Println("Error writing data:", writeErr)
+				return false
+			}
+
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+
+			return true
+		},
 	})
 
 	if err != nil {

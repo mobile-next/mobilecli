@@ -7,7 +7,12 @@ import (
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
+)
+
+var (
+	screencaptureScale float64
 )
 
 var screenshotCmd = &cobra.Command{
@@ -70,21 +75,39 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Start agent
-		err = targetDevice.StartAgent()
+		err = targetDevice.StartAgent(devices.StartAgentConfig{
+			OnProgress: func(message string) {
+				utils.Verbose(message)
+			},
+		})
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
 
+		// set defaults if not provided
+		scale := screencaptureScale
+		if scale == 0.0 {
+			scale = devices.DefaultMJPEGScale
+		}
+
 		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(screencaptureFormat, devices.DefaultMJPEGQuality, devices.DefaultMJPEGScale, func(data []byte) bool {
-			_, writeErr := os.Stdout.Write(data)
-			if writeErr != nil {
-				fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
-				return false
-			}
-			return true
+		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+			Format:  screencaptureFormat,
+			Quality: devices.DefaultMJPEGQuality,
+			Scale:   scale,
+			OnProgress: func(message string) {
+				utils.Verbose(message)
+			},
+			OnData: func(data []byte) bool {
+				_, writeErr := os.Stdout.Write(data)
+				if writeErr != nil {
+					fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
+					return false
+				}
+				return true
+			},
 		})
 
 		if err != nil {
@@ -110,4 +133,5 @@ func init() {
 	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
 	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
+	screencaptureCmd.Flags().Float64Var(&screencaptureScale, "scale", 0, "Scale factor for screen capture (0 for default)")
 }

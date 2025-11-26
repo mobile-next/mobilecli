@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 // URLRequest represents the parameters for a URL opening command
@@ -21,7 +23,7 @@ func URLCommand(req URLRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent()
+	err = targetDevice.StartAgent(devices.StartAgentConfig{})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}

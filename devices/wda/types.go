@@ -9,6 +9,7 @@ import (
 type WdaClient struct {
 	baseURL    string
 	httpClient *http.Client
+	sessionId  string
 }
 
 func NewWdaClient(hostPort string) *WdaClient {
@@ -28,10 +29,10 @@ func NewWdaClient(hostPort string) *WdaClient {
 
 type TapAction struct {
 	Type     string `json:"type"`
-	Duration int    `json:"duration,omitempty"`
-	X        int    `json:"x,omitempty"`
-	Y        int    `json:"y,omitempty"`
-	Button   int    `json:"button,omitempty"`
+	Duration int    `json:"duration"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Button   int    `json:"button"`
 }
 
 type PointerParameters struct {
