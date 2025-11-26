@@ -169,13 +169,119 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
-	byteData, err := d.runAdbCommand("exec-out", "screencap", "-p")
+// getDisplayCount counts the number of displays on the device
+func (d *AndroidDevice) getDisplayCount() int {
+	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
 	if err != nil {
-		return nil, fmt.Errorf("failed to take screenshot: %v", err)
+		return 1 // assume single display on error
 	}
 
+	count := 0
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Display ") {
+			count++
+		}
+	}
+
+	return count
+}
+
+// parseDisplayIdFromCmdDisplay extracts display ID from "cmd display get-displays" output (Android 11+)
+func parseDisplayIdFromCmdDisplay(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		// look for lines like "Display id X, ... state ON, ... uniqueId "..."
+		if strings.HasPrefix(line, "Display id ") &&
+			strings.Contains(line, ", state ON,") &&
+			strings.Contains(line, ", uniqueId ") {
+			re := regexp.MustCompile(`uniqueId "([^"]+)"`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) == 2 {
+				return strings.TrimPrefix(matches[1], "local:")
+			}
+		}
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysViewport extracts display ID from dumpsys DisplayViewport entries
+func parseDisplayIdFromDumpsysViewport(dumpsys string) string {
+	re := regexp.MustCompile(`DisplayViewport\{type=INTERNAL[^}]*isActive=true[^}]*uniqueId='([^']+)'`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return strings.TrimPrefix(matches[1], "local:")
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysState extracts display ID from dumpsys display state entries
+func parseDisplayIdFromDumpsysState(dumpsys string) string {
+	re := regexp.MustCompile(`Display Id=(\d+)[\s\S]*?Display State=ON`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// getFirstDisplayId finds the first active display's unique ID
+func (d *AndroidDevice) getFirstDisplayId() string {
+	// try using cmd display get-displays (Android 11+)
+	output, err := d.runAdbCommand("shell", "cmd", "display", "get-displays")
+	if err == nil {
+		if id := parseDisplayIdFromCmdDisplay(string(output)); id != "" {
+			return id
+		}
+	}
+
+	// fallback: parse dumpsys display for display info (compatible with older Android versions)
+	output, err = d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return ""
+	}
+
+	dumpsys := string(output)
+
+	// try DisplayViewport entries with isActive=true and type=INTERNAL
+	if id := parseDisplayIdFromDumpsysViewport(dumpsys); id != "" {
+		return id
+	}
+
+	// final fallback: look for active display with state ON
+	return parseDisplayIdFromDumpsysState(dumpsys)
+}
+
+// captureScreenshot captures screenshot with optional display ID
+func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
+	args := []string{"exec-out", "screencap", "-p"}
+	if displayID != "" {
+		args = append(args, "-d", displayID)
+	}
+	byteData, err := d.runAdbCommand(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to take screenshot: %w", err)
+	}
 	return byteData, nil
+}
+
+func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
+	displayCount := d.getDisplayCount()
+
+	if displayCount <= 1 {
+		// backward compatibility for android 10 and below, and for single display devices
+		return d.captureScreenshot("")
+	}
+
+	// find the first display that is turned on, and capture that one
+	displayID := d.getFirstDisplayId()
+	if displayID == "" {
+		// no idea why, but we have displayCount >= 2, yet we failed to parse
+		// let's go with screencap's defaults and hope for the best
+		return d.captureScreenshot("")
+	}
+
+	return d.captureScreenshot(displayID)
 }
 
 func (d *AndroidDevice) LaunchApp(bundleID string) error {
