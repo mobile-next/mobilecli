@@ -17,6 +17,20 @@ const (
 	DefaultMJPEGFramerate = 30
 )
 
+// ScreenCaptureConfig contains configuration for screen capture operations
+type ScreenCaptureConfig struct {
+	Format     string
+	Quality    int
+	Scale      float64
+	OnProgress func(message string) // optional progress callback
+	OnData     func([]byte) bool    // data callback - return false to stop
+}
+
+// StartAgentConfig contains configuration for agent startup operations
+type StartAgentConfig struct {
+	OnProgress func(message string) // optional progress callback
+}
+
 // ScreenElementRect represents the rectangle coordinates and dimensions
 // Re-export types for backward compatibility
 type ScreenElementRect = types.ScreenElementRect
@@ -38,7 +52,7 @@ type ControllableDevice interface {
 	LongPress(x, y int) error
 	Swipe(x1, y1, x2, y2 int) error
 	Gesture(actions []wda.TapAction) error
-	StartAgent() error
+	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
 	PressButton(key string) error
 	LaunchApp(bundleID string) error
@@ -48,7 +62,7 @@ type ControllableDevice interface {
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
-	StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error
+	StartScreenCapture(config ScreenCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error

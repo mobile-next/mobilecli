@@ -492,7 +492,7 @@ func GetAndroidDevices() ([]ControllableDevice, error) {
 	return androidDevices, nil
 }
 
-func (d *AndroidDevice) StartAgent() error {
+func (d *AndroidDevice) StartAgent(config StartAgentConfig) error {
 	// if device is offline, return error - user should use 'device boot' command
 	if d.state == "offline" {
 		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
@@ -743,9 +743,13 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
-func (d *AndroidDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
-	if format != "mjpeg" {
-		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", format)
+func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	if config.Format != "mjpeg" {
+		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", config.Format)
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Installing DeviceKit")
 	}
 
 	utils.Verbose("Ensuring DeviceKit is installed...")
@@ -759,8 +763,12 @@ func (d *AndroidDevice) StartScreenCapture(format string, quality int, scale flo
 		return fmt.Errorf("failed to get app path: %v", err)
 	}
 
+	if config.OnProgress != nil {
+		config.OnProgress("Starting MJPEG server")
+	}
+
 	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", quality), "--scale", fmt.Sprintf("%.2f", scale))
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale))
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
@@ -783,7 +791,7 @@ func (d *AndroidDevice) StartScreenCapture(format string, quality int, scale flo
 
 		if n > 0 {
 			// Send bytes to callback, break if it returns false
-			if !callback(buffer[:n]) {
+			if !config.OnData(buffer[:n]) {
 				break
 			}
 		}

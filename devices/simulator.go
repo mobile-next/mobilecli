@@ -301,7 +301,10 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	return tmpFile.Name(), nil
 }
 
-func (s SimulatorDevice) InstallWebDriverAgent() error {
+func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
+	if onProgress != nil {
+		onProgress("Downloading WebDriverAgent")
+	}
 
 	file, err := s.DownloadWebDriverAgent()
 	if err != nil {
@@ -309,8 +312,6 @@ func (s SimulatorDevice) InstallWebDriverAgent() error {
 	}
 
 	defer func() { _ = os.Remove(file) }()
-
-	utils.Verbose("Downloaded WebDriverAgent to %s", file)
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
@@ -448,7 +449,7 @@ func (s *SimulatorDevice) Shutdown() error {
 	return nil
 }
 
-func (s *SimulatorDevice) StartAgent() error {
+func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	// check simulator state - it must be booted
 	state, err := s.getState()
 	if err != nil {
@@ -463,11 +464,16 @@ func (s *SimulatorDevice) StartAgent() error {
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
+		if config.OnProgress != nil {
+			config.OnProgress("Waiting for Simulator to boot")
+		}
+
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
+
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
 	case "ShuttingDown":
@@ -498,12 +504,20 @@ func (s *SimulatorDevice) StartAgent() error {
 
 	if !installed {
 		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
-		err = s.InstallWebDriverAgent()
+		if config.OnProgress != nil {
+			config.OnProgress("Installing WebDriverAgent on Simulator")
+		}
+
+		err = s.InstallWebDriverAgent(config.OnProgress)
 		if err != nil {
 			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
 		}
 
 		// from here on, we assume wda is installed
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Starting WebDriverAgent")
 	}
 
 	// find available ports
@@ -532,6 +546,10 @@ func (s *SimulatorDevice) StartAgent() error {
 
 	// update WDA client to use the actual port
 	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
+
+	if config.OnProgress != nil {
+		config.OnProgress("Waiting for agent to start")
+	}
 
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
@@ -633,7 +651,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale float64, callback func([]byte) bool) error {
+func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	mjpegPort, err := s.getWdaMjpegPort()
 	if err != nil {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
@@ -645,8 +663,12 @@ func (s *SimulatorDevice) StartScreenCapture(format string, quality int, scale f
 		return err
 	}
 
+	if config.OnProgress != nil {
+		config.OnProgress("Starting video stream")
+	}
+
 	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
-	return mjpegClient.StartScreenCapture(format, callback)
+	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
 func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
