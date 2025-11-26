@@ -2,6 +2,7 @@ package devices
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
@@ -22,6 +23,7 @@ type ScreenCaptureConfig struct {
 	Format     string
 	Quality    int
 	Scale      float64
+	FPS        int
 	OnProgress func(message string) // optional progress callback
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
@@ -73,7 +75,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	var allDevices []ControllableDevice
 
 	// get Android devices
+	startTime := time.Now()
 	androidDevices, err := GetAndroidDevices()
+	utils.Verbose("GetAndroidDevices took %s", time.Since(startTime))
 	if err != nil {
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 	} else {
@@ -88,7 +92,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 			onlineDeviceIDs[device.ID()] = true
 		}
 
+		startTime = time.Now()
 		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
+		utils.Verbose("getOfflineAndroidEmulators took %s", time.Since(startTime))
 		if err != nil {
 			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
 		} else {
@@ -97,7 +103,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	}
 
 	// get iOS real devices
+	startTime = time.Now()
 	iosDevices, err := ListIOSDevices()
+	utils.Verbose("ListIOSDevices took %s", time.Since(startTime))
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
 	} else {
@@ -107,7 +115,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	}
 
 	// get iOS simulator devices (all simulators, not just booted ones)
+	startTime = time.Now()
 	sims, err := GetSimulators()
+	utils.Verbose("GetSimulators took %s", time.Since(startTime))
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 	} else {
@@ -154,6 +164,7 @@ type FullDeviceInfo struct {
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
+	startTime := time.Now()
 	devices, err := GetAllControllableDevices(opts.IncludeOffline)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
@@ -187,6 +198,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			State:    state,
 		})
 	}
+	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))
 
 	return deviceInfoList, nil
 }

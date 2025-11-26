@@ -636,8 +636,8 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 }
 
 func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
-	if config.Format != "mjpeg" {
-		return fmt.Errorf("unsupported format: %s, only 'mjpeg' is supported", config.Format)
+	if config.Format != "mjpeg" && config.Format != "avc" {
+		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
 	}
 
 	if config.OnProgress != nil {
@@ -655,12 +655,22 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("failed to get app path: %v", err)
 	}
 
-	if config.OnProgress != nil {
-		config.OnProgress("Starting MJPEG server")
+	var serverClass string
+	var progressMsg string
+	if config.Format == "mjpeg" {
+		serverClass = "com.mobilenext.devicekit.MjpegServer"
+		progressMsg = "Starting MJPEG server"
+	} else {
+		serverClass = "com.mobilenext.devicekit.AvcServer"
+		progressMsg = "Starting AVC server"
 	}
 
-	utils.Verbose("Starting MJPEG server with app path: %s", appPath)
-	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", "com.mobilenext.devicekit.MjpegServer", "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale))
+	if config.OnProgress != nil {
+		config.OnProgress(progressMsg)
+	}
+
+	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
@@ -670,7 +680,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start MJPEG server: %v", err)
+		return fmt.Errorf("failed to start %s: %v", serverClass, err)
 	}
 
 	// Read bytes from the command output and send to callback

@@ -644,7 +644,11 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 
 func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// configure mjpeg framerate
-	err := d.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
+	fps := config.FPS
+	if fps == 0 {
+		fps = DefaultMJPEGFramerate
+	}
+	err := d.wdaClient.SetMjpegFramerate(fps)
 	if err != nil {
 		return err
 	}
