@@ -313,12 +313,6 @@ func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
 
 	defer func() { _ = os.Remove(file) }()
 
-	utils.Verbose("Downloaded WebDriverAgent to %s", file)
-
-	if onProgress != nil {
-		onProgress("Installing WebDriverAgent")
-	}
-
 	dir, err := utils.Unzip(file)
 	if err != nil {
 		return fmt.Errorf("failed to unzip WebDriverAgent: %v", err)
@@ -470,11 +464,16 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
+		if config.OnProgress != nil {
+			config.OnProgress("Waiting for Simulator to boot")
+		}
+
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
+
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
 	case "ShuttingDown":
@@ -505,6 +504,10 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	if !installed {
 		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
+		if config.OnProgress != nil {
+			config.OnProgress("Installing WebDriverAgent on Simulator")
+		}
+
 		err = s.InstallWebDriverAgent(config.OnProgress)
 		if err != nil {
 			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
@@ -514,7 +517,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	if config.OnProgress != nil {
-		config.OnProgress("Launching WebDriverAgent")
+		config.OnProgress("Starting WebDriverAgent")
 	}
 
 	// find available ports

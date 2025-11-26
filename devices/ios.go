@@ -277,9 +277,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		if webdriverBundleId == "" {
-			if config.OnProgress != nil {
-				config.OnProgress("Installing WebDriverAgent")
-			}
 			return fmt.Errorf("WebDriverAgent is not installed")
 		}
 
@@ -319,7 +316,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			// launch WebDriverAgent using testmanagerd
-			utils.Verbose("Launching WebDriverAgent")
 			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 			if err != nil {
 				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
@@ -330,7 +326,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			// wait for WebDriverAgent to start
-			utils.Verbose("Waiting for WebDriverAgent to start")
 			err = d.wdaClient.WaitForAgent()
 			if err != nil {
 				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
@@ -339,8 +334,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			// wait 1 second after pressing home, so we make sure wda is in the background
 			_ = d.wdaClient.PressButton("HOME")
 			time.Sleep(1 * time.Second)
-
-			utils.Verbose("WebDriverAgent started")
 		}
 	}
 

@@ -716,7 +716,14 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 
 	// progress callback sends JSON-RPC notifications through the MJPEG stream
 	progressCallback := func(message string) {
-		statusJSON, _ := json.Marshal(map[string]string{"message": message})
+		notification := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  "notification/message",
+			"params": map[string]string{
+				"message": message,
+			},
+		}
+		statusJSON, _ := json.Marshal(notification)
 		mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
 		_, _ = w.Write([]byte(mimeMessage))
 		if flusher, ok := w.(http.Flusher); ok {
