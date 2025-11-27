@@ -117,8 +117,8 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
 	} else {
 		iosCount = len(iosDevices)
-		for _, device := range iosDevices {
-			allDevices = append(allDevices, &device)
+		for i := range iosDevices {
+			allDevices = append(allDevices, &iosDevices[i])
 		}
 	}
 
