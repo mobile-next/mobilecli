@@ -13,6 +13,8 @@ var dumpCmd = &cobra.Command{
 	Long:  `Perform dump operations like UI tree extraction from devices.`,
 }
 
+var dumpUIFormat string
+
 var dumpUICmd = &cobra.Command{
 	Use:   "ui",
 	Short: "Dump UI tree from a device",
@@ -20,6 +22,7 @@ var dumpUICmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.DumpUIRequest{
 			DeviceID: deviceId,
+			Format:   dumpUIFormat,
 		}
 
 		response := commands.DumpUICommand(req)
@@ -40,4 +43,5 @@ func init() {
 
 	// dump ui command flags
 	dumpUICmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
+	dumpUICmd.Flags().StringVar(&dumpUIFormat, "format", "", "Output format: 'raw' for unprocessed tree from agent (Default: json)")
 }

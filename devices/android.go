@@ -958,7 +958,7 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	for tries := 0; tries < 10; tries++ {
 		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
 		if err != nil {
-			return "", fmt.Errorf("failed to run uiautomator dump: %v", err)
+			return "", fmt.Errorf("failed to run uiautomator dump: %w", err)
 		}
 
 		dump := string(output)
@@ -980,11 +980,26 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
 }
 
-func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+func (d *AndroidDevice) DumpSourceRaw() (interface{}, error) {
 	// get the XML dump from uiautomator
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get uiautomator dump: %w", err)
+	}
+
+	return xmlContent, nil
+}
+
+func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	// get the raw XML dump
+	rawData, err := d.DumpSourceRaw()
+	if err != nil {
+		return nil, err
+	}
+
+	xmlContent, ok := rawData.(string)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for raw XML data")
 	}
 
 	// parse the XML
