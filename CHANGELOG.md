@@ -1,3 +1,8 @@
+## [0.0.42](https://github.com/mobile-next/mobilecli/releases/tag/0.0.42) (2025-11-27)
+
+* iOS: Fix mjpeg framerate wda race condition ([#119](https://github.com/mobile-next/mobilecli/pull/119))
+* iOS: Fix multiple real devices would override each other's pointers ([#120](https://github.com/mobile-next/mobilecli/pull/120))
+
 ## [0.0.41](https://github.com/mobile-next/mobilecli/releases/tag/0.0.41) (2025-11-26)
 
 * General: Cache preflight cors check for a day ([#114](https://github.com/mobile-next/mobilecli/pull/114))
