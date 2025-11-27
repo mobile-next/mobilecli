@@ -12,6 +12,18 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+type alwaysMatch struct {
+	PlatformName string `json:"platformName"`
+}
+
+type sessionCapabilities struct {
+	AlwaysMatch alwaysMatch `json:"alwaysMatch"`
+}
+
+type sessionRequest struct {
+	Capabilities sessionCapabilities `json:"capabilities"`
+}
+
 func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
@@ -27,6 +39,7 @@ func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch endpoint %s: %w", endpoint, err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	// check HTTP status code
@@ -63,6 +76,7 @@ func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -144,14 +158,15 @@ func (c *WdaClient) WaitForAgent() error {
 }
 
 func (c *WdaClient) CreateSession() (string, error) {
-	response, err := c.PostEndpoint("session", map[string]interface{}{
-		"capabilities": map[string]interface{}{
-			"alwaysMatch": map[string]interface{}{
-				"platformName": "iOS",
+	request := sessionRequest{
+		Capabilities: sessionCapabilities{
+			AlwaysMatch: alwaysMatch{
+				PlatformName: "iOS",
 			},
 		},
-	})
+	}
 
+	response, err := c.PostEndpoint("session", request)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -175,6 +190,7 @@ func (c *WdaClient) GetOrCreateSession() (string, error) {
 		if c.isSessionStillValid(c.sessionId) {
 			return c.sessionId, nil
 		}
+
 		// session is invalid, clear it and create a new one
 		utils.Verbose("cached session %s is invalid, creating new session", c.sessionId)
 		c.sessionId = ""
@@ -195,5 +211,10 @@ func (c *WdaClient) DeleteSession(sessionId string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete session %s: %w", sessionId, err)
 	}
+
+	if c.sessionId == sessionId {
+		c.sessionId = ""
+	}
+
 	return nil
 }

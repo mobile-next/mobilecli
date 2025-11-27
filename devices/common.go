@@ -144,12 +144,9 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	totalDuration := time.Since(startTotal).Milliseconds()
 
 	// log all timing stats in one verbose message
-	if includeOffline {
+	if false {
 		utils.Verbose("GetAllControllableDevices completed in %dms: android=%dms (%d devices), offline_android=%dms (%d devices), ios=%dms (%d devices), simulators=%dms (%d devices)",
 			totalDuration, androidDuration, androidCount, offlineAndroidDuration, offlineAndroidCount, iosDuration, iosCount, simulatorsDuration, simulatorsCount)
-	} else {
-		utils.Verbose("GetAllControllableDevices completed in %dms: android=%dms (%d devices), ios=%dms (%d devices), simulators=%dms (%d devices)",
-			totalDuration, androidDuration, androidCount, iosDuration, iosCount, simulatorsDuration, simulatorsCount)
 	}
 
 	return allDevices, nil
