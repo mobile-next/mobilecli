@@ -328,7 +328,11 @@ func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
 	return tmpFile.Name(), nil
 }
 
-func (s SimulatorDevice) downloadWebDriverAgent() (string, error) {
+func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
+	var file string
+	var shouldCleanup bool
+
+	// try local file first
 	wdaPath := os.Getenv("MOBILECLI_WDA_PATH")
 	if wdaPath != "" {
 		filename := getWebdriverAgentFilename(runtime.GOARCH)
@@ -336,49 +340,34 @@ func (s SimulatorDevice) downloadWebDriverAgent() (string, error) {
 
 		if _, err := os.Stat(localPath); err == nil {
 			utils.Verbose("Using local WebDriverAgent from: %s", localPath)
+			file = localPath
+			shouldCleanup = false
+		} else {
+			utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
+		}
+	}
 
-			tmpFile, err := os.CreateTemp("", "wda-*.zip")
-			if err != nil {
-				return "", fmt.Errorf("failed to create temp file: %w", err)
-			}
-			_ = tmpFile.Close()
-
-			input, err := os.ReadFile(localPath)
-			if err != nil {
-				_ = os.Remove(tmpFile.Name())
-				return "", fmt.Errorf("failed to read local WebDriverAgent: %w", err)
-			}
-
-			err = os.WriteFile(tmpFile.Name(), input, 0644)
-			if err != nil {
-				_ = os.Remove(tmpFile.Name())
-				return "", fmt.Errorf("failed to copy local WebDriverAgent: %w", err)
-			}
-
-			return tmpFile.Name(), nil
+	// fall back to GitHub download
+	if file == "" {
+		if onProgress != nil {
+			onProgress("Downloading WebDriverAgent")
 		}
 
-		utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
+		downloadedFile, err := s.downloadWebDriverAgentFromGitHub()
+		if err != nil {
+			return fmt.Errorf("failed to download WebDriverAgent: %w", err)
+		}
+		file = downloadedFile
+		shouldCleanup = true
 	}
 
-	return s.downloadWebDriverAgentFromGitHub()
-}
-
-func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
-	if onProgress != nil {
-		onProgress("Downloading WebDriverAgent")
+	if shouldCleanup {
+		defer func() { _ = os.Remove(file) }()
 	}
-
-	file, err := s.downloadWebDriverAgent()
-	if err != nil {
-		return fmt.Errorf("failed to download WebDriverAgent: %v", err)
-	}
-
-	defer func() { _ = os.Remove(file) }()
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
-		return fmt.Errorf("failed to unzip WebDriverAgent: %v", err)
+		return fmt.Errorf("failed to unzip WebDriverAgent: %w", err)
 	}
 
 	defer func() { _ = os.RemoveAll(dir) }()
