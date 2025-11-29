@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -290,8 +291,20 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
-	url := "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/WebDriverAgentRunner-Build-Sim-arm64.zip"
+func getWebdriverAgentFilename(arch string) string {
+	if arch == "amd64" {
+		return "WebDriverAgentRunner-Build-Sim-x86_64.zip"
+	}
+	return "WebDriverAgentRunner-Build-Sim-arm64.zip"
+}
+
+func getWebdriverAgentDownloadUrl(arch string) string {
+	filename := getWebdriverAgentFilename(arch)
+	return "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/" + filename
+}
+
+func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
+	url := getWebdriverAgentDownloadUrl(runtime.GOARCH)
 
 	tmpFile, err := os.CreateTemp("", "wda-*.zip")
 	if err != nil {
@@ -307,7 +320,6 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 		return "", fmt.Errorf("failed to download WebDriverAgent: %w", err)
 	}
 
-	// log file size
 	fileInfo, err := os.Stat(tmpFile.Name())
 	if err == nil {
 		utils.Verbose("Downloaded %d bytes", fileInfo.Size())
@@ -316,12 +328,48 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 	return tmpFile.Name(), nil
 }
 
+func (s SimulatorDevice) downloadWebDriverAgent() (string, error) {
+	wdaPath := os.Getenv("MOBILECLI_WDA_PATH")
+	if wdaPath != "" {
+		filename := getWebdriverAgentFilename(runtime.GOARCH)
+		localPath := filepath.Join(wdaPath, filename)
+
+		if _, err := os.Stat(localPath); err == nil {
+			utils.Verbose("Using local WebDriverAgent from: %s", localPath)
+
+			tmpFile, err := os.CreateTemp("", "wda-*.zip")
+			if err != nil {
+				return "", fmt.Errorf("failed to create temp file: %v", err)
+			}
+			_ = tmpFile.Close()
+
+			input, err := os.ReadFile(localPath)
+			if err != nil {
+				_ = os.Remove(tmpFile.Name())
+				return "", fmt.Errorf("failed to read local WebDriverAgent: %w", err)
+			}
+
+			err = os.WriteFile(tmpFile.Name(), input, 0644)
+			if err != nil {
+				_ = os.Remove(tmpFile.Name())
+				return "", fmt.Errorf("failed to copy local WebDriverAgent: %w", err)
+			}
+
+			return tmpFile.Name(), nil
+		}
+
+		utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
+	}
+
+	return s.downloadWebDriverAgentFromGitHub()
+}
+
 func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
 	if onProgress != nil {
 		onProgress("Downloading WebDriverAgent")
 	}
 
-	file, err := s.DownloadWebDriverAgent()
+	file, err := s.downloadWebDriverAgent()
 	if err != nil {
 		return fmt.Errorf("failed to download WebDriverAgent: %v", err)
 	}
