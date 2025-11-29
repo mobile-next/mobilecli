@@ -220,7 +220,7 @@ jobs:
     - name: Run tests for iOS ${{ matrix.ios_version }}
       run: |
         cd test
-        npm install
+        npm install --ignore-scripts
         npm run test -- --grep "iOS ${{ matrix.ios_version }}"
 
   server_test:
@@ -244,7 +244,7 @@ jobs:
     - name: Run server tests
       run: |
         cd test
-        npm install
+        npm install --ignore-scripts
         npm run test -- --grep "server"
 
   android_emulator_test:
@@ -302,7 +302,7 @@ jobs:
     - name: npm install
       run: |
         cd test
-        npm install
+        npm install --ignore-scripts
 
     - name: run tests
       uses: reactivecircus/android-emulator-runner@v2
@@ -319,7 +319,7 @@ jobs:
 #    - name: Run tests for Android API ${{ matrix.api_level }}
 #      run: |
 #        cd test
-#        npm install
+#        npm install --ignore-scripts
 #        npm run test -- --grep "Android API ${{ matrix.api_level }}"
 
   publish:
@@ -410,6 +410,6 @@ jobs:
         # publish to npm
         cd publish/npm
         npm version "${{ github.ref_name }}" --no-git-tag-version
-        npm install
+        npm install --ignore-scripts
         npm publish --access public
 
