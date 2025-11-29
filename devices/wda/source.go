@@ -96,25 +96,25 @@ func (c *WdaClient) GetSourceRaw() (interface{}, error) {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
 
-	valueInterface, ok := result["value"]
+	value, ok := result["value"]
 	if !ok {
 		return nil, fmt.Errorf("no 'value' field found in WDA response")
 	}
 
-	return valueInterface, nil
+	return value, nil
 }
 
 func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
-	valueInterface, err := c.GetSourceRaw()
+	value, err := c.GetSourceRaw()
 	if err != nil {
 		return nil, err
 	}
 
-	utils.Verbose("WDA source response: %+v", valueInterface)
+	utils.Verbose("WDA source response: %+v", value)
 
 	// directly parse the value interface into our source tree struct
 	var sourceTree sourceTreeElement
-	valueBytes, err := json.Marshal(valueInterface)
+	valueBytes, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal value: %w", err)
 	}
