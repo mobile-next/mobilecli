@@ -605,6 +605,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
+		// terminate the WDA process if it failed to start
+		_ = s.TerminateApp(webdriverPackageName)
 		return err
 	}
 
