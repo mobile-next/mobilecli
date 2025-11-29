@@ -339,7 +339,7 @@ func (s SimulatorDevice) downloadWebDriverAgent() (string, error) {
 
 			tmpFile, err := os.CreateTemp("", "wda-*.zip")
 			if err != nil {
-				return "", fmt.Errorf("failed to create temp file: %v", err)
+				return "", fmt.Errorf("failed to create temp file: %w", err)
 			}
 			_ = tmpFile.Close()
 
