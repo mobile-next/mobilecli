@@ -65,6 +65,7 @@ type ControllableDevice interface {
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)
+	DumpSourceRaw() (interface{}, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
 }

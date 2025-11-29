@@ -772,6 +772,10 @@ func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
 	return s.wdaClient.GetSourceElements()
 }
 
+func (s SimulatorDevice) DumpSourceRaw() (interface{}, error) {
+	return s.wdaClient.GetSourceRaw()
+}
+
 func (s *SimulatorDevice) getWdaPort() (int, error) {
 	return s.getWdaEnvPort("USE_PORT")
 }

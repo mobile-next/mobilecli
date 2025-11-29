@@ -81,36 +81,46 @@ func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 
 	result, err := c.GetEndpoint(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get source: %v", err)
+		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
 
 	return result, nil
 }
 
-func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
+// GetSourceRaw gets the raw page source from WDA's /source endpoint
+func (c *WdaClient) GetSourceRaw() (interface{}, error) {
 	endpoint := "source?format=json"
 
 	result, err := c.GetEndpoint(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get source: %v", err)
+		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
 
-	utils.Verbose("WDA source response: %+v", result)
-
-	valueInterface, ok := result["value"]
+	value, ok := result["value"]
 	if !ok {
 		return nil, fmt.Errorf("no 'value' field found in WDA response")
 	}
 
+	return value, nil
+}
+
+func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
+	value, err := c.GetSourceRaw()
+	if err != nil {
+		return nil, err
+	}
+
+	utils.Verbose("WDA source response: %+v", value)
+
 	// directly parse the value interface into our source tree struct
 	var sourceTree sourceTreeElement
-	valueBytes, err := json.Marshal(valueInterface)
+	valueBytes, err := json.Marshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal value: %v", err)
+		return nil, fmt.Errorf("failed to marshal value: %w", err)
 	}
 
 	if err := json.Unmarshal(valueBytes, &sourceTree); err != nil {
-		return nil, fmt.Errorf("failed to parse source tree: %v", err)
+		return nil, fmt.Errorf("failed to parse source tree: %w", err)
 	}
 
 	elements := filterSourceElements(sourceTree)

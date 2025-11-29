@@ -662,6 +662,10 @@ func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.wdaClient.GetSourceElements()
 }
 
+func (d IOSDevice) DumpSourceRaw() (interface{}, error) {
+	return d.wdaClient.GetSourceRaw()
+}
+
 func (d IOSDevice) InstallApp(path string) error {
 	log.SetLevel(log.WarnLevel)
 
