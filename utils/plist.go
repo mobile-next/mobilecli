@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 )
@@ -41,6 +43,23 @@ func AddBundleIconFilesToPlist(plistPath string) error {
 	cmd = exec.Command("plutil", "-insert", "CFBundleIconFiles.0", "-string", "AppIcon.png", plistPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to insert AppIcon.png: %w\n%s", err, output)
+	}
+
+	return nil
+}
+
+// ConvertPlistToJSON converts plist bytes to JSON and unmarshals into the provided result
+func ConvertPlistToJSON(plistData []byte, result interface{}) error {
+	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
+	cmd.Stdin = bytes.NewReader(plistData)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to convert plist to JSON: %w\n%s", err, output)
+	}
+
+	err = json.Unmarshal(output, result)
+	if err != nil {
+		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	return nil
