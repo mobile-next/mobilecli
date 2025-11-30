@@ -111,34 +111,6 @@ func getAdbPath() string {
 	return "adb"
 }
 
-func getAvdManagerPath() string {
-	sdkPath := getAndroidSdkPath()
-	if sdkPath != "" {
-		// try cmdline-tools/latest first
-		avdPath := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "avdmanager")
-		if runtime.GOOS == "windows" {
-			avdPath += ".bat"
-		}
-
-		if _, err := os.Stat(avdPath); err == nil {
-			return avdPath
-		}
-
-		// fallback to tools/bin (older SDK layout)
-		avdPath = filepath.Join(sdkPath, "tools", "bin", "avdmanager")
-		if runtime.GOOS == "windows" {
-			avdPath += ".bat"
-		}
-
-		if _, err := os.Stat(avdPath); err == nil {
-			return avdPath
-		}
-	}
-
-	// best effort, look in path
-	return "avdmanager"
-}
-
 func getEmulatorPath() string {
 	sdkPath := getAndroidSdkPath()
 	if sdkPath != "" {
