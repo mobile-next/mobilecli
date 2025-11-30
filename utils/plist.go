@@ -52,12 +52,16 @@ func AddBundleIconFilesToPlist(plistPath string) error {
 func ConvertPlistToJSON(plistData []byte, result interface{}) error {
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
 	cmd.Stdin = bytes.NewReader(plistData)
-	output, err := cmd.CombinedOutput()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to convert plist to JSON: %w\n%s", err, output)
+		return fmt.Errorf("failed to convert plist to JSON: %w\n%s", err, stderr.String())
 	}
 
-	err = json.Unmarshal(output, result)
+	err = json.Unmarshal(stdout.Bytes(), result)
 	if err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}

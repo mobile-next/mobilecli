@@ -544,7 +544,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-		return err
+		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
 	}
 
 	installed, err := s.IsWebDriverAgentInstalled()
