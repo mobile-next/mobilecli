@@ -300,7 +300,7 @@ func getWebdriverAgentFilename(arch string) string {
 
 func getWebdriverAgentDownloadUrl(arch string) string {
 	filename := getWebdriverAgentFilename(arch)
-	return "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/" + filename
+	return "https://github.com/appium/WebDriverAgent/releases/download/v10.2.5/" + filename
 }
 
 func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
