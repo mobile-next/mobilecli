@@ -7,6 +7,7 @@ import (
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +78,7 @@ var screencaptureCmd = &cobra.Command{
 		// Start agent
 		err = targetDevice.StartAgent(devices.StartAgentConfig{
 			OnProgress: func(message string) {
-				fmt.Fprintf(os.Stderr, "%s\n", message)
+				utils.Verbose(message)
 			},
 		})
 		if err != nil {
@@ -104,7 +105,7 @@ var screencaptureCmd = &cobra.Command{
 			Scale:   scale,
 			FPS:     fps,
 			OnProgress: func(message string) {
-				fmt.Fprintf(os.Stderr, "%s\n", message)
+				utils.Verbose(message)
 			},
 			OnData: func(data []byte) bool {
 				_, writeErr := os.Stdout.Write(data)

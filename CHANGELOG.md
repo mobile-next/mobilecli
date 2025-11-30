@@ -1,3 +1,21 @@
+## [0.0.42](https://github.com/mobile-next/mobilecli/releases/tag/0.0.42) (2025-11-27)
+
+* iOS: Fix mjpeg framerate wda race condition ([#119](https://github.com/mobile-next/mobilecli/pull/119))
+* iOS: Fix multiple real devices would override each other's pointers ([#120](https://github.com/mobile-next/mobilecli/pull/120))
+
+## [0.0.41](https://github.com/mobile-next/mobilecli/releases/tag/0.0.41) (2025-11-26)
+
+* General: Cache preflight cors check for a day ([#114](https://github.com/mobile-next/mobilecli/pull/114))
+* General: Fix wrong error message when simulator/emulator device is offline ([#107](https://github.com/mobile-next/mobilecli/pull/107))
+* iOS: Optimize "simctl list" performance by eliminating it ([#115](https://github.com/mobile-next/mobilecli/pull/115))
+* iOS: Add wda session caching for faster input operations ([#111](https://github.com/mobile-next/mobilecli/pull/111))
+* iOS: Support scale parameter for mjpeg ([#110](https://github.com/mobile-next/mobilecli/pull/110))
+* iOS: Add progress notifications on wda installation ([#109](https://github.com/mobile-next/mobilecli/pull/109))
+* Android: Improve "device list" performance by removing dependency on avdmanager ([#116](https://github.com/mobile-next/mobilecli/pull/116))
+* Android: Fix screenshot from multi-display android (like Pro Fold 9) ([#113](https://github.com/mobile-next/mobilecli/pull/113))
+* Android: Make sure ANDROID_HOME path is valid ([#108](https://github.com/mobile-next/mobilecli/pull/108))
+* Android: Faster emulator boot (removed -no-snapshot-load) and without window ([#117](https://github.com/mobile-next/mobilecli/pull/117))
+
 ## [0.0.40](https://github.com/mobile-next/mobilecli/releases/tag/0.0.40) (2025-11-20)
 
 * iOS: Start tunnel before apps launch and terminate on iOS 17+ ([#106](https://github.com/mobile-next/mobilecli/pull/106))

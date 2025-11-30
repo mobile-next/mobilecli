@@ -59,7 +59,9 @@ func (d *AndroidDevice) State() string {
 func getAndroidSdkPath() string {
 	sdkPath := os.Getenv("ANDROID_HOME")
 	if sdkPath != "" {
-		return sdkPath
+		if _, err := os.Stat(sdkPath); err == nil {
+			return sdkPath
+		}
 	}
 
 	// try default Android SDK location on macOS
@@ -169,13 +171,119 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
-	byteData, err := d.runAdbCommand("exec-out", "screencap", "-p")
+// getDisplayCount counts the number of displays on the device
+func (d *AndroidDevice) getDisplayCount() int {
+	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
 	if err != nil {
-		return nil, fmt.Errorf("failed to take screenshot: %v", err)
+		return 1 // assume single display on error
 	}
 
+	count := 0
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Display ") {
+			count++
+		}
+	}
+
+	return count
+}
+
+// parseDisplayIdFromCmdDisplay extracts display ID from "cmd display get-displays" output (Android 11+)
+func parseDisplayIdFromCmdDisplay(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		// look for lines like "Display id X, ... state ON, ... uniqueId "..."
+		if strings.HasPrefix(line, "Display id ") &&
+			strings.Contains(line, ", state ON,") &&
+			strings.Contains(line, ", uniqueId ") {
+			re := regexp.MustCompile(`uniqueId "([^"]+)"`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) == 2 {
+				return strings.TrimPrefix(matches[1], "local:")
+			}
+		}
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysViewport extracts display ID from dumpsys DisplayViewport entries
+func parseDisplayIdFromDumpsysViewport(dumpsys string) string {
+	re := regexp.MustCompile(`DisplayViewport\{type=INTERNAL[^}]*isActive=true[^}]*uniqueId='([^']+)'`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return strings.TrimPrefix(matches[1], "local:")
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysState extracts display ID from dumpsys display state entries
+func parseDisplayIdFromDumpsysState(dumpsys string) string {
+	re := regexp.MustCompile(`Display Id=(\d+)[\s\S]*?Display State=ON`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// getFirstDisplayId finds the first active display's unique ID
+func (d *AndroidDevice) getFirstDisplayId() string {
+	// try using cmd display get-displays (Android 11+)
+	output, err := d.runAdbCommand("shell", "cmd", "display", "get-displays")
+	if err == nil {
+		if id := parseDisplayIdFromCmdDisplay(string(output)); id != "" {
+			return id
+		}
+	}
+
+	// fallback: parse dumpsys display for display info (compatible with older Android versions)
+	output, err = d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return ""
+	}
+
+	dumpsys := string(output)
+
+	// try DisplayViewport entries with isActive=true and type=INTERNAL
+	if id := parseDisplayIdFromDumpsysViewport(dumpsys); id != "" {
+		return id
+	}
+
+	// final fallback: look for active display with state ON
+	return parseDisplayIdFromDumpsysState(dumpsys)
+}
+
+// captureScreenshot captures screenshot with optional display ID
+func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
+	args := []string{"exec-out", "screencap", "-p"}
+	if displayID != "" {
+		args = append(args, "-d", displayID)
+	}
+	byteData, err := d.runAdbCommand(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to take screenshot: %w", err)
+	}
 	return byteData, nil
+}
+
+func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
+	displayCount := d.getDisplayCount()
+
+	if displayCount <= 1 {
+		// backward compatibility for android 10 and below, and for single display devices
+		return d.captureScreenshot("")
+	}
+
+	// find the first display that is turned on, and capture that one
+	displayID := d.getFirstDisplayId()
+	if displayID == "" {
+		// no idea why, but we have displayCount >= 2, yet we failed to parse
+		// let's go with screencap's defaults and hope for the best
+		return d.captureScreenshot("")
+	}
+
+	return d.captureScreenshot(displayID)
 }
 
 func (d *AndroidDevice) LaunchApp(bundleID string) error {
@@ -452,7 +560,7 @@ func (d *AndroidDevice) Boot() error {
 	defer cancel()
 
 	// launch emulator in background without context (so it persists after function returns)
-	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-snapshot-load")
+	cmd := exec.Command(getEmulatorPath(), "-avd", d.id, "-no-window")
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
@@ -641,7 +749,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	if config.OnProgress != nil {
-		config.OnProgress("Installing DeviceKit")
+		config.OnProgress("Installing Agent")
 	}
 
 	utils.Verbose("Ensuring DeviceKit is installed...")
@@ -656,17 +764,14 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	var serverClass string
-	var progressMsg string
 	if config.Format == "mjpeg" {
 		serverClass = "com.mobilenext.devicekit.MjpegServer"
-		progressMsg = "Starting MJPEG server"
 	} else {
 		serverClass = "com.mobilenext.devicekit.AvcServer"
-		progressMsg = "Starting AVC server"
 	}
 
 	if config.OnProgress != nil {
-		config.OnProgress(progressMsg)
+		config.OnProgress("Starting Agent")
 	}
 
 	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
@@ -860,7 +965,7 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	for tries := 0; tries < 10; tries++ {
 		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
 		if err != nil {
-			return "", fmt.Errorf("failed to run uiautomator dump: %v", err)
+			return "", fmt.Errorf("failed to run uiautomator dump: %w", err)
 		}
 
 		dump := string(output)
@@ -882,11 +987,26 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
 }
 
-func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+func (d *AndroidDevice) DumpSourceRaw() (interface{}, error) {
 	// get the XML dump from uiautomator
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get uiautomator dump: %w", err)
+	}
+
+	return xmlContent, nil
+}
+
+func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	// get the raw XML dump
+	rawData, err := d.DumpSourceRaw()
+	if err != nil {
+		return nil, err
+	}
+
+	xmlContent, ok := rawData.(string)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for raw XML data")
 	}
 
 	// parse the XML

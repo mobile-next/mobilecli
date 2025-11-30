@@ -3,18 +3,18 @@ package wda
 import "fmt"
 
 func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
-	// create wda session
-	sessionId, err := c.CreateSession()
+	// get or create wda session
+	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
-		return fmt.Errorf("failed to create wda session: %w", err)
+		return fmt.Errorf("failed to get or create wda session: %w", err)
 	}
-	defer func() { _ = c.DeleteSession(sessionId) }()
 
 	// post settings to appium endpoint
 	endpoint := fmt.Sprintf("session/%s/appium/settings", sessionId)
 	_, err = c.PostEndpoint(endpoint, map[string]interface{}{
 		"settings": settings,
 	})
+
 	if err != nil {
 		return fmt.Errorf("failed to set appium settings: %w", err)
 	}
@@ -23,11 +23,20 @@ func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
 }
 
 func (c *WdaClient) SetMjpegFramerate(framerate int) error {
-	err := c.SetAppiumSettings(map[string]interface{}{
-		"mjpegServerFramerate": framerate,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set mjpeg framerate: %w", err)
+	var err error
+	maxRetries := 5
+
+	for i := 0; i < maxRetries; i++ {
+		err = c.SetAppiumSettings(map[string]interface{}{
+			"mjpegServerFramerate": framerate,
+		})
+
+		if err == nil {
+			return nil
+		}
+
+		fmt.Printf("attempt %d/%d failed to set mjpeg framerate: %v\n", i+1, maxRetries, err)
 	}
-	return nil
+
+	return fmt.Errorf("failed to set mjpeg framerate after %d attempts: %w", maxRetries, err)
 }

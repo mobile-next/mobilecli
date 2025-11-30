@@ -66,6 +66,7 @@ type ControllableDevice interface {
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)
+	DumpSourceRaw() (interface{}, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
 }
@@ -74,17 +75,23 @@ type ControllableDevice interface {
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
+	startTotal := time.Now()
+
 	// get Android devices
-	startTime := time.Now()
+	startAndroid := time.Now()
 	androidDevices, err := GetAndroidDevices()
-	utils.Verbose("GetAndroidDevices took %s", time.Since(startTime))
+	androidDuration := time.Since(startAndroid).Milliseconds()
+	androidCount := 0
 	if err != nil {
 		utils.Verbose("Warning: Failed to get Android devices: %v", err)
 	} else {
+		androidCount = len(androidDevices)
 		allDevices = append(allDevices, androidDevices...)
 	}
 
 	// get offline Android emulators if requested
+	offlineAndroidCount := 0
+	offlineAndroidDuration := int64(0)
 	if includeOffline {
 		// build map of online device IDs for quick lookup
 		onlineDeviceIDs := make(map[string]bool)
@@ -92,43 +99,56 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 			onlineDeviceIDs[device.ID()] = true
 		}
 
-		startTime = time.Now()
+		startOfflineAndroid := time.Now()
 		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
-		utils.Verbose("getOfflineAndroidEmulators took %s", time.Since(startTime))
+		offlineAndroidDuration = time.Since(startOfflineAndroid).Milliseconds()
 		if err != nil {
 			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
 		} else {
+			offlineAndroidCount = len(offlineEmulators)
 			allDevices = append(allDevices, offlineEmulators...)
 		}
 	}
 
 	// get iOS real devices
-	startTime = time.Now()
+	startIOS := time.Now()
 	iosDevices, err := ListIOSDevices()
-	utils.Verbose("ListIOSDevices took %s", time.Since(startTime))
+	iosDuration := time.Since(startIOS).Milliseconds()
+	iosCount := 0
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
 	} else {
-		for _, device := range iosDevices {
-			allDevices = append(allDevices, &device)
+		iosCount = len(iosDevices)
+		for i := range iosDevices {
+			allDevices = append(allDevices, &iosDevices[i])
 		}
 	}
 
 	// get iOS simulator devices (all simulators, not just booted ones)
-	startTime = time.Now()
+	startSimulators := time.Now()
 	sims, err := GetSimulators()
-	utils.Verbose("GetSimulators took %s", time.Since(startTime))
+	simulatorsDuration := time.Since(startSimulators).Milliseconds()
+	simulatorsCount := 0
 	if err != nil {
 		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
 	} else {
 		// filter to only include simulators that have been booted at least once
 		filteredSims := filterSimulatorsByDownloadsDirectory(sims)
+		simulatorsCount = len(filteredSims)
 		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
 				wdaClient: nil,
 			})
 		}
+	}
+
+	totalDuration := time.Since(startTotal).Milliseconds()
+
+	// log all timing stats in one verbose message
+	if false {
+		utils.Verbose("GetAllControllableDevices completed in %dms: android=%dms (%d devices), offline_android=%dms (%d devices), ios=%dms (%d devices), simulators=%dms (%d devices)",
+			totalDuration, androidDuration, androidCount, offlineAndroidDuration, offlineAndroidCount, iosDuration, iosCount, simulatorsDuration, simulatorsCount)
 	}
 
 	return allDevices, nil

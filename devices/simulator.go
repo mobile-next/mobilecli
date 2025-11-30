@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
+	"howett.net/plist"
 )
 
 const (
@@ -29,6 +32,14 @@ type AppInfo struct {
 	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
 	CFBundleDisplayName string `json:"CFBundleDisplayName"`
 	CFBundleVersion     string `json:"CFBundleVersion"`
+}
+
+// devicePlist represents the structure of device.plist
+type devicePlist struct {
+	UDID    string `plist:"UDID"`
+	Name    string `plist:"name"`
+	Runtime string `plist:"runtime"`
+	State   int    `plist:"state"`
 }
 
 // Simulator represents an iOS simulator device
@@ -110,53 +121,58 @@ func runSimctl(args ...string) ([]byte, error) {
 	return output, nil
 }
 
-// getSimulators executes 'xcrun simctl list --json' and returns the parsed response
+// getSimulators reads simulator information from the filesystem
 func GetSimulators() ([]Simulator, error) {
-	output, err := runSimctl("list", "--json")
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute xcrun simctl list: %w", err)
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	var simulators map[string]interface{}
-	if err := json.Unmarshal(output, &simulators); err != nil {
-		return nil, fmt.Errorf("failed to parse simulator list JSON: %w", err)
+	devicesPath := filepath.Join(homeDir, "Library", "Developer", "CoreSimulator", "Devices")
+	entries, err := os.ReadDir(devicesPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read devices directory: %w", err)
 	}
 
-	devices, ok := simulators["devices"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected format in simulator list: devices not found or not a map")
-	}
+	var simulators []Simulator
 
-	var filteredDevices []Simulator
-
-	for runtimeName, deviceList := range devices {
-		deviceArray, ok := deviceList.([]interface{})
-		if !ok {
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
 
-		for _, device := range deviceArray {
-			deviceMap, ok := device.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			name, _ := deviceMap["name"].(string)
-			udid, _ := deviceMap["udid"].(string)
-			state, _ := deviceMap["state"].(string)
-
-			simulator := Simulator{
-				Name:    name,
-				UDID:    udid,
-				State:   state,
-				Runtime: runtimeName,
-			}
-
-			filteredDevices = append(filteredDevices, simulator)
+		plistPath := filepath.Join(devicesPath, entry.Name(), "device.plist")
+		data, err := os.ReadFile(plistPath)
+		if err != nil {
+			// skip devices without device.plist
+			continue
 		}
+
+		var device devicePlist
+		if _, err := plist.Unmarshal(data, &device); err != nil {
+			// skip devices with invalid plist
+			continue
+		}
+
+		// convert state integer to string
+		// state 1 = Shutdown (offline)
+		// state 3 = Booted (online)
+		stateStr := "Shutdown"
+		if device.State == 3 {
+			stateStr = "Booted"
+		}
+
+		simulator := Simulator{
+			Name:    device.Name,
+			UDID:    device.UDID,
+			State:   stateStr,
+			Runtime: device.Runtime,
+		}
+
+		simulators = append(simulators, simulator)
 	}
 
-	return filteredDevices, nil
+	return simulators, nil
 }
 
 // filterSimulatorsByDownloadsDirectory filters simulators that have been booted at least once
@@ -275,8 +291,20 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
-	url := "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/WebDriverAgentRunner-Build-Sim-arm64.zip"
+func getWebdriverAgentFilename(arch string) string {
+	if arch == "amd64" {
+		return "WebDriverAgentRunner-Build-Sim-x86_64.zip"
+	}
+	return "WebDriverAgentRunner-Build-Sim-arm64.zip"
+}
+
+func getWebdriverAgentDownloadUrl(arch string) string {
+	filename := getWebdriverAgentFilename(arch)
+	return "https://github.com/appium/WebDriverAgent/releases/download/v9.15.1/" + filename
+}
+
+func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
+	url := getWebdriverAgentDownloadUrl(runtime.GOARCH)
 
 	tmpFile, err := os.CreateTemp("", "wda-*.zip")
 	if err != nil {
@@ -292,7 +320,6 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 		return "", fmt.Errorf("failed to download WebDriverAgent: %w", err)
 	}
 
-	// log file size
 	fileInfo, err := os.Stat(tmpFile.Name())
 	if err == nil {
 		utils.Verbose("Downloaded %d bytes", fileInfo.Size())
@@ -302,18 +329,41 @@ func (s SimulatorDevice) DownloadWebDriverAgent() (string, error) {
 }
 
 func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
-	if onProgress != nil {
-		onProgress("Downloading WebDriverAgent")
+	var file string
+	var shouldCleanup bool
+
+	// try local file first
+	wdaPath := os.Getenv("MOBILECLI_WDA_PATH")
+	if wdaPath != "" {
+		filename := getWebdriverAgentFilename(runtime.GOARCH)
+		localPath := filepath.Join(wdaPath, filename)
+
+		if _, err := os.Stat(localPath); err == nil {
+			utils.Verbose("Using local WebDriverAgent from: %s", localPath)
+			file = localPath
+			shouldCleanup = false
+		} else {
+			utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
+		}
 	}
 
-	file, err := s.DownloadWebDriverAgent()
-	if err != nil {
-		return fmt.Errorf("failed to download WebDriverAgent: %v", err)
+	// fall back to GitHub download
+	if file == "" {
+		if onProgress != nil {
+			onProgress("Downloading WebDriverAgent")
+		}
+
+		downloadedFile, err := s.downloadWebDriverAgentFromGitHub()
+		if err != nil {
+			return fmt.Errorf("failed to download WebDriverAgent: %w", err)
+		}
+		file = downloadedFile
+		shouldCleanup = true
 	}
 
-	defer func() { _ = os.Remove(file) }()
-
-	utils.Verbose("Downloaded WebDriverAgent to %s", file)
+	if shouldCleanup {
+		defer func() { _ = os.Remove(file) }()
+	}
 
 	if onProgress != nil {
 		onProgress("Installing WebDriverAgent")
@@ -321,7 +371,7 @@ func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
-		return fmt.Errorf("failed to unzip WebDriverAgent: %v", err)
+		return fmt.Errorf("failed to unzip WebDriverAgent: %w", err)
 	}
 
 	defer func() { _ = os.RemoveAll(dir) }()
@@ -470,11 +520,16 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
 		// simulator is already booting, just wait for it to finish
+		if config.OnProgress != nil {
+			config.OnProgress("Waiting for Simulator to boot")
+		}
+
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
+
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
 	case "ShuttingDown":
@@ -505,6 +560,10 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	if !installed {
 		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
+		if config.OnProgress != nil {
+			config.OnProgress("Installing Agent on Simulator")
+		}
+
 		err = s.InstallWebDriverAgent(config.OnProgress)
 		if err != nil {
 			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
@@ -514,7 +573,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	if config.OnProgress != nil {
-		config.OnProgress("Launching WebDriverAgent")
+		config.OnProgress("Starting Agent")
 	}
 
 	// find available ports
@@ -550,6 +609,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
+		// terminate the WDA process if it failed to start
+		_ = s.TerminateApp(webdriverPackageName)
 		return err
 	}
 
@@ -756,6 +817,10 @@ func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
 
 func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
 	return s.wdaClient.GetSourceElements()
+}
+
+func (s SimulatorDevice) DumpSourceRaw() (interface{}, error) {
+	return s.wdaClient.GetSourceRaw()
 }
 
 func (s *SimulatorDevice) getWdaPort() (int, error) {
