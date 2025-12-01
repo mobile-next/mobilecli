@@ -1,3 +1,9 @@
+## [0.0.44](https://github.com/mobile-next/mobilecli/releases/tag/0.0.44) (2025-12-01)
+
+* General: Bump webdriveragent to 10.2.5 ([#125](https://github.com/mobile-next/mobilecli/pull/125))
+* iOS: Support non-ascii characters in io text ([#128](https://github.com/mobile-next/mobilecli/pull/128))
+* iOS: Send home button after wda start in simulator ([#127](https://github.com/mobile-next/mobilecli/pull/127))
+
 ## [0.0.43](https://github.com/mobile-next/mobilecli/releases/tag/0.0.43) (2025-11-30)
 
 * General: Now installating dependencies with --ignore-scripts ([#122](https://github.com/mobile-next/mobilecli/pull/122))
