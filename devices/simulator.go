@@ -608,6 +608,10 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return err
 	}
 
+	// wait 1 second after pressing home, so we make sure wda is in the background
+	_ = s.wdaClient.PressButton("HOME")
+	time.Sleep(1 * time.Second)
+
 	return nil
 }
 
