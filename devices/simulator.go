@@ -1,8 +1,6 @@
 package devices
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -246,25 +244,15 @@ func UninstallApp(udid string, bundleID string) error {
 }
 
 func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
-	// use xcrun simctl
 	output, err := runSimctl("listapps", s.UDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list installed apps: %v\n%s", err, output)
 	}
 
-	// convert output to json
-	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
-	cmd.Stdin = bytes.NewReader(output)
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert output to JSON: %v\n%s", err, output)
-	}
-
-	// parse json
 	var apps map[string]interface{}
-	err = json.Unmarshal(output, &apps)
+	err = utils.ConvertPlistToJSON(output, &apps)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %v\n%s", err, output)
+		return nil, err
 	}
 
 	return apps, nil
@@ -536,17 +524,27 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	if currentPort, err := s.getWdaPort(); err == nil {
 		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
+
+		// check if we already have a client pointing to the same port
+		expectedURL := fmt.Sprintf("localhost:%d", currentPort)
+		if s.wdaClient != nil {
+			// check if the existing client is already pointing to the same port
+			if _, err := s.wdaClient.GetStatus(); err == nil {
+				return nil // already connected to the right port
+			}
+		}
+
 		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
 
-		// update our instance with new client
-		s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", currentPort))
+		// create new client or update with new port
+		s.wdaClient = wda.NewWdaClient(expectedURL)
 		if _, err := s.wdaClient.GetStatus(); err == nil {
 			// double check succeeded
 			return nil // Already running and accessible
 		}
 
 		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-		return err
+		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
 	}
 
 	installed, err := s.IsWebDriverAgentInstalled()
@@ -587,8 +585,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
 	env := map[string]string{
-		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
 		"USE_PORT":          strconv.Itoa(usePort),
+		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
 	}
 
 	err = s.LaunchAppWithEnv(webdriverPackageName, env)
@@ -638,41 +636,24 @@ func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
 }
 
 func (s *SimulatorDevice) OpenURL(url string) error {
+	// #nosec G204 -- udid is controlled, no shell interpretation
 	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
 }
 
 func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
-	simctlCmd := exec.Command("xcrun", "simctl", "listapps", s.ID())
-	plutilCmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-r", "-")
-
-	var err error
-	plutilCmd.Stdin, err = simctlCmd.StdoutPipe()
+	output, err := runSimctl("listapps", s.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pipe: %w", err)
+		return nil, fmt.Errorf("failed to list apps: %w\n%s", err, output)
 	}
 
-	var plutilOut bytes.Buffer
-	plutilCmd.Stdout = &plutilOut
-
-	if err := plutilCmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start plutil: %w", err)
-	}
-
-	if err := simctlCmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to run simctl: %w", err)
-	}
-
-	if err := plutilCmd.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to wait for plutil: %w", err)
-	}
-
-	var output map[string]AppInfo
-	if err := json.Unmarshal(plutilOut.Bytes(), &output); err != nil {
-		return nil, fmt.Errorf("failed to parse plutil JSON output: %w", err)
+	var appsMap map[string]AppInfo
+	err = utils.ConvertPlistToJSON(output, &appsMap)
+	if err != nil {
+		return nil, err
 	}
 
 	var apps []InstalledAppInfo
-	for _, app := range output {
+	for _, app := range appsMap {
 		apps = append(apps, InstalledAppInfo{
 			PackageName: app.CFBundleIdentifier,
 			AppName:     app.CFBundleDisplayName,
@@ -725,33 +706,61 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
-func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+type ProcessInfo struct {
+	PID     int
+	Command string
+}
+
+// listAllProcesses returns a list of all running processes with their PIDs and command info
+func listAllProcesses() ([]ProcessInfo, error) {
 	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
 	output, err := cmd.Output()
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to run ps command: %w", err)
+		return nil, fmt.Errorf("failed to run ps command: %w", err)
 	}
 
 	lines := strings.Split(string(output), "\n")
-	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
+	processes := make([]ProcessInfo, 0, len(lines))
 
 	for _, line := range lines {
-		if strings.Contains(line, devicePath) && strings.Contains(line, "WebDriverAgentRunner-Runner") {
-			// Find the first space to separate PID from the rest
-			spaceIndex := strings.Index(line, " ")
-			if spaceIndex == -1 {
-				continue
-			}
+		if line == "" {
+			continue
+		}
 
-			pidStr := strings.TrimSpace(line[:spaceIndex])
-			pid, err := strconv.Atoi(pidStr)
-			if err != nil {
-				continue
-			}
+		// find the first space to separate PID from the rest
+		spaceIndex := strings.Index(line, " ")
+		if spaceIndex == -1 {
+			continue
+		}
 
-			// The rest of the line contains command and environment
-			processInfo := line[spaceIndex+1:]
-			return pid, processInfo, nil
+		pidStr := strings.TrimSpace(line[:spaceIndex])
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+
+		// the rest of the line contains command and environment
+		command := line[spaceIndex+1:]
+		processes = append(processes, ProcessInfo{
+			PID:     pid,
+			Command: command,
+		})
+	}
+
+	return processes, nil
+}
+
+func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+	processes, err := listAllProcesses()
+	if err != nil {
+		return 0, "", err
+	}
+
+	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
+
+	for _, proc := range processes {
+		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "WebDriverAgentRunner-Runner") {
+			return proc.PID, proc.Command, nil
 		}
 	}
 
@@ -838,6 +847,7 @@ func (s SimulatorDevice) InstallApp(path string) error {
 		if err != nil {
 			return fmt.Errorf("failed to unzip: %v", err)
 		}
+
 		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		entries, err := os.ReadDir(tmpDir)
