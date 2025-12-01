@@ -664,6 +664,11 @@ func (d *AndroidDevice) SendKeys(text string) error {
 
 	// try sending over clipboard if DeviceKit is installed
 	if d.isDeviceKitInstalled() {
+		// ensure clipboard is always cleared, even on failure
+		defer func() {
+			_, _ = d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.clear", "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
+		}()
+
 		// encode text as base64
 		base64Text := base64.StdEncoding.EncodeToString([]byte(text))
 
@@ -677,9 +682,6 @@ func (d *AndroidDevice) SendKeys(text string) error {
 		if err != nil {
 			return fmt.Errorf("failed to paste: %w", err)
 		}
-
-		// clear clipboard when we're done
-		_, _ = d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.clear", "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
 
 		return nil
 	}
