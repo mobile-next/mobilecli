@@ -173,6 +173,7 @@ func (c *WdaClient) CreateSession() (string, error) {
 
 	// log.Printf("createSession response: %v", response)
 	sessionId := response["sessionId"].(string)
+	fmt.Println("gilm: %v", sessionId)
 	return sessionId, nil
 }
 
