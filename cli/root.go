@@ -100,12 +100,6 @@ UTILITIES:
 
 COMMON FLAGS:
   --device <id>        Device ID (from 'mobilecli devices' command)
-  --platform <name>    Filter by platform: ios or android
-  --type <name>        Filter by type: real, simulator, or emulator
-  --include-offline    Include offline devices in listing
-  -o, --output <path>  Output file path (use '-' for stdout)
-  -f, --format <fmt>   Format: png, jpeg, mjpeg
-  -q, --quality <num>  JPEG quality (1-100)
   -v, --verbose        Enable verbose output
   --help               Show help for any command`,
 	CompletionOptions: cobra.CompletionOptions{
