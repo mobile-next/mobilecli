@@ -1,3 +1,17 @@
+## [0.0.44](https://github.com/mobile-next/mobilecli/releases/tag/0.0.44) (2025-12-01)
+
+* General: Bump webdriveragent to 10.2.5 ([#125](https://github.com/mobile-next/mobilecli/pull/125))
+* iOS: Support non-ascii characters in io text ([#128](https://github.com/mobile-next/mobilecli/pull/128))
+* iOS: Send home button after wda start in simulator ([#127](https://github.com/mobile-next/mobilecli/pull/127))
+
+## [0.0.43](https://github.com/mobile-next/mobilecli/releases/tag/0.0.43) (2025-11-30)
+
+* General: Now installating dependencies with --ignore-scripts ([#122](https://github.com/mobile-next/mobilecli/pull/122))
+* General: Support raw view tree ui dumps with --format flag ([#121](https://github.com/mobile-next/mobilecli/pull/121))
+* iOS: Kill wda if StartAgent times out launching on simulator ([#124](https://github.com/mobile-next/mobilecli/pull/124))
+* iOS: Support installing wda from local directory via environment variable ([#123](https://github.com/mobile-next/mobilecli/pull/123))
+* Android: Run new avd without a window, enable snapshot-loading ([#99](https://github.com/mobile-next/mobilecli/pull/99))
+
 ## [0.0.42](https://github.com/mobile-next/mobilecli/releases/tag/0.0.42) (2025-11-27)
 
 * iOS: Fix mjpeg framerate wda race condition ([#119](https://github.com/mobile-next/mobilecli/pull/119))

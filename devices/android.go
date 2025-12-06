@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -109,34 +110,6 @@ func getAdbPath() string {
 
 	// best effort, look in path
 	return "adb"
-}
-
-func getAvdManagerPath() string {
-	sdkPath := getAndroidSdkPath()
-	if sdkPath != "" {
-		// try cmdline-tools/latest first
-		avdPath := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "avdmanager")
-		if runtime.GOOS == "windows" {
-			avdPath += ".bat"
-		}
-
-		if _, err := os.Stat(avdPath); err == nil {
-			return avdPath
-		}
-
-		// fallback to tools/bin (older SDK layout)
-		avdPath = filepath.Join(sdkPath, "tools", "bin", "avdmanager")
-		if runtime.GOOS == "windows" {
-			avdPath += ".bat"
-		}
-
-		if _, err := os.Stat(avdPath); err == nil {
-			return avdPath
-		}
-	}
-
-	// best effort, look in path
-	return "avdmanager"
 }
 
 func getEmulatorPath() string {
@@ -636,7 +609,44 @@ func (d *AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
+// isDeviceKitInstalled checks if DeviceKit is installed on the device
+func (d *AndroidDevice) isDeviceKitInstalled() bool {
+	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
+	return err == nil && appPath != ""
+}
+
+// isAscii checks if text contains only ASCII characters
+func isAscii(text string) bool {
+	for _, char := range text {
+		if char > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+// escapeShellText escapes shell special characters
+func escapeShellText(text string) string {
+	// escape all shell special characters that could be used for injection
+	specialChars := `\'"`+ "`" + `
+|&;()<>{}[]$*?`
+	result := ""
+	for _, char := range text {
+		if strings.ContainsRune(specialChars, char) {
+			result += "\\"
+		}
+		result += string(char)
+	}
+	return result
+}
+
 func (d *AndroidDevice) SendKeys(text string) error {
+	if text == "" {
+		// bailing early, so we don't run adb shell with empty string.
+		// this happens when you prompt with a simple "submit".
+		return nil
+	}
+
 	switch text {
 	case "\b":
 		return d.PressButton("BACKSPACE")
@@ -644,9 +654,39 @@ func (d *AndroidDevice) SendKeys(text string) error {
 		return d.PressButton("ENTER")
 	}
 
-	text = strings.ReplaceAll(text, " ", "\\ ")
-	_, err := d.runAdbCommand("shell", "input", "text", text)
-	return err
+	if isAscii(text) {
+		// adb shell input only supports ascii characters. and
+		// some of the keys have to be escaped.
+		escapedText := escapeShellText(text)
+		_, err := d.runAdbCommand("shell", "input", "text", escapedText)
+		return err
+	}
+
+	// try sending over clipboard if DeviceKit is installed
+	if d.isDeviceKitInstalled() {
+		// ensure clipboard is always cleared, even on failure
+		defer func() {
+			_, _ = d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.clear", "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
+		}()
+
+		// encode text as base64
+		base64Text := base64.StdEncoding.EncodeToString([]byte(text))
+
+		// send clipboard over and immediately paste it
+		_, err := d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.set", "-e", "encoding", "base64", "-e", "text", base64Text, "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
+		if err != nil {
+			return fmt.Errorf("failed to set clipboard: %w", err)
+		}
+
+		_, err = d.runAdbCommand("shell", "input", "keyevent", "KEYCODE_PASTE")
+		if err != nil {
+			return fmt.Errorf("failed to paste: %w", err)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("non-ASCII text is not supported on Android, please install mobilenext devicekit, see https://github.com/mobile-next/devicekit-android")
 }
 
 func (d *AndroidDevice) OpenURL(url string) error {
