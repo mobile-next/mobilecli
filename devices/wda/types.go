@@ -3,6 +3,7 @@ package wda
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -10,6 +11,7 @@ type WdaClient struct {
 	baseURL    string
 	httpClient *http.Client
 	sessionId  string
+	mu         sync.Mutex
 }
 
 func NewWdaClient(hostPort string) *WdaClient {
