@@ -1,3 +1,8 @@
+## [0.0.45](https://github.com/mobile-next/mobilecli/releases/tag/0.0.45) (2025-12-07)
+
+* General: Removed command specific flags from root help ([#129](https://github.com/mobile-next/mobilecli/pull/129))
+* Android: Support avc format (h264 codec) for screencapture ([1f35139](https://github.com/mobile-next/mobilecli/commit/1f35139))
+
 ## [0.0.44](https://github.com/mobile-next/mobilecli/releases/tag/0.0.44) (2025-12-01)
 
 * General: Bump webdriveragent to 10.2.5 ([#125](https://github.com/mobile-next/mobilecli/pull/125))
@@ -26,7 +31,7 @@
 * iOS: Support scale parameter for mjpeg ([#110](https://github.com/mobile-next/mobilecli/pull/110))
 * iOS: Add progress notifications on wda installation ([#109](https://github.com/mobile-next/mobilecli/pull/109))
 * Android: Improve "device list" performance by removing dependency on avdmanager ([#116](https://github.com/mobile-next/mobilecli/pull/116))
-* Android: Fix screenshot from multi-display android (like Pro Fold 9) ([#113](https://github.com/mobile-next/mobilecli/pull/113))
+* Android: Fix screenshot from multi-display Android (like Pro Fold 9) ([#113](https://github.com/mobile-next/mobilecli/pull/113))
 * Android: Make sure ANDROID_HOME path is valid ([#108](https://github.com/mobile-next/mobilecli/pull/108))
 * Android: Faster emulator boot (removed -no-snapshot-load) and without window ([#117](https://github.com/mobile-next/mobilecli/pull/117))
 
