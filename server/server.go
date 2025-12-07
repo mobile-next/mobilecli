@@ -722,12 +722,12 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 	// Set defaults if not provided
 	quality := screenCaptureParams.Quality
 	if quality == 0 {
-		quality = devices.DefaultMJPEGQuality
+		quality = devices.DefaultQuality
 	}
 
 	scale := screenCaptureParams.Scale
 	if scale == 0.0 {
-		scale = devices.DefaultMJPEGScale
+		scale = devices.DefaultScale
 	}
 
 	// Set headers for streaming response based on format
@@ -747,7 +747,11 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 	if screenCaptureParams.Format == "mjpeg" {
 		progressCallback = func(message string) {
 			notification := newJsonRpcNotification(message)
-			statusJSON, _ := json.Marshal(notification)
+			statusJSON, err := json.Marshal(notification)
+			if err != nil {
+				log.Printf("Failed to marshal progress message: %v", err)
+				return
+			}
 			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
 			_, _ = w.Write([]byte(mimeMessage))
 			if flusher, ok := w.(http.Flusher); ok {

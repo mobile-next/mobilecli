@@ -90,18 +90,18 @@ var screencaptureCmd = &cobra.Command{
 		// set defaults if not provided
 		scale := screencaptureScale
 		if scale == 0.0 {
-			scale = devices.DefaultMJPEGScale
+			scale = devices.DefaultScale
 		}
 
 		fps := screencaptureFPS
 		if fps == 0 {
-			fps = devices.DefaultMJPEGFramerate
+			fps = devices.DefaultFramerate
 		}
 
 		// Start screen capture and stream to stdout
 		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 			Format:  screencaptureFormat,
-			Quality: devices.DefaultMJPEGQuality,
+			Quality: devices.DefaultQuality,
 			Scale:   scale,
 			FPS:     fps,
 			OnProgress: func(message string) {

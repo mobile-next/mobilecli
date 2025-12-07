@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	// Default MJPEG streaming quality (1-100)
-	DefaultMJPEGQuality = 80
-	// Default MJPEG streaming scale (0.1-1.0)
-	DefaultMJPEGScale = 1.0
-	// Default MJPEG streaming framerate (frames per second)
-	DefaultMJPEGFramerate = 30
+	// default streaming quality (1-100)
+	DefaultQuality = 80
+	// default streaming scale (0.1-1.0)
+	DefaultScale = 1.0
+	// default streaming framerate (frames per second)
+	DefaultFramerate = 30
 )
 
 // ScreenCaptureConfig contains configuration for screen capture operations

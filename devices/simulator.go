@@ -703,7 +703,7 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// configure mjpeg framerate
 	fps := config.FPS
 	if fps == 0 {
-		fps = DefaultMJPEGFramerate
+		fps = DefaultFramerate
 	}
 	err = s.wdaClient.SetMjpegFramerate(fps)
 	if err != nil {
