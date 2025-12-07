@@ -13,6 +13,7 @@ import (
 
 var (
 	screencaptureScale float64
+	screencaptureFPS   int
 )
 
 var screenshotCmd = &cobra.Command{
@@ -57,11 +58,11 @@ var screenshotCmd = &cobra.Command{
 var screencaptureCmd = &cobra.Command{
 	Use:   "screencapture",
 	Short: "Stream screen capture from a connected device",
-	Long:  `Streams MJPEG screen capture from a specified device to stdout. Only supports MJPEG format.`,
+	Long:  `Streams screen capture from a specified device to stdout. Supports MJPEG and AVC formats (Android only for AVC).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validate format
-		if screencaptureFormat != "mjpeg" {
-			response := commands.NewErrorResponse(fmt.Errorf("format must be 'mjpeg' for screen capture"))
+		if screencaptureFormat != "mjpeg" && screencaptureFormat != "avc" {
+			response := commands.NewErrorResponse(fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture"))
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
@@ -89,14 +90,20 @@ var screencaptureCmd = &cobra.Command{
 		// set defaults if not provided
 		scale := screencaptureScale
 		if scale == 0.0 {
-			scale = devices.DefaultMJPEGScale
+			scale = devices.DefaultScale
+		}
+
+		fps := screencaptureFPS
+		if fps == 0 {
+			fps = devices.DefaultFramerate
 		}
 
 		// Start screen capture and stream to stdout
 		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 			Format:  screencaptureFormat,
-			Quality: devices.DefaultMJPEGQuality,
+			Quality: devices.DefaultQuality,
 			Scale:   scale,
+			FPS:     fps,
 			OnProgress: func(message string) {
 				utils.Verbose(message)
 			},
@@ -134,4 +141,5 @@ func init() {
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
 	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
 	screencaptureCmd.Flags().Float64Var(&screencaptureScale, "scale", 0, "Scale factor for screen capture (0 for default)")
+	screencaptureCmd.Flags().IntVar(&screencaptureFPS, "fps", 0, "Frames per second for screen capture (0 for default)")
 }

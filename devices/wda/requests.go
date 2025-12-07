@@ -185,6 +185,9 @@ func (c *WdaClient) isSessionStillValid(sessionId string) bool {
 
 // GetOrCreateSession returns cached session or creates a new one
 func (c *WdaClient) GetOrCreateSession() (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	// if we have a cached session, validate it first
 	if c.sessionId != "" {
 		if c.isSessionStillValid(c.sessionId) {
@@ -212,9 +215,11 @@ func (c *WdaClient) DeleteSession(sessionId string) error {
 		return fmt.Errorf("failed to delete session %s: %w", sessionId, err)
 	}
 
+	c.mu.Lock()
 	if c.sessionId == sessionId {
 		c.sessionId = ""
 	}
+	c.mu.Unlock()
 
 	return nil
 }

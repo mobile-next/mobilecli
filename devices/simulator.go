@@ -353,6 +353,10 @@ func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
 		defer func() { _ = os.Remove(file) }()
 	}
 
+	if onProgress != nil {
+		onProgress("Installing WebDriverAgent")
+	}
+
 	dir, err := utils.Unzip(file)
 	if err != nil {
 		return fmt.Errorf("failed to unzip WebDriverAgent: %w", err)
@@ -697,7 +701,11 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	// configure mjpeg framerate
-	err = s.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
+	fps := config.FPS
+	if fps == 0 {
+		fps = DefaultFramerate
+	}
+	err = s.wdaClient.SetMjpegFramerate(fps)
 	if err != nil {
 		return err
 	}

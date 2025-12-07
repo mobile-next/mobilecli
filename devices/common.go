@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	// Default MJPEG streaming quality (1-100)
-	DefaultMJPEGQuality = 80
-	// Default MJPEG streaming scale (0.1-1.0)
-	DefaultMJPEGScale = 1.0
-	// Default MJPEG streaming framerate (frames per second)
-	DefaultMJPEGFramerate = 30
+	// default streaming quality (1-100)
+	DefaultQuality = 80
+	// default streaming scale (0.1-1.0)
+	DefaultScale = 1.0
+	// default streaming framerate (frames per second)
+	DefaultFramerate = 30
 )
 
 // ScreenCaptureConfig contains configuration for screen capture operations
@@ -23,6 +23,7 @@ type ScreenCaptureConfig struct {
 	Format     string
 	Quality    int
 	Scale      float64
+	FPS        int
 	OnProgress func(message string) // optional progress callback
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
@@ -92,13 +93,13 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	offlineAndroidCount := 0
 	offlineAndroidDuration := int64(0)
 	if includeOffline {
-		startOfflineAndroid := time.Now()
 		// build map of online device IDs for quick lookup
 		onlineDeviceIDs := make(map[string]bool)
 		for _, device := range androidDevices {
 			onlineDeviceIDs[device.ID()] = true
 		}
 
+		startOfflineAndroid := time.Now()
 		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
 		offlineAndroidDuration = time.Since(startOfflineAndroid).Milliseconds()
 		if err != nil {
@@ -183,6 +184,7 @@ type FullDeviceInfo struct {
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
+	startTime := time.Now()
 	devices, err := GetAllControllableDevices(opts.IncludeOffline)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
@@ -216,6 +218,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			State:    state,
 		})
 	}
+	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))
 
 	return deviceInfoList, nil
 }

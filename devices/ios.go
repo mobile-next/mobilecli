@@ -277,6 +277,9 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		if webdriverBundleId == "" {
+			if config.OnProgress != nil {
+				config.OnProgress("Installing WebDriverAgent")
+			}
 			return fmt.Errorf("WebDriverAgent is not installed")
 		}
 
@@ -637,7 +640,11 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 
 func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// configure mjpeg framerate
-	err := d.wdaClient.SetMjpegFramerate(DefaultMJPEGFramerate)
+	fps := config.FPS
+	if fps == 0 {
+		fps = DefaultFramerate
+	}
+	err := d.wdaClient.SetMjpegFramerate(fps)
 	if err != nil {
 		return err
 	}
