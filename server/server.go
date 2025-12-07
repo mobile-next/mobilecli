@@ -678,6 +678,17 @@ func sendBanner(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(okResponse)
 }
 
+// newJsonRpcNotification creates a JSON-RPC notification message
+func newJsonRpcNotification(message string) map[string]interface{} {
+	return map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "notification/message",
+		"params": map[string]string{
+			"message": message,
+		},
+	}
+}
+
 func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
@@ -693,8 +704,19 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		return fmt.Errorf("error finding device: %w", err)
 	}
 
-	if screenCaptureParams.Format == "" || screenCaptureParams.Format != "mjpeg" {
-		return fmt.Errorf("format must be 'mjpeg' for screen capture")
+	// Set default format if not provided
+	if screenCaptureParams.Format == "" {
+		screenCaptureParams.Format = "mjpeg"
+	}
+
+	// Validate format
+	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
+		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+
+	// AVC format is only supported on Android
+	if screenCaptureParams.Format == "avc" && targetDevice.Platform() != "android" {
+		return fmt.Errorf("avc format is only supported on Android devices")
 	}
 
 	// Set defaults if not provided
@@ -708,26 +730,29 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		scale = devices.DefaultMJPEGScale
 	}
 
-	// Set headers for streaming response
-	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
+	// Set headers for streaming response based on format
+	if screenCaptureParams.Format == "mjpeg" {
+		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
+	} else {
+		// avc format
+		w.Header().Set("Content-Type", "video/h264")
+	}
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
 	// progress callback sends JSON-RPC notifications through the MJPEG stream
-	progressCallback := func(message string) {
-		notification := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "notification/message",
-			"params": map[string]string{
-				"message": message,
-			},
-		}
-		statusJSON, _ := json.Marshal(notification)
-		mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
-		_, _ = w.Write([]byte(mimeMessage))
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
+	// only used for MJPEG format, not for AVC
+	var progressCallback func(string)
+	if screenCaptureParams.Format == "mjpeg" {
+		progressCallback = func(message string) {
+			notification := newJsonRpcNotification(message)
+			statusJSON, _ := json.Marshal(notification)
+			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
+			_, _ = w.Write([]byte(mimeMessage))
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
 		}
 	}
 
