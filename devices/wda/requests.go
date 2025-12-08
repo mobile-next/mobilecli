@@ -24,10 +24,10 @@ type sessionRequest struct {
 	Capabilities sessionCapabilities `json:"capabilities"`
 }
 
-func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
+func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duration) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -60,6 +60,10 @@ func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error)
 	}
 
 	return result, nil
+}
+
+func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
+	return c.getEndpointWithTimeout(endpoint, 5*time.Second)
 }
 
 func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]interface{}, error) {
