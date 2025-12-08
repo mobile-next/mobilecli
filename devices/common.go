@@ -83,7 +83,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	androidDuration := time.Since(startAndroid).Milliseconds()
 	androidCount := 0
 	if err != nil {
-		utils.Verbose("Warning: Failed to get Android devices: %v", err)
+		utils.Verbose("Warning: Failed to get Android devices: %w", err)
 	} else {
 		androidCount = len(androidDevices)
 		allDevices = append(allDevices, androidDevices...)
@@ -103,7 +103,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
 		offlineAndroidDuration = time.Since(startOfflineAndroid).Milliseconds()
 		if err != nil {
-			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
+			utils.Verbose("Warning: Failed to get offline Android emulators: %w", err)
 		} else {
 			offlineAndroidCount = len(offlineEmulators)
 			allDevices = append(allDevices, offlineEmulators...)
@@ -116,7 +116,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	iosDuration := time.Since(startIOS).Milliseconds()
 	iosCount := 0
 	if err != nil {
-		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
+		utils.Verbose("Warning: Failed to get iOS real devices: %w", err)
 	} else {
 		iosCount = len(iosDevices)
 		for i := range iosDevices {
@@ -130,7 +130,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	simulatorsDuration := time.Since(startSimulators).Milliseconds()
 	simulatorsCount := 0
 	if err != nil {
-		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
+		utils.Verbose("Warning: Failed to get iOS simulators: %w", err)
 	} else {
 		// filter to only include simulators that have been booted at least once
 		filteredSims := filterSimulatorsByDownloadsDirectory(sims)
