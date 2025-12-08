@@ -121,6 +121,10 @@ func runSimctl(args ...string) ([]byte, error) {
 
 // getSimulators reads simulator information from the filesystem
 func GetSimulators() ([]Simulator, error) {
+	if runtime.GOOS != "darwin" {
+		return []Simulator{}, nil
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
