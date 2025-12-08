@@ -3,6 +3,7 @@ package wda
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -79,7 +80,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 	endpoint := "source?format=json"
 
-	result, err := c.GetEndpoint(endpoint)
+	result, err := c.getEndpointWithTimeout(endpoint, 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
@@ -91,7 +92,7 @@ func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 func (c *WdaClient) GetSourceRaw() (interface{}, error) {
 	endpoint := "source?format=json"
 
-	result, err := c.GetEndpoint(endpoint)
+	result, err := c.getEndpointWithTimeout(endpoint, 60*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}

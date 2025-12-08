@@ -24,7 +24,7 @@ func NewWdaClient(hostPort string) *WdaClient {
 	return &WdaClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 }
