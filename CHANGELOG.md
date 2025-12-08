@@ -1,3 +1,8 @@
+## [0.0.46](https://github.com/mobile-next/mobilecli/releases/tag/0.0.46) (2025-12-08)
+
+* General: Allow negative coordinates when swiping ([#130](https://github.com/mobile-next/mobilecli/pull/130))
+* iOS: Increase timeout to 60 seconds for dump ui ([#131](https://github.com/mobile-next/mobilecli/pull/131))
+
 ## [0.0.45](https://github.com/mobile-next/mobilecli/releases/tag/0.0.45) (2025-12-07)
 
 * General: Removed command specific flags from root help ([#129](https://github.com/mobile-next/mobilecli/pull/129))
