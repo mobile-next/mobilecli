@@ -443,18 +443,26 @@ jobs:
 
     - name: Publish
       run: |
-        # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
-        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-arm64.exe publish/npm/bin
-        chmod +x publish/npm/bin/*
-        # copy README.md
+        # publish platform-specific packages
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          os="${platform%-*}"
+          binary="mobilecli-$platform"
+          if [ "$os" = "windows" ]; then
+            binary="$binary.exe"
+          fi
+          cp "mobilecli-$os/$binary" "publish/npm-$platform/"
+          chmod +x "publish/npm-$platform/$binary"
+          cd "publish/npm-$platform"
+          npm version "$GITHUB_REF_NAME" --no-git-tag-version
+          npm publish --access public --provenance
+          cd ../..
+        done
+
+        # publish main package (wrapper)
         cp README.md publish/npm
-        # publish to npm
         cd publish/npm
         npm version "$GITHUB_REF_NAME" --no-git-tag-version
-        npm install --ignore-scripts
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          npm pkg set "optionalDependencies.@mobilenext/mobilecli-$platform=$GITHUB_REF_NAME"
+        done
         npm publish --access public --provenance
