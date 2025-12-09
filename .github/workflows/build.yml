@@ -396,18 +396,51 @@ jobs:
       env:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
-        # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
-        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
-        chmod +x publish/npm/bin/*
         # setup npmrc
         echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
-        # copy README.md
+
+        # publish platform-specific packages
+        # darwin-arm64
+        cp ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm-darwin-arm64/
+        chmod +x publish/npm-darwin-arm64/mobilecli-darwin-arm64
+        cd publish/npm-darwin-arm64
+        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm publish --access public
+        cd ../..
+
+        # darwin-amd64
+        cp ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm-darwin-amd64/
+        chmod +x publish/npm-darwin-amd64/mobilecli-darwin-amd64
+        cd publish/npm-darwin-amd64
+        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm publish --access public
+        cd ../..
+
+        # linux-arm64
+        cp ./mobilecli-linux/mobilecli-linux-arm64 publish/npm-linux-arm64/
+        chmod +x publish/npm-linux-arm64/mobilecli-linux-arm64
+        cd publish/npm-linux-arm64
+        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm publish --access public
+        cd ../..
+
+        # linux-amd64
+        cp ./mobilecli-linux/mobilecli-linux-amd64 publish/npm-linux-amd64/
+        chmod +x publish/npm-linux-amd64/mobilecli-linux-amd64
+        cd publish/npm-linux-amd64
+        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm publish --access public
+        cd ../..
+
+        # windows-amd64
+        cp ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm-windows-amd64/
+        cd publish/npm-windows-amd64
+        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm publish --access public
+        cd ../..
+
+        # publish main package (wrapper)
         cp README.md publish/npm
-        # publish to npm
         cd publish/npm
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install --ignore-scripts

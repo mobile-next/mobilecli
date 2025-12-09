@@ -1,0 +1,13 @@
+{
+	"name": "@mobilenext/mobilecli-darwin-amd64",
+	"version": "0.0.4",
+	"author": "Mobile Next",
+	"description": "mobilecli binary for macOS x64",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mobile-next/mobilecli.git"
+	},
+	"license": "MIT",
+	"os": ["darwin"],
+	"cpu": ["x64"]
+}

@@ -10,6 +10,13 @@
 	"license": "MIT",
 	"bin": {
 		"mobilecli": "index.js"
+	},
+	"optionalDependencies": {
+		"@mobilenext/mobilecli-darwin-arm64": "0.0.4",
+		"@mobilenext/mobilecli-darwin-amd64": "0.0.4",
+		"@mobilenext/mobilecli-linux-arm64": "0.0.4",
+		"@mobilenext/mobilecli-linux-amd64": "0.0.4",
+		"@mobilenext/mobilecli-windows-amd64": "0.0.4"
 	}
 
 }

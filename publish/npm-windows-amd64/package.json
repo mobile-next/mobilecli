@@ -1,0 +1,13 @@
+{
+	"name": "@mobilenext/mobilecli-windows-amd64",
+	"version": "0.0.4",
+	"author": "Mobile Next",
+	"description": "mobilecli binary for Windows x64",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mobile-next/mobilecli.git"
+	},
+	"license": "MIT",
+	"os": ["win32"],
+	"cpu": ["x64"]
+}
