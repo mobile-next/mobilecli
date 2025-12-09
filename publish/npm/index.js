@@ -3,16 +3,19 @@
 const { join } = require("node:path");
 const { spawn } = require("node:child_process");
 
-let binary;
+let packageName;
+let binaryName;
 
 switch (process.platform) {
 	case "darwin":
 		switch (process.arch) {
 			case "arm64":
-				binary = "mobilecli-darwin-arm64";
+				packageName = "@mobilenext/mobilecli-darwin-arm64";
+				binaryName = "mobilecli-darwin-arm64";
 				break;
 			case "x64":
-				binary = "mobilecli-darwin-amd64";
+				packageName = "@mobilenext/mobilecli-darwin-amd64";
+				binaryName = "mobilecli-darwin-amd64";
 				break;
 		}
 		break;
@@ -20,10 +23,21 @@ switch (process.platform) {
 	case "linux":
 		switch (process.arch) {
 			case "arm64":
-				binary = "mobilecli-linux-arm64";
+				packageName = "@mobilenext/mobilecli-linux-arm64";
+				binaryName = "mobilecli-linux-arm64";
 				break;
 			case "x64":
-				binary = "mobilecli-linux-amd64";
+				packageName = "@mobilenext/mobilecli-linux-amd64";
+				binaryName = "mobilecli-linux-amd64";
+				break;
+		}
+		break;
+
+	case "win32":
+		switch (process.arch) {
+			case "x64":
+				packageName = "@mobilenext/mobilecli-windows-amd64";
+				binaryName = "mobilecli-windows-amd64.exe";
 				break;
 		}
 		break;
@@ -33,7 +47,19 @@ switch (process.platform) {
 		process.exit(1);
 }
 
-const binaryPath = join(__dirname, "bin", binary);
+if (!packageName) {
+	console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
+	process.exit(1);
+}
+
+let binaryPath;
+try {
+	const packagePath = require.resolve(packageName);
+	binaryPath = join(packagePath, "..", binaryName);
+} catch (error) {
+	console.error(`Failed to find ${packageName}. Please reinstall @mobilenext/mobilecli.`);
+	process.exit(1);
+}
 
 const args = process.argv.slice(2);
 const child = spawn(binaryPath, args, {
