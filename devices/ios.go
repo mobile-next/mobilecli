@@ -629,6 +629,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Platform: d.Platform(),
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
+			State:    d.State(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
