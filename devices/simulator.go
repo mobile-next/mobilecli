@@ -689,6 +689,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 			Platform: "ios",
 			Type:     "simulator",
 			Version:  parseSimulatorVersion(s.Runtime),
+			State:    s.State(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
