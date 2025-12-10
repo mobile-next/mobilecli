@@ -1,3 +1,9 @@
+## [0.0.47](https://github.com/mobile-next/mobilecli/releases/tag/0.0.47) (2025-12-10)
+
+* General: Don't look for iOS simulators on windows or linux ([#133](https://github.com/mobile-next/mobilecli/pull/133))
+* General: Missing 'state' in device info ([#135](https://github.com/mobile-next/mobilecli/pull/135))
+* Android: Removed "no-window" again from emulator start, headless is horribly slow ([#136](https://github.com/mobile-next/mobilecli/pull/136))
+
 ## [0.0.46](https://github.com/mobile-next/mobilecli/releases/tag/0.0.46) (2025-12-08)
 
 * General: Allow negative coordinates when swiping ([#130](https://github.com/mobile-next/mobilecli/pull/130))
