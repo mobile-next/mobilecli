@@ -1,5 +1,6 @@
 name: Build and Release
 permissions:
+  id-token: write  # Required for OIDC
   contents: write
 on:
   push:
@@ -393,8 +394,6 @@ jobs:
           mobilecli-*.zip
 
     - name: Publish
-      env:
-        NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
       run: |
         # prepare binaries for distribution
         mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
@@ -403,8 +402,6 @@ jobs:
         mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
         mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
         chmod +x publish/npm/bin/*
-        # setup npmrc
-        echo "//registry.npmjs.org/:_authToken=$NPM_AUTH_TOKEN" >> ~/.npmrc
         # copy README.md
         cp README.md publish/npm
         # publish to npm
