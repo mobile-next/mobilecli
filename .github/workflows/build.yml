@@ -1,6 +1,5 @@
 name: Build and Release
 permissions:
-  id-token: write  # Required for OIDC
   contents: write
 on:
   push:
@@ -328,6 +327,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      id-token: write  # Required for npm trusted publishing with OIDC
       contents: write
     needs: [build_on_windows, build_on_linux, build_on_macos, server_test]
     steps:
