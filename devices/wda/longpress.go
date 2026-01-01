@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-func (c *WdaClient) LongPress(x, y int) error {
+func (c *WdaClient) LongPress(x, y, duration int) error {
 
 	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
@@ -22,7 +22,7 @@ func (c *WdaClient) LongPress(x, y int) error {
 				Actions: []TapAction{
 					{Type: "pointerMove", Duration: 0, X: x, Y: y},
 					{Type: "pointerDown", Button: 0},
-					{Type: "pause", Duration: 500},
+					{Type: "pause", Duration: duration},
 					{Type: "pointerUp", Button: 0},
 				},
 			},

@@ -53,6 +53,8 @@ var ioTapCmd = &cobra.Command{
 	},
 }
 
+var longPressDuration int
+
 var ioLongPressCmd = &cobra.Command{
 	Use:   "longpress [x,y]",
 	Short: "Long press on a device screen at the given coordinates",
@@ -80,6 +82,7 @@ var ioLongPressCmd = &cobra.Command{
 			DeviceID: deviceId,
 			X:        x,
 			Y:        y,
+			Duration: longPressDuration,
 		}
 
 		response := commands.LongPressCommand(req)
@@ -186,6 +189,7 @@ func init() {
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
 	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
+	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")

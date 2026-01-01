@@ -635,8 +635,8 @@ func (s SimulatorDevice) Tap(x, y int) error {
 	return s.wdaClient.Tap(x, y)
 }
 
-func (s SimulatorDevice) LongPress(x, y int) error {
-	return s.wdaClient.LongPress(x, y)
+func (s SimulatorDevice) LongPress(x, y, duration int) error {
+	return s.wdaClient.LongPress(x, y, duration)
 }
 
 func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {

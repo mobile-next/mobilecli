@@ -20,6 +20,7 @@ type LongPressRequest struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
+	Duration int    `json:"duration"`
 }
 
 // TextRequest represents the parameters for a text input command
@@ -91,13 +92,13 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.LongPress(req.X, req.Y)
+	err = targetDevice.LongPress(req.X, req.Y, req.Duration)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to long press on device %s: %v", targetDevice.ID(), err))
 	}
 
 	return NewSuccessResponse(map[string]interface{}{
-		"message": fmt.Sprintf("Long pressed on device %s at (%d,%d)", targetDevice.ID(), req.X, req.Y),
+		"message": fmt.Sprintf("Long pressed on device %s at (%d,%d) for %dms", targetDevice.ID(), req.X, req.Y, req.Duration),
 	})
 }
 

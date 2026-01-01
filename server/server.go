@@ -278,6 +278,7 @@ type IoLongPressParams struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
+	Duration int    `json:"duration"`
 }
 
 type IoSwipeParams struct {
@@ -322,10 +323,17 @@ func handleIoLongPress(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
 	}
 
+	// default duration to 500ms if not provided
+	duration := ioLongPressParams.Duration
+	if duration == 0 {
+		duration = 500
+	}
+
 	req := commands.LongPressRequest{
 		DeviceID: ioLongPressParams.DeviceID,
 		X:        ioLongPressParams.X,
 		Y:        ioLongPressParams.Y,
+		Duration: duration,
 	}
 
 	response := commands.LongPressCommand(req)
