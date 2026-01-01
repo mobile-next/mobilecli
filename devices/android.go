@@ -319,8 +319,8 @@ func (d *AndroidDevice) Tap(x, y int) error {
 }
 
 // LongPress simulates a long press at (x, y) on the Android device.
-func (d *AndroidDevice) LongPress(x, y int) error {
-	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), "500")
+func (d *AndroidDevice) LongPress(x, y, duration int) error {
+	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", duration))
 	if err != nil {
 		return err
 	}

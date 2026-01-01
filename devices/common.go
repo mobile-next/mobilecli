@@ -51,7 +51,7 @@ type ControllableDevice interface {
 	Boot() error     // boot simulator/emulator
 	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
-	LongPress(x, y int) error
+	LongPress(x, y, duration int) error
 	Swipe(x1, y1, x2, y2 int) error
 	Gesture(actions []wda.TapAction) error
 	StartAgent(config StartAgentConfig) error
