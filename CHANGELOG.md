@@ -1,3 +1,7 @@
+## [0.0.49](https://github.com/mobile-next/mobilecli/releases/tag/0.0.49) (2026-01-01)
+
+* General: Add configurable --duration flag to longpress command ([#139](https://github.com/mobile-next/mobilecli/pull/139))
+
 ## [0.0.48](https://github.com/mobile-next/mobilecli/releases/tag/0.0.48) (2025-12-17)
 
 * Android: Added "no-qt-window", "netspeed" and "netdelay" to android emulator start; fixes inconsistent frame-rate ([#137](https://github.com/mobile-next/mobilecli/pull/137))
