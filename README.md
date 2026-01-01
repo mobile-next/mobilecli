@@ -157,6 +157,10 @@ mobilecli device reboot --device <device-id>
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
 
+# Long press at coordinates (x,y) with optional duration in milliseconds
+mobilecli io longpress --device <device-id> 100,200
+mobilecli io longpress --device <device-id> 100,200 --duration 2000
+
 # Press hardware buttons
 mobilecli io button --device <device-id> HOME
 mobilecli io button --device <device-id> VOLUME_UP
