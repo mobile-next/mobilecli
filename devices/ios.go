@@ -230,7 +230,8 @@ func (d *IOSDevice) startTunnel() error {
 	err := d.tunnelManager.StartTunnel()
 	if err != nil {
 		// check if it's the "already running" error, which is fine
-		if err.Error() == "tunnel is already running" {
+
+		if errors.Is(err, ErrTunnelAlreadyRunning) {
 			utils.Verbose("Tunnel already running for this device")
 			return nil
 		}
