@@ -184,6 +184,10 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleDeviceShutdown(req.Params)
 	case "device_reboot":
 		result, err = handleDeviceReboot(req.Params)
+	case "dump_ui":
+		result, err = handleDumpUI(req.Params)
+	case "apps_launch":
+		result, err = handleAppsLaunch(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -455,6 +459,16 @@ type DeviceRebootParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
+type DumpUIParams struct {
+	DeviceID string `json:"deviceId"`
+	Format   string `json:"format,omitempty"` // "json" or "raw"
+}
+
+type AppsLaunchParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -666,6 +680,52 @@ func handleDeviceReboot(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
+func handleDumpUI(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var dumpUIParams DumpUIParams
+	if err := json.Unmarshal(params, &dumpUIParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, format (optional)", err)
+	}
+
+	req := commands.DumpUIRequest{
+		DeviceID: dumpUIParams.DeviceID,
+		Format:   dumpUIParams.Format,
+	}
+
+	response := commands.DumpUICommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsLaunch(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var appsLaunchParams AppsLaunchParams
+	if err := json.Unmarshal(params, &appsLaunchParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, bundleId", err)
+	}
+
+	req := commands.AppRequest{
+		DeviceID: appsLaunchParams.DeviceID,
+		BundleID: appsLaunchParams.BundleID,
+	}
+
+	response := commands.LaunchAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
@@ -777,9 +837,9 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 
 	// Start screen capture and stream to the response writer
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-		Format:  screenCaptureParams.Format,
-		Quality: quality,
-		Scale:   scale,
+		Format:     screenCaptureParams.Format,
+		Quality:    quality,
+		Scale:      scale,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
