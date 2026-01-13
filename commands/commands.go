@@ -67,6 +67,13 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return FindDevice(deviceID)
 	}
 
+	// check cache for any online device before creating new instances
+	for _, device := range deviceCache {
+		if device.State() == "online" {
+			return device, nil
+		}
+	}
+
 	// Get all devices for auto-selection
 	allDevices, err := devices.GetAllControllableDevices(false)
 	if err != nil {
