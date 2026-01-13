@@ -2,6 +2,7 @@ package ios
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"

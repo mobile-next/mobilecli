@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -231,7 +232,7 @@ func (d *IOSDevice) startTunnel() error {
 	if err != nil {
 		// check if it's the "already running" error, which is fine
 
-		if errors.Is(err, ErrTunnelAlreadyRunning) {
+		if errors.Is(err, ios.ErrTunnelAlreadyRunning) {
 			utils.Verbose("Tunnel already running for this device")
 			return nil
 		}
