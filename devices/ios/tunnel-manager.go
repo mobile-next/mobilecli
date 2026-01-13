@@ -2,6 +2,7 @@ package ios
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+var ErrTunnelAlreadyRunning = errors.New("tunnel is already running")
 
 type TunnelManager struct {
 	udid         string
@@ -32,7 +35,7 @@ func NewTunnelManager(udid string) (*TunnelManager, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create pair records directory: %w", err)
 	}
-	
+
 	pm, err := tunnel.NewPairRecordManager(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pair record manager: %w", err)
@@ -56,7 +59,7 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 	defer tm.tunnelMutex.Unlock()
 
 	if tm.updateCtx != nil {
-		return fmt.Errorf("tunnel is already running")
+		return ErrTunnelAlreadyRunning
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
