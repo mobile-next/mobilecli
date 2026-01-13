@@ -221,6 +221,26 @@ func (d *IOSDevice) requiresTunnel() bool {
 	return majorVersion >= 17
 }
 
+func (d *IOSDevice) waitForTunnelReady() error {
+	tunnelMgr := d.tunnelManager.GetTunnelManager()
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for tunnel to be ready for device %s", d.Udid)
+		case <-ticker.C:
+			tunnelInfo, err := tunnelMgr.FindTunnel(d.Udid)
+			if err == nil && tunnelInfo.Udid != "" {
+				utils.Verbose("Tunnel ready for device %s", d.Udid)
+				return nil
+			}
+		}
+	}
+}
+
 func (d *IOSDevice) startTunnel() error {
 	if !d.requiresTunnel() {
 		return nil
@@ -240,8 +260,7 @@ func (d *IOSDevice) startTunnel() error {
 	}
 
 	utils.Verbose("Started new tunnel for device %s", d.Udid)
-	time.Sleep(1 * time.Second)
-	return nil
+	return d.waitForTunnelReady()
 }
 
 func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
