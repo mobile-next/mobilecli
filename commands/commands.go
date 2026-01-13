@@ -67,13 +67,6 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return FindDevice(deviceID)
 	}
 
-	// check cache for any online device before creating new instances
-	for _, device := range deviceCache {
-		if device.State() == "online" {
-			return device, nil
-		}
-	}
-
 	// Get all devices for auto-selection
 	allDevices, err := devices.GetAllControllableDevices(false)
 	if err != nil {
@@ -92,15 +85,22 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return nil, fmt.Errorf("no online devices found")
 	}
 
-	if len(onlineDevices) == 1 {
-		device := onlineDevices[0]
-		// Cache the device for future use
-		deviceCache[device.ID()] = device
-		return device, nil
+	if len(onlineDevices) > 1 {
+		err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
+		return nil, err
 	}
 
-	err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
-	return nil, err
+	// exactly 1 online device - check cache first to reuse existing instance
+	deviceID = onlineDevices[0].ID()
+	cachedDevice, exists := deviceCache[deviceID]
+	if exists {
+		return cachedDevice, nil
+	}
+
+	// not in cache, use the new device instance and cache it
+	device := onlineDevices[0]
+	deviceCache[device.ID()] = device
+	return device, nil
 }
 
 // getDeviceIDList returns a comma-separated list of device IDs for error messages
