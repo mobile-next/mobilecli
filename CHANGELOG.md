@@ -1,3 +1,10 @@
+## [0.0.50](https://github.com/mobile-next/mobilecli/releases/tag/0.0.50) (2026-01-13)
+
+* General: Add apps_launch and dump_ui methods to jsonrpc ([5163c8a](https://github.com/mobile-next/mobilecli/commit/5163c8a))
+* General: Add apps_list and apps_terminate methods to jsonrpc ([#142](https://github.com/mobile-next/mobilecli/pull/142))
+* iOS: Fix missing tunnel when listing apps ([#140](https://github.com/mobile-next/mobilecli/pull/140))
+* iOS: Fixed potential double-tunnel creation and error ([#140](https://github.com/mobile-next/mobilecli/pull/140))
+
 ## [0.0.49](https://github.com/mobile-next/mobilecli/releases/tag/0.0.49) (2026-01-01)
 
 * General: Add configurable --duration flag to longpress command ([#139](https://github.com/mobile-next/mobilecli/pull/139))
