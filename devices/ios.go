@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -113,6 +114,12 @@ func (d IOSDevice) TakeScreenshot() ([]byte, error) {
 func (d IOSDevice) Reboot() error {
 	log.SetLevel(log.WarnLevel)
 
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
@@ -219,22 +226,20 @@ func (d *IOSDevice) startTunnel() error {
 		return nil
 	}
 
-	tunnels, err := d.ListTunnels()
+	// start tunnel if not already running
+	// TunnelManager.StartTunnel() will return error if already running
+	err := d.tunnelManager.StartTunnel()
 	if err != nil {
-		return fmt.Errorf("failed to list tunnels: %w", err)
-	}
+		// check if it's the "already running" error, which is fine
 
-	if len(tunnels) > 0 {
-		utils.Verbose("Tunnels available for this device: %v", tunnels)
-		return nil
-	}
-
-	utils.Verbose("No tunnels found, starting a new tunnel")
-	err = d.tunnelManager.StartTunnel()
-	if err != nil {
+		if errors.Is(err, ios.ErrTunnelAlreadyRunning) {
+			utils.Verbose("Tunnel already running for this device")
+			return nil
+		}
 		return fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
+	utils.Verbose("Started new tunnel for device %s", d.Udid)
 	time.Sleep(1 * time.Second)
 	return nil
 }
@@ -368,6 +373,12 @@ func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) 
 	}
 
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
+
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
 
 	device, err := d.getEnhancedDevice()
 	if err != nil {
@@ -588,6 +599,12 @@ func (d IOSDevice) OpenURL(url string) error {
 func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get enhanced device connection: %w", err)
@@ -677,6 +694,12 @@ func (d IOSDevice) DumpSourceRaw() (interface{}, error) {
 func (d IOSDevice) InstallApp(path string) error {
 	log.SetLevel(log.WarnLevel)
 
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
@@ -698,6 +721,12 @@ func (d IOSDevice) InstallApp(path string) error {
 
 func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
+
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start tunnel: %w", err)
+	}
 
 	device, err := d.getEnhancedDevice()
 	if err != nil {
