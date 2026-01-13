@@ -144,6 +144,17 @@ This section documents the JSON-RPC methods registered by the server and shows e
 		- `deviceId` (string)
 		- `bundleId` (string) - required
 
+- `apps_terminate`
+	- Description: Terminate a running app on a device.
+	- Params: object
+		- `deviceId` (string)
+		- `bundleId` (string) - required
+
+- `apps_list`
+	- Description: List installed apps on a device.
+	- Params: object (optional)
+		- `deviceId` (string)
+
 Common notes:
 - For most methods `deviceId` is optional; when omitted the server auto-selects a single online device or returns an error when multiple devices are available.
 - Methods that interact with the UI/agent (`io_*`, `dump_ui`, `apps_launch`, `device_info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
@@ -244,4 +255,20 @@ curl -s -X POST http://localhost:12000/rpc \
 curl -s -X POST http://localhost:12000/rpc \
 	-H 'Content-Type: application/json' \
 	-d '{"jsonrpc":"2.0","method":"apps_launch","params":{"deviceId":"<id>","bundleId":"com.example.app"},"id":20}'
+```
+
+- Terminate app:
+
+```bash
+curl -s -X POST http://localhost:12000/rpc \
+	-H 'Content-Type: application/json' \
+	-d '{"jsonrpc":"2.0","method":"apps_terminate","params":{"deviceId":"<id>","bundleId":"com.example.app"},"id":21}'
+```
+
+- List apps:
+
+```bash
+curl -s -X POST http://localhost:12000/rpc \
+	-H 'Content-Type: application/json' \
+	-d '{"jsonrpc":"2.0","method":"apps_list","params":{"deviceId":"<id>"},"id":22}'
 ```

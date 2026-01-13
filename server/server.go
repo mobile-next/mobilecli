@@ -188,6 +188,10 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleDumpUI(req.Params)
 	case "apps_launch":
 		result, err = handleAppsLaunch(req.Params)
+	case "apps_terminate":
+		result, err = handleAppsTerminate(req.Params)
+	case "apps_list":
+		result, err = handleAppsList(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -469,6 +473,15 @@ type AppsLaunchParams struct {
 	BundleID string `json:"bundleId"`
 }
 
+type AppsTerminateParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+type AppsListParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -719,6 +732,49 @@ func handleAppsLaunch(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.LaunchAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsTerminate(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var appsTerminateParams AppsTerminateParams
+	if err := json.Unmarshal(params, &appsTerminateParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, bundleId", err)
+	}
+
+	req := commands.AppRequest{
+		DeviceID: appsTerminateParams.DeviceID,
+		BundleID: appsTerminateParams.BundleID,
+	}
+
+	response := commands.TerminateAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsList(params json.RawMessage) (interface{}, error) {
+	var appsListParams AppsListParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &appsListParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
+		}
+	}
+
+	req := commands.ListAppsRequest{
+		DeviceID: appsListParams.DeviceID,
+	}
+
+	response := commands.ListAppsCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
