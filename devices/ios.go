@@ -343,7 +343,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			// launch WebDriverAgent using testmanagerd
-			err = d.LaunchWda(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
+			err = d.LaunchTestRunner(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
 			if err != nil {
 				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
 			}
@@ -385,7 +385,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	return nil
 }
 
-func (d IOSDevice) LaunchWda(bundleID, testRunnerBundleID, xctestConfig string) error {
+func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
@@ -778,4 +778,84 @@ func (d IOSDevice) GetOrientation() (string, error) {
 // SetOrientation sets the device orientation
 func (d IOSDevice) SetOrientation(orientation string) error {
 	return d.wdaClient.SetOrientation(orientation)
+}
+
+// DeviceKitInfo contains information about the started DeviceKit session
+type DeviceKitInfo struct {
+	HTTPPort   int `json:"httpPort"`
+	StreamPort int `json:"streamPort"`
+}
+
+// StartDeviceKit starts the devicekit-ios XCUITest which provides:
+// - An HTTP server for tap/dumpUI commands (port 12004)
+// - A broadcast extension for H.264 screen streaming (port 12005)
+func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
+	const (
+		httpPort           = 12004 // XCUITest HTTP server for tap/dumpUI
+		streamPort         = 12005 // H.264 TCP stream from broadcast extension
+		bundleID           = "com.mobilenext.devicekit-ios"
+		testRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+		xctestConfig       = "devicekit-iosUITests.xctest"
+	)
+
+	// Start tunnel if needed (iOS 17+)
+	err := d.startTunnel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
+	// Find available local ports for forwarding
+	localHTTPPort, err := findAvailablePortInRange(12004, 12099)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
+	}
+
+	localStreamPort, err := findAvailablePortInRange(12100, 12199)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+	}
+
+	// Set up port forwarding for HTTP server
+	httpForwarder := ios.NewPortForwarder(d.ID())
+	err = httpForwarder.Forward(localHTTPPort, httpPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, httpPort)
+
+	// Set up port forwarding for H.264 stream
+	streamForwarder := ios.NewPortForwarder(d.ID())
+	err = streamForwarder.Forward(localStreamPort, streamPort)
+	if err != nil {
+		// Clean up HTTP forwarder on failure
+		_ = httpForwarder.Stop()
+		return nil, fmt.Errorf("failed to forward stream port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, streamPort)
+
+	// Launch the XCUITest
+	err = d.LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig)
+	if err != nil {
+		// Clean up port forwarders on failure
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to launch XCUITest: %w", err)
+	}
+
+	utils.Verbose("DeviceKit started successfully")
+
+	return &DeviceKitInfo{
+		HTTPPort:   localHTTPPort,
+		StreamPort: localStreamPort,
+	}, nil
+}
+
+// findAvailablePortInRange finds an available port in the specified range
+func findAvailablePortInRange(start, end int) (int, error) {
+	for port := start; port <= end; port++ {
+		if utils.IsPortAvailable("localhost", port) {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no available ports found in range %d-%d", start, end)
 }

@@ -192,6 +192,8 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		result, err = handleAppsTerminate(req.Params)
 	case "apps_list":
 		result, err = handleAppsList(req.Params)
+	case "devicekit_start":
+		result, err = handleDeviceKitStart(req.Params)
 	case "":
 		err = fmt.Errorf("'method' is required")
 
@@ -479,6 +481,10 @@ type AppsTerminateParams struct {
 }
 
 type AppsListParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type DeviceKitStartParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
@@ -775,6 +781,26 @@ func handleAppsList(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ListAppsCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleDeviceKitStart(params json.RawMessage) (interface{}, error) {
+	var devicekitParams DeviceKitStartParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &devicekitParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
+		}
+	}
+
+	req := commands.DeviceKitStartRequest{
+		DeviceID: devicekitParams.DeviceID,
+	}
+
+	response := commands.DeviceKitStartCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

@@ -170,6 +170,29 @@ mobilecli io button --device <device-id> POWER
 mobilecli io text --device <device-id> 'hello world'
 ```
 
+### DeviceKit (iOS Real Devices) 📱
+
+DeviceKit provides automation capabilities for iOS real devices, including tap/dumpUI commands and screen streaming.
+
+```bash
+# Start DeviceKit on an iOS device
+mobilecli devicekit start --device <device-id>
+```
+
+The command will output the local ports for HTTP and streaming:
+```json
+{
+  "status": "ok",
+  "data": {
+    "httpPort": 12004,
+    "streamPort": 12100,
+    "message": "DeviceKit started on device ..."
+  }
+}
+```
+
+The process keeps running until you press Ctrl+C. While running, you can use the HTTP endpoint for automation commands.
+
 ### Supported Hardware Buttons
 
 - `HOME` - Home button
@@ -181,7 +204,8 @@ mobilecli io text --device <device-id> 'hello world'
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Currently requires that you install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
+- Use `mobilecli devicekit start` to enable automation on iOS real devices. This starts the DeviceKit XCUITest runner which provides tap, dumpUI, and screen streaming capabilities.
+- Alternatively, you can install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
 
 ## Development 👩‍💻
 
