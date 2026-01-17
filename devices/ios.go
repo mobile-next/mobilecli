@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
@@ -332,10 +336,12 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 
 		// check if wda is already running, now that we have a port forwarder set up
-		_, err = d.wdaClient.GetStatus()
+		status, err := d.wdaClient.GetStatus()
 		if err == nil {
 			utils.Verbose("WebDriverAgent is already running")
 		}
+
+		utils.Verbose("WebDriverAgent status %s", status)
 
 		if err != nil {
 			if config.OnProgress != nil {
@@ -676,6 +682,73 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	// handle avc format via DeviceKit
+	if config.Format == "avc" {
+		if config.OnProgress != nil {
+			config.OnProgress("Starting DeviceKit for H.264 streaming")
+		}
+
+		// start DeviceKit
+		deviceKitInfo, err := d.StartDeviceKit()
+		if err != nil {
+			return fmt.Errorf("failed to start DeviceKit: %w", err)
+		}
+
+		if config.OnProgress != nil {
+			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d", deviceKitInfo.StreamPort))
+		}
+
+		// connect to the TCP stream
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", deviceKitInfo.StreamPort))
+		if err != nil {
+			return fmt.Errorf("failed to connect to stream port: %w", err)
+		}
+
+		// setup signal handling for Ctrl+C
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		// channel to signal when streaming is done
+		done := make(chan error, 1)
+
+		// stream data in a goroutine
+		go func() {
+			defer conn.Close()
+			buffer := make([]byte, 65536)
+			for {
+				n, err := conn.Read(buffer)
+				if err != nil {
+					if err != io.EOF {
+						done <- fmt.Errorf("error reading from stream: %w", err)
+					} else {
+						done <- nil
+					}
+					return
+				}
+
+				if n > 0 {
+					if !config.OnData(buffer[:n]) {
+						// client wants to stop the stream
+						done <- nil
+						return
+					}
+				}
+			}
+		}()
+
+		// wait for either signal or stream completion
+		select {
+		case <-sigChan:
+			conn.Close()
+			utils.Verbose("stream closed by user")
+			return nil
+		case err := <-done:
+			utils.Verbose("stream ended")
+			return err
+		}
+	}
+
+	// handle mjpeg format via WDA
 	// configure mjpeg framerate
 	fps := config.FPS
 	if fps == 0 {
@@ -791,17 +864,34 @@ type DeviceKitInfo struct {
 // - A broadcast extension for H.264 screen streaming (port 12005)
 func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	const (
-		httpPort           = 12004 // XCUITest HTTP server for tap/dumpUI
-		streamPort         = 12005 // H.264 TCP stream from broadcast extension
-		bundleID           = "com.mobilenext.devicekit-ios"
-		testRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
-		xctestConfig       = "devicekit-iosUITests.xctest"
+		httpPort   = 12004 // XCUITest HTTP server for tap/dumpUI
+		streamPort = 12005 // H.264 TCP stream from broadcast extension
 	)
 
 	// Start tunnel if needed (iOS 17+)
 	err := d.startTunnel()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
+	// Find DeviceKit main app (not the xctrunner)
+	apps, err := d.ListApps()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	var devicekitMainAppBundleId string
+	for _, app := range apps {
+		// Look for the main app, not the test runner
+		if strings.HasPrefix(app.PackageName, "com.") && strings.Contains(app.PackageName, "devicekit-ios") && !strings.Contains(app.PackageName, "UITests") {
+			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
+			devicekitMainAppBundleId = app.PackageName
+			break
+		}
+	}
+
+	if devicekitMainAppBundleId == "" {
+		return nil, fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
 	}
 
 	// Find available local ports for forwarding
@@ -833,16 +923,78 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, streamPort)
 
-	// Launch the XCUITest
-	err = d.LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig)
+	// Launch the main DeviceKit app
+	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
+	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
 		// Clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
-		return nil, fmt.Errorf("failed to launch XCUITest: %w", err)
+		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
-	utils.Verbose("DeviceKit started successfully")
+	// Wait for the app to launch and show the broadcast picker
+	utils.Verbose("Waiting 5 seconds for DeviceKit app to launch...")
+	time.Sleep(5 * time.Second)
+
+	// Start WebDriverAgent to be able to tap on the screen
+	err = d.StartAgent(StartAgentConfig{
+		OnProgress: func(message string) {
+			utils.Verbose(message)
+		},
+	})
+	if err != nil {
+		// Clean up port forwarders on failure
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to start agent: %w", err)
+	}
+
+	// Get UI elements to find the "Start Broadcast" button
+	utils.Verbose("Finding Start Broadcast button...")
+	elements, err := d.DumpSource()
+	if err != nil {
+		// Clean up port forwarders on failure
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to dump UI: %w", err)
+	}
+
+	// Find the "Start Broadcast" button
+	var startBroadcastButton *ScreenElement
+	for i := range elements {
+		if elements[i].Name != nil && *elements[i].Name == "Start Broadcast" {
+			startBroadcastButton = &elements[i]
+			break
+		}
+	}
+
+	if startBroadcastButton == nil {
+		// Clean up port forwarders on failure
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("Start Broadcast button not found on screen")
+	}
+
+	// Calculate center coordinates
+	centerX := startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
+	centerY := startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
+	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
+
+	// Tap the button
+	err = d.Tap(centerX, centerY)
+	if err != nil {
+		// Clean up port forwarders on failure
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to tap Start Broadcast button: %w", err)
+	}
+
+	// Wait for the TCP server to start listening (takes about 5 seconds)
+	utils.Verbose("Waiting 5 seconds for broadcast TCP server to start...")
+	time.Sleep(5 * time.Second)
+
+	utils.Verbose("DeviceKit broadcast started successfully")
 
 	return &DeviceKitInfo{
 		HTTPPort:   localHTTPPort,
