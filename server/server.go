@@ -161,13 +161,15 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Special case: device_boot needs timeout extension
+	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
 	if req.Method == "device_boot" {
-		result, err = handleDeviceBoot(w, req.Params)
-	} else if req.Method == "" {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
+	}
+
+	// Use registry for all methods
+	if req.Method == "" {
 		err = fmt.Errorf("'method' is required")
 	} else {
-		// Use registry for all other methods
 		registry := GetMethodRegistry()
 		handler, exists := registry[req.Method]
 		if exists {
@@ -602,10 +604,7 @@ func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleDeviceBoot(w http.ResponseWriter, params json.RawMessage) (interface{}, error) {
-	// extend write deadline for boot operations (can take up to 2 minutes)
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
-
+func handleDeviceBoot(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}

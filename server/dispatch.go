@@ -3,8 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/mobile-next/mobilecli/commands"
 )
 
 // HandlerFunc is the signature for non-streaming JSON-RPC method handlers
@@ -26,45 +24,14 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device_info":        handleDeviceInfo,
 		"io_orientation_get": handleIoOrientationGet,
 		"io_orientation_set": handleIoOrientationSet,
+		"device_boot":        handleDeviceBoot,
 		"device_shutdown":    handleDeviceShutdown,
 		"device_reboot":      handleDeviceReboot,
 		"dump_ui":            handleDumpUI,
 		"apps_launch":        handleAppsLaunch,
 		"apps_terminate":     handleAppsTerminate,
 		"apps_list":          handleAppsList,
-		"device_boot":        wrapDeviceBootHandler(),
 	}
-}
-
-// wrapDeviceBootHandler creates a wrapper that matches HandlerFunc signature
-func wrapDeviceBootHandler() HandlerFunc {
-	return func(params json.RawMessage) (interface{}, error) {
-		return handleDeviceBootWithoutTimeout(params)
-	}
-}
-
-// handleDeviceBootWithoutTimeout is device_boot handler without HTTP-specific timeout logic
-func handleDeviceBootWithoutTimeout(params json.RawMessage) (interface{}, error) {
-	if len(params) == 0 {
-		return nil, fmt.Errorf("'params' is required with fields: deviceId")
-	}
-
-	var bootParams DeviceBootParams
-	err := json.Unmarshal(params, &bootParams)
-	if err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
-	}
-
-	req := commands.BootRequest{
-		DeviceID: bootParams.DeviceID,
-	}
-
-	response := commands.BootCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
 }
 
 // Execute dispatches a method call using the registry
