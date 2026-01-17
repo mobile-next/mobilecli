@@ -462,10 +462,6 @@ type AppsListParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
-type DeviceKitStartParams struct {
-	DeviceID string `json:"deviceId"`
-}
-
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -756,26 +752,6 @@ func handleAppsList(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ListAppsCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
-}
-
-func handleDeviceKitStart(params json.RawMessage) (interface{}, error) {
-	var devicekitParams DeviceKitStartParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &devicekitParams); err != nil {
-			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
-		}
-	}
-
-	req := commands.DeviceKitStartRequest{
-		DeviceID: devicekitParams.DeviceID,
-	}
-
-	response := commands.DeviceKitStartCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
