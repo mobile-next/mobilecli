@@ -1,11 +1,11 @@
-# mobilecli 
+# mobilecli
 
-A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/). 
+A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/).
 
 <p align="center">
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
-  </a>  
+  </a>
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
@@ -17,13 +17,13 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
-  </a> 
+  </a>
 </p>
 
 <p align="center">
   <a href="http://mobilenexthq.com/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
-  </a>	
+  </a>
 </p>
 
 
@@ -63,7 +63,7 @@ make build
 
 ### Install Dependencies
 
-#### 🍎 For iOS Simulator Support 
+#### 🍎 For iOS Simulator Support
 
 Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
 
@@ -170,29 +170,6 @@ mobilecli io button --device <device-id> POWER
 mobilecli io text --device <device-id> 'hello world'
 ```
 
-### DeviceKit (iOS Real Devices) 📱
-
-DeviceKit provides automation capabilities for iOS real devices, including tap/dumpUI commands and screen streaming.
-
-```bash
-# Start DeviceKit on an iOS device
-mobilecli devicekit start --device <device-id>
-```
-
-The command will output the local ports for HTTP and streaming:
-```json
-{
-  "status": "ok",
-  "data": {
-    "httpPort": 12004,
-    "streamPort": 12100,
-    "message": "DeviceKit started on device ..."
-  }
-}
-```
-
-The process keeps running until you press Ctrl+C. While running, you can use the HTTP endpoint for automation commands.
-
 ### Supported Hardware Buttons
 
 - `HOME` - Home button
@@ -221,7 +198,7 @@ make test
 
 ## Support 💬
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page. 
+For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
 Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today 💜
 
