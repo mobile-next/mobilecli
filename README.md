@@ -181,8 +181,7 @@ mobilecli io text --device <device-id> 'hello world'
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Use `mobilecli devicekit start` to enable automation on iOS real devices. This starts the DeviceKit XCUITest runner which provides tap, dumpUI, and screen streaming capabilities.
-- Alternatively, you can install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
+- Currently requires that you install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
 
 ## Development 👩‍💻
 
