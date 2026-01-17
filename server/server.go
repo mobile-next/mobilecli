@@ -151,53 +151,31 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var result interface{}
 	var err error
 
-	switch req.Method {
-	case "devices":
-		result, err = handleDevicesList(req.Params)
-	case "screenshot":
-		result, err = handleScreenshot(req.Params)
-	case "screencapture":
+	// Special case: screencapture is streaming and has different signature
+	if req.Method == "screencapture" {
 		err = handleScreenCapture(w, req.Params)
-	case "io_tap":
-		result, err = handleIoTap(req.Params)
-	case "io_longpress":
-		result, err = handleIoLongPress(req.Params)
-	case "io_text":
-		result, err = handleIoText(req.Params)
-	case "io_button":
-		result, err = handleIoButton(req.Params)
-	case "io_swipe":
-		result, err = handleIoSwipe(req.Params)
-	case "io_gesture":
-		result, err = handleIoGesture(req.Params)
-	case "url":
-		result, err = handleURL(req.Params)
-	case "device_info":
-		result, err = handleDeviceInfo(req.Params)
-	case "io_orientation_get":
-		result, err = handleIoOrientationGet(req.Params)
-	case "io_orientation_set":
-		result, err = handleIoOrientationSet(req.Params)
-	case "device_boot":
-		result, err = handleDeviceBoot(w, req.Params)
-	case "device_shutdown":
-		result, err = handleDeviceShutdown(req.Params)
-	case "device_reboot":
-		result, err = handleDeviceReboot(req.Params)
-	case "dump_ui":
-		result, err = handleDumpUI(req.Params)
-	case "apps_launch":
-		result, err = handleAppsLaunch(req.Params)
-	case "apps_terminate":
-		result, err = handleAppsTerminate(req.Params)
-	case "apps_list":
-		result, err = handleAppsList(req.Params)
-	case "":
-		err = fmt.Errorf("'method' is required")
-
-	default:
-		sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
+		if err != nil {
+			log.Printf("Error in screen capture: %v", err)
+			sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
+		}
 		return
+	}
+
+	// Special case: device_boot needs timeout extension
+	if req.Method == "device_boot" {
+		result, err = handleDeviceBoot(w, req.Params)
+	} else if req.Method == "" {
+		err = fmt.Errorf("'method' is required")
+	} else {
+		// Use registry for all other methods
+		registry := GetMethodRegistry()
+		handler, exists := registry[req.Method]
+		if exists {
+			result, err = handler(req.Params)
+		} else {
+			sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
+			return
+		}
 	}
 
 	if err != nil {
