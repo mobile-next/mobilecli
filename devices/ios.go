@@ -27,6 +27,15 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	portRangeStart            = 8100
+	portRangeEnd              = 8299
+	deviceKitHTTPPort         = 12004 // device-side HTTP server port
+	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
+	deviceKitAppLaunchTimeout = 5 * time.Second
+	deviceKitBroadcastTimeout = 5 * time.Second
+)
+
 var (
 	portForwarder *ios.PortForwarder
 )
@@ -322,7 +331,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		// check that forward proxy is running
-		port, err := findAvailablePort()
+		port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 		if err != nil {
 			return fmt.Errorf("failed to find available port: %w", err)
 		}
@@ -372,7 +381,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 	// assuming everything went well if we reached this point
 	if true {
-		portMjpeg, err := findAvailablePort()
+		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 		if err != nil {
 			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
 		}
@@ -766,15 +775,6 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
-func findAvailablePort() (int, error) {
-	for port := 8100; port <= 8199; port++ {
-		if utils.IsPortAvailable("localhost", port) {
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("no available ports found in range 8101-8199")
-}
-
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.wdaClient.GetSourceElements()
 }
@@ -863,11 +863,6 @@ type DeviceKitInfo struct {
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
 func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
-	const (
-		httpPort   = 12004 // XCUITest HTTP server for tap/dumpUI
-		streamPort = 12005 // H.264 TCP stream from broadcast extension
-	)
-
 	// Start tunnel if needed (iOS 17+)
 	err := d.startTunnel()
 	if err != nil {
@@ -895,33 +890,33 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Find available local ports for forwarding
-	localHTTPPort, err := findAvailablePortInRange(12004, 12099)
+	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
-	localStreamPort, err := findAvailablePortInRange(12100, 12199)
+	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
 	}
 
 	// Set up port forwarding for HTTP server
 	httpForwarder := ios.NewPortForwarder(d.ID())
-	err = httpForwarder.Forward(localHTTPPort, httpPort)
+	err = httpForwarder.Forward(localHTTPPort, deviceKitHTTPPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
 	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, httpPort)
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
 
 	// Set up port forwarding for H.264 stream
 	streamForwarder := ios.NewPortForwarder(d.ID())
-	err = streamForwarder.Forward(localStreamPort, streamPort)
+	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
 	if err != nil {
 		// Clean up HTTP forwarder on failure
 		_ = httpForwarder.Stop()
 		return nil, fmt.Errorf("failed to forward stream port: %w", err)
 	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, streamPort)
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
 
 	// Launch the main DeviceKit app
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
@@ -934,8 +929,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Wait for the app to launch and show the broadcast picker
-	utils.Verbose("Waiting 5 seconds for DeviceKit app to launch...")
-	time.Sleep(5 * time.Second)
+	utils.Verbose("Waiting %v for DeviceKit app to launch...", deviceKitAppLaunchTimeout)
+	time.Sleep(deviceKitAppLaunchTimeout)
 
 	// Start WebDriverAgent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
@@ -991,8 +986,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Wait for the TCP server to start listening (takes about 5 seconds)
-	utils.Verbose("Waiting 5 seconds for broadcast TCP server to start...")
-	time.Sleep(5 * time.Second)
+	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
+	time.Sleep(deviceKitBroadcastTimeout)
 
 	utils.Verbose("DeviceKit broadcast started successfully")
 
