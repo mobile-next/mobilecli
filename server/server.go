@@ -815,9 +815,11 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
 	}
 
-	// AVC format is only supported on Android
-	if screenCaptureParams.Format == "avc" && targetDevice.Platform() != "android" {
-		return fmt.Errorf("avc format is only supported on Android devices")
+	// avc format is supported on Android and iOS real devices (not simulators)
+	if screenCaptureParams.Format == "avc" {
+		if targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator" {
+			return fmt.Errorf("avc format is not supported on iOS simulators")
+		}
 	}
 
 	// Set defaults if not provided
