@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -869,7 +870,8 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 	}
 
 	// Start screen capture and stream to the response writer
-	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+	ctx := context.Background()
+	err = targetDevice.StartScreenCapture(ctx, devices.ScreenCaptureConfig{
 		Format:     screenCaptureParams.Format,
 		Quality:    quality,
 		Scale:      scale,

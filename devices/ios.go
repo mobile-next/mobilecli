@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
@@ -322,7 +319,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 
 		// check that forward proxy is running
-		port, err := findAvailablePort()
+		port, err := findAvailablePortInRange(8100, 8199)
 		if err != nil {
 			return fmt.Errorf("failed to find available port: %w", err)
 		}
@@ -372,7 +369,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 	// assuming everything went well if we reached this point
 	if true {
-		portMjpeg, err := findAvailablePort()
+		portMjpeg, err := findAvailablePortInRange(8100, 8199)
 		if err != nil {
 			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
 		}
@@ -681,7 +678,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+func (d IOSDevice) StartScreenCapture(ctx context.Context, config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit
 	if config.Format == "avc" {
 		if config.OnProgress != nil {
@@ -704,10 +701,6 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			return fmt.Errorf("failed to connect to stream port: %w", err)
 		}
 
-		// setup signal handling for Ctrl+C
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
 		// channel to signal when streaming is done
 		done := make(chan error, 1)
 
@@ -716,32 +709,44 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			defer conn.Close()
 			buffer := make([]byte, 65536)
 			for {
-				n, err := conn.Read(buffer)
-				if err != nil {
-					if err != io.EOF {
-						done <- fmt.Errorf("error reading from stream: %w", err)
-					} else {
-						done <- nil
-					}
+				select {
+				case <-ctx.Done():
+					done <- ctx.Err()
 					return
-				}
-
-				if n > 0 {
-					if !config.OnData(buffer[:n]) {
-						// client wants to stop the stream
-						done <- nil
+				default:
+					// set read deadline to allow context checking
+					conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+					n, err := conn.Read(buffer)
+					if err != nil {
+						if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+							// timeout is expected, check context again
+							continue
+						}
+						if err != io.EOF {
+							done <- fmt.Errorf("error reading from stream: %w", err)
+						} else {
+							done <- nil
+						}
 						return
+					}
+
+					if n > 0 {
+						if !config.OnData(buffer[:n]) {
+							// client wants to stop the stream
+							done <- nil
+							return
+						}
 					}
 				}
 			}
 		}()
 
-		// wait for either signal or stream completion
+		// wait for either context cancellation or stream completion
 		select {
-		case <-sigChan:
+		case <-ctx.Done():
 			conn.Close()
-			utils.Verbose("stream closed by user")
-			return nil
+			utils.Verbose("stream closed by context cancellation")
+			return ctx.Err()
 		case err := <-done:
 			utils.Verbose("stream ended")
 			return err
@@ -764,15 +769,6 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
-}
-
-func findAvailablePort() (int, error) {
-	for port := 8100; port <= 8199; port++ {
-		if utils.IsPortAvailable("localhost", port) {
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("no available ports found in range 8101-8199")
 }
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
@@ -853,6 +849,15 @@ func (d IOSDevice) SetOrientation(orientation string) error {
 	return d.wdaClient.SetOrientation(orientation)
 }
 
+const (
+	deviceKitHTTPPortRangeStart   = 12004
+	deviceKitHTTPPortRangeEnd     = 12099
+	deviceKitStreamPortRangeStart = 12100
+	deviceKitStreamPortRangeEnd   = 12199
+	deviceKitAppLaunchTimeout     = 5 * time.Second
+	deviceKitBroadcastTimeout     = 5 * time.Second
+)
+
 // DeviceKitInfo contains information about the started DeviceKit session
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`
@@ -895,12 +900,12 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Find available local ports for forwarding
-	localHTTPPort, err := findAvailablePortInRange(12004, 12099)
+	localHTTPPort, err := findAvailablePortInRange(deviceKitHTTPPortRangeStart, deviceKitHTTPPortRangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
-	localStreamPort, err := findAvailablePortInRange(12100, 12199)
+	localStreamPort, err := findAvailablePortInRange(deviceKitStreamPortRangeStart, deviceKitStreamPortRangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
 	}
@@ -934,8 +939,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Wait for the app to launch and show the broadcast picker
-	utils.Verbose("Waiting 5 seconds for DeviceKit app to launch...")
-	time.Sleep(5 * time.Second)
+	utils.Verbose("Waiting %v for DeviceKit app to launch...", deviceKitAppLaunchTimeout)
+	time.Sleep(deviceKitAppLaunchTimeout)
 
 	// Start WebDriverAgent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
@@ -991,8 +996,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	// Wait for the TCP server to start listening (takes about 5 seconds)
-	utils.Verbose("Waiting 5 seconds for broadcast TCP server to start...")
-	time.Sleep(5 * time.Second)
+	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
+	time.Sleep(deviceKitBroadcastTimeout)
 
 	utils.Verbose("DeviceKit broadcast started successfully")
 

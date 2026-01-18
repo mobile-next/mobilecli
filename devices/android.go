@@ -784,7 +784,7 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
-func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+func (d *AndroidDevice) StartScreenCapture(ctx context.Context, config ScreenCaptureConfig) error {
 	if config.Format != "mjpeg" && config.Format != "avc" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
 	}

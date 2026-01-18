@@ -99,7 +99,8 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+		ctx := cmd.Context()
+		err = targetDevice.StartScreenCapture(ctx, devices.ScreenCaptureConfig{
 			Format:  screencaptureFormat,
 			Quality: devices.DefaultQuality,
 			Scale:   scale,

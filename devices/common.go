@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -64,7 +65,7 @@ type ControllableDevice interface {
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
-	StartScreenCapture(config ScreenCaptureConfig) error
+	StartScreenCapture(ctx context.Context, config ScreenCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)
 	DumpSourceRaw() (interface{}, error)
 	GetOrientation() (string, error)

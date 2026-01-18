@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -699,7 +700,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+func (s *SimulatorDevice) StartScreenCapture(ctx context.Context, config ScreenCaptureConfig) error {
 	mjpegPort, err := s.getWdaMjpegPort()
 	if err != nil {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
