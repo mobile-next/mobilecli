@@ -1,12 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -120,8 +124,40 @@ func StartServer(addr string, enableCORS bool) error {
 		IdleTimeout:  IdleTimeout,
 	}
 
-	utils.Info("Starting server on http://%s...", server.Addr)
-	return server.ListenAndServe()
+	// channel to catch server errors
+	serverErr := make(chan error, 1)
+
+	// start server in goroutine
+	go func() {
+		utils.Info("Starting server on http://%s...", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// wait for shutdown signal or server error
+	select {
+	case err := <-serverErr:
+		return fmt.Errorf("server error: %w", err)
+	case sig := <-sigChan:
+		utils.Info("Received signal %v, shutting down gracefully...", sig)
+
+		// create context with timeout for shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// shutdown server gracefully
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("server shutdown error: %w", err)
+		}
+
+		utils.Info("Server stopped")
+		return nil
+	}
 }
 
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +189,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	// Special case: screencapture is streaming and has different signature
 	if req.Method == "screencapture" {
-		err = handleScreenCapture(w, req.Params)
+		err = handleScreenCapture(r, w, req.Params)
 		if err != nil {
 			log.Printf("Error in screen capture: %v", err)
 			sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
@@ -790,7 +826,7 @@ func newJsonRpcNotification(message string) map[string]interface{} {
 	}
 }
 
-func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
+func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {
 
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
 
@@ -870,7 +906,7 @@ func handleScreenCapture(w http.ResponseWriter, params json.RawMessage) error {
 		return fmt.Errorf("error starting agent: %w", err)
 	}
 
-	// Start screen capture and stream to the response writer
+	// start screen capture and stream to the response writer
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 		Format:     screenCaptureParams.Format,
 		Quality:    quality,
