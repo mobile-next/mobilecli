@@ -908,36 +908,18 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
 func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
-	// start tunnel if needed (iOS 17+)
+	// Start tunnel if needed (iOS 17+)
 	err := d.startTunnel()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
-	// set up port forwarding for H.264 stream first to check if broadcast is already running
-	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
-	}
-
-	streamForwarder := ios.NewPortForwarder(d.ID())
-	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
-	if err != nil {
-		return nil, fmt.Errorf("failed to forward stream port: %w", err)
-	}
-
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
-
-	// TODO: add a check here if the broadcast extension is already streaming. it's not that easy to implement because
-	// once we set up the port forwarding, the tcp socket is listening. but we will fail if we try to read from it (or write to it)
-
-	// broadcast is not running, we need to start it
+	// Broadcast is not running, we need to start it.
 	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
 
 	// find DeviceKit main app (not the xctrunner)
 	apps, err := d.ListApps()
 	if err != nil {
-		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
 
@@ -952,26 +934,38 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 
 	if devicekitMainAppBundleId == "" {
-		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
 	}
 
-	// set up port forwarding for HTTP server
+	// Find available local port for HTTP forwarding and bind immediately.
 	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
-		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
 	httpForwarder := ios.NewPortForwarder(d.ID())
 	err = httpForwarder.Forward(localHTTPPort, deviceKitHTTPPort)
 	if err != nil {
-		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
+	// Find available local port for stream forwarding after HTTP is bound.
+	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		_ = httpForwarder.Stop()
+		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+	}
 
-	// launch the main DeviceKit app
+	streamForwarder := ios.NewPortForwarder(d.ID())
+	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
+	if err != nil {
+		// clean up HTTP forwarder on failure
+		_ = httpForwarder.Stop()
+		return nil, fmt.Errorf("failed to forward stream port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
+
+	// Launch the main DeviceKit app
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
@@ -981,7 +975,11 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
-	// start WebDriverAgent to be able to tap on the screen
+	// Wait for the app to launch and show the broadcast picker
+	utils.Verbose("Waiting %v for DeviceKit app to launch...", deviceKitAppLaunchTimeout)
+	time.Sleep(deviceKitAppLaunchTimeout)
+
+	// Start WebDriverAgent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
 		OnProgress: func(message string) {
 			utils.Verbose(message)
