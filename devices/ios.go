@@ -889,18 +889,12 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
 	}
 
-	// Find available local ports for forwarding
+	// set up port forwarding for HTTP server
 	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
-	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
-	}
-
-	// Set up port forwarding for HTTP server
 	httpForwarder := ios.NewPortForwarder(d.ID())
 	err = httpForwarder.Forward(localHTTPPort, deviceKitHTTPPort)
 	if err != nil {
@@ -908,11 +902,17 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
 
-	// Set up port forwarding for H.264 stream
+	// set up port forwarding for H.264 stream (after HTTP is bound to avoid port collision)
+	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		_ = httpForwarder.Stop()
+		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+	}
+
 	streamForwarder := ios.NewPortForwarder(d.ID())
 	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
 	if err != nil {
-		// Clean up HTTP forwarder on failure
+		// clean up HTTP forwarder on failure
 		_ = httpForwarder.Stop()
 		return nil, fmt.Errorf("failed to forward stream port: %w", err)
 	}
