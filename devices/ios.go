@@ -859,6 +859,51 @@ type DeviceKitInfo struct {
 	StreamPort int `json:"streamPort"`
 }
 
+// clickStartBroadcastButton polls for the "Start Broadcast" button and taps it
+func (d *IOSDevice) clickStartBroadcastButton() error {
+	utils.Verbose("Waiting for Start Broadcast button to appear...")
+	var startBroadcastButton *ScreenElement
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for startBroadcastButton == nil {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for Start Broadcast button to appear")
+		case <-ticker.C:
+			elements, err := d.DumpSource()
+			if err != nil {
+				// continue trying on error
+				continue
+			}
+
+			// find the "Start Broadcast" button
+			for i := range elements {
+				if elements[i].Name != nil && *elements[i].Name == "Start Broadcast" {
+					startBroadcastButton = &elements[i]
+					break
+				}
+			}
+		}
+	}
+
+	utils.Verbose("Start Broadcast button found")
+
+	// calculate center coordinates
+	centerX := startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
+	centerY := startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
+	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
+
+	// tap the button
+	err := d.Tap(centerX, centerY)
+	if err != nil {
+		return fmt.Errorf("failed to tap Start Broadcast button: %w", err)
+	}
+
+	return nil
+}
+
 // StartDeviceKit starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
@@ -869,7 +914,10 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
-	// Find DeviceKit main app (not the xctrunner)
+	// Broadcast is not running, we need to start it.
+	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
+
+	// find DeviceKit main app (not the xctrunner)
 	apps, err := d.ListApps()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
@@ -877,7 +925,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 
 	var devicekitMainAppBundleId string
 	for _, app := range apps {
-		// Look for the main app, not the test runner
+		// look for the main app, not the test runner
 		if strings.HasPrefix(app.PackageName, "com.") && strings.Contains(app.PackageName, "devicekit-ios") && !strings.Contains(app.PackageName, "UITests") {
 			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
 			devicekitMainAppBundleId = app.PackageName
@@ -921,7 +969,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
-		// Clean up port forwarders on failure
+		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
@@ -938,50 +986,19 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		},
 	})
 	if err != nil {
-		// Clean up port forwarders on failure
+		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	// Get UI elements to find the "Start Broadcast" button
-	utils.Verbose("Finding Start Broadcast button...")
-	elements, err := d.DumpSource()
+	// find and tap the "Start Broadcast" button
+	err = d.clickStartBroadcastButton()
 	if err != nil {
-		// Clean up port forwarders on failure
+		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
-		return nil, fmt.Errorf("failed to dump UI: %w", err)
-	}
-
-	// Find the "Start Broadcast" button
-	var startBroadcastButton *ScreenElement
-	for i := range elements {
-		if elements[i].Name != nil && *elements[i].Name == "Start Broadcast" {
-			startBroadcastButton = &elements[i]
-			break
-		}
-	}
-
-	if startBroadcastButton == nil {
-		// Clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
-		return nil, fmt.Errorf("Start Broadcast button not found on screen")
-	}
-
-	// Calculate center coordinates
-	centerX := startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
-	centerY := startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
-	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
-
-	// Tap the button
-	err = d.Tap(centerX, centerY)
-	if err != nil {
-		// Clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
-		return nil, fmt.Errorf("failed to tap Start Broadcast button: %w", err)
+		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 
 	// Wait for the TCP server to start listening (takes about 5 seconds)
