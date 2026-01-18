@@ -42,15 +42,15 @@ func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duratio
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// check HTTP status code
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d", endpoint, resp.StatusCode)
-	}
-
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	// check HTTP status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d, body: %s", endpoint, resp.StatusCode, string(body))
 	}
 
 	// Parse the JSON response
@@ -90,13 +90,20 @@ func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// check HTTP status code
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d", endpoint, resp.StatusCode)
+	// read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
+	// check HTTP status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d, body: %s", endpoint, resp.StatusCode, string(body))
+	}
+
+	// Parse the JSON response
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 
@@ -121,13 +128,20 @@ func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]interface{}, err
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// check HTTP status code
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d", endpoint, resp.StatusCode)
+	// read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
+	// check HTTP status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("endpoint %s returned non-2xx status: %d, body: %s", endpoint, resp.StatusCode, string(body))
+	}
+
+	// Parse the JSON response
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
 

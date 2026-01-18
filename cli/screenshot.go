@@ -58,7 +58,7 @@ var screenshotCmd = &cobra.Command{
 var screencaptureCmd = &cobra.Command{
 	Use:   "screencapture",
 	Short: "Stream screen capture from a connected device",
-	Long:  `Streams screen capture from a specified device to stdout. Supports MJPEG and AVC formats (Android only for AVC).`,
+	Long:  `Streams screen capture from a specified device to stdout. Supports MJPEG (all devices) and AVC (Android and iOS real devices).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validate format
 		if screencaptureFormat != "mjpeg" && screencaptureFormat != "avc" {
