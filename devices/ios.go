@@ -859,12 +859,54 @@ type DeviceKitInfo struct {
 	StreamPort int `json:"streamPort"`
 }
 
-// clickStartBroadcastButton polls for the "Start Broadcast" button and taps it
+// clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
+// then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
-	utils.Verbose("Waiting for Start Broadcast button to appear...")
-	var startBroadcastButton *ScreenElement
+	// first, find and tap "BroadcastUploadExtension"
+	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
+	var broadcastExtensionButton *ScreenElement
 	timeout := time.After(10 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for broadcastExtensionButton == nil {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear")
+		case <-ticker.C:
+			elements, err := d.DumpSource()
+			if err != nil {
+				// continue trying on error
+				continue
+			}
+
+			// find the "BroadcastUploadExtension" button
+			for i := range elements {
+				if elements[i].Name != nil && *elements[i].Name == "BroadcastUploadExtension" {
+					broadcastExtensionButton = &elements[i]
+					break
+				}
+			}
+		}
+	}
+
+	utils.Verbose("BroadcastUploadExtension button found")
+
+	// calculate center coordinates and tap
+	centerX := broadcastExtensionButton.Rect.X + broadcastExtensionButton.Rect.Width/2
+	centerY := broadcastExtensionButton.Rect.Y + broadcastExtensionButton.Rect.Height/2
+	utils.Verbose("Tapping BroadcastUploadExtension button at (%d, %d)", centerX, centerY)
+
+	err := d.Tap(centerX, centerY)
+	if err != nil {
+		return fmt.Errorf("failed to tap BroadcastUploadExtension button: %w", err)
+	}
+
+	// now wait for "Start Broadcast" button to appear
+	utils.Verbose("Waiting for Start Broadcast button to appear...")
+	var startBroadcastButton *ScreenElement
+	timeout = time.After(10 * time.Second)
+	ticker = time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for startBroadcastButton == nil {
@@ -890,13 +932,12 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 
 	utils.Verbose("Start Broadcast button found")
 
-	// calculate center coordinates
-	centerX := startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
-	centerY := startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
+	// calculate center coordinates and tap
+	centerX = startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
+	centerY = startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
 	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
 
-	// tap the button
-	err := d.Tap(centerX, centerY)
+	err = d.Tap(centerX, centerY)
 	if err != nil {
 		return fmt.Errorf("failed to tap Start Broadcast button: %w", err)
 	}
