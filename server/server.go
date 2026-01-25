@@ -45,6 +45,11 @@ const (
 	IdleTimeout  = 120 * time.Second
 )
 
+const (
+	ScreenCaptureMinBitrate = 100000
+	ScreenCaptureMaxBitrate = 8000000
+)
+
 var okResponse = map[string]interface{}{"status": "ok"}
 
 type JSONRPCRequest struct {
@@ -293,9 +298,16 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 }
 
 type ScreenCaptureSetConfigurationParams struct {
-	DeviceID  string `json:"device_id"`
+	DeviceID  string `json:"deviceId"`
 	Bitrate   int    `json:"bitrate"`
-	FrameRate *int   `json:"frame_rate,omitempty"`
+	FrameRate *int   `json:"frameRate,omitempty"`
+}
+
+type ScreenCaptureSetConfigurationResponse struct {
+	Success   bool   `json:"success"`
+	DeviceID  string `json:"deviceId"`
+	Bitrate   int    `json:"bitrate"`
+	FrameRate *int   `json:"frameRate,omitempty"`
 }
 
 func handleScreenCaptureSetConfiguration(params json.RawMessage) (interface{}, error) {
@@ -305,8 +317,8 @@ func handleScreenCaptureSetConfiguration(params json.RawMessage) (interface{}, e
 	}
 
 	// Validate bitrate range (100 kbps to 8 Mbps)
-	if req.Bitrate < 100000 || req.Bitrate > 8000000 {
-		return nil, fmt.Errorf("bitrate must be between 100000 and 8000000 bps")
+	if req.Bitrate < ScreenCaptureMinBitrate || req.Bitrate > ScreenCaptureMaxBitrate {
+		return nil, fmt.Errorf("bitrate must be between %d and %d bps", ScreenCaptureMinBitrate, ScreenCaptureMaxBitrate)
 	}
 
 	// Validate frame rate if provided
@@ -337,10 +349,11 @@ func handleScreenCaptureSetConfiguration(params json.RawMessage) (interface{}, e
 		return nil, fmt.Errorf("failed to update configuration: %w", err)
 	}
 
-	return map[string]interface{}{
-		"success":   true,
-		"bitrate":   req.Bitrate,
-		"frameRate": req.FrameRate,
+	return ScreenCaptureSetConfigurationResponse{
+		Success:   true,
+		DeviceID:  req.DeviceID,
+		Bitrate:   req.Bitrate,
+		FrameRate: req.FrameRate,
 	}, nil
 }
 
