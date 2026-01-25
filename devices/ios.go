@@ -936,6 +936,24 @@ type DeviceKitInfo struct {
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
 // then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
+	// first dump: handle "Press to Start Broadcasting" screen if present
+	firstElements, err := d.DumpSource()
+	if err == nil {
+		if hasText(firstElements, "Press to Start Broadcasting") {
+			utils.Verbose("Found 'Press to Start Broadcasting' screen; tapping the only button.")
+			buttons := filterButtons(firstElements)
+			if len(buttons) != 1 {
+				return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
+			}
+
+			centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
+			centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+			if err = d.Tap(centerX, centerY); err != nil {
+				return fmt.Errorf("failed to tap broadcast button: %w", err)
+			}
+		}
+	}
+
 	// first, find and tap "BroadcastUploadExtension"
 	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
 	var broadcastExtensionButton *ScreenElement
@@ -971,7 +989,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	centerY := broadcastExtensionButton.Rect.Y + broadcastExtensionButton.Rect.Height/2
 	utils.Verbose("Tapping BroadcastUploadExtension button at (%d, %d)", centerX, centerY)
 
-	err := d.Tap(centerX, centerY)
+	err = d.Tap(centerX, centerY)
 	if err != nil {
 		return fmt.Errorf("failed to tap BroadcastUploadExtension button: %w", err)
 	}
@@ -1017,6 +1035,34 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	}
 
 	return nil
+}
+
+func hasText(elements []ScreenElement, text string) bool {
+	for i := range elements {
+		if elements[i].Label != nil && *elements[i].Label == text {
+			return true
+		}
+		if elements[i].Name != nil && *elements[i].Name == text {
+			return true
+		}
+		if elements[i].Value != nil && *elements[i].Value == text {
+			return true
+		}
+		if elements[i].Text != nil && *elements[i].Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func filterButtons(elements []ScreenElement) []ScreenElement {
+	var buttons []ScreenElement
+	for i := range elements {
+		if elements[i].Type == "Button" {
+			buttons = append(buttons, elements[i])
+		}
+	}
+	return buttons
 }
 
 // StartDeviceKit starts the devicekit-ios XCUITest which provides:
