@@ -99,6 +99,9 @@ func StartServer(addr string, enableCORS bool) error {
 
 	mux.HandleFunc("/", sendBanner)
 	mux.HandleFunc("/rpc", handleJSONRPC)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		handleWebSocket(w, r, enableCORS)
+	})
 
 	// if host is missing, default to localhost
 	if !strings.Contains(addr, ":") {
