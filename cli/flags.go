@@ -13,6 +13,8 @@ var (
 
 	// for screencapture command
 	screencaptureFormat string
+	// for audiocapture command
+	audiocaptureFormat string
 
 	// for devices command
 	platform   string

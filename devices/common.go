@@ -28,6 +28,13 @@ type ScreenCaptureConfig struct {
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
 
+// AudioCaptureConfig contains configuration for audio capture operations
+type AudioCaptureConfig struct {
+	Format     string
+	OnProgress func(message string) // optional progress callback
+	OnData     func([]byte) bool    // data callback - return false to stop
+}
+
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {
 	OnProgress func(message string) // optional progress callback
@@ -65,6 +72,7 @@ type ControllableDevice interface {
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
+	StartAudioCapture(config AudioCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)
 	DumpSourceRaw() (interface{}, error)
 	GetOrientation() (string, error)

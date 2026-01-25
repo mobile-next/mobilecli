@@ -628,7 +628,7 @@ func isAscii(text string) bool {
 // escapeShellText escapes shell special characters
 func escapeShellText(text string) string {
 	// escape all shell special characters that could be used for injection
-	specialChars := `\'"`+ "`" + `
+	specialChars := `\'"` + "`" + `
 |&;()<>{}[]$*?`
 	result := ""
 	for _, char := range text {
@@ -847,6 +847,10 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	_ = cmd.Process.Kill()
 	return nil
+}
+
+func (d *AndroidDevice) StartAudioCapture(config AudioCaptureConfig) error {
+	return fmt.Errorf("audio capture is only supported on real iOS devices")
 }
 
 func (d *AndroidDevice) installPackage(apkPath string) error {

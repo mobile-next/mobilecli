@@ -32,6 +32,7 @@ const (
 	portRangeEnd              = 8299
 	deviceKitHTTPPort         = 12004 // device-side HTTP server port
 	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
+	deviceKitAudioPort        = 12006 // device-side Opus audio TCP stream port
 	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
 )
@@ -775,6 +776,78 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
+func (d IOSDevice) StartAudioCapture(config AudioCaptureConfig) error {
+	if config.Format != "opus+rtp" && config.Format != "opus+ogg" {
+		return fmt.Errorf("format must be 'opus+rtp' or 'opus+ogg' for audio capture")
+	}
+
+	if d.Platform() != "ios" || d.DeviceType() != "real" {
+		return fmt.Errorf("audio capture is only supported on real iOS devices")
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Starting port forwarding for Opus audio stream")
+	}
+
+	localAudioPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		return fmt.Errorf("failed to find available port for audio: %w", err)
+	}
+
+	audioForwarder := ios.NewPortForwarder(d.ID())
+	err = audioForwarder.Forward(localAudioPort, deviceKitAudioPort)
+	if err != nil {
+		return fmt.Errorf("failed to forward audio port: %w", err)
+	}
+	defer func() { _ = audioForwarder.Stop() }()
+
+	if config.OnProgress != nil {
+		config.OnProgress(fmt.Sprintf("Connecting to Opus stream on localhost:%d", localAudioPort))
+	}
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", localAudioPort))
+	if err != nil {
+		return fmt.Errorf("failed to connect to audio stream port: %w", err)
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	done := make(chan error, 1)
+	go func() {
+		defer conn.Close()
+		buffer := make([]byte, 65536)
+		for {
+			n, err := conn.Read(buffer)
+			if err != nil {
+				if err != io.EOF {
+					done <- fmt.Errorf("error reading from audio stream: %w", err)
+				} else {
+					done <- nil
+				}
+				return
+			}
+
+			if n > 0 {
+				if !config.OnData(buffer[:n]) {
+					done <- nil
+					return
+				}
+			}
+		}
+	}()
+
+	select {
+	case <-sigChan:
+		conn.Close()
+		utils.Verbose("audio stream closed by user")
+		return nil
+	case err := <-done:
+		utils.Verbose("audio stream ended")
+		return err
+	}
+}
+
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.wdaClient.GetSourceElements()
 }
@@ -857,6 +930,7 @@ func (d IOSDevice) SetOrientation(orientation string) error {
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`
 	StreamPort int `json:"streamPort"`
+	AudioPort  int `json:"audioPort"`
 }
 
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
@@ -1052,6 +1126,23 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
 
+	// Find available local port for audio forwarding.
+	localAudioPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to find available port for audio: %w", err)
+	}
+
+	audioForwarder := ios.NewPortForwarder(d.ID())
+	err = audioForwarder.Forward(localAudioPort, deviceKitAudioPort)
+	if err != nil {
+		_ = httpForwarder.Stop()
+		_ = streamForwarder.Stop()
+		return nil, fmt.Errorf("failed to forward audio port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (Opus stream)", localAudioPort, deviceKitAudioPort)
+
 	// Launch the main DeviceKit app
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	err = d.LaunchApp(devicekitMainAppBundleId)
@@ -1059,6 +1150,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
+		_ = audioForwarder.Stop()
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
@@ -1076,6 +1168,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
+		_ = audioForwarder.Stop()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
@@ -1085,6 +1178,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		// clean up port forwarders on failure
 		_ = httpForwarder.Stop()
 		_ = streamForwarder.Stop()
+		_ = audioForwarder.Stop()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 
@@ -1097,6 +1191,7 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	return &DeviceKitInfo{
 		HTTPPort:   localHTTPPort,
 		StreamPort: localStreamPort,
+		AudioPort:  localAudioPort,
 	}, nil
 }
 
