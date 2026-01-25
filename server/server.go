@@ -292,6 +292,58 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	return nil, fmt.Errorf("unexpected response format")
 }
 
+type ScreenCaptureSetConfigurationParams struct {
+	DeviceID  string `json:"device_id"`
+	Bitrate   int    `json:"bitrate"`
+	FrameRate *int   `json:"frame_rate,omitempty"`
+}
+
+func handleScreenCaptureSetConfiguration(params json.RawMessage) (interface{}, error) {
+	var req ScreenCaptureSetConfigurationParams
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	// Validate bitrate range (100 kbps to 8 Mbps)
+	if req.Bitrate < 100000 || req.Bitrate > 8000000 {
+		return nil, fmt.Errorf("bitrate must be between 100000 and 8000000 bps")
+	}
+
+	// Validate frame rate if provided
+	if req.FrameRate != nil {
+		if *req.FrameRate < 1 || *req.FrameRate > 60 {
+			return nil, fmt.Errorf("frame rate must be between 1 and 60")
+		}
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	// Only iOS real devices support this
+	if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+		return nil, fmt.Errorf("screencapture.setConfiguration only supported on real iOS devices")
+	}
+
+	iosDevice, ok := targetDevice.(*devices.IOSDevice)
+	if !ok {
+		return nil, fmt.Errorf("device is not an iOS device")
+	}
+
+	// Send to device over TCP socket
+	err = iosDevice.SendScreenCaptureConfiguration(req.Bitrate, req.FrameRate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update configuration: %w", err)
+	}
+
+	return map[string]interface{}{
+		"success":   true,
+		"bitrate":   req.Bitrate,
+		"frameRate": req.FrameRate,
+	}, nil
+}
+
 type IoTapParams struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
