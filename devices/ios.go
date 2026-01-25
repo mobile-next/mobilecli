@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,9 +48,11 @@ type IOSDevice struct {
 	DeviceName string `json:"DeviceName"`
 	OSVersion  string `json:"Version"`
 
-	tunnelManager *ios.TunnelManager
-	wdaClient     *wda.WdaClient
-	mjpegClient   *mjpeg.WdaMjpegClient
+	tunnelManager         *ios.TunnelManager
+	wdaClient             *wda.WdaClient
+	mjpegClient           *mjpeg.WdaMjpegClient
+	screenCaptureConn     net.Conn
+	screenCaptureConnLock sync.Mutex
 }
 
 func (d IOSDevice) ID() string {
@@ -713,6 +718,11 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			return fmt.Errorf("failed to connect to stream port: %w", err)
 		}
 
+		// store connection for configuration updates
+		d.screenCaptureConnLock.Lock()
+		d.screenCaptureConn = conn
+		d.screenCaptureConnLock.Unlock()
+
 		// setup signal handling for Ctrl+C
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -722,7 +732,12 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 		// stream data in a goroutine
 		go func() {
-			defer conn.Close()
+			defer func() {
+				conn.Close()
+				d.screenCaptureConnLock.Lock()
+				d.screenCaptureConn = nil
+				d.screenCaptureConnLock.Unlock()
+			}()
 			buffer := make([]byte, 65536)
 			for {
 				n, err := conn.Read(buffer)
@@ -773,6 +788,68 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
+}
+
+// SendScreenCaptureConfiguration sends encoder configuration updates to the device over the TCP stream.
+//
+// This method sends a length-prefixed JSON-RPC message to update the H.264 encoder
+// bitrate and optionally frame rate dynamically without restarting the stream.
+//
+// Parameters:
+//   - bitrate: Target bitrate in bits per second (100000 - 8000000)
+//   - frameRate: Optional target frame rate (nil to keep current, 1-60 if provided)
+//
+// The message format is:
+//   [4-byte big-endian length][JSON-RPC payload]
+//
+// Returns an error if:
+//   - Screen capture is not active
+//   - JSON marshaling fails
+//   - TCP write fails
+func (d *IOSDevice) SendScreenCaptureConfiguration(bitrate int, frameRate *int) error {
+	// Check if screen capture is active (TCP connection exists)
+	d.screenCaptureConnLock.Lock()
+	conn := d.screenCaptureConn
+	d.screenCaptureConnLock.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("screen capture not active, start screencapture first")
+	}
+
+	// Build JSON-RPC request
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "screencapture.setConfiguration",
+		"params": map[string]interface{}{
+			"bitrate":   bitrate,
+			"frameRate": frameRate,
+		},
+		"id": 1,
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Prepend 4-byte length (big-endian)
+	length := uint32(len(jsonData))
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, length)
+
+	// Send: [4-byte length][JSON payload]
+	message := append(lengthBytes, jsonData...)
+
+	d.screenCaptureConnLock.Lock()
+	_, err = conn.Write(message)
+	d.screenCaptureConnLock.Unlock()
+
+	if err != nil {
+		return fmt.Errorf("failed to send configuration: %w", err)
+	}
+
+	utils.Verbose("Sent screen capture configuration: bitrate=%d bps, frameRate=%v", bitrate, frameRate)
+	return nil
 }
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {

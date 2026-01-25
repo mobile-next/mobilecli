@@ -45,6 +45,11 @@ const (
 	IdleTimeout  = 120 * time.Second
 )
 
+const (
+	ScreenCaptureMinBitrate = 100000
+	ScreenCaptureMaxBitrate = 8000000
+)
+
 var okResponse = map[string]interface{}{"status": "ok"}
 
 type JSONRPCRequest struct {
@@ -290,6 +295,66 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format")
+}
+
+type ScreenCaptureSetConfigurationParams struct {
+	DeviceID  string `json:"deviceId"`
+	Bitrate   int    `json:"bitrate"`
+	FrameRate *int   `json:"frameRate,omitempty"`
+}
+
+type ScreenCaptureSetConfigurationResponse struct {
+	Success   bool   `json:"success"`
+	DeviceID  string `json:"deviceId"`
+	Bitrate   int    `json:"bitrate"`
+	FrameRate *int   `json:"frameRate,omitempty"`
+}
+
+func handleScreenCaptureSetConfiguration(params json.RawMessage) (interface{}, error) {
+	var req ScreenCaptureSetConfigurationParams
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	// Validate bitrate range (100 kbps to 8 Mbps)
+	if req.Bitrate < ScreenCaptureMinBitrate || req.Bitrate > ScreenCaptureMaxBitrate {
+		return nil, fmt.Errorf("bitrate must be between %d and %d bps", ScreenCaptureMinBitrate, ScreenCaptureMaxBitrate)
+	}
+
+	// Validate frame rate if provided
+	if req.FrameRate != nil {
+		if *req.FrameRate < 1 || *req.FrameRate > 60 {
+			return nil, fmt.Errorf("frame rate must be between 1 and 60")
+		}
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	// Only iOS real devices support this
+	if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+		return nil, fmt.Errorf("screencapture.setConfiguration only supported on real iOS devices")
+	}
+
+	iosDevice, ok := targetDevice.(*devices.IOSDevice)
+	if !ok {
+		return nil, fmt.Errorf("device is not an iOS device")
+	}
+
+	// Send to device over TCP socket
+	err = iosDevice.SendScreenCaptureConfiguration(req.Bitrate, req.FrameRate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update configuration: %w", err)
+	}
+
+	return ScreenCaptureSetConfigurationResponse{
+		Success:   true,
+		DeviceID:  req.DeviceID,
+		Bitrate:   req.Bitrate,
+		FrameRate: req.FrameRate,
+	}, nil
 }
 
 type IoTapParams struct {
