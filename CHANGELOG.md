@@ -1,3 +1,11 @@
+## [0.0.51](https://github.com/mobile-next/mobilecli/releases/tag/0.0.51) (2026-01-25)
+
+* General: Plenty of code cleanups and refactoring for smaller and more maintained code ([#144](https://github.com/mobile-next/mobilecli/pull/144))
+* General: Merged the port ranges used for wda and wda's mjpeg ([#147](https://github.com/mobile-next/mobilecli/pull/147))
+* General: Graceful server shutdown on sigint/sigterm ([#151](https://github.com/mobile-next/mobilecli/pull/151))
+* iOS: Support AVC screencapture on real iOS devices via `devicekit-ios` ([#145](https://github.com/mobile-next/mobilecli/pull/145))
+* iOS: Include TextField/SearchField/Switch/Button elements in dump UI results ([#155](https://github.com/mobile-next/mobilecli/pull/155))
+
 ## [0.0.50](https://github.com/mobile-next/mobilecli/releases/tag/0.0.50) (2026-01-13)
 
 * General: Add apps_launch and dump_ui methods to jsonrpc ([5163c8a](https://github.com/mobile-next/mobilecli/commit/5163c8a))
@@ -212,5 +220,4 @@
 * iOS: support multiple custom gestures to be passed to device ([b7ca418](https://github.com/mobile-next/mobilecli/commit/b7ca418c8b8e31c5c2776a231bfcdae6dbed3b4c))
 * Simulator: automatically donwload webdriveragent for simulator ([0dbe361](https://github.com/mobile-next/mobilecli/commit/0dbe3612ef5758523028433f1e168ddac98544e0))
 * Simulator: automatically install webdriveragent on simulator if needed ([0dbe361](https://github.com/mobile-next/mobilecli/commit/0dbe3612ef5758523028433f1e168ddac98544e0))
-
 

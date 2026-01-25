@@ -50,7 +50,9 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 
 	if typeAccepted {
 		if source.IsVisible == "1" && isVisible(source.Rect) {
-			if source.Label != nil || source.Name != nil || source.RawIdentifier != nil {
+			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil
+			alwaysInclude := source.Type == "TextField" || source.Type == "Button" || source.Type == "Switch" || source.Type == "SearchField"
+			if hasIdentifier || alwaysInclude {
 				output = append(output, types.ScreenElement{
 					Type:       source.Type,
 					Label:      source.Label,
@@ -127,4 +129,3 @@ func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
 	elements := filterSourceElements(sourceTree)
 	return elements, nil
 }
-
