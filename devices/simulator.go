@@ -723,6 +723,10 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
+func (s *SimulatorDevice) StartAudioCapture(config AudioCaptureConfig) error {
+	return fmt.Errorf("audio capture is only supported on real iOS devices")
+}
+
 type ProcessInfo struct {
 	PID     int
 	Command string

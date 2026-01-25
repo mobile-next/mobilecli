@@ -36,6 +36,7 @@ const (
 	errMsgMethodRequired  = "'method' is required"
 	errMsgTextOnly        = "only text messages accepted for requests"
 	errMsgScreencapture   = "screencapture not supported over WebSocket, use HTTP /rpc endpoint"
+	errMsgAudiocapture    = "audiocapture not supported over WebSocket, use HTTP /rpc endpoint"
 	errTitleParseError    = "Parse error"
 	errTitleInvalidReq    = "Invalid Request"
 	errTitleMethodNotSupp = "Method not supported"
@@ -185,6 +186,14 @@ func validateJSONRPCRequest(req JSONRPCRequest) *validationError {
 			code:    ErrCodeMethodNotFound,
 			message: errTitleMethodNotSupp,
 			data:    errMsgScreencapture,
+		}
+	}
+
+	if req.Method == "audiocapture" {
+		return &validationError{
+			code:    ErrCodeMethodNotFound,
+			message: errTitleMethodNotSupp,
+			data:    errMsgAudiocapture,
 		}
 	}
 

@@ -198,6 +198,16 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Special case: audiocapture is streaming and has different signature
+	if req.Method == "audiocapture" {
+		err = handleAudioCapture(r, w, req.Params)
+		if err != nil {
+			log.Printf("Error in audio capture: %v", err)
+			sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
+		}
+		return
+	}
+
 	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
 	if req.Method == "device_boot" {
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
@@ -930,6 +940,80 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 
 	if err != nil {
 		return fmt.Errorf("error starting screen capture: %v", err)
+	}
+
+	return nil
+}
+
+func handleAudioCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+
+	var audioCaptureParams commands.AudioCaptureRequest
+	if err := json.Unmarshal(params, &audioCaptureParams); err != nil {
+		return fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(audioCaptureParams.DeviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
+	}
+
+	if audioCaptureParams.Format == "" {
+		audioCaptureParams.Format = "opus+rtp"
+	}
+
+	if audioCaptureParams.Format != "opus+rtp" && audioCaptureParams.Format != "opus+ogg" {
+		return fmt.Errorf("format must be 'opus+rtp' or 'opus+ogg' for audio capture")
+	}
+
+	if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+		return fmt.Errorf("audio capture is only supported on real iOS devices")
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	var parser *utils.OpusFrameParser
+	var oggWriter *utils.OggOpusWriter
+	if audioCaptureParams.Format == "opus+ogg" {
+		var err error
+		oggWriter, err = utils.NewOggOpusWriter(w)
+		if err != nil {
+			return fmt.Errorf("failed to initialize ogg writer: %v", err)
+		}
+		parser = utils.NewOpusFrameParser(func(packet []byte) error {
+			return oggWriter.WritePacket(packet)
+		})
+	}
+
+	err = targetDevice.StartAudioCapture(devices.AudioCaptureConfig{
+		Format: audioCaptureParams.Format,
+		OnData: func(data []byte) bool {
+			if parser != nil {
+				if err := parser.Write(data); err != nil {
+					fmt.Println("Error writing Ogg Opus data:", err)
+					return false
+				}
+			} else {
+				_, writeErr := w.Write(data)
+				if writeErr != nil {
+					fmt.Println("Error writing data:", writeErr)
+					return false
+				}
+			}
+
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+
+			return true
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("error starting audio capture: %v", err)
 	}
 
 	return nil
