@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
