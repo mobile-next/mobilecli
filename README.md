@@ -77,6 +77,24 @@ Xcode is required. Make sure you have it installed with the runtimes relevant fo
 brew install --cask android-platform-tools
 ```
 
+## WebSocket Support 🔌
+
+mobilecli includes a WebSocket server that allows multiple requests over a single connection using the same JSON-RPC 2.0 format as the HTTP API.
+
+```bash
+# Start the server (default port 12000)
+mobilecli server start
+
+# Connect and send requests using wscat
+wscat -c ws://localhost:12000/ws
+> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+< {"jsonrpc":"2.0","id":1,"result":[...]}
+> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+< {"jsonrpc":"2.0","id":2,"result":{...}}
+```
+
+**Note**: `screencapture` is not supported over WebSocket - use the HTTP `/rpc` endpoint for video streaming.
+
 ## Usage
 
 ### List Connected Devices 🔍
