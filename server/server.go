@@ -146,6 +146,9 @@ func StartServer(addr string, enableCORS bool) error {
 	case sig := <-sigChan:
 		utils.Info("Received signal %v, shutting down gracefully...", sig)
 
+		// cleanup all devices first
+		devices.CleanupAllDevices()
+
 		// create context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

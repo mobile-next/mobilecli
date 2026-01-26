@@ -96,6 +96,10 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
+
+	// register device for cleanup tracking
+	RegisterDevice(&device)
+
 	return device, nil
 }
 
@@ -216,6 +220,59 @@ func (d *IOSDevice) StartTunnelWithCallback(onProcessDied func(error)) error {
 
 func (d *IOSDevice) stopTunnel() error {
 	return d.tunnelManager.StopTunnel()
+}
+
+// Cleanup gracefully cleans up all device resources
+func (d *IOSDevice) Cleanup() error {
+	// check if there's anything to clean up
+	hasWda := d.wdaCancel != nil
+	hasWdaPort := d.portForwarder != nil && d.portForwarder.IsRunning()
+	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
+	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
+
+	if !hasWda && !hasWdaPort && !hasMjpegPort && !hasTunnel {
+		return nil
+	}
+
+	utils.Verbose("Starting cleanup for device %s (%s)", d.Udid, d.DeviceName)
+	var errs []error
+
+	// cancel WDA context if running
+	if hasWda {
+		utils.Verbose("Canceling WebDriverAgent for device %s", d.Udid)
+		d.wdaCancel()
+		d.wdaCancel = nil
+	}
+
+	// stop WDA port forwarder
+	if hasWdaPort {
+		utils.Verbose("Stopping WDA port forwarder for device %s", d.Udid)
+		if err := d.portForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop WDA port forwarder: %w", err))
+		}
+	}
+
+	// stop mjpeg port forwarder
+	if hasMjpegPort {
+		utils.Verbose("Stopping mjpeg port forwarder for device %s", d.Udid)
+		if err := d.portForwarderMjpeg.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop mjpeg port forwarder: %w", err))
+		}
+	}
+
+	// stop tunnel manager if running
+	if hasTunnel {
+		utils.Verbose("Stopping tunnel manager for device %s", d.Udid)
+		if err := d.tunnelManager.StopTunnel(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop tunnel: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("cleanup errors: %v", errs)
+	}
+
+	return nil
 }
 
 func (d *IOSDevice) requiresTunnel() bool {
