@@ -12,9 +12,9 @@ import (
 )
 
 func main() {
-	// create device registry for cleanup tracking
-	registry := devices.NewDeviceRegistry()
-	commands.SetRegistry(registry)
+	// create shutdown hook for cleanup tracking
+	hook := devices.NewShutdownHook()
+	commands.SetShutdownHook(hook)
 
 	// setup signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -30,7 +30,7 @@ func main() {
 	select {
 	case <-sigChan:
 		// cleanup resources on signal
-		registry.CleanupAll()
+		hook.Shutdown()
 		os.Exit(0)
 	case err := <-done:
 		// normal exit: let WDA and other resources persist

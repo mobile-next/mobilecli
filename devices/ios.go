@@ -382,9 +382,10 @@ func (d *IOSDevice) startTunnel() error {
 }
 
 func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
-	// register device for cleanup tracking
-	if config.Registry != nil {
-		config.Registry.Register(d)
+	// register cleanup hook for this device
+	if config.Hook != nil {
+		hookName := fmt.Sprintf("ios-device-%s", d.Udid)
+		config.Hook.Register(hookName, d.Cleanup)
 	}
 
 	// starting an agent on a real device requires quite a few things to happen in the right order:
@@ -1152,10 +1153,11 @@ func filterButtons(elements []ScreenElement) []ScreenElement {
 // StartDeviceKit starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
-func (d *IOSDevice) StartDeviceKit(registry *DeviceRegistry) (*DeviceKitInfo, error) {
-	// register device for cleanup tracking
-	if registry != nil {
-		registry.Register(d)
+func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
+	// register cleanup hook for this device
+	if hook != nil {
+		hookName := fmt.Sprintf("ios-devicekit-%s", d.Udid)
+		hook.Register(hookName, d.Cleanup)
 	}
 
 	// Start tunnel if needed (iOS 17+)

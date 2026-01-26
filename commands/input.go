@@ -62,7 +62,7 @@ func TapCommand(req TapRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
@@ -90,7 +90,7 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
@@ -118,7 +118,7 @@ func TextCommand(req TextRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
@@ -146,7 +146,7 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
@@ -174,7 +174,7 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
@@ -213,7 +213,7 @@ func SwipeCommand(req SwipeRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))

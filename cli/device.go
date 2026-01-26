@@ -49,7 +49,7 @@ var deviceInfoCmd = &cobra.Command{
 
 		// Start agent
 		err = targetDevice.StartAgent(devices.StartAgentConfig{
-			Registry: commands.GetRegistry(),
+			Hook: commands.GetShutdownHook(),
 		})
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))

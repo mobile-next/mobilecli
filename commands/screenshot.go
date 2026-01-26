@@ -55,7 +55,7 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 
 	// Start agent if needed
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))

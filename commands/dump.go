@@ -27,7 +27,7 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 
 	// Start agent if needed
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err))

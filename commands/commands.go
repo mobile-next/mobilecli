@@ -33,24 +33,24 @@ func NewErrorResponse(err error) *CommandResponse {
 // DeviceCache provides a simple cache for devices to avoid repeated lookups
 var deviceCache = make(map[string]devices.ControllableDevice)
 
-// deviceRegistry holds the registry for device cleanup tracking.
-// It is set once at application startup via SetRegistry and used by commands
-// to register devices for graceful shutdown cleanup.
-var deviceRegistry *devices.DeviceRegistry
+// shutdownHook holds the shutdown hook for resource cleanup tracking.
+// It is set once at application startup via SetShutdownHook and used by commands
+// to register cleanup functions for graceful shutdown.
+var shutdownHook *devices.ShutdownHook
 
-// SetRegistry sets the global device registry for cleanup tracking.
+// SetShutdownHook sets the global shutdown hook for resource cleanup.
 // This should be called once at application startup (main.go or server.go).
-// The registry is used to track active devices and clean up their resources
+// The hook is used to register cleanup functions that will be called
 // during graceful shutdown (SIGINT/SIGTERM).
-func SetRegistry(registry *devices.DeviceRegistry) {
-	deviceRegistry = registry
+func SetShutdownHook(hook *devices.ShutdownHook) {
+	shutdownHook = hook
 }
 
-// GetRegistry returns the current device registry.
-// Returns nil if SetRegistry has not been called yet.
-// Commands use this to register devices when StartAgent is called.
-func GetRegistry() *devices.DeviceRegistry {
-	return deviceRegistry
+// GetShutdownHook returns the current shutdown hook.
+// Returns nil if SetShutdownHook has not been called yet.
+// Commands use this to register cleanup functions.
+func GetShutdownHook() *devices.ShutdownHook {
+	return shutdownHook
 }
 
 // FindDevice finds a device by ID, using cache when possible

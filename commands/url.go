@@ -24,7 +24,7 @@ func URLCommand(req URLRequest) *CommandResponse {
 	}
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Registry: GetRegistry(),
+		Hook: GetShutdownHook(),
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
