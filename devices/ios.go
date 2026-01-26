@@ -36,20 +36,17 @@ const (
 	deviceKitBroadcastTimeout = 5 * time.Second
 )
 
-var (
-	portForwarder      *ios.PortForwarder
-	portForwarderMjpeg *ios.PortForwarder
-)
-
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
 	OSVersion  string `json:"Version"`
 
-	tunnelManager *ios.TunnelManager
-	wdaClient     *wda.WdaClient
-	mjpegClient   *mjpeg.WdaMjpegClient
-	wdaCancel     context.CancelFunc
+	tunnelManager      *ios.TunnelManager
+	wdaClient          *wda.WdaClient
+	mjpegClient        *mjpeg.WdaMjpegClient
+	wdaCancel          context.CancelFunc
+	portForwarder      *ios.PortForwarder
+	portForwarderMjpeg *ios.PortForwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -338,8 +335,8 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return fmt.Errorf("failed to find available port: %w", err)
 		}
 
-		portForwarder = ios.NewPortForwarder(d.ID())
-		err = portForwarder.Forward(port, 8100)
+		d.portForwarder = ios.NewPortForwarder(d.ID())
+		err = d.portForwarder.Forward(port, 8100)
 		if err != nil {
 			return fmt.Errorf("failed to forward port: %w", err)
 		}
@@ -379,24 +376,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			_ = d.wdaClient.PressButton("HOME")
 			time.Sleep(1 * time.Second)
 		}
-	}
-
-	// set up mjpeg port forwarding if not already running
-	if portForwarderMjpeg == nil || !portForwarderMjpeg.IsRunning() {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
-		}
-
-		portForwarderMjpeg = ios.NewPortForwarder(d.ID())
-		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
-		}
-
-		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
-		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
 	}
 
 	return nil
@@ -701,7 +680,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit
 	if config.Format == "avc" {
 		if config.OnProgress != nil {
@@ -769,6 +748,24 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	// handle mjpeg format via WDA
+	// set up mjpeg port forwarding if not already running
+	if d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning() {
+		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
+		}
+
+		d.portForwarderMjpeg = ios.NewPortForwarder(d.ID())
+		err = d.portForwarderMjpeg.Forward(portMjpeg, 9100)
+		if err != nil {
+			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
+		}
+
+		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
+		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
+		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
+	}
+
 	// configure mjpeg framerate
 	fps := config.FPS
 	if fps == 0 {
