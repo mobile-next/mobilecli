@@ -386,19 +386,30 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return err
 		}
 
-		// check that forward proxy is running
-		port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port: %w", err)
-		}
+		// set up WDA port forwarding if not already running
+		if d.portForwarder == nil || !d.portForwarder.IsRunning() {
+			port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+			if err != nil {
+				return fmt.Errorf("failed to find available port: %w", err)
+			}
 
-		d.portForwarder = ios.NewPortForwarder(d.ID())
-		err = d.portForwarder.Forward(port, 8100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port: %w", err)
-		}
+			d.portForwarder = ios.NewPortForwarder(d.ID())
+			err = d.portForwarder.Forward(port, 8100)
+			if err != nil {
+				return fmt.Errorf("failed to forward port: %w", err)
+			}
 
-		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			utils.Verbose("WDA port forwarder set up on port %d", port)
+		} else {
+			srcPort, _ := d.portForwarder.GetPorts()
+			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
+
+			// ensure wdaClient is set if not already
+			if d.wdaClient == nil {
+				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
+			}
+		}
 
 		// check if wda is already running, now that we have a port forwarder set up
 		status, err := d.wdaClient.GetStatus()
