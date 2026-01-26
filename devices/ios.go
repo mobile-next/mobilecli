@@ -37,7 +37,8 @@ const (
 )
 
 var (
-	portForwarder *ios.PortForwarder
+	portForwarder      *ios.PortForwarder
+	portForwarderMjpeg *ios.PortForwarder
 )
 
 type IOSDevice struct {
@@ -48,6 +49,7 @@ type IOSDevice struct {
 	tunnelManager *ios.TunnelManager
 	wdaClient     *wda.WdaClient
 	mjpegClient   *mjpeg.WdaMjpegClient
+	wdaCancel     context.CancelFunc
 }
 
 func (d IOSDevice) ID() string {
@@ -379,14 +381,14 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 	}
 
-	// assuming everything went well if we reached this point
-	if true {
+	// set up mjpeg port forwarding if not already running
+	if portForwarderMjpeg == nil || !portForwarderMjpeg.IsRunning() {
 		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 		if err != nil {
 			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
 		}
 
-		portForwarderMjpeg := ios.NewPortForwarder(d.ID())
+		portForwarderMjpeg = ios.NewPortForwarder(d.ID())
 		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
 		if err != nil {
 			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
@@ -400,7 +402,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	return nil
 }
 
-func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
+func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
@@ -419,11 +421,17 @@ func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig s
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
 
+	// if wda is already running, don't launch again
+	if d.wdaCancel != nil {
+		utils.Verbose("WebDriverAgent is already running")
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
+	d.wdaCancel = cancel
 
 	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
-		defer cancel()
 		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
 			BundleId:           bundleID,
 			TestRunnerBundleId: testRunnerBundleID,
@@ -436,7 +444,10 @@ func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig s
 
 		if err != nil {
 			utils.Verbose("WebDriverAgent process ended with error: %v", err)
+		} else {
+			utils.Verbose("WebDriverAgent process ended")
 		}
+		d.wdaCancel = nil
 	}()
 
 	utils.Verbose("WebDriverAgent launched in background")
