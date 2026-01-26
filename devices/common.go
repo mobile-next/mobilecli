@@ -31,6 +31,7 @@ type ScreenCaptureConfig struct {
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {
 	OnProgress func(message string) // optional progress callback
+	Registry   *DeviceRegistry       // optional registry for cleanup tracking
 }
 
 // ScreenElementRect represents the rectangle coordinates and dimensions

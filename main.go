@@ -7,10 +7,15 @@ import (
 	"syscall"
 
 	"github.com/mobile-next/mobilecli/cli"
+	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
 )
 
 func main() {
+	// create device registry for cleanup tracking
+	registry := devices.NewDeviceRegistry()
+	commands.SetRegistry(registry)
+
 	// setup signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -25,7 +30,7 @@ func main() {
 	select {
 	case <-sigChan:
 		// cleanup resources on signal
-		devices.CleanupAllDevices()
+		registry.CleanupAll()
 		os.Exit(0)
 	case err := <-done:
 		// normal exit: let WDA and other resources persist

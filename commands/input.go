@@ -61,7 +61,9 @@ func TapCommand(req TapRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
@@ -87,7 +89,9 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
@@ -113,7 +117,9 @@ func TextCommand(req TextRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
@@ -139,7 +145,9 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
@@ -165,7 +173,9 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
@@ -202,7 +212,9 @@ func SwipeCommand(req SwipeRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}

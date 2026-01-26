@@ -11,40 +11,35 @@ type DeviceRegistry struct {
 	devices map[string]*IOSDevice
 }
 
-var globalRegistry = &DeviceRegistry{
-	devices: make(map[string]*IOSDevice),
+// NewDeviceRegistry creates a new device registry instance
+func NewDeviceRegistry() *DeviceRegistry {
+	return &DeviceRegistry{
+		devices: make(map[string]*IOSDevice),
+	}
 }
 
-// RegisterDevice adds a device to the global registry for cleanup tracking
-func RegisterDevice(device *IOSDevice) {
-	globalRegistry.mu.Lock()
-	defer globalRegistry.mu.Unlock()
-	globalRegistry.devices[device.Udid] = device
+// Register adds a device to the registry for cleanup tracking
+func (r *DeviceRegistry) Register(device *IOSDevice) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.devices[device.Udid] = device
 }
 
-// UnregisterDevice removes a device from the global registry
-func UnregisterDevice(udid string) {
-	globalRegistry.mu.Lock()
-	defer globalRegistry.mu.Unlock()
-	delete(globalRegistry.devices, udid)
-	utils.Verbose("Unregistered device %s from cleanup tracking", udid)
-}
+// CleanupAll gracefully cleans up all registered devices
+func (r *DeviceRegistry) CleanupAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-// CleanupAllDevices gracefully cleans up all registered devices
-func CleanupAllDevices() {
-	globalRegistry.mu.Lock()
-	defer globalRegistry.mu.Unlock()
-
-	if len(globalRegistry.devices) == 0 {
+	if len(r.devices) == 0 {
 		return
 	}
 
-	for udid, device := range globalRegistry.devices {
+	for udid, device := range r.devices {
 		if err := device.Cleanup(); err != nil {
 			utils.Verbose("Error cleaning up device %s: %v", udid, err)
 		}
 	}
 
 	// clear the registry
-	globalRegistry.devices = make(map[string]*IOSDevice)
+	r.devices = make(map[string]*IOSDevice)
 }

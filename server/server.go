@@ -95,6 +95,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func StartServer(addr string, enableCORS bool) error {
+	// create device registry for cleanup tracking
+	registry := devices.NewDeviceRegistry()
+	commands.SetRegistry(registry)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", sendBanner)
@@ -147,7 +151,7 @@ func StartServer(addr string, enableCORS bool) error {
 		utils.Info("Received signal %v, shutting down gracefully...", sig)
 
 		// cleanup all devices first
-		devices.CleanupAllDevices()
+		registry.CleanupAll()
 
 		// create context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -585,7 +589,9 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("error finding device: %w", err)
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: commands.GetRegistry(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error starting agent: %w", err)
 	}
@@ -904,6 +910,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
 		OnProgress: progressCallback,
+		Registry:   commands.GetRegistry(),
 	})
 	if err != nil {
 		return fmt.Errorf("error starting agent: %w", err)

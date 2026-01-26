@@ -23,7 +23,9 @@ func URLCommand(req URLRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{})
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Registry: GetRegistry(),
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}

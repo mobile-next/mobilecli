@@ -33,6 +33,26 @@ func NewErrorResponse(err error) *CommandResponse {
 // DeviceCache provides a simple cache for devices to avoid repeated lookups
 var deviceCache = make(map[string]devices.ControllableDevice)
 
+// deviceRegistry holds the registry for device cleanup tracking.
+// It is set once at application startup via SetRegistry and used by commands
+// to register devices for graceful shutdown cleanup.
+var deviceRegistry *devices.DeviceRegistry
+
+// SetRegistry sets the global device registry for cleanup tracking.
+// This should be called once at application startup (main.go or server.go).
+// The registry is used to track active devices and clean up their resources
+// during graceful shutdown (SIGINT/SIGTERM).
+func SetRegistry(registry *devices.DeviceRegistry) {
+	deviceRegistry = registry
+}
+
+// GetRegistry returns the current device registry.
+// Returns nil if SetRegistry has not been called yet.
+// Commands use this to register devices when StartAgent is called.
+func GetRegistry() *devices.DeviceRegistry {
+	return deviceRegistry
+}
+
 // FindDevice finds a device by ID, using cache when possible
 func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	if deviceID == "" {
