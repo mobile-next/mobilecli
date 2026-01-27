@@ -42,13 +42,15 @@ type IOSDevice struct {
 	DeviceName string `json:"DeviceName"`
 	OSVersion  string `json:"Version"`
 
-	mu                 sync.Mutex // protects fields below
-	tunnelManager      *ios.TunnelManager
-	wdaClient          *wda.WdaClient
-	mjpegClient        *mjpeg.WdaMjpegClient
-	wdaCancel          context.CancelFunc
-	portForwarder      *ios.PortForwarder
-	portForwarderMjpeg *ios.PortForwarder
+	mu                     sync.Mutex // protects fields below
+	tunnelManager          *ios.TunnelManager
+	wdaClient              *wda.WdaClient
+	mjpegClient            *mjpeg.WdaMjpegClient
+	wdaCancel              context.CancelFunc
+	portForwarderWda       *ios.PortForwarder
+	portForwarderMjpeg     *ios.PortForwarder
+	portForwarderDeviceKit *ios.PortForwarder // devicekit http forwarder
+	portForwarderAvc       *ios.PortForwarder // devicekit h264 stream forwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -256,11 +258,13 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	defer d.mu.Unlock()
 
 	hasWda := d.wdaCancel != nil
-	hasWdaPort := d.portForwarder != nil && d.portForwarder.IsRunning()
+	hasWdaPort := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
 	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
+	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
 	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
 
-	return hasWda || hasWdaPort || hasMjpegPort || hasTunnel
+	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
 }
 
 // cleanupWDA cancels the WebDriverAgent context
@@ -278,11 +282,13 @@ func (d *IOSDevice) cleanupWDA() error {
 	return nil
 }
 
-// cleanupPortForwarders stops WDA and MJPEG port forwarders
+// cleanupPortForwarders stops WDA, MJPEG, and DeviceKit port forwarders
 func (d *IOSDevice) cleanupPortForwarders() error {
 	d.mu.Lock()
-	wdaForwarder := d.portForwarder
+	wdaForwarder := d.portForwarderWda
 	mjpegForwarder := d.portForwarderMjpeg
+	httpForwarder := d.portForwarderDeviceKit
+	streamForwarder := d.portForwarderAvc
 	d.mu.Unlock()
 
 	var errs []error
@@ -298,6 +304,20 @@ func (d *IOSDevice) cleanupPortForwarders() error {
 		utils.Verbose("Stopping mjpeg port forwarder for device %s", d.Udid)
 		if err := mjpegForwarder.Stop(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to stop mjpeg port forwarder: %w", err))
+		}
+	}
+
+	if httpForwarder != nil && httpForwarder.IsRunning() {
+		utils.Verbose("Stopping DeviceKit HTTP port forwarder for device %s", d.Udid)
+		if err := httpForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop DeviceKit HTTP port forwarder: %w", err))
+		}
+	}
+
+	if streamForwarder != nil && streamForwarder.IsRunning() {
+		utils.Verbose("Stopping DeviceKit AVC stream port forwarder for device %s", d.Udid)
+		if err := streamForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop DeviceKit AVC stream port forwarder: %w", err))
 		}
 	}
 
@@ -442,7 +462,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 		// set up WDA port forwarding if not already running
 		d.mu.Lock()
-		needsPortForwarder := d.portForwarder == nil || !d.portForwarder.IsRunning()
+		needsPortForwarder := d.portForwarderWda == nil || !d.portForwarderWda.IsRunning()
 		d.mu.Unlock()
 
 		if needsPortForwarder {
@@ -458,21 +478,23 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			d.mu.Lock()
-			d.portForwarder = forwarder
+			d.portForwarderWda = forwarder
 			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 			d.mu.Unlock()
 
 			utils.Verbose("WDA port forwarder set up on port %d", port)
 		} else {
 			d.mu.Lock()
-			srcPort, _ := d.portForwarder.GetPorts()
+			srcPort, _ := d.portForwarderWda.GetPorts()
 			d.mu.Unlock()
 			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
 
 			// ensure wdaClient is set if not already
+			d.mu.Lock()
 			if d.wdaClient == nil {
 				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
 			}
+			d.mu.Unlock()
 		}
 
 		// check if wda is already running, now that we have a port forwarder set up
@@ -1204,8 +1226,11 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
-	httpForwarder := ios.NewPortForwarder(d.ID())
-	err = httpForwarder.Forward(localHTTPPort, deviceKitHTTPPort)
+	d.mu.Lock()
+	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	err = d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
 	}
@@ -1213,15 +1238,18 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// Find available local port for stream forwarding after HTTP is bound.
 	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
-		_ = httpForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
 		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
 	}
 
-	streamForwarder := ios.NewPortForwarder(d.ID())
-	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
+	d.mu.Lock()
+	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	err = d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort)
 	if err != nil {
 		// clean up HTTP forwarder on failure
-		_ = httpForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
 		return nil, fmt.Errorf("failed to forward stream port: %w", err)
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
@@ -1231,8 +1259,8 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
@@ -1248,8 +1276,8 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	})
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
@@ -1257,8 +1285,8 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	err = d.clickStartBroadcastButton()
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 
