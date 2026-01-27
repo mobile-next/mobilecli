@@ -629,7 +629,7 @@ func isAscii(text string) bool {
 func escapeShellText(text string) string {
 	// escape all shell special characters that could be used for injection
 	specialChars := `\'"`+ "`" + `
-|&;()<>{}[]$*?`
+|&;()<>{}[]$*? `
 	result := ""
 	for _, char := range text {
 		if strings.ContainsRune(specialChars, char) {
