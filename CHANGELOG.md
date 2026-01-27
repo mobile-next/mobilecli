@@ -5,6 +5,7 @@
 * iOS: Multiple real devices would overwrite each other's wda tcp forwader ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Keep running WebdriverAgent xcuitest as long as "mobilecli server" is running ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Graceful shutdown and improved tunnel closing ([#158](https://github.com/mobile-next/mobilecli/pull/158))
+* iOS: Calling "device info" on iOS Simulator would fail after first time ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 
 ## [0.0.52](https://github.com/mobile-next/mobilecli/releases/tag/0.0.52) (2026-01-27)
 * General: Websocket support for jsonrpc at /ws, single connection multiple requests ([#154](https://github.com/mobile-next/mobilecli/pull/154))
