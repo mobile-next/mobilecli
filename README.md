@@ -26,7 +26,6 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   </a>
 </p>
 
-
 ## Features 🚀
 
 - **Device Management**: List, manage, interactive with connected mobile devices
@@ -34,9 +33,9 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
 - **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
-- **Screencapture video streaming**: Stream mjpeg video directly from device
+- **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App management**: Launch app, terminate apps. Install and uninstall coming next ⏭️
+- **App Management**: Launch app, terminate apps, install and uninstall
 
 ## Installation 📦
 
@@ -177,6 +176,36 @@ mobilecli io text --device <device-id> 'hello world'
 - `POWER` - Power button
 - `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+
+## HTTP API 🔌
+
+***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
+use mobilecli as a webserver, so it can cache and keep tunnels alive, speeding up your interactions with the mobile device or simulator/emulator.
+
+```bash
+# Start the server (default port 12000)
+mobile server start
+
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+
+## WebSocket Support 🔌
+
+***mobilecli*** includes a WebSocket server that allows multiple requests over a single connection using the same JSON-RPC 2.0 format as the HTTP API.
+
+```bash
+# Start the server (default port 12000)
+mobilecli server start
+
+# Connect and send requests using wscat
+wscat -c ws://localhost:12000/ws
+> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+< {"jsonrpc":"2.0","id":1,"result":[...]}
+> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+< {"jsonrpc":"2.0","id":2,"result":{...}}
+```
+
+**Note**: `screencapture` is not supported over WebSocket - use the HTTP `/rpc` endpoint for video streaming.
 
 ## Platform-Specific Notes
 

@@ -1,11 +1,15 @@
-## [0.0.52](https://github.com/mobile-next/mobilecli/releases/tag/0.0.52) (2026-01-26)
+## [0.0.53](https://github.com/mobile-next/mobilecli/releases/tag/0.0.53) (2026-01-28)
 
-* General: Support for jsonrpc over websocket through /ws endpoint ([#154](https://github.com/mobile-next/mobilecli/pull/154))
 * iOS: Fixed a bug where tcp forwarders were created on every request for mjpeg ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Lazily creating mjpeg tcp forwarder only when needed ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Multiple real devices would overwrite each other's wda tcp forwader ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Keep running WebdriverAgent xcuitest as long as "mobilecli server" is running ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Graceful shutdown and improved tunnel closing ([#158](https://github.com/mobile-next/mobilecli/pull/158))
+
+## [0.0.52](https://github.com/mobile-next/mobilecli/releases/tag/0.0.52) (2026-01-27)
+* General: Websocket support for jsonrpc at /ws, single connection multiple requests ([#154](https://github.com/mobile-next/mobilecli/pull/154))
+* iOS: Detect devicekit-ios process already running to Start Broadcasting a 2nd time ([#156](https://github.com/mobile-next/mobilecli/pull/156))
+* iOS: Return more elements in "dump ui", eg Button with no label ([#155](https://github.com/mobile-next/mobilecli/pull/155))
 
 ## [0.0.51](https://github.com/mobile-next/mobilecli/releases/tag/0.0.51) (2026-01-25)
 
