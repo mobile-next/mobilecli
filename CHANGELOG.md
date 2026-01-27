@@ -1,3 +1,8 @@
+## [0.0.52](https://github.com/mobile-next/mobilecli/releases/tag/0.0.52) (2026-01-27)
+* General: Websocket support for jsonrpc, single connection multiple requests ([#154](https://github.com/mobile-next/mobilecli/pull/154))
+* iOS: Detect devicekit-ios process already running to Start Broadcasting a 2nd time ([#156](https://github.com/mobile-next/mobilecli/pull/156))
+* iOS: Return more elements in "dump ui", eg Button with no label ([#155](https://github.com/mobile-next/mobilecli/pull/155))
+
 ## [0.0.51](https://github.com/mobile-next/mobilecli/releases/tag/0.0.51) (2026-01-25)
 
 * General: Plenty of code cleanups and refactoring for smaller and more maintained code ([#144](https://github.com/mobile-next/mobilecli/pull/144))
