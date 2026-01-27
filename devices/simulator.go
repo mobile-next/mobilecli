@@ -553,6 +553,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
 		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
+	} else {
+		utils.Verbose("Failed to get existing WDA port: %v", err)
 	}
 
 	installed, err := s.IsWebDriverAgentInstalled()
@@ -815,13 +817,17 @@ func extractEnvValue(output, envVar string) (string, error) {
 }
 
 func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
-	_, processInfo, err := findWdaProcessForDevice(s.UDID)
+	pid, processInfo, err := findWdaProcessForDevice(s.UDID)
 	if err != nil {
+		utils.Verbose("Could not find WDA process: %v", err)
 		return 0, err
 	}
 
+	utils.Verbose("Found WDA process PID=%d", pid)
+
 	portStr, err := extractEnvValue(processInfo, envVar)
 	if err != nil {
+		utils.Verbose("Could not extract %s from process info: %v", envVar, err)
 		return 0, err
 	}
 
@@ -830,6 +836,7 @@ func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
 		return 0, fmt.Errorf("invalid %s value: %s", envVar, portStr)
 	}
 
+	utils.Verbose("Extracted %s=%d from WDA process", envVar, port)
 	return port, nil
 }
 
