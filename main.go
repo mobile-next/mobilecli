@@ -33,7 +33,8 @@ func main() {
 		hook.Shutdown()
 		os.Exit(0)
 	case err := <-done:
-		// normal exit: let WDA and other resources persist
+		// cleanup resources on normal exit
+		hook.Shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

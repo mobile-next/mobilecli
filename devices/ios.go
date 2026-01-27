@@ -504,9 +504,18 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 			}
 
-			// wait 1 second after pressing home, so we make sure wda is in the background
-			_ = d.wdaClient.PressButton("HOME")
-			time.Sleep(1 * time.Second)
+			// check if WebDriverAgent is the active app and press HOME to background it
+			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			if err == nil {
+				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
+
+				// if WDA is in foreground, press HOME to background it
+				if strings.Contains(activeApp.Name, "WebDriverAgent") {
+					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
+					_ = d.wdaClient.PressButton("HOME")
+					time.Sleep(1 * time.Second)
+				}
+			}
 		}
 	}
 
