@@ -2,7 +2,7 @@
 
 * iOS: Fixed a bug where tcp forwarders were created on every request for mjpeg ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Lazily creating mjpeg tcp forwarder only when needed ([#158](https://github.com/mobile-next/mobilecli/pull/158))
-* iOS: Multiple real devices would overwrite each other's wda tcp forwader ([#158](https://github.com/mobile-next/mobilecli/pull/158))
+* iOS: Multiple real devices would overwrite each other's wda tcp forwarder ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Keep running WebdriverAgent xcuitest as long as "mobilecli server" is running ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Graceful shutdown and improved tunnel closing ([#158](https://github.com/mobile-next/mobilecli/pull/158))
 * iOS: Calling "device info" on iOS Simulator would fail after first time ([#158](https://github.com/mobile-next/mobilecli/pull/158))
