@@ -107,6 +107,12 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 	return nil
 }
 
+func (tm *TunnelManager) IsTunnelRunning() bool {
+	tm.tunnelMutex.Lock()
+	defer tm.tunnelMutex.Unlock()
+	return tm.updateCtx != nil
+}
+
 func (tm *TunnelManager) StopTunnel() error {
 	tm.tunnelMutex.Lock()
 	defer tm.tunnelMutex.Unlock()

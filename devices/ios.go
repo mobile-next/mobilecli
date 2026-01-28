@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -36,18 +37,20 @@ const (
 	deviceKitBroadcastTimeout = 5 * time.Second
 )
 
-var (
-	portForwarder *ios.PortForwarder
-)
-
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
 	DeviceName string `json:"DeviceName"`
 	OSVersion  string `json:"Version"`
 
-	tunnelManager *ios.TunnelManager
-	wdaClient     *wda.WdaClient
-	mjpegClient   *mjpeg.WdaMjpegClient
+	mu                     sync.Mutex // protects fields below
+	tunnelManager          *ios.TunnelManager
+	wdaClient              *wda.WdaClient
+	mjpegClient            *mjpeg.WdaMjpegClient
+	wdaCancel              context.CancelFunc
+	portForwarderWda       *ios.PortForwarder
+	portForwarderMjpeg     *ios.PortForwarder
+	portForwarderDeviceKit *ios.PortForwarder // devicekit http forwarder
+	portForwarderAvc       *ios.PortForwarder // devicekit h264 stream forwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -97,6 +100,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
+
 	return device, nil
 }
 
@@ -219,6 +223,127 @@ func (d *IOSDevice) stopTunnel() error {
 	return d.tunnelManager.StopTunnel()
 }
 
+// Cleanup gracefully cleans up all device resources
+func (d *IOSDevice) Cleanup() error {
+	if !d.hasResourcesToCleanup() {
+		return nil
+	}
+
+	utils.Verbose("Starting cleanup for device %s (%s)", d.Udid, d.DeviceName)
+	var errs []error
+
+	// cleanup each resource type
+	if err := d.cleanupWDA(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := d.cleanupPortForwarders(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := d.cleanupTunnel(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("device cleanup failed with %d error(s): %v", len(errs), errs)
+	}
+
+	return nil
+}
+
+// hasResourcesToCleanup checks if there are any resources that need cleanup
+func (d *IOSDevice) hasResourcesToCleanup() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	hasWda := d.wdaCancel != nil
+	hasWdaPort := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
+	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
+	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
+	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
+
+	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
+}
+
+// cleanupWDA cancels the WebDriverAgent context
+func (d *IOSDevice) cleanupWDA() error {
+	d.mu.Lock()
+	cancel := d.wdaCancel
+	d.wdaCancel = nil
+	d.mu.Unlock()
+
+	if cancel != nil {
+		utils.Verbose("Canceling WebDriverAgent for device %s", d.Udid)
+		cancel()
+	}
+
+	return nil
+}
+
+// cleanupPortForwarders stops WDA, MJPEG, and DeviceKit port forwarders
+func (d *IOSDevice) cleanupPortForwarders() error {
+	d.mu.Lock()
+	wdaForwarder := d.portForwarderWda
+	mjpegForwarder := d.portForwarderMjpeg
+	httpForwarder := d.portForwarderDeviceKit
+	streamForwarder := d.portForwarderAvc
+	d.mu.Unlock()
+
+	var errs []error
+
+	if wdaForwarder != nil && wdaForwarder.IsRunning() {
+		utils.Verbose("Stopping WDA port forwarder for device %s", d.Udid)
+		if err := wdaForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop WDA port forwarder: %w", err))
+		}
+	}
+
+	if mjpegForwarder != nil && mjpegForwarder.IsRunning() {
+		utils.Verbose("Stopping mjpeg port forwarder for device %s", d.Udid)
+		if err := mjpegForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop mjpeg port forwarder: %w", err))
+		}
+	}
+
+	if httpForwarder != nil && httpForwarder.IsRunning() {
+		utils.Verbose("Stopping DeviceKit HTTP port forwarder for device %s", d.Udid)
+		if err := httpForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop DeviceKit HTTP port forwarder: %w", err))
+		}
+	}
+
+	if streamForwarder != nil && streamForwarder.IsRunning() {
+		utils.Verbose("Stopping DeviceKit AVC stream port forwarder for device %s", d.Udid)
+		if err := streamForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop DeviceKit AVC stream port forwarder: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("port forwarder cleanup errors: %v", errs)
+	}
+
+	return nil
+}
+
+// cleanupTunnel stops the tunnel manager
+func (d *IOSDevice) cleanupTunnel() error {
+	d.mu.Lock()
+	tunnel := d.tunnelManager
+	d.mu.Unlock()
+
+	if tunnel != nil && tunnel.IsTunnelRunning() {
+		utils.Verbose("Stopping tunnel manager for device %s", d.Udid)
+		if err := tunnel.StopTunnel(); err != nil {
+			return fmt.Errorf("failed to stop tunnel: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (d *IOSDevice) requiresTunnel() bool {
 	parts := strings.Split(d.OSVersion, ".")
 	if len(parts) == 0 {
@@ -277,6 +402,11 @@ func (d *IOSDevice) startTunnel() error {
 }
 
 func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
+	// register cleanup hook for this device
+	if config.Hook != nil {
+		hookName := fmt.Sprintf("ios-device-%s", d.Udid)
+		config.Hook.Register(hookName, d.Cleanup)
+	}
 
 	// starting an agent on a real device requires quite a few things to happen in the right order:
 	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
@@ -330,19 +460,42 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return err
 		}
 
-		// check that forward proxy is running
-		port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port: %w", err)
-		}
+		// set up WDA port forwarding if not already running
+		d.mu.Lock()
+		needsPortForwarder := d.portForwarderWda == nil || !d.portForwarderWda.IsRunning()
+		d.mu.Unlock()
 
-		portForwarder = ios.NewPortForwarder(d.ID())
-		err = portForwarder.Forward(port, 8100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port: %w", err)
-		}
+		if needsPortForwarder {
+			port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+			if err != nil {
+				return fmt.Errorf("failed to find available port: %w", err)
+			}
 
-		d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			forwarder := ios.NewPortForwarder(d.ID())
+			err = forwarder.Forward(port, 8100)
+			if err != nil {
+				return fmt.Errorf("failed to forward port: %w", err)
+			}
+
+			d.mu.Lock()
+			d.portForwarderWda = forwarder
+			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			d.mu.Unlock()
+
+			utils.Verbose("WDA port forwarder set up on port %d", port)
+		} else {
+			d.mu.Lock()
+			srcPort, _ := d.portForwarderWda.GetPorts()
+			d.mu.Unlock()
+			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
+
+			// ensure wdaClient is set if not already
+			d.mu.Lock()
+			if d.wdaClient == nil {
+				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
+			}
+			d.mu.Unlock()
+		}
 
 		// check if wda is already running, now that we have a port forwarder set up
 		status, err := d.wdaClient.GetStatus()
@@ -373,34 +526,25 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 			}
 
-			// wait 1 second after pressing home, so we make sure wda is in the background
-			_ = d.wdaClient.PressButton("HOME")
-			time.Sleep(1 * time.Second)
-		}
-	}
+			// check if WebDriverAgent is the active app and press HOME to background it
+			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			if err == nil {
+				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
 
-	// assuming everything went well if we reached this point
-	if true {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
+				// if WDA is in foreground, press HOME to background it
+				if strings.Contains(activeApp.Name, "WebDriverAgent") {
+					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
+					_ = d.wdaClient.PressButton("HOME")
+					time.Sleep(1 * time.Second)
+				}
+			}
 		}
-
-		portForwarderMjpeg := ios.NewPortForwarder(d.ID())
-		err = portForwarderMjpeg.Forward(portMjpeg, 9100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
-		}
-
-		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
-		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
 	}
 
 	return nil
 }
 
-func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
+func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
 		utils.Verbose("No bundle ids specified, falling back to defaults")
 		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
@@ -419,11 +563,21 @@ func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig s
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
 
+	// check if wda is already running (thread-safe)
+	d.mu.Lock()
+	if d.wdaCancel != nil {
+		d.mu.Unlock()
+		utils.Verbose("WebDriverAgent is already running")
+		return nil
+	}
+
+	// create context and store cancel function
 	ctx, cancel := context.WithCancel(context.Background())
+	d.wdaCancel = cancel
+	d.mu.Unlock()
 
 	// start WDA in background using testmanagerd similar to go-ios runwda command
 	go func() {
-		defer cancel()
 		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
 			BundleId:           bundleID,
 			TestRunnerBundleId: testRunnerBundleID,
@@ -436,7 +590,14 @@ func (d IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig s
 
 		if err != nil {
 			utils.Verbose("WebDriverAgent process ended with error: %v", err)
+		} else {
+			utils.Verbose("WebDriverAgent process ended")
 		}
+
+		// clear cancel function when done (thread-safe)
+		d.mu.Lock()
+		d.wdaCancel = nil
+		d.mu.Unlock()
 	}()
 
 	utils.Verbose("WebDriverAgent launched in background")
@@ -690,7 +851,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit
 	if config.Format == "avc" {
 		if config.OnProgress != nil {
@@ -698,7 +859,9 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		}
 
 		// start DeviceKit
-		deviceKitInfo, err := d.StartDeviceKit()
+		// Note: passing nil registry since this is internal call from StartScreenCapture
+		// ScreenCapture callers should have already registered the device via StartAgent
+		deviceKitInfo, err := d.StartDeviceKit(nil)
 		if err != nil {
 			return fmt.Errorf("failed to start DeviceKit: %w", err)
 		}
@@ -758,6 +921,33 @@ func (d IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	// handle mjpeg format via WDA
+	// set up mjpeg port forwarding if not already running
+	d.mu.Lock()
+	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
+	d.mu.Unlock()
+
+	if needsMjpegForwarder {
+		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
+		}
+
+		forwarder := ios.NewPortForwarder(d.ID())
+		err = forwarder.Forward(portMjpeg, 9100)
+		if err != nil {
+			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
+		}
+
+		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
+
+		d.mu.Lock()
+		d.portForwarderMjpeg = forwarder
+		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
+		d.mu.Unlock()
+
+		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
+	}
+
 	// configure mjpeg framerate
 	fps := config.FPS
 	if fps == 0 {
@@ -994,7 +1184,13 @@ func filterButtons(elements []ScreenElement) []ScreenElement {
 // StartDeviceKit starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
-func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
+func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
+	// register cleanup hook for this device
+	if hook != nil {
+		hookName := fmt.Sprintf("ios-devicekit-%s", d.Udid)
+		hook.Register(hookName, d.Cleanup)
+	}
+
 	// Start tunnel if needed (iOS 17+)
 	err := d.startTunnel()
 	if err != nil {
@@ -1030,8 +1226,11 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 	}
 
-	httpForwarder := ios.NewPortForwarder(d.ID())
-	err = httpForwarder.Forward(localHTTPPort, deviceKitHTTPPort)
+	d.mu.Lock()
+	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	err = d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
 	}
@@ -1039,15 +1238,18 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	// Find available local port for stream forwarding after HTTP is bound.
 	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 	if err != nil {
-		_ = httpForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
 		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
 	}
 
-	streamForwarder := ios.NewPortForwarder(d.ID())
-	err = streamForwarder.Forward(localStreamPort, deviceKitStreamPort)
+	d.mu.Lock()
+	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	err = d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort)
 	if err != nil {
 		// clean up HTTP forwarder on failure
-		_ = httpForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
 		return nil, fmt.Errorf("failed to forward stream port: %w", err)
 	}
 	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
@@ -1057,8 +1259,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
@@ -1074,8 +1276,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	})
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
@@ -1083,8 +1285,8 @@ func (d *IOSDevice) StartDeviceKit() (*DeviceKitInfo, error) {
 	err = d.clickStartBroadcastButton()
 	if err != nil {
 		// clean up port forwarders on failure
-		_ = httpForwarder.Stop()
-		_ = streamForwarder.Stop()
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 

@@ -80,6 +80,7 @@ var screencaptureCmd = &cobra.Command{
 			OnProgress: func(message string) {
 				utils.Verbose(message)
 			},
+			Hook: commands.GetShutdownHook(),
 		})
 		if err != nil {
 			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))

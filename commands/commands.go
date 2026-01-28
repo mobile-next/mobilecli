@@ -33,6 +33,26 @@ func NewErrorResponse(err error) *CommandResponse {
 // DeviceCache provides a simple cache for devices to avoid repeated lookups
 var deviceCache = make(map[string]devices.ControllableDevice)
 
+// shutdownHook holds the shutdown hook for resource cleanup tracking.
+// It is set once at application startup via SetShutdownHook and used by commands
+// to register cleanup functions for graceful shutdown.
+var shutdownHook *devices.ShutdownHook
+
+// SetShutdownHook sets the global shutdown hook for resource cleanup.
+// This should be called once at application startup (main.go or server.go).
+// The hook is used to register cleanup functions that will be called
+// during graceful shutdown (SIGINT/SIGTERM).
+func SetShutdownHook(hook *devices.ShutdownHook) {
+	shutdownHook = hook
+}
+
+// GetShutdownHook returns the current shutdown hook.
+// Returns nil if SetShutdownHook has not been called yet.
+// Commands use this to register cleanup functions.
+func GetShutdownHook() *devices.ShutdownHook {
+	return shutdownHook
+}
+
 // FindDevice finds a device by ID, using cache when possible
 func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	if deviceID == "" {
