@@ -21,6 +21,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
@@ -36,6 +37,30 @@ const (
 	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
 )
+
+// deviceInfoCache caches device name and OS version to avoid expensive GetValues() calls
+type deviceInfoCacheEntry struct {
+	DeviceName string
+	OSVersion  string
+}
+
+var (
+	deviceInfoCache     *lru.Cache[string, deviceInfoCacheEntry]
+	deviceInfoCacheOnce sync.Once
+)
+
+// getDeviceInfoCache returns the singleton cache instance
+func getDeviceInfoCache() *lru.Cache[string, deviceInfoCacheEntry] {
+	deviceInfoCacheOnce.Do(func() {
+		var err error
+		deviceInfoCache, err = lru.New[string, deviceInfoCacheEntry](32)
+		if err != nil {
+			// should never happen with valid size
+			panic(fmt.Sprintf("failed to create device info cache: %v", err))
+		}
+	})
+	return deviceInfoCache
+}
 
 type IOSDevice struct {
 	Udid       string `json:"UniqueDeviceID"`
@@ -82,15 +107,33 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	udid := deviceEntry.Properties.SerialNumber
 
-	allValues, err := goios.GetValues(deviceEntry)
-	if err != nil {
-		return IOSDevice{}, fmt.Errorf("failed getting values for device %s: %w", udid, err)
+	// check cache first
+	cache := getDeviceInfoCache()
+	var deviceName, osVersion string
+
+	if cached, ok := cache.Get(udid); ok {
+		deviceName = cached.DeviceName
+		osVersion = cached.OSVersion
+	} else {
+		allValues, err := goios.GetValues(deviceEntry)
+		if err != nil {
+			return IOSDevice{}, fmt.Errorf("failed getting values for device %s: %w", udid, err)
+		}
+
+		deviceName = allValues.Value.DeviceName
+		osVersion = allValues.Value.ProductVersion
+
+		// store in cache
+		cache.Add(udid, deviceInfoCacheEntry{
+			DeviceName: deviceName,
+			OSVersion:  osVersion,
+		})
 	}
 
 	device := IOSDevice{
 		Udid:       udid,
-		DeviceName: allValues.Value.DeviceName,
-		OSVersion:  allValues.Value.ProductVersion,
+		DeviceName: deviceName,
+		OSVersion:  osVersion,
 	}
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
