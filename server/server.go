@@ -10,9 +10,11 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/utils"
@@ -46,6 +48,27 @@ const (
 )
 
 var okResponse = map[string]interface{}{"status": "ok"}
+
+// StreamSession represents a screen capture streaming session
+type StreamSession struct {
+	ID        string
+	DeviceID  string
+	Format    string  // "mjpeg" or "avc"
+	Quality   int
+	Scale     float64
+	CreatedAt time.Time
+	ExpiresAt time.Time // CreatedAt + 1 minute
+	InUse     bool      // prevents duplicate connections
+}
+
+// SessionManager manages screen capture streaming sessions
+type SessionManager struct {
+	sessions map[string]*StreamSession
+	mu       sync.RWMutex
+}
+
+// global session manager instance
+var sessionManager *SessionManager
 
 type JSONRPCRequest struct {
 	// these fields are all omitempty, so we can report back to client if they are missing
@@ -94,16 +117,88 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// AddSession adds a new session to the manager, sweeps expired sessions first
+func (sm *SessionManager) AddSession(session *StreamSession) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// sweep expired sessions first
+	now := time.Now()
+	for id, s := range sm.sessions {
+		// remove sessions that are expired and not in use
+		if now.After(s.ExpiresAt) && !s.InUse {
+			delete(sm.sessions, id)
+		}
+	}
+
+	// check session limit
+	if len(sm.sessions) >= 128 {
+		return fmt.Errorf("session limit reached (128), please try again later")
+	}
+
+	sm.sessions[session.ID] = session
+	return nil
+}
+
+// GetSession retrieves a session by ID, returns error if not found or expired for new connections
+func (sm *SessionManager) GetSession(id string) (*StreamSession, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	session, exists := sm.sessions[id]
+	if !exists {
+		return nil, fmt.Errorf("session not found")
+	}
+
+	// check if expired for NEW connections (in-use sessions are allowed to continue)
+	if time.Now().After(session.ExpiresAt) && !session.InUse {
+		return nil, fmt.Errorf("session not found")
+	}
+
+	return session, nil
+}
+
+// MarkInUse atomically marks a session as in use, returns error if already in use
+func (sm *SessionManager) MarkInUse(id string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, exists := sm.sessions[id]
+	if !exists {
+		return fmt.Errorf("session not found")
+	}
+
+	if session.InUse {
+		return fmt.Errorf("session already in use")
+	}
+
+	session.InUse = true
+	return nil
+}
+
+// RemoveSession removes a session from the manager
+func (sm *SessionManager) RemoveSession(id string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.sessions, id)
+}
+
 func StartServer(addr string, enableCORS bool) error {
 	// create shutdown hook for cleanup tracking
 	hook := devices.NewShutdownHook()
 	commands.SetShutdownHook(hook)
+
+	// initialize session manager
+	sessionManager = &SessionManager{
+		sessions: make(map[string]*StreamSession),
+	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", sendBanner)
 	mux.HandleFunc("/rpc", handleJSONRPC)
 	mux.HandleFunc("/ws", NewWebSocketHandler(enableCORS))
+	mux.HandleFunc("/stream", handleStream)
 
 	// if host is missing, default to localhost
 	if !strings.Contains(addr, ":") {
@@ -194,16 +289,6 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	var result interface{}
 	var err error
-
-	// Special case: screencapture is streaming and has different signature
-	if req.Method == "screencapture" {
-		err = handleScreenCapture(r, w, req.Params)
-		if err != nil {
-			log.Printf("Error in screen capture: %v", err)
-			sendJSONRPCError(w, req.ID, ErrCodeServerError, "Server error", err.Error())
-		}
-		return
-	}
 
 	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
 	if req.Method == "device_boot" {
@@ -834,6 +919,191 @@ func newJsonRpcNotification(message string) map[string]interface{} {
 			"message": message,
 		},
 	}
+}
+
+// handleScreenCaptureSession creates a streaming session and returns sessionUrl
+func handleScreenCaptureSession(params json.RawMessage) (interface{}, error) {
+	var screenCaptureParams commands.ScreenCaptureRequest
+	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v", err)
+	}
+
+	// set default format if not provided
+	if screenCaptureParams.Format == "" {
+		screenCaptureParams.Format = "mjpeg"
+	}
+
+	// validate format
+	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
+		return nil, fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+
+	// validate device exists (early error detection)
+	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	// avc format validation based on device type
+	if screenCaptureParams.Format == "avc" {
+		if targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator" {
+			return nil, fmt.Errorf("avc format is not supported on iOS simulators")
+		}
+	}
+
+	// ensure session manager is initialized for non-server Execute usage
+	if sessionManager == nil {
+		sessionManager = &SessionManager{sessions: make(map[string]*StreamSession)}
+	}
+
+	// set defaults for quality and scale
+	quality := screenCaptureParams.Quality
+	if quality == 0 {
+		quality = devices.DefaultQuality
+	}
+
+	scale := screenCaptureParams.Scale
+	if scale == 0.0 {
+		scale = devices.DefaultScale
+	}
+
+	// generate session ID
+	sessionID := uuid.New().String()
+
+	// pin resolved device ID (handles auto-select)
+	resolvedDeviceID := screenCaptureParams.DeviceID
+	if resolvedDeviceID == "" {
+		resolvedDeviceID = targetDevice.ID()
+	}
+
+	// create session entry
+	session := &StreamSession{
+		ID:        sessionID,
+		DeviceID:  resolvedDeviceID,
+		Format:    screenCaptureParams.Format,
+		Quality:   quality,
+		Scale:     scale,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(1 * time.Minute),
+		InUse:     false,
+	}
+
+	// store in session manager
+	if err := sessionManager.AddSession(session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// return response with format and sessionUrl
+	result := map[string]interface{}{
+		"format":     screenCaptureParams.Format,
+		"sessionUrl": fmt.Sprintf("/stream?s=%s", sessionID),
+	}
+
+	return result, nil
+}
+
+// handleStream handles the /stream endpoint for screen capture streaming
+func handleStream(w http.ResponseWriter, r *http.Request) {
+	// extract session ID from query parameter
+	sessionID := r.URL.Query().Get("s")
+	if sessionID == "" {
+		http.Error(w, "Missing session ID", http.StatusBadRequest)
+		return
+	}
+
+	// look up session
+	session, err := sessionManager.GetSession(sessionID)
+	if err != nil {
+		http.Error(w, "Invalid or expired session", http.StatusNotFound)
+		return
+	}
+
+	// mark session as in use (prevents duplicate connections)
+	if err := sessionManager.MarkInUse(sessionID); err != nil {
+		http.Error(w, "Session already in use", http.StatusConflict)
+		return
+	}
+
+	// ensure cleanup on exit
+	defer sessionManager.RemoveSession(sessionID)
+
+	// set extended write deadline for long-running stream
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+
+	// find device
+	targetDevice, err := commands.FindDeviceOrAutoSelect(session.DeviceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Device not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	// set streaming headers based on format
+	if session.Format == "mjpeg" {
+		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
+	} else {
+		// avc format
+		w.Header().Set("Content-Type", "video/h264")
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	// setup progress callback for MJPEG format
+	var progressCallback func(string)
+	if session.Format == "mjpeg" {
+		progressCallback = func(message string) {
+			notification := newJsonRpcNotification(message)
+			statusJSON, err := json.Marshal(notification)
+			if err != nil {
+				log.Printf("Failed to marshal progress message: %v", err)
+				return
+			}
+			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
+			_, _ = w.Write([]byte(mimeMessage))
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+	}
+
+	// start agent
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		OnProgress: progressCallback,
+		Hook:       commands.GetShutdownHook(),
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error starting agent: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// start screen capture and stream
+	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+		Format:     session.Format,
+		Quality:    session.Quality,
+		Scale:      session.Scale,
+		OnProgress: progressCallback,
+		OnData: func(data []byte) bool {
+			_, writeErr := w.Write(data)
+			if writeErr != nil {
+				fmt.Println("Error writing data:", writeErr)
+				return false
+			}
+
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+
+			return true
+		},
+	})
+
+	if err != nil {
+		// can't send HTTP error after streaming started, just log
+		log.Printf("Error starting screen capture: %v", err)
+		return
+	}
+
+	// session cleaned up by defer
 }
 
 func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {

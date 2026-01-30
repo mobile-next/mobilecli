@@ -29,16 +29,15 @@ const (
 	wsPongWait       = 60 * time.Second
 	wsPingPeriod     = (wsPongWait * 9) / 10
 
-	jsonRPCVersion        = "2.0"
+	jsonRPCVersion       = "2.0"
 	errMsgParseError      = "expecting jsonrpc payload"
 	errMsgInvalidJSONRPC  = "'jsonrpc' must be '2.0'"
 	errMsgIDRequired      = "'id' field is required"
 	errMsgMethodRequired  = "'method' is required"
 	errMsgTextOnly        = "only text messages accepted for requests"
-	errMsgScreencapture   = "screencapture not supported over WebSocket, use HTTP /rpc endpoint"
 	errTitleParseError    = "Parse error"
 	errTitleInvalidReq    = "Invalid Request"
-	errTitleMethodNotSupp = "Method not supported"
+	errTitleMethodNotSupp = "Method not found"
 )
 
 func newUpgrader(enableCORS bool) *websocket.Upgrader {
@@ -177,14 +176,6 @@ func validateJSONRPCRequest(req JSONRPCRequest) *validationError {
 			code:    ErrCodeInvalidRequest,
 			message: errTitleInvalidReq,
 			data:    errMsgMethodRequired,
-		}
-	}
-
-	if req.Method == "screencapture" {
-		return &validationError{
-			code:    ErrCodeMethodNotFound,
-			message: errTitleMethodNotSupp,
-			data:    errMsgScreencapture,
 		}
 	}
 
