@@ -1299,6 +1299,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 
 	// Launch the main DeviceKit app
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
+	startTime := time.Now()
 	err = d.LaunchApp(devicekitMainAppBundleId)
 	if err != nil {
 		// clean up port forwarders on failure
@@ -1332,6 +1333,10 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		_ = d.portForwarderAvc.Stop()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
+
+	// log benchmark timing
+	elapsed := time.Since(startTime)
+	utils.Verbose("DeviceKit startup benchmark: %.2f seconds (from LaunchApp to Start Broadcasting clicked)", elapsed.Seconds())
 
 	// Wait for the TCP server to start listening (takes about 5 seconds)
 	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
