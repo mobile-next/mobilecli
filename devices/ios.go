@@ -1308,9 +1308,15 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
-	// Wait for the app to launch and show the broadcast picker
-	utils.Verbose("Waiting %v for DeviceKit app to launch...", deviceKitAppLaunchTimeout)
-	time.Sleep(deviceKitAppLaunchTimeout)
+	// wait for the app to be in foreground
+	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
+	err = d.waitForAppInForeground(devicekitMainAppBundleId, deviceKitAppLaunchTimeout)
+	if err != nil {
+		// clean up port forwarders on failure
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
+		return nil, fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	}
 
 	// Start WebDriverAgent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
@@ -1318,6 +1324,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 			utils.Verbose(message)
 		},
 	})
+
 	if err != nil {
 		// clean up port forwarders on failure
 		_ = d.portForwarderDeviceKit.Stop()
@@ -1348,6 +1355,31 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		HTTPPort:   localHTTPPort,
 		StreamPort: localStreamPort,
 	}, nil
+}
+
+// waitForAppInForeground polls WDA to check if the specified app is in foreground
+func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duration) error {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
+		case <-ticker.C:
+			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			if err != nil {
+				// continue trying on error
+				continue
+			}
+
+			if activeApp.BundleID == bundleID {
+				utils.Verbose("App %s is now in foreground", bundleID)
+				return nil
+			}
+		}
+	}
 }
 
 // findAvailablePortInRange finds an available port in the specified range

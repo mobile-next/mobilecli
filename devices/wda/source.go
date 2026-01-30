@@ -3,6 +3,7 @@ package wda
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -92,7 +93,8 @@ func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 
 // GetSourceRaw gets the raw page source from WDA's /source endpoint
 func (c *WdaClient) GetSourceRaw() (interface{}, error) {
-	endpoint := "source?format=json"
+	startTime := time.Now()
+	endpoint := "source?format=json&excluded_attributes="
 
 	result, err := c.getEndpointWithTimeout(endpoint, 60*time.Second)
 	if err != nil {
@@ -104,11 +106,64 @@ func (c *WdaClient) GetSourceRaw() (interface{}, error) {
 		return nil, fmt.Errorf("no 'value' field found in WDA response")
 	}
 
+	elapsed := time.Since(startTime)
+	utils.Verbose("GetSourceRaw took %.2f seconds", elapsed.Seconds())
+
+	return value, nil
+}
+
+// GetSourceRawWithAttributes gets the raw page source with only the specified attributes included
+func (c *WdaClient) GetSourceRawWithAttributes(attributes []string) (interface{}, error) {
+	startTime := time.Now()
+
+	// all possible attributes that can be excluded
+	allAttributes := []string{
+		"type", "value", "name", "label", "enabled", "visible", "accessible", "focused",
+		"x", "y", "width", "height", "index", "hittable", "bundleId", "processId",
+		"placeholderValue", "nativeFrame", "traits", "minValue", "maxValue", "customActions",
+	}
+
+	// build excluded list by removing requested attributes from all attributes
+	excludedAttrs := []string{}
+	for _, attr := range allAttributes {
+		include := false
+		for _, requestedAttr := range attributes {
+			if attr == requestedAttr {
+				include = true
+				break
+			}
+		}
+		if !include {
+			excludedAttrs = append(excludedAttrs, attr)
+		}
+	}
+
+	excludedStr := ""
+	if len(excludedAttrs) > 0 {
+		excludedStr = fmt.Sprintf("&excluded_attributes=%s", strings.Join(excludedAttrs, ","))
+	}
+
+	endpoint := fmt.Sprintf("source?format=json%s", excludedStr)
+
+	result, err := c.getEndpointWithTimeout(endpoint, 60*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source: %w", err)
+	}
+
+	value, ok := result["value"]
+	if !ok {
+		return nil, fmt.Errorf("no 'value' field found in WDA response")
+	}
+
+	elapsed := time.Since(startTime)
+	utils.Verbose("GetSourceRawWithAttributes took %.2f seconds (attributes: %v)", elapsed.Seconds(), attributes)
+
 	return value, nil
 }
 
 func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
-	value, err := c.GetSourceRaw()
+	// only fetch the attributes we actually use
+	value, err := c.GetSourceRawWithAttributes([]string{"type", "name", "label", "value", "visible", "x", "y", "width", "height"})
 	if err != nil {
 		return nil, err
 	}
