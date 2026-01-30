@@ -14,6 +14,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 	return map[string]HandlerFunc{
 		"devices":            handleDevicesList,
 		"screenshot":         handleScreenshot,
+		"screencapture":      handleScreenCaptureSession,
 		"io_tap":             handleIoTap,
 		"io_longpress":       handleIoLongPress,
 		"io_text":            handleIoText,
