@@ -951,6 +951,11 @@ func handleScreenCaptureSession(params json.RawMessage) (interface{}, error) {
 		}
 	}
 
+	// ensure session manager is initialized for non-server Execute usage
+	if sessionManager == nil {
+		sessionManager = &SessionManager{sessions: make(map[string]*StreamSession)}
+	}
+
 	// set defaults for quality and scale
 	quality := screenCaptureParams.Quality
 	if quality == 0 {
@@ -965,10 +970,16 @@ func handleScreenCaptureSession(params json.RawMessage) (interface{}, error) {
 	// generate session ID
 	sessionID := uuid.New().String()
 
+	// pin resolved device ID (handles auto-select)
+	resolvedDeviceID := screenCaptureParams.DeviceID
+	if resolvedDeviceID == "" {
+		resolvedDeviceID = targetDevice.ID()
+	}
+
 	// create session entry
 	session := &StreamSession{
 		ID:        sessionID,
-		DeviceID:  screenCaptureParams.DeviceID,
+		DeviceID:  resolvedDeviceID,
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
 		Scale:     scale,

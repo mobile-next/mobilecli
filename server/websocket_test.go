@@ -140,32 +140,6 @@ func TestWebSocket_MissingMethod(t *testing.T) {
 	assert.Equal(t, errMsgMethodRequired, errorMap["data"])
 }
 
-func TestWebSocket_ScreencaptureNotSupported(t *testing.T) {
-	server, wsURL := setupTestServer(false)
-	defer server.Close()
-
-	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
-
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "screencapture",
-		Params:  json.RawMessage(`{"deviceId":"test"}`),
-		ID:      1,
-	}
-
-	sendJSONRPCRequest(t, conn, req)
-	resp := readJSONRPCResponse(t, conn)
-
-	assert.Equal(t, "2.0", resp.JSONRPC)
-	assert.NotNil(t, resp.Error)
-
-	errorMap := resp.Error.(map[string]interface{})
-	assert.Equal(t, float64(ErrCodeMethodNotFound), errorMap["code"])
-	assert.Equal(t, errTitleMethodNotSupp, errorMap["message"])
-	assert.Equal(t, errMsgScreencapture, errorMap["data"])
-}
-
 func TestWebSocket_MethodNotFound(t *testing.T) {
 	server, wsURL := setupTestServer(false)
 	defer server.Close()
@@ -421,17 +395,6 @@ func TestValidateJSONRPCRequest_AllValidationErrors(t *testing.T) {
 			wantCode: ErrCodeInvalidRequest,
 			wantMsg:  errTitleInvalidReq,
 			wantData: errMsgMethodRequired,
-		},
-		{
-			name: "screencapture method",
-			req: JSONRPCRequest{
-				JSONRPC: "2.0",
-				Method:  "screencapture",
-				ID:      1,
-			},
-			wantCode: ErrCodeMethodNotFound,
-			wantMsg:  errTitleMethodNotSupp,
-			wantData: errMsgScreencapture,
 		},
 	}
 

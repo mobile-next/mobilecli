@@ -30,13 +30,14 @@ const (
 	wsPingPeriod     = (wsPongWait * 9) / 10
 
 	jsonRPCVersion       = "2.0"
-	errMsgParseError     = "expecting jsonrpc payload"
-	errMsgInvalidJSONRPC = "'jsonrpc' must be '2.0'"
-	errMsgIDRequired     = "'id' field is required"
-	errMsgMethodRequired = "'method' is required"
-	errMsgTextOnly       = "only text messages accepted for requests"
-	errTitleParseError   = "Parse error"
-	errTitleInvalidReq   = "Invalid Request"
+	errMsgParseError      = "expecting jsonrpc payload"
+	errMsgInvalidJSONRPC  = "'jsonrpc' must be '2.0'"
+	errMsgIDRequired      = "'id' field is required"
+	errMsgMethodRequired  = "'method' is required"
+	errMsgTextOnly        = "only text messages accepted for requests"
+	errTitleParseError    = "Parse error"
+	errTitleInvalidReq    = "Invalid Request"
+	errTitleMethodNotSupp = "Method not found"
 )
 
 func newUpgrader(enableCORS bool) *websocket.Upgrader {
