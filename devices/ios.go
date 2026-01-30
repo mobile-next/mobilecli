@@ -928,7 +928,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 		// stream data in a goroutine
 		go func() {
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			buffer := make([]byte, 65536)
 			for {
 				n, err := conn.Read(buffer)
@@ -954,7 +954,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		// wait for either signal or stream completion
 		select {
 		case <-sigChan:
-			conn.Close()
+			_ = conn.Close()
 			utils.Verbose("stream closed by user")
 			return nil
 		case err := <-done:
