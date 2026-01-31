@@ -1281,14 +1281,15 @@ func (d *IOSDevice) ensureDeviceKitPortForwarders() (*DeviceKitInfo, error) {
 			return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
 		}
 
-		d.mu.Lock()
-		d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
-		d.mu.Unlock()
-
-		err = d.portForwarderDeviceKit.Forward(httpPort, deviceKitHTTPPort)
+		forwarder := ios.NewPortForwarder(d.ID())
+		err = forwarder.Forward(httpPort, deviceKitHTTPPort)
 		if err != nil {
 			return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
 		}
+
+		d.mu.Lock()
+		d.portForwarderDeviceKit = forwarder
+		d.mu.Unlock()
 		utils.Verbose("Port forwarding created: localhost:%d -> device:%d (HTTP)", httpPort, deviceKitHTTPPort)
 	} else {
 		d.mu.Lock()
