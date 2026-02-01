@@ -37,6 +37,15 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch app, terminate apps, install and uninstall
 
+### 🎯 Platform Support
+
+| Platform | Supported |
+|----------|:---------:|
+| iOS Real Device | ✅ |
+| iOS Simulator | ✅ |
+| Android Real Device | ✅ |
+| Android Emulator | ✅ |
+
 ## Installation 📦
 
 #### Prerequisites 📋
