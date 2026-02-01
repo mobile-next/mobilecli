@@ -902,15 +902,57 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit
 	if config.Format == "avc" {
 		if config.OnProgress != nil {
-			config.OnProgress("Starting DeviceKit for H.264 streaming")
+			config.OnProgress("Checking DeviceKit status")
 		}
 
-		// start DeviceKit
-		// Note: passing nil registry since this is internal call from StartScreenCapture
-		// ScreenCapture callers should have already registered the device via StartAgent
-		deviceKitInfo, err := d.StartDeviceKit(nil)
-		if err != nil {
-			return fmt.Errorf("failed to start DeviceKit: %w", err)
+		var deviceKitInfo *DeviceKitInfo
+		var err error
+
+		// check if DeviceKit is already running
+		if d.isDeviceKitRunning() {
+			utils.Verbose("DeviceKit already running, reusing existing session")
+
+			// check if we need to create port forwarders
+			d.mu.Lock()
+			hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+			hasStreamForwarder := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
+			d.mu.Unlock()
+
+			if hasHTTPForwarder && hasStreamForwarder {
+				// reuse existing forwarders
+				d.mu.Lock()
+				httpPort, _ := d.portForwarderDeviceKit.GetPorts()
+				streamPort, _ := d.portForwarderAvc.GetPorts()
+				d.mu.Unlock()
+
+				deviceKitInfo = &DeviceKitInfo{
+					HTTPPort:   httpPort,
+					StreamPort: streamPort,
+				}
+			} else {
+				// DeviceKit running but we need to create forwarders
+				deviceKitInfo, err = d.ensureDeviceKitPortForwarders()
+				if err != nil {
+					return fmt.Errorf("failed to create port forwarders: %w", err)
+				}
+			}
+
+			if config.OnProgress != nil {
+				config.OnProgress("Using existing DeviceKit session")
+			}
+		} else {
+			// DeviceKit not running, start it normally
+			if config.OnProgress != nil {
+				config.OnProgress("Starting DeviceKit for H.264 streaming")
+			}
+
+			// start DeviceKit
+			// Note: passing nil registry since this is internal call from StartScreenCapture
+			// ScreenCapture callers should have already registered the device via StartAgent
+			deviceKitInfo, err = d.StartDeviceKit(nil)
+			if err != nil {
+				return fmt.Errorf("failed to start DeviceKit: %w", err)
+			}
 		}
 
 		if config.OnProgress != nil {
@@ -1228,6 +1270,134 @@ func filterButtons(elements []ScreenElement) []ScreenElement {
 	return buttons
 }
 
+func (d *IOSDevice) ensureDeviceKitPortForwarders() (*DeviceKitInfo, error) {
+	var httpPort, streamPort int
+	var err error
+
+	// check if HTTP forwarder exists, create if needed
+	d.mu.Lock()
+	hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+	d.mu.Unlock()
+
+	if !hasHTTPForwarder {
+		httpPort, err = findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
+		}
+
+		forwarder := ios.NewPortForwarder(d.ID())
+		err = forwarder.Forward(httpPort, deviceKitHTTPPort)
+		if err != nil {
+			return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
+		}
+
+		d.mu.Lock()
+		d.portForwarderDeviceKit = forwarder
+		d.mu.Unlock()
+		utils.Verbose("Port forwarding created: localhost:%d -> device:%d (HTTP)", httpPort, deviceKitHTTPPort)
+	} else {
+		d.mu.Lock()
+		httpPort, _ = d.portForwarderDeviceKit.GetPorts()
+		d.mu.Unlock()
+	}
+
+	// check if stream forwarder exists, create if needed
+	d.mu.Lock()
+	hasStreamForwarder := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
+	d.mu.Unlock()
+
+	if !hasStreamForwarder {
+		streamPort, err = findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			if !hasHTTPForwarder {
+				_ = d.portForwarderDeviceKit.Stop()
+			}
+			return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+		}
+
+		d.mu.Lock()
+		d.portForwarderAvc = ios.NewPortForwarder(d.ID())
+		d.mu.Unlock()
+
+		err = d.portForwarderAvc.Forward(streamPort, deviceKitStreamPort)
+		if err != nil {
+			if !hasHTTPForwarder {
+				_ = d.portForwarderDeviceKit.Stop()
+			}
+			return nil, fmt.Errorf("failed to forward stream port: %w", err)
+		}
+		utils.Verbose("Port forwarding created: localhost:%d -> device:%d (H.264 stream)", streamPort, deviceKitStreamPort)
+	} else {
+		d.mu.Lock()
+		streamPort, _ = d.portForwarderAvc.GetPorts()
+		d.mu.Unlock()
+	}
+
+	return &DeviceKitInfo{
+		HTTPPort:   httpPort,
+		StreamPort: streamPort,
+	}, nil
+}
+
+func (d *IOSDevice) isDeviceKitRunning() bool {
+	// check if we already have port forwarders running
+	d.mu.Lock()
+	hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+	hasStreamForwarder := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
+	d.mu.Unlock()
+
+	// if both forwarders exist, DeviceKit is definitely running from our perspective
+	if hasHTTPForwarder && hasStreamForwarder {
+		utils.Verbose("DeviceKit port forwarders already running")
+		return true
+	}
+
+	// find an available local port for testing
+	testPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		utils.Verbose("Could not find available port for DeviceKit check: %v", err)
+		return false
+	}
+
+	// create temporary port forwarder to device port 12005 (stream)
+	testForwarder := ios.NewPortForwarder(d.ID())
+	err = testForwarder.Forward(testPort, deviceKitStreamPort)
+	if err != nil {
+		utils.Verbose("Could not create test port forwarder: %v", err)
+		return false
+	}
+
+	// ensure cleanup of test forwarder
+	defer func() {
+		_ = testForwarder.Stop()
+	}()
+
+	// try to connect with timeout
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", testPort), 2*time.Second)
+	if err != nil {
+		utils.Verbose("DeviceKit not responding on port %d: %v", deviceKitStreamPort, err)
+		return false
+	}
+	defer func() { _ = conn.Close() }()
+
+	// set read deadline and try to read 1 byte
+	err = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	if err != nil {
+		utils.Verbose("Could not set read deadline: %v", err)
+		return false
+	}
+
+	buffer := make([]byte, 1)
+	_, err = conn.Read(buffer)
+	if err != nil {
+		utils.Verbose("DeviceKit not serving data on port %d: %v", deviceKitStreamPort, err)
+		return false
+	}
+
+	utils.Verbose("DeviceKit is already running on device port %d", deviceKitStreamPort)
+	return true
+}
+
 // StartDeviceKit starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
@@ -1312,9 +1482,15 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
 
-	// Wait for the app to launch and show the broadcast picker
-	utils.Verbose("Waiting %v for DeviceKit app to launch...", deviceKitAppLaunchTimeout)
-	time.Sleep(deviceKitAppLaunchTimeout)
+	// wait for the app to be in foreground
+	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
+	err = d.waitForAppInForeground(devicekitMainAppBundleId, deviceKitAppLaunchTimeout)
+	if err != nil {
+		// clean up port forwarders on failure
+		_ = d.portForwarderDeviceKit.Stop()
+		_ = d.portForwarderAvc.Stop()
+		return nil, fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	}
 
 	// Start WebDriverAgent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
@@ -1322,6 +1498,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 			utils.Verbose(message)
 		},
 	})
+
 	if err != nil {
 		// clean up port forwarders on failure
 		_ = d.portForwarderDeviceKit.Stop()
@@ -1352,6 +1529,31 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		HTTPPort:   localHTTPPort,
 		StreamPort: localStreamPort,
 	}, nil
+}
+
+// waitForAppInForeground polls WDA to check if the specified app is in foreground
+func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duration) error {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
+		case <-ticker.C:
+			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			if err != nil {
+				// continue trying on error
+				continue
+			}
+
+			if activeApp.BundleID == bundleID {
+				utils.Verbose("App %s is now in foreground", bundleID)
+				return nil
+			}
+		}
+	}
 }
 
 // findAvailablePortInRange finds an available port in the specified range
