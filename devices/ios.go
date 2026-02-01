@@ -834,8 +834,12 @@ func (d IOSDevice) OpenURL(url string) error {
 	return d.wdaClient.OpenURL(url)
 }
 
-func (d IOSDevice) ListApps() ([]InstalledAppInfo, error) {
+func (d *IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
+
+	// Lock to prevent concurrent access to usbmuxd (race condition on ReadPair)
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
