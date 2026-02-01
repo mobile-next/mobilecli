@@ -162,8 +162,9 @@ func (c *WdaClient) GetSourceRawWithAttributes(attributes []string) (interface{}
 }
 
 func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
+	value, err := c.GetSourceRaw()
 	// only fetch the attributes we actually use
-	value, err := c.GetSourceRawWithAttributes([]string{"type", "name", "label", "value", "visible", "x", "y", "width", "height"})
+	// value, err := c.GetSourceRawWithAttributes([]string{"type", "name", "label", "value", "visible", "x", "y", "width", "height"})
 	if err != nil {
 		return nil, err
 	}
