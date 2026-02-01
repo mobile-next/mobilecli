@@ -1,3 +1,10 @@
+## [0.0.54](https://github.com/mobile-next/mobilecli/releases/tag/0.0.54) (2026-02-01)
+
+* General: Screencapture over /rpc and /ws now returns a redirect url such as /session?s= ([#161](https://github.com/mobile-next/mobilecli/pull/161))
+* iOS: Many devicekit-ios start optimizations ([#162](https://github.com/mobile-next/mobilecli/pull/162))
+* iOS: Fix potential race condition when checking availability of wda ([#163](https://github.com/mobile-next/mobilecli/pull/163))
+* iOS: Cache ios devicename and version for faster 'devices' command ([#160](https://github.com/mobile-next/mobilecli/pull/160))
+
 ## [0.0.53](https://github.com/mobile-next/mobilecli/releases/tag/0.0.53) (2026-01-28)
 
 * iOS: Fixed a bug where tcp forwarders were created on every request for mjpeg ([#158](https://github.com/mobile-next/mobilecli/pull/158))
