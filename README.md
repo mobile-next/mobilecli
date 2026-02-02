@@ -75,7 +75,7 @@ make build
 
 Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
 
-`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons buttons and streaming screen capture.
+`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons and streaming screen capture.
 
 #### 🤖 For Android Support
 ```bash
