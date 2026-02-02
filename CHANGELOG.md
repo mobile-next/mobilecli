@@ -1,3 +1,7 @@
+## [0.0.55](https://github.com/mobile-next/mobilecli/releases/tag/0.0.55) (2026-02-02)
+* iOS: Support getting foreground app and its version ([#165](https://github.com/mobile-next/mobilecli/pull/165))
+* Android: Support getting foreground app and its version ([#165](https://github.com/mobile-next/mobilecli/pull/165))
+
 ## [0.0.54](https://github.com/mobile-next/mobilecli/releases/tag/0.0.54) (2026-02-01)
 
 * General: Screencapture over /rpc and /ws now returns a redirect url such as /session?s= ([#161](https://github.com/mobile-next/mobilecli/pull/161))
