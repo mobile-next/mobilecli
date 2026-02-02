@@ -8,7 +8,7 @@ build:
 
 build-cover:
 	go mod tidy
-	CGO_ENABLED=0 go build -ldflags="-s -w" -cover -o mobilecli-cover
+	CGO_ENABLED=0 go build -ldflags="-s -w" -cover
 
 test:
 	go test ./... -v -race
