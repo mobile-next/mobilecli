@@ -186,6 +186,69 @@ describe('iOS Simulator Tests', () => {
 				const foregroundAfterHome = getForegroundApp(simulatorId);
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
+
+			it('should test device lifecycle: boot, reboot, shutdown', async function () {
+				this.timeout(180000); // 3 minutes for the full lifecycle
+
+				// shutdown simulator using simctl to get it offline
+				shutdownSimulator(simulatorId);
+				await new Promise(resolve => setTimeout(resolve, 3000));
+
+				// list offline devices - verify simulator is there and offline
+				const offlineDevices = listDevices(true);
+				verifyDeviceIsOffline(offlineDevices, simulatorId);
+
+				// boot the simulator using mobilecli
+				bootDevice(simulatorId);
+				await new Promise(resolve => setTimeout(resolve, 5000));
+
+				// verify simulator is now online
+				const devicesAfterBoot = listDevices(false);
+				verifyDeviceIsOnline(devicesAfterBoot, simulatorId);
+
+				// reboot the simulator
+				rebootDevice(simulatorId);
+
+				// immediately check - should be offline (or at least not in the online list during reboot)
+				await new Promise(resolve => setTimeout(resolve, 2000));
+				const devicesDuringReboot = listDevices(true);
+				// during reboot, state might be "Booting" or "Shutdown"
+				// we just verify it exists in the full list
+				verifyDeviceExists(devicesDuringReboot, simulatorId);
+
+				// wait a bit more for reboot to complete
+				await new Promise(resolve => setTimeout(resolve, 15000));
+
+				// verify simulator came back online
+				const devicesAfterReboot = listDevices(false);
+				verifyDeviceIsOnline(devicesAfterReboot, simulatorId);
+
+				// shutdown the simulator
+				shutdownDevice(simulatorId);
+				await new Promise(resolve => setTimeout(resolve, 3000));
+
+				// verify simulator is offline
+				const devicesAfterShutdown = listDevices(true);
+				verifyDeviceIsOffline(devicesAfterShutdown, simulatorId);
+
+				// boot it again for cleanup and other tests
+				bootDevice(simulatorId);
+				await new Promise(resolve => setTimeout(resolve, 5000));
+			});
+
+			it('should dump UI source in raw format', async function () {
+				this.timeout(60000);
+
+				// ensure WDA is running by checking foreground app first
+				const foregroundApp = getForegroundApp(simulatorId);
+				expect(foregroundApp.data.packageName).to.not.be.empty;
+
+				// dump UI in raw format
+				const rawDump = dumpUIRaw(simulatorId);
+
+				// verify it's the raw WDA response structure
+				verifyRawWDADump(rawDump);
+			});
 		});
 	});
 });
@@ -352,6 +415,7 @@ function verifySafariIsRunning(uiDump: UIDumpResponse): void {
 	expect(isSafariRunning, `Expected to find Safari UI elements (home screen or toolbar). Sample labels found: ${labels.join(', ')}`).to.be.true;
 }
 
+/*
 function verifyHomeScreenIsVisible(uiDump: UIDumpResponse): void {
 	// Home screen shows app icons - just check if we have any Icon elements
 	const elements = uiDump?.data?.elements;
@@ -367,6 +431,7 @@ function verifyHomeScreenIsVisible(uiDump: UIDumpResponse): void {
 	const hasIcons = elements.some(el => el.type === 'Icon');
 	expect(hasIcons, `Expected to find Icon elements on home screen, but found types: ${[...new Set(elementTypes)].join(', ')}`).to.be.true;
 }
+*/
 
 function findElementByName(uiDump: UIDumpResponse, name: string): UIElement {
 	const elements = uiDump?.data?.elements;
@@ -406,5 +471,72 @@ function verifyElementExists(uiDump: UIDumpResponse, name: string): void {
 		const availableNames = elements.map(el => el.name || el.label).filter(Boolean).slice(0, 20);
 		throw new Error(`Element with name "${name}" not found. Available elements: ${availableNames.join(', ')}`);
 	}
+}
+
+function bootDevice(simulatorId: string): void {
+	mobilecli(['device', 'boot', '--device', simulatorId]);
+}
+
+function rebootDevice(simulatorId: string): void {
+	mobilecli(['device', 'reboot', '--device', simulatorId]);
+}
+
+function shutdownDevice(simulatorId: string): void {
+	mobilecli(['device', 'shutdown', '--device', simulatorId]);
+}
+
+function verifyDeviceIsOnline(response: any, simulatorId: string): void {
+	const jsonString = JSON.stringify(response);
+	expect(jsonString).to.include(simulatorId);
+
+	// verify device has state "online"
+	const devices = response.data?.devices || [];
+	const device = devices.find((d: any) => d.id === simulatorId);
+	expect(device).to.not.be.undefined;
+	expect(device.state).to.equal('online');
+}
+
+function verifyDeviceIsOffline(response: any, simulatorId: string): void {
+	const jsonString = JSON.stringify(response);
+	expect(jsonString).to.include(simulatorId);
+
+	// verify device has state "offline"
+	const devices = response.data?.devices || [];
+	const device = devices.find((d: any) => d.id === simulatorId);
+	expect(device).to.not.be.undefined;
+	expect(device.state).to.equal('offline');
+}
+
+function verifyDeviceExists(response: any, simulatorId: string): void {
+	const jsonString = JSON.stringify(response);
+	expect(jsonString).to.include(simulatorId);
+
+	// just verify device exists in the list
+	const devices = response.data?.devices || [];
+	const device = devices.find((d: any) => d.id === simulatorId);
+	expect(device).to.not.be.undefined;
+}
+
+function dumpUIRaw(simulatorId: string): any {
+	return mobilecli(['dump', 'ui', '--device', simulatorId, '--format', 'raw']);
+}
+
+function verifyRawWDADump(response: any): void {
+	// verify it's a valid response
+	expect(response).to.not.be.undefined;
+	expect(response.status).to.equal('ok');
+
+	// raw format returns rawData field
+	const data = response.data;
+	expect(data).to.not.be.undefined;
+	expect(data.rawData).to.not.be.undefined;
+
+	// rawData should contain the tree structure directly from WDA
+	const rawData = data.rawData;
+	expect(rawData.type).to.be.a('string');
+	expect(rawData.type).to.not.be.empty;
+
+	// WDA raw response typically has children array
+	expect(rawData.children).to.be.an('array');
 }
 
