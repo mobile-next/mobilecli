@@ -730,6 +730,71 @@ func (d *AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
+func (d *AndroidDevice) getForegroundPackageName() (string, error) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "window", "displays")
+	if err != nil {
+		return "", fmt.Errorf("failed to get window displays: %w", err)
+	}
+
+	// parse package name from mCurrentFocus line
+	// format: mCurrentFocus=Window{...u0 com.package.name/...}
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "mCurrentFocus") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				focusPart := parts[2]
+				// extract package name (before the '/')
+				if idx := strings.Index(focusPart, "/"); idx != -1 {
+					return focusPart[:idx], nil
+				}
+			}
+			break
+		}
+	}
+
+	return "", fmt.Errorf("could not determine foreground app")
+}
+
+func (d *AndroidDevice) getAppVersion(packageName string) (string, error) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "package", packageName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get package info: %w", err)
+	}
+
+	// parse version name
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "versionName=") {
+			parts := strings.Split(line, "versionName=")
+			if len(parts) >= 2 {
+				return strings.TrimSpace(parts[1]), nil
+			}
+			break
+		}
+	}
+
+	return "", nil
+}
+
+func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
+	packageName, err := d.getForegroundPackageName()
+	if err != nil {
+		return nil, err
+	}
+
+	version, err := d.getAppVersion(packageName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ForegroundAppInfo{
+		PackageName: packageName,
+		AppName:     packageName,
+		Version:     version,
+	}, nil
+}
+
 func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 
 	// run adb shell wm size

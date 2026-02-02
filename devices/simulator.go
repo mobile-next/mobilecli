@@ -678,6 +678,38 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
+func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
+	// get active app info from WDA
+	activeApp, err := s.wdaClient.GetActiveAppInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active app info: %w", err)
+	}
+
+	// get all installed apps to enrich with version information
+	apps, err := s.ListApps()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	// find the matching app to get full details
+	for _, app := range apps {
+		if app.PackageName == activeApp.BundleID {
+			return &ForegroundAppInfo{
+				PackageName: app.PackageName,
+				AppName:     app.AppName,
+				Version:     app.Version,
+			}, nil
+		}
+	}
+
+	// if app not found in list (e.g., system app), return info from WDA only
+	return &ForegroundAppInfo{
+		PackageName: activeApp.BundleID,
+		AppName:     activeApp.Name,
+		Version:     "",
+	}, nil
+}
+
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 	wdaSize, err := s.wdaClient.GetWindowSize()
 	if err != nil {

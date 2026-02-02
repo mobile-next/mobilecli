@@ -62,6 +62,7 @@ type ControllableDevice interface {
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)
+	GetForegroundApp() (*ForegroundAppInfo, error)
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
@@ -229,4 +230,11 @@ type InstalledAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName,omitempty"`
 	Version     string `json:"version,omitempty"`
+}
+
+// ForegroundAppInfo represents information about the currently foreground application
+type ForegroundAppInfo struct {
+	PackageName string `json:"packageName"`
+	AppName     string `json:"appName"`
+	Version     string `json:"version"`
 }

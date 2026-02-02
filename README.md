@@ -35,7 +35,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App Management**: Launch app, terminate apps, install and uninstall
+- **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
 
 ### 🎯 Platform Support
 
@@ -75,7 +75,7 @@ make build
 
 Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
 
-`mobilecli` will automatically install an agent on the device that is required for functionalities such as opening a url, tapping on buttons and streaming screen capture.
+`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons and streaming screen capture.
 
 #### 🤖 For Android Support
 ```bash
@@ -185,6 +185,40 @@ mobilecli io text --device <device-id> 'hello world'
 - `POWER` - Power button
 - `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+
+### App Management 📱
+
+```bash
+# List installed apps on device
+mobilecli apps list --device <device-id>
+
+# Get currently foreground app
+mobilecli apps foreground --device <device-id>
+
+# Launch an app
+mobilecli apps launch <bundle-id> --device <device-id>
+
+# Terminate an app
+mobilecli apps terminate <bundle-id> --device <device-id>
+
+# Install an app (.apk for Android, .ipa for iOS, .zip for iOS Simulator)
+mobilecli apps install <path> --device <device-id>
+
+# Uninstall an app
+mobilecli apps uninstall <bundle-id> --device <device-id>
+```
+
+Example output for `apps foreground`:
+```json
+{
+  "status": "ok",
+  "data": {
+    "packageName": "com.example.app",
+    "appName": "Example App",
+    "version": "1.0.0"
+  }
+}
+```
 
 ## HTTP API 🔌
 

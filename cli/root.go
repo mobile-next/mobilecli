@@ -56,6 +56,9 @@ APP MANAGEMENT:
   # List installed apps
   mobilecli apps list --device <device-id>
 
+  # Get currently foreground app
+  mobilecli apps foreground --device <device-id>
+
   # Install an app (.apk for Android, .ipa/.zip for iOS)
   mobilecli apps install --device <device-id> /path/to/app.apk
 

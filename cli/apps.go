@@ -111,6 +111,24 @@ var appsUninstallCmd = &cobra.Command{
 	},
 }
 
+var appsForegroundCmd = &cobra.Command{
+	Use:   "foreground",
+	Short: "Get the currently foreground app on a device",
+	Long:  `Returns information about the app currently in the foreground on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ForegroundAppRequest{
+			DeviceID: deviceId,
+		}
+
+		response := commands.ForegroundAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(appsCmd)
 
@@ -119,10 +137,12 @@ func init() {
 	appsCmd.AddCommand(appsListCmd)
 	appsCmd.AddCommand(appsInstallCmd)
 	appsCmd.AddCommand(appsUninstallCmd)
+	appsCmd.AddCommand(appsForegroundCmd)
 
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")
 	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
+	appsForegroundCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get foreground app from")
 }

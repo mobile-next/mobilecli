@@ -1,5 +1,5 @@
-import { execSync } from 'child_process';
-import { readdirSync } from 'fs';
+import {execSync} from 'child_process';
+import {readdirSync} from 'fs';
 
 const ANDROID_HOME = process.env.ANDROID_HOME;
 const EMULATOR_PATH = `${ANDROID_HOME}/emulator/emulator`;
@@ -47,7 +47,7 @@ export function findAndroidSystemImage(apiLevel: string): string {
 }
 
 function listAvds(): Array<String> {
-	return execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' })
+	return execSync(`${EMULATOR_PATH} -list-avds`, {encoding: 'utf8'})
 		.toString()
 		.split("\n");
 }
@@ -58,7 +58,7 @@ export function createEmulator(name: string, systemImage: string, deviceProfile:
 			throw new Error(`AVD ${name} already exists`);
 		}
 
-		execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`, { encoding: 'utf8' });
+		execSync(`echo "no" | ${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager create avd -n "${name}" -k "${systemImage}" -d "${deviceProfile}"`, {encoding: 'utf8'});
 
 		createdEmulators.push(name);
 		return name;
@@ -69,8 +69,8 @@ export function createEmulator(name: string, systemImage: string, deviceProfile:
 
 export function launchEmulator(emulatorName: string): void {
 	try {
-		execSync(`${EMULATOR_PATH} -avd "${emulatorName}" -no-snapshot-save -wipe-data > /dev/null 2>&1 &`,
-			{ encoding: 'utf8' });
+		execSync(`${EMULATOR_PATH} -avd "${emulatorName}" -no-snapshot-save -wipe-data 2>&1 >/dev/null &`,
+			{encoding: 'utf8'});
 
 		execSync('sleep 60');
 	} catch (error) {
@@ -87,7 +87,7 @@ export function waitForEmulatorReady(emulatorName: string, timeout: number = 180
 	while (Date.now() - startTime < timeout) {
 		try {
 			// Check if emulator is listed in adb devices
-			const devices = execSync(`${ADB_PATH} devices`, { encoding: 'utf8' });
+			const devices = execSync(`${ADB_PATH} devices`, {encoding: 'utf8'});
 			const deviceLines = devices
 				.split('\n')
 				.filter(line => line.includes('device') && !line.includes('List'));
@@ -98,8 +98,14 @@ export function waitForEmulatorReady(emulatorName: string, timeout: number = 180
 					deviceId = parts[0].trim();
 
 					try {
-						const bootCompleted = execSync(`${ADB_PATH} -s ${deviceId} shell getprop sys.boot_completed`, { encoding: 'utf8', timeout: 5000 }).trim();
-						const bootAnim = execSync(`${ADB_PATH} -s ${deviceId} shell getprop init.svc.bootanim`, { encoding: 'utf8', timeout: 5000 }).trim();
+						const bootCompleted = execSync(`${ADB_PATH} -s ${deviceId} shell getprop sys.boot_completed`, {
+							encoding: 'utf8',
+							timeout: 5000
+						}).trim();
+						const bootAnim = execSync(`${ADB_PATH} -s ${deviceId} shell getprop init.svc.bootanim`, {
+							encoding: 'utf8',
+							timeout: 5000
+						}).trim();
 
 						if (bootCompleted === '1' && bootAnim === 'stopped') {
 							console.log(`Emulator ${emulatorName} is ready with device ID: ${deviceId}`);
@@ -122,11 +128,11 @@ export function waitForEmulatorReady(emulatorName: string, timeout: number = 180
 
 export function shutdownEmulator(deviceId: string): void {
 	try {
-		execSync(`${ADB_PATH} -s ${deviceId} emu kill`, { encoding: 'utf8' });
+		execSync(`${ADB_PATH} -s ${deviceId} emu kill`, {encoding: 'utf8'});
 	} catch (error) {
 		try {
 			// Force kill if graceful shutdown fails
-			const processes = execSync(`ps aux | grep "${deviceId}" | grep -v grep`, { encoding: 'utf8' });
+			const processes = execSync(`ps aux | grep "${deviceId}" | grep -v grep`, {encoding: 'utf8'});
 			if (processes.trim()) {
 				execSync(`pkill -f "${deviceId}"`);
 			}
@@ -162,13 +168,13 @@ export function createAndLaunchEmulator(apiLevel: string = '36', deviceProfile: 
 	const deviceId = waitForEmulatorReady(emulatorName);
 
 	console.log(`Emulator ${emulatorName} is ready with device ID ${deviceId}!`);
-	return { name: emulatorName, deviceId };
+	return {name: emulatorName, deviceId};
 }
 
 export function cleanupEmulators(): void {
 	// First try to shutdown all running emulators
 	try {
-		const devices = execSync(`${ADB_PATH} devices`, { encoding: 'utf8' });
+		const devices = execSync(`${ADB_PATH} devices`, {encoding: 'utf8'});
 		const deviceLines = devices.split('\n').filter(line => line.includes('device') && !line.includes('List'));
 
 		for (const line of deviceLines) {
@@ -197,7 +203,7 @@ export function removeFromTracking(emulatorName: string): void {
 
 export function getAvailableEmulators(): string[] {
 	try {
-		const stdout = execSync(`${EMULATOR_PATH} -list-avds`, { encoding: 'utf8' });
+		const stdout = execSync(`${EMULATOR_PATH} -list-avds`, {encoding: 'utf8'});
 		return stdout.trim().split('\n').filter(line => line.trim().length > 0);
 	} catch (error) {
 		throw new Error(`Failed to list available emulators: ${error}`);
