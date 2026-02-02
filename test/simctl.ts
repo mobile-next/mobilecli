@@ -112,10 +112,10 @@ export function createAndLaunchSimulator(iosVersion: string, deviceType: string 
 }
 
 export function cleanupSimulators(): void {
-	createdSimulators.forEach(simulatorId => {
-		shutdownSimulator(simulatorId)
+	for (const simulatorId of [...createdSimulators]) {
+		shutdownSimulator(simulatorId);
 		deleteSimulator(simulatorId);
-	});
+	}
 
 	createdSimulators.length = 0;
 }
