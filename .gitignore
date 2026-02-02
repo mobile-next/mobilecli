@@ -4,3 +4,4 @@ screenshot.png
 **/node_modules
 **/coverage*.out
 **/coverage*.html
+test/coverage

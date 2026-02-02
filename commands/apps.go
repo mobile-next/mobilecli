@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 // AppRequest represents the parameters for app-related commands
@@ -70,6 +72,34 @@ func ListAppsCommand(req ListAppsRequest) *CommandResponse {
 	}
 
 	return NewSuccessResponse(apps)
+}
+
+// ForegroundAppRequest represents the parameters for getting the foreground app
+type ForegroundAppRequest struct {
+	DeviceID string `json:"deviceId"`
+}
+
+// ForegroundAppCommand gets the currently foreground app on a device
+func ForegroundAppCommand(req ForegroundAppRequest) *CommandResponse {
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	// start agent if needed (for WDA)
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Hook: GetShutdownHook(),
+	})
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+	}
+
+	app, err := targetDevice.GetForegroundApp()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to get foreground app on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(app)
 }
 
 type InstallAppRequest struct {
