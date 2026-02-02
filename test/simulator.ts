@@ -146,6 +146,46 @@ describe('iOS Simulator Tests', () => {
 				const foregroundApp = getForegroundApp(simulatorId);
 				verifySafariIsForeground(foregroundApp);
 			});
+
+			it('should tap on General button in Settings and navigate to General settings', async function () {
+				// Launch Settings app
+				launchApp(simulatorId, 'com.apple.Preferences');
+				await new Promise(resolve => setTimeout(resolve, 5000));
+
+				// Dump UI to find General button
+				const uiDump = dumpUI(simulatorId);
+				const generalElement = findElementByName(uiDump, 'General');
+
+				// Calculate center coordinates for tap
+				const centerX = generalElement.rect.x + Math.floor(generalElement.rect.width / 2);
+				const centerY = generalElement.rect.y + Math.floor(generalElement.rect.height / 2);
+
+				// Tap on General button
+				tap(simulatorId, centerX, centerY);
+				await new Promise(resolve => setTimeout(resolve, 3000));
+
+				// Verify we're in General settings by checking for About element
+				const generalUiDump = dumpUI(simulatorId);
+				verifyElementExists(generalUiDump, 'About');
+			});
+
+			it('should press HOME button and return to home screen from Safari', async function () {
+				// Launch Safari
+				launchApp(simulatorId, 'com.apple.mobilesafari');
+				await new Promise(resolve => setTimeout(resolve, 10000));
+
+				// Verify Safari is in foreground
+				const foregroundApp = getForegroundApp(simulatorId);
+				verifySafariIsForeground(foregroundApp);
+
+				// Press HOME button
+				pressButton(simulatorId, 'HOME');
+				await new Promise(resolve => setTimeout(resolve, 3000));
+
+				// Verify SpringBoard (home screen) is now in foreground
+				const foregroundAfterHome = getForegroundApp(simulatorId);
+				verifySpringBoardIsForeground(foregroundAfterHome);
+			});
 		});
 	});
 });
@@ -326,5 +366,45 @@ function verifyHomeScreenIsVisible(uiDump: UIDumpResponse): void {
 
 	const hasIcons = elements.some(el => el.type === 'Icon');
 	expect(hasIcons, `Expected to find Icon elements on home screen, but found types: ${[...new Set(elementTypes)].join(', ')}`).to.be.true;
+}
+
+function findElementByName(uiDump: UIDumpResponse, name: string): UIElement {
+	const elements = uiDump?.data?.elements;
+
+	if (!elements) {
+		throw new Error(`No UI elements found in response. Status: ${uiDump?.status}`);
+	}
+
+	const element = elements.find(el => el.name === name || el.label === name);
+
+	if (!element) {
+		const availableNames = elements.map(el => el.name || el.label).filter(Boolean).slice(0, 20);
+		throw new Error(`Element with name "${name}" not found. Available elements: ${availableNames.join(', ')}`);
+	}
+
+	return element;
+}
+
+function tap(simulatorId: string, x: number, y: number): void {
+	mobilecli(['io', 'tap', `${x},${y}`, '--device', simulatorId]);
+}
+
+function pressButton(simulatorId: string, button: string): void {
+	mobilecli(['io', 'button', button, '--device', simulatorId]);
+}
+
+function verifyElementExists(uiDump: UIDumpResponse, name: string): void {
+	const elements = uiDump?.data?.elements;
+
+	if (!elements) {
+		throw new Error(`No UI elements found in response. Status: ${uiDump?.status}`);
+	}
+
+	const exists = elements.some(el => el.name === name || el.label === name);
+
+	if (!exists) {
+		const availableNames = elements.map(el => el.name || el.label).filter(Boolean).slice(0, 20);
+		throw new Error(`Element with name "${name}" not found. Available elements: ${availableNames.join(', ')}`);
+	}
 }
 

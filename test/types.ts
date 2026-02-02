@@ -4,6 +4,12 @@ export interface UIElement {
 	name?: string;
 	value?: string;
 	identifier?: string;
+	rect: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	},
 }
 
 export interface UIDumpResponse {
