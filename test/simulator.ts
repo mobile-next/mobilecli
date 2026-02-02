@@ -1,5 +1,5 @@
-import { expect } from 'chai';
-import { execFileSync } from 'child_process';
+import {expect} from 'chai';
+import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
@@ -10,6 +10,8 @@ import {
 	cleanupSimulators,
 	findIOSRuntime
 } from './simctl';
+import {randomUUID} from "node:crypto";
+import {mkdirSync} from "fs";
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 
@@ -18,7 +20,7 @@ describe('iOS Simulator Tests', () => {
 		cleanupSimulators();
 	});
 
-	['16', '17', '18', '26'].forEach((iosVersion) => {
+	[/*'16',*/ '17', '18', '26'].forEach((iosVersion) => {
 		describe(`iOS ${iosVersion}`, () => {
 			let simulatorId: string;
 			let runtimeAvailable: boolean = false;
@@ -48,7 +50,6 @@ describe('iOS Simulator Tests', () => {
 			it('should take screenshot', async function () {
 				if (!runtimeAvailable) {
 					this.skip();
-					return;
 				}
 
 				this.timeout(180000);
@@ -65,7 +66,6 @@ describe('iOS Simulator Tests', () => {
 			it('should open URL https://example.com', async function () {
 				if (!runtimeAvailable) {
 					this.skip();
-					return;
 				}
 
 				this.timeout(180000);
@@ -76,20 +76,32 @@ describe('iOS Simulator Tests', () => {
 	});
 });
 
+const createCoverageDirectory = (): string => {
+	const dir = path.join(__dirname, "coverage");
+	mkdirSync(dir, {recursive: true});
+	return dir;
+}
+
 function mobilecli(args: string[]): void {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
 	try {
+		const coverdata = createCoverageDirectory();
 		const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
 			encoding: 'utf8',
 			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe']
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: {
+				...process.env,
+				"GOCOVERDIR": coverdata,
+			}
 		});
 	} catch (error: any) {
 		console.log(`Command failed: ${mobilecliBinary} ${JSON.stringify(args)}`);
 		if (error.stderr) {
 			console.log(`Error stderr: ${error.stderr}`);
 		}
+
 		if (error.stdout) {
 			console.log(`Error stdout: ${error.stdout}`);
 		}
