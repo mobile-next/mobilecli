@@ -423,7 +423,15 @@ func getAVDName(transportID string) string {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// try getting device name from settings
+	// for emulators, prioritize AVD name
+	if strings.HasPrefix(deviceID, "emulator-") {
+		avdName := getAVDName(deviceID)
+		if avdName != "" {
+			return strings.ReplaceAll(avdName, "_", " ")
+		}
+	}
+
+	// for real devices, try getting device name from settings
 	nameCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
 	nameOutput, err := nameCmd.CombinedOutput()
 	if err == nil && len(nameOutput) > 0 {
@@ -432,12 +440,6 @@ func getAndroidDeviceName(deviceID string) string {
 		if name != "" && name != "null" {
 			return name
 		}
-	}
-
-	// fall back to AVD name for emulators
-	avdName := getAVDName(deviceID)
-	if avdName != "" {
-		return strings.ReplaceAll(avdName, "_", " ")
 	}
 
 	// fall back to product model
