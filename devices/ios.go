@@ -40,8 +40,9 @@ const (
 
 // deviceInfoCache caches device name and OS version to avoid expensive GetValues() calls
 type deviceInfoCacheEntry struct {
-	DeviceName string
-	OSVersion  string
+	DeviceName  string
+	OSVersion   string
+	ProductType string
 }
 
 var (
@@ -63,9 +64,10 @@ func getDeviceInfoCache() *lru.Cache[string, deviceInfoCacheEntry] {
 }
 
 type IOSDevice struct {
-	Udid       string `json:"UniqueDeviceID"`
-	DeviceName string `json:"DeviceName"`
-	OSVersion  string `json:"Version"`
+	Udid        string `json:"UniqueDeviceID"`
+	DeviceName  string `json:"DeviceName"`
+	OSVersion   string `json:"Version"`
+	ProductType string `json:"ProductType"`
 
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
@@ -109,11 +111,12 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	// check cache first
 	cache := getDeviceInfoCache()
-	var deviceName, osVersion string
+	var deviceName, osVersion, productType string
 
 	if cached, ok := cache.Get(udid); ok {
 		deviceName = cached.DeviceName
 		osVersion = cached.OSVersion
+		productType = cached.ProductType
 	} else {
 		allValues, err := goios.GetValues(deviceEntry)
 		if err != nil {
@@ -122,18 +125,21 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 		deviceName = allValues.Value.DeviceName
 		osVersion = allValues.Value.ProductVersion
+		productType = allValues.Value.ProductType
 
 		// store in cache
 		cache.Add(udid, deviceInfoCacheEntry{
-			DeviceName: deviceName,
-			OSVersion:  osVersion,
+			DeviceName:  deviceName,
+			OSVersion:   osVersion,
+			ProductType: productType,
 		})
 	}
 
 	device := IOSDevice{
-		Udid:       udid,
-		DeviceName: deviceName,
-		OSVersion:  osVersion,
+		Udid:        udid,
+		DeviceName:  deviceName,
+		OSVersion:   osVersion,
+		ProductType: productType,
 	}
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
@@ -921,6 +927,7 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    d.State(),
+			Model:    d.ProductType,
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,

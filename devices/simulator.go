@@ -34,18 +34,20 @@ type AppInfo struct {
 
 // devicePlist represents the structure of device.plist
 type devicePlist struct {
-	UDID    string `plist:"UDID"`
-	Name    string `plist:"name"`
-	Runtime string `plist:"runtime"`
-	State   int    `plist:"state"`
+	UDID       string `plist:"UDID"`
+	Name       string `plist:"name"`
+	Runtime    string `plist:"runtime"`
+	State      int    `plist:"state"`
+	DeviceType string `plist:"deviceType"`
 }
 
 // Simulator represents an iOS simulator device
 type Simulator struct {
-	Name    string `json:"name"`
-	UDID    string `json:"udid"`
-	State   string `json:"state"`
-	Runtime string `json:"runtime"`
+	Name       string `json:"name"`
+	UDID       string `json:"udid"`
+	State      string `json:"state"`
+	Runtime    string `json:"runtime"`
+	DeviceType string `json:"deviceType"`
 }
 
 // SimulatorDevice wraps a Simulator to implement the AnyDevice interface
@@ -165,10 +167,11 @@ func GetSimulators() ([]Simulator, error) {
 		}
 
 		simulator := Simulator{
-			Name:    device.Name,
-			UDID:    device.UDID,
-			State:   stateStr,
-			Runtime: device.Runtime,
+			Name:       device.Name,
+			UDID:       device.UDID,
+			State:      stateStr,
+			Runtime:    device.Runtime,
+			DeviceType: device.DeviceType,
 		}
 
 		simulators = append(simulators, simulator)
@@ -724,6 +727,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 			Type:     "simulator",
 			Version:  parseSimulatorVersion(s.Runtime),
 			State:    s.State(),
+			Model:    s.Simulator.DeviceType,
 		},
 		ScreenSize: &ScreenSize{
 			Width:  wdaSize.ScreenSize.Width,
