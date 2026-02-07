@@ -135,7 +135,7 @@ describe('server jsonrpc', () => {
 	it('should require params for device_info method', async () => {
 		const payload: JSONRPCRequest = {
 			jsonrpc: '2.0',
-			method: 'device_info',
+			method: 'device.info',
 			id: 1
 		};
 
