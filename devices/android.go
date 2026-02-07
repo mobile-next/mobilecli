@@ -26,6 +26,7 @@ type AndroidDevice struct {
 	version     string
 	state       string // "online" or "offline"
 	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
+	model       string
 }
 
 func (d *AndroidDevice) ID() string {
@@ -401,6 +402,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 					name:        getAndroidDeviceName(transportID),
 					version:     getAndroidDeviceVersion(transportID),
 					state:       "online",
+					model:       getAndroidDeviceModel(transportID),
 				})
 			}
 		}
@@ -421,10 +423,23 @@ func getAVDName(transportID string) string {
 }
 
 func getAndroidDeviceName(deviceID string) string {
-	// try getting AVD name first (for emulators)
-	avdName := getAVDName(deviceID)
-	if avdName != "" {
-		return strings.ReplaceAll(avdName, "_", " ")
+	// for emulators, prioritize AVD name
+	if strings.HasPrefix(deviceID, "emulator-") {
+		avdName := getAVDName(deviceID)
+		if avdName != "" {
+			return strings.ReplaceAll(avdName, "_", " ")
+		}
+	}
+
+	// for real devices, try getting device name from settings
+	nameCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
+	nameOutput, err := nameCmd.CombinedOutput()
+	if err == nil && len(nameOutput) > 0 {
+		name := strings.TrimSpace(string(nameOutput))
+		// settings returns "null" if the value is not set
+		if name != "" && name != "null" {
+			return name
+		}
 	}
 
 	// fall back to product model
@@ -435,6 +450,16 @@ func getAndroidDeviceName(deviceID string) string {
 	}
 
 	return deviceID
+}
+
+func getAndroidDeviceModel(deviceID string) string {
+	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
+	modelOutput, err := modelCmd.CombinedOutput()
+	if err == nil && len(modelOutput) > 0 {
+		return strings.TrimSpace(string(modelOutput))
+	}
+
+	return ""
 }
 
 func getAndroidDeviceVersion(deviceID string) string {
@@ -826,6 +851,7 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    d.State(),
+			Model:    d.model,
 		},
 		ScreenSize: &ScreenSize{
 			Width:  widthInt,

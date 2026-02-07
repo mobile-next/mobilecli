@@ -171,6 +171,7 @@ type DeviceInfo struct {
 	Type     string `json:"type"`
 	Version  string `json:"version"`
 	State    string `json:"state"`
+	Model    string `json:"model"`
 }
 
 type ScreenSize struct {
@@ -211,6 +212,24 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			continue
 		}
 
+		// get model for devices
+		model := ""
+		if d.Platform() == "ios" {
+			if d.DeviceType() == "real" {
+				if iosDevice, ok := d.(*IOSDevice); ok {
+					model = iosDevice.ProductType
+				}
+			} else if d.DeviceType() == "simulator" {
+				if simDevice, ok := d.(*SimulatorDevice); ok {
+					model = simDevice.Simulator.DeviceType
+				}
+			}
+		} else if d.Platform() == "android" {
+			if androidDevice, ok := d.(*AndroidDevice); ok {
+				model = androidDevice.model
+			}
+		}
+
 		deviceInfoList = append(deviceInfoList, DeviceInfo{
 			ID:       d.ID(),
 			Name:     d.Name(),
@@ -218,6 +237,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    state,
+			Model:    model,
 		})
 	}
 	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))
