@@ -19,11 +19,41 @@ Common response format:
 
 Errors use standard JSON-RPC error codes and include a `data` field with additional context.
 
+## BREAKING CHANGE: Method Names Updated
+
+**All JSON-RPC methods now use a `device.*` naming scheme. Old method names are no longer supported.**
+
+### Migration Table
+
+| Old Method Name | New Method Name |
+|-----------------|-----------------|
+| devices | devices.list |
+| screenshot | device.screenshot |
+| screencapture | device.screencapture |
+| io_tap | device.io.tap |
+| io_longpress | device.io.longpress |
+| io_text | device.io.text |
+| io_button | device.io.button |
+| io_swipe | device.io.swipe |
+| io_gesture | device.io.gesture |
+| url | device.url |
+| device_info | device.info |
+| io_orientation_get | device.io.orientation.get |
+| io_orientation_set | device.io.orientation.set |
+| device_boot | device.boot |
+| device_shutdown | device.shutdown |
+| device_reboot | device.reboot |
+| dump_ui | device.dump.ui |
+| apps_launch | device.apps.launch |
+| apps_terminate | device.apps.terminate |
+| apps_list | device.apps.list |
+| apps_foreground | device.apps.foreground |
+
 ## Methods
 
 This section documents the JSON-RPC methods registered by the server and shows example `params` and curl requests.
 
-- `devices`
+- `devices.list`
 	- Description: List devices.
 	- Params: object (optional)
 		- `includeOffline` (bool)
@@ -32,10 +62,10 @@ This section documents the JSON-RPC methods registered by the server and shows e
 	- Example:
 
 ```json
-{"jsonrpc":"2.0","method":"devices","params":{"includeOffline":true},"id":1}
+{"jsonrpc":"2.0","method":"devices.list","params":{"includeOffline":true},"id":1}
 ```
 
-- `screenshot`
+- `device.screenshot`
 	- Description: Take a screenshot and return base64 data.
 	- Params: object
 		- `deviceId` (string)
@@ -44,10 +74,10 @@ This section documents the JSON-RPC methods registered by the server and shows e
 	- Example:
 
 ```json
-{"jsonrpc":"2.0","method":"screenshot","params":{"deviceId":"<id>","format":"png"},"id":2}
+{"jsonrpc":"2.0","method":"device.screenshot","params":{"deviceId":"<id>","format":"png"},"id":2}
 ```
 
-- `screencapture` (streaming)
+- `device.screencapture` (streaming)
 	- Description: Start a screen capture stream (MJPEG or AVC). This writes a streaming response; use the HTTP `/rpc` POST to initiate streaming.
 	- Params: object
 		- `deviceId` (string)
@@ -56,7 +86,7 @@ This section documents the JSON-RPC methods registered by the server and shows e
 		- `scale` (float)
 	- Note: Progress notifications are sent inside the stream for `mjpeg`.
 
-- `io_tap`
+- `device.io.tap`
 	- Description: Tap at coordinates.
 	- Params: object
 		- `deviceId` (string)
@@ -65,10 +95,10 @@ This section documents the JSON-RPC methods registered by the server and shows e
 	- Example:
 
 ```json
-{"jsonrpc":"2.0","method":"io_tap","params":{"deviceId":"<id>","x":100,"y":200},"id":3}
+{"jsonrpc":"2.0","method":"device.io.tap","params":{"deviceId":"<id>","x":100,"y":200},"id":3}
 ```
 
-- `io_longpress`
+- `device.io.longpress`
 	- Description: Long-press at coordinates.
 	- Params: object
 		- `deviceId` (string)
@@ -76,37 +106,37 @@ This section documents the JSON-RPC methods registered by the server and shows e
 		- `y` (int)
 		- `duration` (int, ms)
 
-- `io_text`
+- `device.io.text`
 	- Description: Send text input.
 	- Params: object
 		- `deviceId` (string)
 		- `text` (string)
 
-- `io_button`
+- `device.io.button`
 	- Description: Press a hardware button (HOME, VOLUME_UP, etc.).
 	- Params: object
 		- `deviceId` (string)
 		- `button` (string)
 
-- `io_swipe`
+- `device.io.swipe`
 	- Description: Swipe from one point to another.
 	- Params: object
 		- `deviceId` (string)
 		- `x1`,`y1`,`x2`,`y2` (ints)
 
-- `io_gesture`
+- `device.io.gesture`
 	- Description: Perform a gesture composed of actions (tap, move, wait, etc.).
 	- Params: object
 		- `deviceId` (string)
 		- `actions` (array of action objects) — see `devices/wda` types in code for schema.
 
-- `url`
+- `device.url`
 	- Description: Open a URL or deep link on device.
 	- Params: object
 		- `deviceId` (string)
 		- `url` (string)
 
-- `device_info`
+- `device.info`
 	- Description: Retrieve detailed device info (screen size, OS, etc.).
 	- Params: object
 		- `deviceId` (string)
@@ -116,48 +146,53 @@ This section documents the JSON-RPC methods registered by the server and shows e
 {"jsonrpc":"2.0","method":"device_info","params":{"deviceId":"<id>"},"id":21}
 ```
 
-- `io_orientation_get`
+- `device.io.orientation.get`
 	- Description: Get device orientation.
 	- Params: object
 		- `deviceId` (string)
 
-- `io_orientation_set`
+- `device.io.orientation.set`
 	- Description: Set device orientation.
 	- Params: object
 		- `deviceId` (string)
 		- `orientation` (string)
 
-- `device_boot`, `device_shutdown`, `device_reboot`
+- `device.boot`, `device.shutdown`, `device.reboot`
 	- Description: Control device power state (boot, shutdown, reboot).
 	- Params: object
 		- `deviceId` (string)
 
-- `dump_ui`
+- `device.dump.ui`
 	- Description: Dump the UI tree from the device.
 	- Params: object
 		- `deviceId` (string)
 		- `format` (string) - `json` (default) or `raw`
 
-- `apps_launch`
+- `device.apps.launch`
 	- Description: Launch an app on a device.
 	- Params: object
 		- `deviceId` (string)
 		- `bundleId` (string) - required
 
-- `apps_terminate`
+- `device.apps.terminate`
 	- Description: Terminate a running app on a device.
 	- Params: object
 		- `deviceId` (string)
 		- `bundleId` (string) - required
 
-- `apps_list`
+- `device.apps.list`
 	- Description: List installed apps on a device.
+	- Params: object (optional)
+		- `deviceId` (string)
+
+- `device.apps.foreground`
+	- Description: Get the currently foreground (active) app on a device.
 	- Params: object (optional)
 		- `deviceId` (string)
 
 Common notes:
 - For most methods `deviceId` is optional; when omitted the server auto-selects a single online device or returns an error when multiple devices are available.
-- Methods that interact with the UI/agent (`io_*`, `dump_ui`, `apps_launch`, `device_info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
+- Methods that interact with the UI/agent (`device.io.*`, `device.dump.ui`, `device.apps.launch`, `device.info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
 
 ## Curl examples
 
@@ -166,7 +201,7 @@ Common notes:
 ```bash
 curl -s -X POST http://localhost:12000/rpc \
 	-H 'Content-Type: application/json' \
-	-d '{"jsonrpc":"2.0","method":"devices","params":{},"id":10}'
+	-d '{"jsonrpc":"2.0","method":"devices.list","params":{},"id":10}'
 ```
 
 - Take a screenshot:
@@ -174,7 +209,7 @@ curl -s -X POST http://localhost:12000/rpc \
 ```bash
 curl -s -X POST http://localhost:12000/rpc \
 	-H 'Content-Type: application/json' \
-	-d '{"jsonrpc":"2.0","method":"screenshot","params":{"deviceId":"<id>","format":"png"},"id":11}'
+	-d '{"jsonrpc":"2.0","method":"device.screenshot","params":{"deviceId":"<id>","format":"png"},"id":11}'
 ```
 
 - Start MJPEG screen capture (streaming):
@@ -190,7 +225,7 @@ curl -v -X POST http://localhost:12000/rpc \
 ```bash
 curl -s -X POST http://localhost:12000/rpc \
 	-H 'Content-Type: application/json' \
-	-d '{"jsonrpc":"2.0","method":"io_tap","params":{"deviceId":"<id>","x":195,"y":422},"id":13}'
+	-d '{"jsonrpc":"2.0","method":"device.io.tap","params":{"deviceId":"<id>","x":195,"y":422},"id":13}'
 ```
 
 - Long press:

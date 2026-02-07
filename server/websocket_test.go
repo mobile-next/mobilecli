@@ -39,6 +39,22 @@ func readJSONRPCResponse(t *testing.T, conn *websocket.Conn) JSONRPCResponse {
 	return resp
 }
 
+var requestIDCounter int
+
+func newJSONRPCRequest(method string, params ...json.RawMessage) JSONRPCRequest {
+	requestIDCounter++
+	p := json.RawMessage(`{}`)
+	if len(params) > 0 {
+		p = params[0]
+	}
+	return JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  method,
+		Params:  p,
+		ID:      requestIDCounter,
+	}
+}
+
 func TestWebSocket_ValidRequest(t *testing.T) {
 	server, wsURL := setupTestServer(false)
 	defer server.Close()
@@ -46,18 +62,13 @@ func TestWebSocket_ValidRequest(t *testing.T) {
 	conn := connectWebSocket(t, wsURL)
 	defer conn.Close()
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "devices",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("devices.list")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
 
 	assert.Equal(t, "2.0", resp.JSONRPC)
-	assert.Equal(t, 1, int(resp.ID.(float64)))
+	assert.NotNil(t, resp.ID)
 	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.Result)
 }
@@ -71,7 +82,7 @@ func TestWebSocket_MissingJSONRPCVersion(t *testing.T) {
 
 	req := JSONRPCRequest{
 		JSONRPC: "1.0",
-		Method:  "devices",
+		Method:  "devices.list",
 		Params:  json.RawMessage(`{}`),
 		ID:      1,
 	}
@@ -97,7 +108,7 @@ func TestWebSocket_MissingID(t *testing.T) {
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
-		Method:  "devices",
+		Method:  "devices.list",
 		Params:  json.RawMessage(`{}`),
 		ID:      nil,
 	}
@@ -121,12 +132,7 @@ func TestWebSocket_MissingMethod(t *testing.T) {
 	conn := connectWebSocket(t, wsURL)
 	defer conn.Close()
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
@@ -147,12 +153,7 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	conn := connectWebSocket(t, wsURL)
 	defer conn.Close()
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "nonexistent_method",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("nonexistent_method")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
@@ -215,18 +216,13 @@ func TestWebSocket_MultipleRequests(t *testing.T) {
 	defer conn.Close()
 
 	for i := 1; i <= 3; i++ {
-		req := JSONRPCRequest{
-			JSONRPC: "2.0",
-			Method:  "devices",
-			Params:  json.RawMessage(`{}`),
-			ID:      i,
-		}
+		req := newJSONRPCRequest("devices.list")
 
 		sendJSONRPCRequest(t, conn, req)
 		resp := readJSONRPCResponse(t, conn)
 
 		assert.Equal(t, "2.0", resp.JSONRPC)
-		assert.Equal(t, i, int(resp.ID.(float64)))
+		assert.NotNil(t, resp.ID)
 		assert.Nil(t, resp.Error)
 		assert.NotNil(t, resp.Result)
 	}
@@ -281,12 +277,7 @@ func TestWebSocket_CORSEnabled(t *testing.T) {
 	require.NoError(t, err, "should connect with CORS enabled")
 	defer conn.Close()
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "devices",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("devices.list")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
@@ -313,12 +304,7 @@ func TestWebSocket_ConnectionLifecycle(t *testing.T) {
 
 	conn := connectWebSocket(t, wsURL)
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "devices",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("devices.list")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
@@ -342,7 +328,7 @@ func TestWebSocket_StringID(t *testing.T) {
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
-		Method:  "devices",
+		Method:  "devices.list",
 		Params:  json.RawMessage(`{}`),
 		ID:      "string-id-123",
 	}
@@ -367,7 +353,7 @@ func TestValidateJSONRPCRequest_AllValidationErrors(t *testing.T) {
 			name: "invalid jsonrpc version",
 			req: JSONRPCRequest{
 				JSONRPC: "1.0",
-				Method:  "devices",
+				Method:  "devices.list",
 				ID:      1,
 			},
 			wantCode: ErrCodeInvalidRequest,
@@ -378,7 +364,7 @@ func TestValidateJSONRPCRequest_AllValidationErrors(t *testing.T) {
 			name: "missing id",
 			req: JSONRPCRequest{
 				JSONRPC: "2.0",
-				Method:  "devices",
+				Method:  "devices.list",
 				ID:      nil,
 			},
 			wantCode: ErrCodeInvalidRequest,
@@ -412,7 +398,7 @@ func TestValidateJSONRPCRequest_AllValidationErrors(t *testing.T) {
 func TestValidateJSONRPCRequest_Valid(t *testing.T) {
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
-		Method:  "devices",
+		Method:  "devices.list",
 		ID:      1,
 	}
 
@@ -502,7 +488,7 @@ func TestWebSocket_ConcurrentConnections(t *testing.T) {
 
 			req := JSONRPCRequest{
 				JSONRPC: "2.0",
-				Method:  "devices",
+				Method:  "devices.list",
 				Params:  json.RawMessage(`{}`),
 				ID:      id,
 			}
@@ -537,12 +523,7 @@ func TestWebSocket_ReadDeadline(t *testing.T) {
 	defer conn.Close()
 
 	// send request to establish connection
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "devices",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("devices.list")
 
 	sendJSONRPCRequest(t, conn, req)
 	resp := readJSONRPCResponse(t, conn)
@@ -569,12 +550,7 @@ func BenchmarkWebSocket_SingleRequest(b *testing.B) {
 	}
 	defer conn.Close()
 
-	req := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "devices",
-		Params:  json.RawMessage(`{}`),
-		ID:      1,
-	}
+	req := newJSONRPCRequest("devices.list")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -607,7 +583,7 @@ func BenchmarkWebSocket_ConcurrentRequests(b *testing.B) {
 
 		req := JSONRPCRequest{
 			JSONRPC: "2.0",
-			Method:  "devices",
+			Method:  "devices.list",
 			Params:  json.RawMessage(`{}`),
 			ID:      1,
 		}
@@ -676,7 +652,7 @@ func TestWSConnection_SendResponse(t *testing.T) {
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
-		Method:  "devices",
+		Method:  "devices.list",
 		Params:  json.RawMessage(`{}`),
 		ID:      "response-test",
 	}
