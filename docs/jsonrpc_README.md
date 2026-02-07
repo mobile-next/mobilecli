@@ -192,7 +192,7 @@ This section documents the JSON-RPC methods registered by the server and shows e
 
 Common notes:
 - For most methods `deviceId` is optional; when omitted the server auto-selects a single online device or returns an error when multiple devices are available.
-- Methods that interact with the UI/agent (`io_*`, `dump_ui`, `apps_launch`, `device_info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
+- Methods that interact with the UI/agent (`device.io.*`, `device.dump.ui`, `device.apps.launch`, `device.info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
 
 ## Curl examples
 
