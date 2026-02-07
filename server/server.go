@@ -591,6 +591,10 @@ type AppsListParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
+type AppsForegroundParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -883,6 +887,26 @@ func handleAppsList(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ListAppsCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsForeground(params json.RawMessage) (interface{}, error) {
+	var appsForegroundParams AppsForegroundParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &appsForegroundParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
+		}
+	}
+
+	req := commands.ForegroundAppRequest{
+		DeviceID: appsForegroundParams.DeviceID,
+	}
+
+	response := commands.ForegroundAppCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

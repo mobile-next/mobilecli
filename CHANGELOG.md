@@ -1,3 +1,36 @@
+## [Unreleased]
+
+**BREAKING CHANGES:**
+* General: All JSON-RPC method names now use `device.*` prefix for better organization. Migration table:
+  * `devices` → `devices.list`
+  * `screenshot` → `device.screenshot`
+  * `screencapture` → `device.screencapture`
+  * `io_tap` → `device.io.tap`
+  * `io_longpress` → `device.io.longpress`
+  * `io_text` → `device.io.text`
+  * `io_button` → `device.io.button`
+  * `io_swipe` → `device.io.swipe`
+  * `io_gesture` → `device.io.gesture`
+  * `url` → `device.url`
+  * `device_info` → `device.info`
+  * `io_orientation_get` → `device.io.orientation.get`
+  * `io_orientation_set` → `device.io.orientation.set`
+  * `device_boot` → `device.boot`
+  * `device_shutdown` → `device.shutdown`
+  * `device_reboot` → `device.reboot`
+  * `dump_ui` → `device.dump.ui`
+  * `apps_launch` → `device.apps.launch`
+  * `apps_terminate` → `device.apps.terminate`
+  * `apps_list` → `device.apps.list`
+  * `apps_foreground` → `device.apps.foreground`
+
+**New Features:**
+* General: Added `device.apps.foreground` method to get the currently active application
+
+**Documentation:**
+* General: Updated openrpc.json with all missing method definitions
+* General: Updated jsonrpc_README.md with migration guide and breaking change notice
+
 ## [0.0.55](https://github.com/mobile-next/mobilecli/releases/tag/0.0.55) (2026-02-02)
 * iOS: Support getting foreground app and its version ([#165](https://github.com/mobile-next/mobilecli/pull/165))
 * Android: Support getting foreground app and its version ([#165](https://github.com/mobile-next/mobilecli/pull/165))
