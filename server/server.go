@@ -70,6 +70,9 @@ type SessionManager struct {
 // global session manager instance
 var sessionManager *SessionManager
 
+// global shutdown channel for JSON-RPC shutdown command
+var shutdownChan chan os.Signal
+
 type JSONRPCRequest struct {
 	// these fields are all omitempty, so we can report back to client if they are missing
 	JSONRPC string          `json:"jsonrpc,omitempty"`
@@ -193,6 +196,9 @@ func StartServer(addr string, enableCORS bool) error {
 		sessions: make(map[string]*StreamSession),
 	}
 
+	// initialize shutdown channel for JSON-RPC shutdown command
+	shutdownChan = make(chan os.Signal, 1)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", sendBanner)
@@ -245,6 +251,23 @@ func StartServer(addr string, enableCORS bool) error {
 		return fmt.Errorf("server error: %w", err)
 	case sig := <-sigChan:
 		utils.Info("Received signal %v, shutting down gracefully...", sig)
+
+		// cleanup all resources first
+		hook.Shutdown()
+
+		// create context with timeout for shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// shutdown server gracefully
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("server shutdown error: %w", err)
+		}
+
+		utils.Info("Server stopped")
+		return nil
+	case <-shutdownChan:
+		utils.Info("Received shutdown command via JSON-RPC, shutting down gracefully...")
 
 		// cleanup all resources first
 		hook.Shutdown()
@@ -912,6 +935,17 @@ func handleAppsForeground(params json.RawMessage) (interface{}, error) {
 	}
 
 	return response.Data, nil
+}
+
+// handleServerShutdown initiates graceful server shutdown
+func handleServerShutdown(params json.RawMessage) (interface{}, error) {
+	// trigger shutdown in background (after response is sent)
+	go func() {
+		time.Sleep(100 * time.Millisecond) // allow response to be sent
+		shutdownChan <- syscall.SIGTERM
+	}()
+
+	return map[string]string{"status": "shutting down"}, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
