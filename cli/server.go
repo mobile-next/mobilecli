@@ -38,7 +38,7 @@ var serverStartCmd = &cobra.Command{
 			}
 
 			if child != nil {
-				fmt.Printf("Server started in daemon mode on %s\n", listenAddr)
+				fmt.Printf("Server daemon spawned, attempting to listen on %s\n", listenAddr)
 				return nil
 			}
 		}

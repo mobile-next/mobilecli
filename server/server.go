@@ -245,44 +245,32 @@ func StartServer(addr string, enableCORS bool) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	performShutdown := func() error {
+		if err := hook.Shutdown(); err != nil {
+			utils.Info("hook shutdown error: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("server shutdown error: %w", err)
+		}
+
+		utils.Info("Server stopped")
+		return nil
+	}
+
 	// wait for shutdown signal or server error
 	select {
 	case err := <-serverErr:
 		return fmt.Errorf("server error: %w", err)
 	case sig := <-sigChan:
 		utils.Info("Received signal %v, shutting down gracefully...", sig)
-
-		// cleanup all resources first
-		hook.Shutdown()
-
-		// create context with timeout for shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		// shutdown server gracefully
-		if err := server.Shutdown(ctx); err != nil {
-			return fmt.Errorf("server shutdown error: %w", err)
-		}
-
-		utils.Info("Server stopped")
-		return nil
+		return performShutdown()
 	case <-shutdownChan:
 		utils.Info("Received shutdown command via JSON-RPC, shutting down gracefully...")
-
-		// cleanup all resources first
-		hook.Shutdown()
-
-		// create context with timeout for shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		// shutdown server gracefully
-		if err := server.Shutdown(ctx); err != nil {
-			return fmt.Errorf("server shutdown error: %w", err)
-		}
-
-		utils.Info("Server stopped")
-		return nil
+		return performShutdown()
 	}
 }
 

@@ -82,7 +82,8 @@ func KillServer(addr string) error {
 	}
 
 	// send request
-	resp, err := http.Post(addr+"/rpc", "application/json", bytes.NewBuffer(jsonData))
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(addr+"/rpc", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") {
 			return fmt.Errorf("server is not running on %s", addr)
