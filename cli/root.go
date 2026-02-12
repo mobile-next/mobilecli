@@ -131,6 +131,11 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// GetVersion returns the current version of mobilecli
+func GetVersion() string {
+	return version
+}
+
 // printJson is a helper function to print JSON responses
 func printJson(data interface{}) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
