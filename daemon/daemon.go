@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sevlyar/go-daemon"
 )
@@ -83,19 +84,25 @@ func KillServer(addr string) error {
 
 	// send request
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(addr+"/rpc", "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, addr+"/rpc", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") {
 			return fmt.Errorf("server is not running on %s", addr)
 		}
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
-	defer resp.Body.Close()
 
 	// check response
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
 		return fmt.Errorf("server returned error: %s", resp.Status)
 	}
 
-	return nil
+	return resp.Body.Close()
 }

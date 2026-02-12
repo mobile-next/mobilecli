@@ -930,7 +930,10 @@ func handleServerShutdown(params json.RawMessage) (interface{}, error) {
 	// trigger shutdown in background (after response is sent)
 	go func() {
 		time.Sleep(100 * time.Millisecond) // allow response to be sent
-		shutdownChan <- syscall.SIGTERM
+		select {
+		case shutdownChan <- syscall.SIGTERM:
+		default:
+		}
 	}()
 
 	return map[string]string{"status": "shutting down"}, nil
