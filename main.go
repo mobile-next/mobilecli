@@ -8,10 +8,20 @@ import (
 
 	"github.com/mobile-next/mobilecli/cli"
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/daemon"
 	"github.com/mobile-next/mobilecli/devices"
 )
 
 func main() {
+	// daemon child sets up its own signal handling in server.StartServer
+	if daemon.IsChild() {
+		if err := cli.Execute(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// create shutdown hook for cleanup tracking
 	hook := devices.NewShutdownHook()
 	commands.SetShutdownHook(hook)

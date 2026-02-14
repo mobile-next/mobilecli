@@ -1,114 +1,78 @@
-import { expect } from 'chai';
-import { execSync } from 'child_process';
+import {expect} from 'chai';
+import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import {
-	createAndLaunchEmulator,
-	shutdownEmulator,
-	deleteEmulator,
-	cleanupEmulators,
-	findAndroidSystemImage,
-	getAvailableEmulators
-} from './avdctl';
+import {findRunningEmulatorByName} from './avdctl';
+import {mkdirSync} from "fs";
 
-const TEST_SERVER_URL = 'http://localhost:12001';
-
-const SUPPORTED_VERSIONS = ['31', '36'];
+const EMULATOR_NAME = 'mobilecli-test-emu';
 
 describe('Android Emulator Tests', () => {
-	after(() => {
-		cleanupEmulators();
+	let deviceId: string;
+
+	before(function () {
+		this.timeout(30000);
+
+		const id = findRunningEmulatorByName(EMULATOR_NAME);
+		if (!id) {
+			console.log(`No running "${EMULATOR_NAME}" emulator found, skipping Android Emulator tests`);
+			console.log('Create and launch one with:');
+			console.log('  avdmanager create avd -n "mobilecli-test-emu" -k "system-images;android-36;google_apis_playstore;arm64-v8a" -d "pixel_9"');
+			console.log('  emulator -avd mobilecli-test-emu &');
+			this.skip();
+			return;
+		}
+
+		deviceId = id;
 	});
 
-	SUPPORTED_VERSIONS.forEach((apiLevel) => {
-		describe(`Android API ${apiLevel}`, () => {
-			let emulatorName: string;
-			let deviceId: string;
-			let systemImageAvailable: boolean = false;
+	it('should take screenshot', async function () {
+		this.timeout(180000);
 
-			before(function () {
-				this.timeout(300000); // 5 minutes for emulator startup
+		const screenshotPath = `/tmp/screenshot-emu-${Date.now()}.png`;
 
-				try {
-					findAndroidSystemImage(apiLevel);
-					systemImageAvailable = true;
+		takeScreenshot(deviceId, screenshotPath);
+		verifyScreenshotFileWasCreated(screenshotPath);
+		verifyScreenshotFileHasValidContent(screenshotPath);
+	});
 
-					console.log(`Creating and launching Android API ${apiLevel} emulator...`);
-					const result = createAndLaunchEmulator(apiLevel, 'pixel');
-					emulatorName = result.name;
-					deviceId = result.deviceId;
-					console.log(`Emulator ready: ${emulatorName} (${deviceId})`);
-				} catch (error) {
-					console.log(`Android API ${apiLevel} system image not available, skipping tests: ${error}`);
-					systemImageAvailable = false;
-				}
-			});
+	it('should open URL https://example.com', async function () {
+		this.timeout(180000);
 
-			after(() => {
-				if (deviceId && emulatorName) {
-					console.log(`Cleaning up emulator ${emulatorName} (${deviceId})`);
-					shutdownEmulator(deviceId);
-					deleteEmulator(emulatorName);
-				}
-			});
+		openUrl(deviceId, 'https://example.com');
+	});
 
-			it('should take screenshot', async function () {
-				if (!systemImageAvailable) {
-					this.skip();
-					return;
-				}
+	it('should get device info', async function () {
+		this.timeout(60000);
 
-				this.timeout(180000);
-
-				const screenshotPath = `/tmp/screenshot-android${apiLevel}-${Date.now()}.png`;
-
-				takeScreenshot(deviceId, screenshotPath);
-				verifyScreenshotFileWasCreated(screenshotPath);
-				verifyScreenshotFileHasValidContent(screenshotPath);
-
-				// console.log(`Screenshot saved at: ${screenshotPath}`);
-			});
-
-			it('should open URL https://example.com', async function () {
-				if (!systemImageAvailable) {
-					this.skip();
-					return;
-				}
-
-				this.timeout(180000);
-
-				openUrl(deviceId, 'https://example.com');
-			});
-
-			it('should get device info', async function () {
-				if (!systemImageAvailable) {
-					this.skip();
-					return;
-				}
-
-				this.timeout(60000);
-
-				getDeviceInfo(deviceId);
-			});
-		});
+		const info = getDeviceInfo(deviceId);
+		verifyDeviceInfo(info, deviceId);
 	});
 });
 
-function mobilecli(args: string): void {
+const createCoverageDirectory = (): string => {
+	const dir = path.join(__dirname, "coverage");
+	mkdirSync(dir, {recursive: true});
+	return dir;
+}
+
+function mobilecli(args: string[]): any {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
-	const command = `${mobilecliBinary} ${args}`;
 
 	try {
-		const result = execSync(command, {
+		const coverdata = createCoverageDirectory();
+		const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
 			encoding: 'utf8',
 			timeout: 180000,
 			stdio: ['pipe', 'pipe', 'pipe'],
 			env: {
-				ANDROID_HOME: process.env.ANDROID_HOME || "",
+				...process.env,
+				"GOCOVERDIR": coverdata,
 			}
 		});
+		return JSON.parse(result);
 	} catch (error: any) {
-		console.log(`Command failed: ${command}`);
+		console.log(`Command failed: ${mobilecliBinary} ${JSON.stringify(args)}`);
 		if (error.stderr) {
 			console.log(`Error stderr: ${error.stderr}`);
 		}
@@ -123,14 +87,12 @@ function mobilecli(args: string): void {
 }
 
 function takeScreenshot(deviceId: string, screenshotPath: string): void {
-	execSync('../mobilecli devices', { stdio: 'inherit' });
-	mobilecli(`screenshot --device ${deviceId} --format png --output ${screenshotPath}`);
+	mobilecli(['screenshot', '--device', deviceId, '--format', 'png', '--output', screenshotPath]);
 }
 
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
 	const fileExists = fs.existsSync(screenshotPath);
 	expect(fileExists).to.be.true;
-	// console.log(`✓ Screenshot file was created: ${screenshotPath}`);
 }
 
 function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
@@ -140,9 +102,16 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 }
 
 function openUrl(deviceId: string, url: string): void {
-	mobilecli(`url "${url}" --device ${deviceId}`);
+	mobilecli(['url', url, '--device', deviceId]);
 }
 
-function getDeviceInfo(deviceId: string): void {
-	mobilecli(`device info --device ${deviceId}`);
+function getDeviceInfo(deviceId: string): any {
+	return mobilecli(['device', 'info', '--device', deviceId]);
+}
+
+function verifyDeviceInfo(info: any, deviceId: string): void {
+	expect(info.data.device.id).to.equal(deviceId);
+	expect(info.data.device.platform).to.equal('android');
+	expect(info.data.device.type).to.equal('emulator');
+	expect(info.data.device.state).to.equal('online');
 }

@@ -3,6 +3,31 @@ import {execSync} from 'child_process';
 // track created simulators for cleanup
 const createdSimulators: string[] = [];
 
+interface SimulatorInfo {
+	udid: string;
+	state: string;
+	name: string;
+}
+
+export function findSimulatorByName(name: string): SimulatorInfo | null {
+	try {
+		const output = execSync('xcrun simctl list devices -j', {encoding: 'utf8'});
+		const data = JSON.parse(output);
+
+		for (const runtime of Object.values(data.devices) as any[]) {
+			for (const device of runtime) {
+				if (device.name === name && device.isAvailable) {
+					return {udid: device.udid, state: device.state, name: device.name};
+				}
+			}
+		}
+
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 export function findIOSRuntime(majorVersion: string): string {
 	try {
 		const matchingLines = execSync('xcrun simctl list runtimes', {encoding: 'utf8'})

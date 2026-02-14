@@ -3,253 +3,205 @@ import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
-	createAndLaunchSimulator,
-	printAllLogsFromSimulator,
-	shutdownSimulator,
-	deleteSimulator,
-	cleanupSimulators,
-	findIOSRuntime
+	findSimulatorByName,
+	bootSimulator,
+	waitForSimulatorReady,
 } from './simctl';
-import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
 import {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
 
-const TEST_SERVER_URL = 'http://localhost:12001';
+const SIMULATOR_NAME = 'mobilecli-test-sim';
 
 describe('iOS Simulator Tests', () => {
-	after(() => {
-		cleanupSimulators();
+	let simulatorId: string;
+
+	before(function () {
+		this.timeout(180000);
+
+		const sim = findSimulatorByName(SIMULATOR_NAME);
+		if (!sim) {
+			console.log(`No "${SIMULATOR_NAME}" simulator found, skipping iOS Simulator tests`);
+			console.log('Create one with: xcrun simctl create "mobilecli-test-sim" "iPhone 16" com.apple.CoreSimulator.SimRuntime.iOS-26-0');
+			this.skip();
+			return;
+		}
+
+		simulatorId = sim.udid;
+
+		if (sim.state !== 'Booted') {
+			try {
+				bootSimulator(simulatorId);
+				waitForSimulatorReady(simulatorId);
+			} catch (error) {
+				console.log(`Failed to boot simulator "${SIMULATOR_NAME}": ${error}`);
+				this.skip();
+				return;
+			}
+		}
 	});
 
-	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
-		describe(`iOS ${iosVersion}`, () => {
-			let simulatorId: string;
+	it('should take screenshot', async function () {
+		const screenshotPath = `/tmp/screenshot-sim-${Date.now()}.png`;
 
-			before(function () {
-				this.timeout(180000);
+		takeScreenshot(simulatorId, screenshotPath);
+		verifyScreenshotFileWasCreated(screenshotPath);
+		verifyScreenshotFileHasValidContent(screenshotPath);
+	});
 
-				// Check if runtime is available
-				try {
-					findIOSRuntime(iosVersion);
-					simulatorId = createAndLaunchSimulator(iosVersion);
-				} catch (error) {
-					console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
-					this.skip();
-				}
-			});
+	it('should open URL https://example.com', async function () {
+		openUrl(simulatorId, 'https://example.com');
+	});
 
-			after(() => {
-				if (simulatorId) {
-					printAllLogsFromSimulator(simulatorId);
-					shutdownSimulator(simulatorId);
-					deleteSimulator(simulatorId);
-				}
-			});
+	it('should list all devices', async function () {
+		const devices = listDevices(false);
+		verifyDeviceListContainsSimulator(devices, simulatorId);
+	});
 
-			it('should take screenshot', async function () {
-				const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
+	it('should get device info', async function () {
+		const info = getDeviceInfo(simulatorId);
+		verifyDeviceInfo(info, simulatorId);
+	});
 
-				takeScreenshot(simulatorId, screenshotPath);
-				verifyScreenshotFileWasCreated(screenshotPath);
-				verifyScreenshotFileHasValidContent(screenshotPath);
+	it('should list installed apps', async function () {
+		const apps = listApps(simulatorId);
+		verifyAppsListContainsSafari(apps);
+	});
 
-				// console.log(`Screenshot saved at: ${screenshotPath}`);
-			});
+	it('should warm up WDA by checking foreground app', async function () {
+		this.timeout(300000);
 
-			it('should open URL https://example.com', async function () {
-				openUrl(simulatorId, 'https://example.com');
-			});
+		try {
+			terminateApp(simulatorId, 'com.apple.mobilesafari');
+			await new Promise(resolve => setTimeout(resolve, 2000));
+		} catch (e) {
+			// Safari might not be running, that's fine
+		}
 
-			it('should list all devices', async function () {
-				const devices = listDevices(false);
-				verifyDeviceListContainsSimulator(devices, simulatorId);
-			});
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySpringBoardIsForeground(foregroundApp);
 
-			it('should get device info', async function () {
-				const info = getDeviceInfo(simulatorId);
-				verifyDeviceInfo(info, simulatorId);
-			});
+		await new Promise(resolve => setTimeout(resolve, 3000));
+	});
 
-			it('should list installed apps', async function () {
-				const apps = listApps(simulatorId);
-				verifyAppsListContainsSafari(apps);
-			});
+	it('should launch Safari app and verify it is in foreground', async function () {
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-			it('should warm up WDA by checking foreground app', async function () {
-				this.timeout(300000); // 5 minutes for WDA installation
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
 
-				// Terminate Safari if it's running (from previous URL test)
-				try {
-					terminateApp(simulatorId, 'com.apple.mobilesafari');
-					await new Promise(resolve => setTimeout(resolve, 2000));
-				} catch (e) {
-					// Safari might not be running, that's fine
-				}
+	it('should terminate Safari app and verify SpringBoard is in foreground', async function () {
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-				// This ensures WDA is installed and running before the Safari tests
-				// Check foreground app - should be SpringBoard
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundApp);
+		terminateApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				// Wait a bit more to ensure WDA is fully ready
-				await new Promise(resolve => setTimeout(resolve, 3000));
-			});
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySpringBoardIsForeground(foregroundApp);
+	});
 
-			it('should launch Safari app and verify it is in foreground', async function () {
-				launchApp(simulatorId, 'com.apple.mobilesafari');
+	it('should handle launching app twice (idempotency)', async function () {
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-				// Wait for Safari to fully launch
-				await new Promise(resolve => setTimeout(resolve, 10000));
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
 
-			it('should terminate Safari app and verify SpringBoard is in foreground', async function () {
-				// First launch Safari
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
+	it('should handle launch-terminate-launch cycle', async function () {
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-				// Now terminate it
-				terminateApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
+		terminateApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundApp);
-			});
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-			it('should handle launching app twice (idempotency)', async function () {
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
 
-				// Launch again - should not fail
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
+	it('should tap on General button in Settings and navigate to General settings', async function () {
+		launchApp(simulatorId, 'com.apple.Preferences');
+		await new Promise(resolve => setTimeout(resolve, 5000));
 
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
+		const uiDump = dumpUI(simulatorId);
+		const generalElement = findElementByName(uiDump, 'General');
 
-			it('should handle launch-terminate-launch cycle', async function () {
-				// Launch
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
+		const centerX = generalElement.rect.x + Math.floor(generalElement.rect.width / 2);
+		const centerY = generalElement.rect.y + Math.floor(generalElement.rect.height / 2);
 
-				// Terminate
-				terminateApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
+		tap(simulatorId, centerX, centerY);
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				// Launch again
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
+		const generalUiDump = dumpUI(simulatorId);
+		verifyElementExists(generalUiDump, 'About');
+	});
 
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
+	it('should press HOME button and return to home screen from Safari', async function () {
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
 
-			it('should tap on General button in Settings and navigate to General settings', async function () {
-				// Launch Settings app
-				launchApp(simulatorId, 'com.apple.Preferences');
-				await new Promise(resolve => setTimeout(resolve, 5000));
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
 
-				// Dump UI to find General button
-				const uiDump = dumpUI(simulatorId);
-				const generalElement = findElementByName(uiDump, 'General');
+		pressButton(simulatorId, 'HOME');
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				// Calculate center coordinates for tap
-				const centerX = generalElement.rect.x + Math.floor(generalElement.rect.width / 2);
-				const centerY = generalElement.rect.y + Math.floor(generalElement.rect.height / 2);
+		const foregroundAfterHome = getForegroundApp(simulatorId);
+		verifySpringBoardIsForeground(foregroundAfterHome);
+	});
 
-				// Tap on General button
-				tap(simulatorId, centerX, centerY);
-				await new Promise(resolve => setTimeout(resolve, 3000));
+	it('should test device lifecycle: boot, reboot, shutdown', async function () {
+		this.timeout(180000);
 
-				// Verify we're in General settings by checking for About element
-				const generalUiDump = dumpUI(simulatorId);
-				verifyElementExists(generalUiDump, 'About');
-			});
+		shutdownDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-			it('should press HOME button and return to home screen from Safari', async function () {
-				// Launch Safari
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
+		const offlineDevices = listDevices(true);
+		verifyDeviceIsOffline(offlineDevices, simulatorId);
 
-				// Verify Safari is in foreground
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
+		bootDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 5000));
 
-				// Press HOME button
-				pressButton(simulatorId, 'HOME');
-				await new Promise(resolve => setTimeout(resolve, 3000));
+		const devicesAfterBoot = listDevices(false);
+		verifyDeviceIsOnline(devicesAfterBoot, simulatorId);
 
-				// Verify SpringBoard (home screen) is now in foreground
-				const foregroundAfterHome = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundAfterHome);
-			});
+		rebootDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 2000));
 
-			it('should test device lifecycle: boot, reboot, shutdown', async function () {
-				this.timeout(180000); // 3 minutes for the full lifecycle
+		const devicesDuringReboot = listDevices(true);
+		verifyDeviceExists(devicesDuringReboot, simulatorId);
 
-				// shutdown simulator using simctl to get it offline
-				shutdownSimulator(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 3000));
+		await new Promise(resolve => setTimeout(resolve, 15000));
 
-				// list offline devices - verify simulator is there and offline
-				const offlineDevices = listDevices(true);
-				verifyDeviceIsOffline(offlineDevices, simulatorId);
+		const devicesAfterReboot = listDevices(false);
+		verifyDeviceIsOnline(devicesAfterReboot, simulatorId);
 
-				// boot the simulator using mobilecli
-				bootDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 5000));
+		shutdownDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 3000));
 
-				// verify simulator is now online
-				const devicesAfterBoot = listDevices(false);
-				verifyDeviceIsOnline(devicesAfterBoot, simulatorId);
+		const devicesAfterShutdown = listDevices(true);
+		verifyDeviceIsOffline(devicesAfterShutdown, simulatorId);
 
-				// reboot the simulator
-				rebootDevice(simulatorId);
+		bootDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 5000));
+	});
 
-				// immediately check - should be offline (or at least not in the online list during reboot)
-				await new Promise(resolve => setTimeout(resolve, 2000));
-				const devicesDuringReboot = listDevices(true);
-				// during reboot, state might be "Booting" or "Shutdown"
-				// we just verify it exists in the full list
-				verifyDeviceExists(devicesDuringReboot, simulatorId);
+	it('should dump UI source in raw format', async function () {
+		this.timeout(60000);
 
-				// wait a bit more for reboot to complete
-				await new Promise(resolve => setTimeout(resolve, 15000));
+		const foregroundApp = getForegroundApp(simulatorId);
+		expect(foregroundApp.data.packageName).to.not.be.empty;
 
-				// verify simulator came back online
-				const devicesAfterReboot = listDevices(false);
-				verifyDeviceIsOnline(devicesAfterReboot, simulatorId);
-
-				// shutdown the simulator
-				shutdownDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// verify simulator is offline
-				const devicesAfterShutdown = listDevices(true);
-				verifyDeviceIsOffline(devicesAfterShutdown, simulatorId);
-
-				// boot it again for cleanup and other tests
-				bootDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 5000));
-			});
-
-			it('should dump UI source in raw format', async function () {
-				this.timeout(60000);
-
-				// ensure WDA is running by checking foreground app first
-				const foregroundApp = getForegroundApp(simulatorId);
-				expect(foregroundApp.data.packageName).to.not.be.empty;
-
-				// dump UI in raw format
-				const rawDump = dumpUIRaw(simulatorId);
-
-				// verify it's the raw WDA response structure
-				verifyRawWDADump(rawDump);
-			});
-		});
+		const rawDump = dumpUIRaw(simulatorId);
+		verifyRawWDADump(rawDump);
 	});
 });
 
@@ -297,7 +249,6 @@ function takeScreenshot(simulatorId: string, screenshotPath: string): void {
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
 	const fileExists = fs.existsSync(screenshotPath);
 	expect(fileExists).to.be.true;
-	// console.log(`✓ Screenshot file was created: ${screenshotPath}`);
 }
 
 function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
@@ -369,69 +320,12 @@ function verifySpringBoardIsForeground(foregroundApp: ForegroundAppResponse): vo
 function dumpUI(simulatorId: string): UIDumpResponse {
 	const response = mobilecli(['dump', 'ui', '--device', simulatorId]);
 
-	// Debug: log the response if elements are missing
 	if (!response?.data?.elements) {
 		console.log('Unexpected dump UI response:', JSON.stringify(response, null, 2));
 	}
 
 	return response;
 }
-
-function verifySafariIsRunning(uiDump: UIDumpResponse): void {
-	// Safari can show either:
-	// 1. Home screen with Favorites, Privacy Report, Reading List
-	// 2. A web page (if it was previously viewing one)
-	const elements = uiDump?.data?.elements;
-
-	if (!elements) {
-		throw new Error(`No UI elements found in response. Status: ${uiDump?.status}, Response: ${JSON.stringify(uiDump)}`);
-	}
-
-	// Debug: log some labels
-	const labels = elements.map(el => el.label || el.name).filter(Boolean).slice(0, 10);
-	console.log(`Found ${elements.length} UI elements. First 10 labels:`, labels);
-
-	// Check for Safari home screen elements OR Safari-specific UI elements
-	const hasSafariHomeElements = elements.some(el =>
-		el.label === 'Favorites' ||
-		el.label === 'Privacy Report' ||
-		el.label === 'Reading List' ||
-		el.name === 'Favorites' ||
-		el.name === 'Privacy Report' ||
-		el.name === 'Reading List'
-	);
-
-	// Check for Safari toolbar elements that appear on any page
-	const hasSafariToolbar = elements.some(el =>
-		el.label === 'Address' ||
-		el.label === 'Back' ||
-		el.label === 'Page Menu' ||
-		el.name === 'Address' ||
-		el.name === 'Back' ||
-		el.name === 'Page Menu'
-	);
-
-	const isSafariRunning = hasSafariHomeElements || hasSafariToolbar;
-	expect(isSafariRunning, `Expected to find Safari UI elements (home screen or toolbar). Sample labels found: ${labels.join(', ')}`).to.be.true;
-}
-
-/*
-function verifyHomeScreenIsVisible(uiDump: UIDumpResponse): void {
-	// Home screen shows app icons - just check if we have any Icon elements
-	const elements = uiDump?.data?.elements;
-
-	if (!elements) {
-		throw new Error(`No UI elements found in response. Status: ${uiDump?.status}, Response: ${JSON.stringify(uiDump)}`);
-	}
-
-	// Debug: log element types
-	const elementTypes = elements.map(el => el.type);
-	console.log(`Found ${elements.length} UI elements with types:`, [...new Set(elementTypes)]);
-
-	const hasIcons = elements.some(el => el.type === 'Icon');
-	expect(hasIcons, `Expected to find Icon elements on home screen, but found types: ${[...new Set(elementTypes)].join(', ')}`).to.be.true;
-}
-*/
 
 function findElementByName(uiDump: UIDumpResponse, name: string): UIElement {
 	const elements = uiDump?.data?.elements;
@@ -489,7 +383,6 @@ function verifyDeviceIsOnline(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
 	expect(jsonString).to.include(simulatorId);
 
-	// verify device has state "online"
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
 	expect(device).to.not.be.undefined;
@@ -500,7 +393,6 @@ function verifyDeviceIsOffline(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
 	expect(jsonString).to.include(simulatorId);
 
-	// verify device has state "offline"
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
 	expect(device).to.not.be.undefined;
@@ -511,7 +403,6 @@ function verifyDeviceExists(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
 	expect(jsonString).to.include(simulatorId);
 
-	// just verify device exists in the list
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
 	expect(device).to.not.be.undefined;
@@ -522,21 +413,16 @@ function dumpUIRaw(simulatorId: string): any {
 }
 
 function verifyRawWDADump(response: any): void {
-	// verify it's a valid response
 	expect(response).to.not.be.undefined;
 	expect(response.status).to.equal('ok');
 
-	// raw format returns rawData field
 	const data = response.data;
 	expect(data).to.not.be.undefined;
 	expect(data.rawData).to.not.be.undefined;
 
-	// rawData should contain the tree structure directly from WDA
 	const rawData = data.rawData;
 	expect(rawData.type).to.be.a('string');
 	expect(rawData.type).to.not.be.empty;
 
-	// WDA raw response typically has children array
 	expect(rawData.children).to.be.an('array');
 }
-
