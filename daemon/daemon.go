@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mobile-next/mobilecli/server"
 	"github.com/sevlyar/go-daemon"
 )
 
@@ -71,10 +72,10 @@ func KillServer(addr string) error {
 	addr = "http://" + addr
 
 	// create JSON-RPC request
-	reqBody := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "server.shutdown",
-		"id":      shutdownRequestID,
+	reqBody := server.JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "server.shutdown",
+		ID:      shutdownRequestID,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

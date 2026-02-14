@@ -32,15 +32,13 @@ var serverStartCmd = &cobra.Command{
 		isDaemon, _ := cmd.Flags().GetBool("daemon")
 
 		if isDaemon && !daemon.IsChild() {
-			child, err := daemon.Daemonize()
+			_, err := daemon.Daemonize()
 			if err != nil {
 				return fmt.Errorf("failed to start daemon: %w", err)
 			}
 
-			if child != nil {
-				fmt.Printf("Server daemon spawned, attempting to listen on %s\n", listenAddr)
-				return nil
-			}
+			fmt.Printf("Server daemon spawned, attempting to listen on %s\n", listenAddr)
+			return nil
 		}
 
 		return server.StartServer(listenAddr, enableCORS)

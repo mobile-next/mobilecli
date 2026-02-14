@@ -936,7 +936,7 @@ func handleServerShutdown(params json.RawMessage) (interface{}, error) {
 		}
 	}()
 
-	return map[string]string{"status": "shutting down"}, nil
+	return map[string]string{"status": "ok"}, nil
 }
 
 func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
