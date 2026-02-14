@@ -1,3 +1,6 @@
+## [0.1.57](https://github.com/mobile-next/mobilecli/releases/tag/0.1.57) (2026-02-14)
+* General: Support for daemonizing (running in background) using -d or --daemon ([#169](https://github.com/mobile-next/mobilecli/pull/169))
+
 ## [0.1.56](https://github.com/mobile-next/mobilecli/releases/tag/0.1.56) (2026-02-07)
 * General: Added .model to "devices" and "device info" commands ([#166](https://github.com/mobile-next/mobilecli/pull/166))
 * General: Refactored jsonrpc methods into namespaces ("device", and "devices") ([#167](https://github.com/mobile-next/mobilecli/pull/167))
