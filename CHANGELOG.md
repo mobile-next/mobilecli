@@ -1,3 +1,6 @@
+## [0.1.58](https://github.com/mobile-next/mobilecli/releases/tag/0.1.58) (2026-02-14)
+* iOS: Click HOME button three times after Broadcast Extension starts running ([#27afdbe](https://github.com/mobile-next/mobilecli/commit/27afdbed955aebd6649ab8645068ae83322875a3))
+
 ## [0.1.57](https://github.com/mobile-next/mobilecli/releases/tag/0.1.57) (2026-02-14)
 * General: Support for daemonizing (running in background) using -d or --daemon ([#169](https://github.com/mobile-next/mobilecli/pull/169))
 
