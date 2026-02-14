@@ -653,7 +653,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 	return nil
 }
 
-func (d IOSDevice) PressButton(key string) error {
+func (d *IOSDevice) PressButton(key string) error {
 	return d.wdaClient.PressButton(key)
 }
 
@@ -1561,6 +1561,15 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// Wait for the TCP server to start listening (takes about 5 seconds)
 	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
 	time.Sleep(deviceKitBroadcastTimeout)
+
+	// Press HOME 3 times to dismiss the DeviceKit app and return to home screen
+	for i := 0; i < 3; i++ {
+		err = d.PressButton("HOME")
+		if err != nil {
+			utils.Verbose("Failed to press HOME button (attempt %d): %v", i+1, err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	utils.Verbose("DeviceKit broadcast started successfully")
 
