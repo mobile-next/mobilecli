@@ -5,3 +5,4 @@ screenshot.png
 **/coverage*.out
 **/coverage*.html
 test/coverage
+coverage/

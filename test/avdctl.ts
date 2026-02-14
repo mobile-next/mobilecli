@@ -209,3 +209,43 @@ export function getAvailableEmulators(): string[] {
 		throw new Error(`Failed to list available emulators: ${error}`);
 	}
 }
+
+export function findRunningEmulatorByName(name: string): string | null {
+	try {
+		const avds = getAvailableEmulators();
+		if (!avds.includes(name)) {
+			return null;
+		}
+
+		const devices = execSync(`${ADB_PATH} devices`, {encoding: 'utf8'});
+		const deviceLines = devices.split('\n')
+			.filter(line => line.includes('device') && !line.includes('List'));
+
+		for (const line of deviceLines) {
+			const parts = line.split('\t');
+			if (parts.length >= 2 && parts[1].trim() === 'device') {
+				const deviceId = parts[0].trim();
+				if (!deviceId.startsWith('emulator-')) {
+					continue;
+				}
+
+				try {
+					const avdName = execSync(`${ADB_PATH} -s ${deviceId} emu avd name`, {
+						encoding: 'utf8',
+						timeout: 5000
+					}).trim().split('\n')[0];
+
+					if (avdName === name) {
+						return deviceId;
+					}
+				} catch {
+					continue;
+				}
+			}
+		}
+
+		return null;
+	} catch {
+		return null;
+	}
+}

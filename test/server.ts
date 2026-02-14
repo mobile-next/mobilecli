@@ -3,9 +3,6 @@ import {spawn, ChildProcess} from 'child_process';
 import axios from 'axios';
 import * as path from 'path';
 import {
-	cleanupSimulators
-} from './simctl';
-import {
 	JSONRPCRequest,
 	JSONRPCResponse,
 	ErrCodeParseError,
@@ -13,7 +10,6 @@ import {
 	ErrCodeMethodNotFound,
 	ErrCodeServerError
 } from './jsonrpc';
-import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
 
 const TEST_SERVER_URL = 'http://localhost:12001';
@@ -23,8 +19,8 @@ const SERVER_TIMEOUT = 8000; // 8 seconds
 let serverProcess: ChildProcess | null = null;
 
 const createCoverageDirectory = (): string => {
-	const dir = path.join(__dirname, "cover-" + randomUUID());
-	mkdirSync(dir);
+	const dir = path.join(__dirname, "coverage");
+	mkdirSync(dir, {recursive: true});
 	return dir;
 }
 
@@ -40,7 +36,6 @@ describe('server jsonrpc', () => {
 	// Stop server after all tests
 	after(() => {
 		stopTestServer();
-		cleanupSimulators();
 	});
 
 	it('should return status "ok" for root endpoint', async () => {
