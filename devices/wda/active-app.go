@@ -17,11 +17,10 @@ type activeAppResponse struct {
 	Value activeAppValue `json:"value"`
 }
 
-// ActiveAppInfo represents information about the currently active application
-type ActiveAppInfo struct {
-	BundleID  string `json:"bundleId"`
-	Name      string `json:"name"`
-	ProcessID int    `json:"pid"`
+// GetForegroundApp returns information about the currently active/foreground application.
+// This is the IOSControl interface method that delegates to GetActiveAppInfo.
+func (c *WdaClient) GetForegroundApp() (*ActiveAppInfo, error) {
+	return c.GetActiveAppInfo()
 }
 
 // GetActiveAppInfo returns information about the currently active/foreground application

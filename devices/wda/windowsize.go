@@ -4,16 +4,6 @@ import (
 	"fmt"
 )
 
-type Size struct {
-	Width  int `json:"width"`
-	Height int `json:"height"`
-}
-
-type WindowSize struct {
-	Scale      int  `json:"scale"`
-	ScreenSize Size `json:"screenSize"`
-}
-
 func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
 	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
@@ -24,8 +14,6 @@ func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// log.Printf("response: %v", response["value"])
 
 	windowSize := response["value"].(map[string]interface{})
 	screenSize := windowSize["screenSize"].(map[string]interface{})

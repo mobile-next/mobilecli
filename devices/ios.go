@@ -22,9 +22,11 @@ import (
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -71,7 +73,9 @@ type IOSDevice struct {
 
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
-	wdaClient              *wda.WdaClient
+	controlClient          IOSControl        // active control backend (WDA or DeviceKit)
+	deviceKitClient        *devicekit.Client  // kept for DeviceKit-specific methods (HealthCheck, WaitForReady, Close, GetForegroundApp)
+	wdaClient              *wda.WdaClient     // kept for WDA-specific methods (GetStatus, GetActiveAppInfo, WaitForAgent, SetMjpegFramerate)
 	mjpegClient            *mjpeg.WdaMjpegClient
 	wdaCancel              context.CancelFunc
 	portForwarderWda       *ios.PortForwarder
@@ -149,6 +153,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	device.tunnelManager = tunnelManager
 	device.wdaClient = wda.NewWdaClient("localhost:8100")
+	device.controlClient = device.wdaClient // default to WDA, overridden by StartAgent if DeviceKit is available
 
 	return device, nil
 }
@@ -174,7 +179,7 @@ func ListIOSDevices() ([]IOSDevice, error) {
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
-	return d.wdaClient.TakeScreenshot()
+	return d.controlClient.TakeScreenshot()
 }
 
 func (d IOSDevice) Reboot() error {
@@ -209,19 +214,19 @@ func (d IOSDevice) Shutdown() error {
 }
 
 func (d IOSDevice) Tap(x, y int) error {
-	return d.wdaClient.Tap(x, y)
+	return d.controlClient.Tap(x, y)
 }
 
 func (d IOSDevice) LongPress(x, y, duration int) error {
-	return d.wdaClient.LongPress(x, y, duration)
+	return d.controlClient.LongPress(x, y, duration)
 }
 
 func (d IOSDevice) Swipe(x1, y1, x2, y2 int) error {
-	return d.wdaClient.Swipe(x1, y1, x2, y2)
+	return d.controlClient.Swipe(x1, y1, x2, y2)
 }
 
-func (d IOSDevice) Gesture(actions []wda.TapAction) error {
-	return d.wdaClient.Gesture(actions)
+func (d IOSDevice) Gesture(actions []types.TapAction) error {
+	return d.controlClient.Gesture(actions)
 }
 
 type Tunnel struct {
@@ -457,21 +462,135 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		config.Hook.Register(hookName, d.Cleanup)
 	}
 
-	// starting an agent on a real device requires quite a few things to happen in the right order:
-	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
-	//    a. we download the wda bundle from github
-	//    b. we need to unzip it to a temp directory
-	//    c. we need to modify the Info.plist to set the correct bundle identifier
-	//    d. we need to create an entitlements file
-	//    e. we need to sign the bundle
-	//    f. we need to install the bundle to the device
-	// 2. we need to launch the agent ✅
-	// 3. we need to make sure there's a tunnel running for iOS17+ ✅
-	// 4. we need to set up a forward proxy to port 8100 on the device ✅
-	// 5. we need to set up a forward proxy to port 9100 on the device for MJPEG screencapture
-	// 6. we need to wait for the agent to be ready ✅
-	// 7. just in case, click HOME button ✅
+	// Try DeviceKit first (preferred for real devices), fall back to WDA
+	err := d.startDeviceKitAgent(config)
+	if err == nil {
+		return nil
+	}
+	utils.Verbose("DeviceKit agent not available: %v, falling back to WDA", err)
 
+	return d.startWDAAgent(config)
+}
+
+// startDeviceKitAgent starts the DeviceKit XCUITest runner as the control backend
+func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
+	// if DeviceKit client already exists and is healthy, reuse it
+	d.mu.Lock()
+	existingClient := d.deviceKitClient
+	d.mu.Unlock()
+
+	if existingClient != nil {
+		if err := existingClient.HealthCheck(); err == nil {
+			utils.Verbose("DeviceKit already running, reusing existing session")
+			d.mu.Lock()
+			d.controlClient = existingClient
+			d.mu.Unlock()
+			return nil
+		}
+	}
+
+	// list apps on device to find DeviceKit XCUITest runner
+	apps, err := d.ListApps()
+	if err != nil {
+		return fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	var deviceKitRunnerBundleId string
+	for _, app := range apps {
+		if strings.Contains(app.PackageName, "devicekit-ios") && strings.Contains(app.PackageName, "UITests.xctrunner") {
+			utils.Verbose("DeviceKit XCUITest runner found: %s", app.PackageName)
+			deviceKitRunnerBundleId = app.PackageName
+			break
+		}
+	}
+
+	if deviceKitRunnerBundleId == "" {
+		return fmt.Errorf("DeviceKit not installed")
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Starting tunnel")
+	}
+
+	// start tunnel if needed (only for iOS 17+)
+	err = d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
+	// set up port forwarding for DeviceKit HTTP port
+	d.mu.Lock()
+	needsHTTPForwarder := d.portForwarderDeviceKit == nil || !d.portForwarderDeviceKit.IsRunning()
+	d.mu.Unlock()
+
+	var localHTTPPort int
+	if needsHTTPForwarder {
+		localHTTPPort, err = findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			return fmt.Errorf("failed to find available port for DeviceKit HTTP: %w", err)
+		}
+
+		forwarder := ios.NewPortForwarder(d.ID())
+		err = forwarder.Forward(localHTTPPort, deviceKitHTTPPort)
+		if err != nil {
+			return fmt.Errorf("failed to forward DeviceKit HTTP port: %w", err)
+		}
+
+		d.mu.Lock()
+		d.portForwarderDeviceKit = forwarder
+		d.mu.Unlock()
+
+		utils.Verbose("DeviceKit HTTP port forwarder set up on port %d", localHTTPPort)
+	} else {
+		d.mu.Lock()
+		localHTTPPort, _ = d.portForwarderDeviceKit.GetPorts()
+		d.mu.Unlock()
+		utils.Verbose("DeviceKit HTTP port forwarder already running on port %d", localHTTPPort)
+	}
+
+	// create client and check if already running
+	client := devicekit.NewClient("localhost", localHTTPPort)
+	if err := client.HealthCheck(); err == nil {
+		utils.Verbose("DeviceKit is already running")
+		d.mu.Lock()
+		d.deviceKitClient = client
+		d.controlClient = client
+		d.mu.Unlock()
+		return nil
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Launching DeviceKit")
+	}
+
+	// launch DeviceKit XCUITest runner
+	xctestConfig := "devicekit-iosUITests.xctest"
+	err = d.LaunchTestRunner(deviceKitRunnerBundleId, deviceKitRunnerBundleId, xctestConfig)
+	if err != nil {
+		return fmt.Errorf("failed to launch DeviceKit: %w", err)
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Waiting for DeviceKit to start")
+	}
+
+	// wait for DeviceKit to be ready
+	err = client.WaitForReady(20 * time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to wait for DeviceKit: %w", err)
+	}
+
+	d.mu.Lock()
+	d.deviceKitClient = client
+	d.controlClient = client
+	d.mu.Unlock()
+
+	utils.Verbose("DeviceKit agent started successfully")
+	return nil
+}
+
+// startWDAAgent starts WebDriverAgent as the control backend (fallback for when DeviceKit is not installed)
+func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
 	_, err := d.wdaClient.GetStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
@@ -590,6 +709,11 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		}
 	}
 
+	// set WDA as the control client
+	d.mu.Lock()
+	d.controlClient = d.wdaClient
+	d.mu.Unlock()
+
 	return nil
 }
 
@@ -654,7 +778,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 }
 
 func (d *IOSDevice) PressButton(key string) error {
-	return d.wdaClient.PressButton(key)
+	return d.controlClient.PressButton(key)
 }
 
 func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
@@ -833,11 +957,11 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 }
 
 func (d IOSDevice) SendKeys(text string) error {
-	return d.wdaClient.SendKeys(text)
+	return d.controlClient.SendKeys(text)
 }
 
 func (d IOSDevice) OpenURL(url string) error {
-	return d.wdaClient.OpenURL(url)
+	return d.controlClient.OpenURL(url)
 }
 
 func (d *IOSDevice) ListApps() ([]InstalledAppInfo, error) {
@@ -882,10 +1006,9 @@ func (d *IOSDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	// get active app info from WDA
-	activeApp, err := d.wdaClient.GetActiveAppInfo()
+	activeApp, err := d.controlClient.GetForegroundApp()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active app info: %w", err)
+		return nil, fmt.Errorf("failed to get foreground app: %w", err)
 	}
 
 	// get all installed apps to enrich with version information
@@ -905,7 +1028,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 		}
 	}
 
-	// if app not found in list (e.g., system app), return info from WDA only
+	// if app not found in list (e.g., system app), return basic info
 	return &ForegroundAppInfo{
 		PackageName: activeApp.BundleID,
 		AppName:     activeApp.Name,
@@ -914,9 +1037,9 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := d.wdaClient.GetWindowSize()
+	wdaSize, err := d.controlClient.GetWindowSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+		return nil, fmt.Errorf("failed to get window size: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -1076,14 +1199,16 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
 	}
 
-	// configure mjpeg framerate
+	// configure mjpeg framerate (WDA-specific)
 	fps := config.FPS
 	if fps == 0 {
 		fps = DefaultFramerate
 	}
-	err := d.wdaClient.SetMjpegFramerate(fps)
-	if err != nil {
-		return err
+	if d.wdaClient != nil {
+		err := d.wdaClient.SetMjpegFramerate(fps)
+		if err != nil {
+			return err
+		}
 	}
 
 	if config.OnProgress != nil {
@@ -1094,11 +1219,11 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 }
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
-	return d.wdaClient.GetSourceElements()
+	return d.controlClient.GetSourceElements()
 }
 
 func (d IOSDevice) DumpSourceRaw() (interface{}, error) {
-	return d.wdaClient.GetSourceRaw()
+	return d.controlClient.GetSourceRaw()
 }
 
 func (d IOSDevice) InstallApp(path string) error {
@@ -1163,12 +1288,12 @@ func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 
 // GetOrientation gets the current device orientation
 func (d IOSDevice) GetOrientation() (string, error) {
-	return d.wdaClient.GetOrientation()
+	return d.controlClient.GetOrientation()
 }
 
 // SetOrientation sets the device orientation
 func (d IOSDevice) SetOrientation(orientation string) error {
-	return d.wdaClient.SetOrientation(orientation)
+	return d.controlClient.SetOrientation(orientation)
 }
 
 // DeviceKitInfo contains information about the started DeviceKit session
@@ -1579,7 +1704,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	}, nil
 }
 
-// waitForAppInForeground polls WDA to check if the specified app is in foreground
+// waitForAppInForeground polls to check if the specified app is in foreground
 func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duration) error {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(200 * time.Millisecond)
@@ -1590,9 +1715,8 @@ func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duratio
 		case <-deadline:
 			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
 		case <-ticker.C:
-			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			activeApp, err := d.controlClient.GetForegroundApp()
 			if err != nil {
-				// continue trying on error
 				continue
 			}
 

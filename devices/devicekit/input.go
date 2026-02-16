@@ -3,7 +3,7 @@ package devicekit
 import (
 	"fmt"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 )
 
 func (c *Client) Tap(x, y int) error {
@@ -39,7 +39,7 @@ func (c *Client) Swipe(x1, y1, x2, y2 int) error {
 	return err
 }
 
-func (c *Client) Gesture(actions []wda.TapAction) error {
+func (c *Client) Gesture(actions []types.TapAction) error {
 	converted := convertGestureActions(actions)
 	params := map[string]interface{}{
 		"actions":  converted,
@@ -99,7 +99,7 @@ type deviceKitAction struct {
 	Button   int     `json:"button"`
 }
 
-func convertGestureActions(actions []wda.TapAction) []deviceKitAction {
+func convertGestureActions(actions []types.TapAction) []deviceKitAction {
 	var result []deviceKitAction
 	var pendingDuration float64
 	var lastX, lastY float64

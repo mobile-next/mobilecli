@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 )
 
 func (c *Client) GetOrientation() (string, error) {
@@ -58,7 +58,7 @@ func (c *Client) SetOrientation(orientation string) error {
 	return nil
 }
 
-func (c *Client) GetWindowSize() (*wda.WindowSize, error) {
+func (c *Client) GetWindowSize() (*types.WindowSize, error) {
 	params := map[string]interface{}{
 		"deviceId": "",
 	}
@@ -79,21 +79,16 @@ func (c *Client) GetWindowSize() (*wda.WindowSize, error) {
 		return nil, fmt.Errorf("failed to parse device info response: %w", err)
 	}
 
-	return &wda.WindowSize{
+	return &types.WindowSize{
 		Scale: int(response.Scale),
-		ScreenSize: wda.Size{
+		ScreenSize: types.Size{
 			Width:  int(response.ScreenSize.Width),
 			Height: int(response.ScreenSize.Height),
 		},
 	}, nil
 }
 
-type ForegroundAppInfo struct {
-	BundleID string `json:"bundleId"`
-	Name     string `json:"name"`
-}
-
-func (c *Client) GetForegroundApp() (*ForegroundAppInfo, error) {
+func (c *Client) GetForegroundApp() (*types.ActiveAppInfo, error) {
 	params := map[string]interface{}{
 		"deviceId": "",
 	}
@@ -103,12 +98,20 @@ func (c *Client) GetForegroundApp() (*ForegroundAppInfo, error) {
 		return nil, fmt.Errorf("failed to get foreground app: %w", err)
 	}
 
-	var response ForegroundAppInfo
+	var response struct {
+		BundleID string  `json:"bundleId"`
+		Name     string  `json:"name"`
+		PID      float64 `json:"pid"`
+	}
 	if err := json.Unmarshal(result, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse foreground app response: %w", err)
 	}
 
-	return &response, nil
+	return &types.ActiveAppInfo{
+		BundleID:  response.BundleID,
+		Name:      response.Name,
+		ProcessID: int(response.PID),
+	}, nil
 }
 
 func (c *Client) LaunchApp(bundleID string) error {

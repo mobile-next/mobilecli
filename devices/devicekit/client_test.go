@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -414,7 +414,7 @@ func TestOpenURL(t *testing.T) {
 // --- Gesture conversion tests ---
 
 func TestConvertGestureActions_TapSequence(t *testing.T) {
-	actions := []wda.TapAction{
+	actions := []types.TapAction{
 		{Type: "pointerMove", Duration: 0, X: 200, Y: 400},
 		{Type: "pointerDown", Button: 0},
 		{Type: "pause", Duration: 100},
@@ -438,7 +438,7 @@ func TestConvertGestureActions_TapSequence(t *testing.T) {
 }
 
 func TestConvertGestureActions_SwipeSequence(t *testing.T) {
-	actions := []wda.TapAction{
+	actions := []types.TapAction{
 		{Type: "pointerMove", Duration: 0, X: 200, Y: 600},
 		{Type: "pointerDown", Button: 0},
 		{Type: "pointerMove", Duration: 1000, X: 200, Y: 200},
@@ -467,7 +467,7 @@ func TestConvertGestureActions_SwipeSequence(t *testing.T) {
 }
 
 func TestConvertGestureActions_LongPressSequence(t *testing.T) {
-	actions := []wda.TapAction{
+	actions := []types.TapAction{
 		{Type: "pointerMove", Duration: 0, X: 150, Y: 300},
 		{Type: "pointerDown", Button: 0},
 		{Type: "pause", Duration: 2000},
@@ -487,7 +487,7 @@ func TestConvertGestureActions_LongPressSequence(t *testing.T) {
 }
 
 func TestConvertGestureActions_Passthrough(t *testing.T) {
-	actions := []wda.TapAction{
+	actions := []types.TapAction{
 		{Type: "press", X: 100, Y: 200, Duration: 0, Button: 0},
 		{Type: "move", X: 100, Y: 100, Duration: 300, Button: 0},
 		{Type: "release", X: 100, Y: 100, Duration: 0, Button: 0},
@@ -526,7 +526,7 @@ func TestGesture(t *testing.T) {
 	client := newTestClient(server)
 	defer client.Close()
 
-	err := client.Gesture([]wda.TapAction{
+	err := client.Gesture([]types.TapAction{
 		{Type: "pointerMove", Duration: 0, X: 200, Y: 400},
 		{Type: "pointerDown", Button: 0},
 		{Type: "pause", Duration: 100},
