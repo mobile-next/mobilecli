@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mobile-next/mobilecli/types"
 )
 
 type WdaClient struct {
@@ -29,13 +31,11 @@ func NewWdaClient(hostPort string) *WdaClient {
 	}
 }
 
-type TapAction struct {
-	Type     string `json:"type"`
-	Duration int    `json:"duration"`
-	X        int    `json:"x"`
-	Y        int    `json:"y"`
-	Button   int    `json:"button"`
-}
+// Re-export shared types for use within the wda package
+type TapAction = types.TapAction
+type WindowSize = types.WindowSize
+type Size = types.Size
+type ActiveAppInfo = types.ActiveAppInfo
 
 type PointerParameters struct {
 	PointerType string `json:"pointerType"`
