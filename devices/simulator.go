@@ -15,6 +15,7 @@ import (
 
 	"github.com/mobile-next/mobilecli/assets"
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 	"howett.net/plist"
@@ -654,7 +655,7 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
 	return s.wdaClient.Swipe(x1, y1, x2, y2)
 }
 
-func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
+func (s SimulatorDevice) Gesture(actions []types.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
 
