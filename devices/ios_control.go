@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"time"
+
 	"github.com/mobile-next/mobilecli/types"
 )
 
@@ -22,4 +24,12 @@ type IOSControl interface {
 	SetOrientation(orientation string) error
 	GetWindowSize() (*types.WindowSize, error)
 	GetForegroundApp() (*types.ActiveAppInfo, error)
+
+	// Lifecycle methods
+	HealthCheck() error
+	WaitForReady(timeout time.Duration) error
+	Close()
+
+	// Streaming
+	StartMjpegStream(fps int, onData func([]byte) bool) error
 }

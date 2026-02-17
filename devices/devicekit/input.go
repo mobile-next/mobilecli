@@ -29,10 +29,10 @@ func (c *Client) LongPress(x, y, duration int) error {
 
 func (c *Client) Swipe(x1, y1, x2, y2 int) error {
 	params := map[string]interface{}{
-		"fromX":    x1,
-		"fromY":    y1,
-		"toX":      x2,
-		"toY":      y2,
+		"x1":       x1,
+		"y1":       y1,
+		"x2":       x2,
+		"y2":       y2,
 		"deviceId": "",
 	}
 	_, err := c.call("device.io.swipe", params)
