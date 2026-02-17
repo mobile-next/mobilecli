@@ -14,6 +14,7 @@ type WdaClient struct {
 	httpClient *http.Client
 	sessionId  string
 	mu         sync.Mutex
+	mjpegURL   string
 }
 
 func NewWdaClient(hostPort string) *WdaClient {
