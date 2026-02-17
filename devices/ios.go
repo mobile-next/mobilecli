@@ -25,7 +25,6 @@ import (
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
@@ -73,10 +72,7 @@ type IOSDevice struct {
 
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
-	controlClient          IOSControl        // active control backend (WDA or DeviceKit)
-	deviceKitClient        *devicekit.Client  // kept for DeviceKit-specific methods (HealthCheck, WaitForReady, Close, GetForegroundApp)
-	wdaClient              *wda.WdaClient     // kept for WDA-specific methods (GetStatus, GetActiveAppInfo, WaitForAgent, SetMjpegFramerate)
-	mjpegClient            *mjpeg.WdaMjpegClient
+	controlClient          IOSControl // active control backend (WDA or DeviceKit)
 	wdaCancel              context.CancelFunc
 	portForwarderWda       *ios.PortForwarder
 	portForwarderMjpeg     *ios.PortForwarder
@@ -152,8 +148,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	}
 
 	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
-	device.controlClient = device.wdaClient // default to WDA, overridden by StartAgent if DeviceKit is available
+	device.controlClient = wda.NewWdaClient("localhost:8100") // default to WDA, overridden by StartAgent if DeviceKit is available
 
 	return device, nil
 }
@@ -285,6 +280,13 @@ func (d *IOSDevice) Cleanup() error {
 
 	utils.Verbose("Starting cleanup for device %s (%s)", d.Udid, d.DeviceName)
 	var errs []error
+
+	// close control client (handles DeviceKit websocket close, no-op for WDA)
+	d.mu.Lock()
+	if d.controlClient != nil {
+		d.controlClient.Close()
+	}
+	d.mu.Unlock()
 
 	// cleanup each resource type
 	if err := d.cleanupWDA(); err != nil {
@@ -474,21 +476,6 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 // startDeviceKitAgent starts the DeviceKit XCUITest runner as the control backend
 func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
-	// if DeviceKit client already exists and is healthy, reuse it
-	d.mu.Lock()
-	existingClient := d.deviceKitClient
-	d.mu.Unlock()
-
-	if existingClient != nil {
-		if err := existingClient.HealthCheck(); err == nil {
-			utils.Verbose("DeviceKit already running, reusing existing session")
-			d.mu.Lock()
-			d.controlClient = existingClient
-			d.mu.Unlock()
-			return nil
-		}
-	}
-
 	// list apps on device to find DeviceKit XCUITest runner
 	apps, err := d.ListApps()
 	if err != nil {
@@ -553,7 +540,6 @@ func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
 	if err := client.HealthCheck(); err == nil {
 		utils.Verbose("DeviceKit is already running")
 		d.mu.Lock()
-		d.deviceKitClient = client
 		d.controlClient = client
 		d.mu.Unlock()
 		return nil
@@ -581,7 +567,6 @@ func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
 	}
 
 	d.mu.Lock()
-	d.deviceKitClient = client
 	d.controlClient = client
 	d.mu.Unlock()
 
@@ -591,8 +576,26 @@ func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
 
 // startWDAAgent starts WebDriverAgent as the control backend (fallback for when DeviceKit is not installed)
 func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
-	_, err := d.wdaClient.GetStatus()
-	if err != nil {
+	// use a local wdaClient variable throughout; assigned to d.controlClient at the end
+	var wdaClient *wda.WdaClient
+
+	// check if we already have a WDA port forwarder with a client
+	d.mu.Lock()
+	hasForwarder := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
+	d.mu.Unlock()
+
+	if hasForwarder {
+		d.mu.Lock()
+		srcPort, _ := d.portForwarderWda.GetPorts()
+		d.mu.Unlock()
+		wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
+		utils.Verbose("WDA port forwarder already running on port %d", srcPort)
+	} else {
+		// create a temporary client to check if WDA is already accessible on default port
+		wdaClient = wda.NewWdaClient("localhost:8100")
+	}
+
+	if err := wdaClient.HealthCheck(); err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
 		// list apps on device
@@ -629,11 +632,7 @@ func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
 		}
 
 		// set up WDA port forwarding if not already running
-		d.mu.Lock()
-		needsPortForwarder := d.portForwarderWda == nil || !d.portForwarderWda.IsRunning()
-		d.mu.Unlock()
-
-		if needsPortForwarder {
+		if !hasForwarder {
 			port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
 			if err != nil {
 				return fmt.Errorf("failed to find available port: %w", err)
@@ -647,26 +646,14 @@ func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
 
 			d.mu.Lock()
 			d.portForwarderWda = forwarder
-			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 			d.mu.Unlock()
 
+			wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 			utils.Verbose("WDA port forwarder set up on port %d", port)
-		} else {
-			d.mu.Lock()
-			srcPort, _ := d.portForwarderWda.GetPorts()
-			d.mu.Unlock()
-			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
-
-			// ensure wdaClient is set if not already
-			d.mu.Lock()
-			if d.wdaClient == nil {
-				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
-			}
-			d.mu.Unlock()
 		}
 
 		// check if wda is already running, now that we have a port forwarder set up
-		status, err := d.wdaClient.GetStatus()
+		status, err := wdaClient.GetStatus()
 		if err == nil {
 			utils.Verbose("WebDriverAgent is already running")
 		}
@@ -689,29 +676,56 @@ func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
 			}
 
 			// wait for WebDriverAgent to start
-			err = d.wdaClient.WaitForAgent()
+			err = wdaClient.WaitForReady(20 * time.Second)
 			if err != nil {
 				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
 			}
 
 			// check if WebDriverAgent is the active app and press HOME to background it
-			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			activeApp, err := wdaClient.GetForegroundApp()
 			if err == nil {
 				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
 
 				// if WDA is in foreground, press HOME to background it
 				if strings.Contains(activeApp.Name, "WebDriverAgent") {
 					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
-					_ = d.wdaClient.PressButton("HOME")
+					_ = wdaClient.PressButton("HOME")
 					time.Sleep(1 * time.Second)
 				}
 			}
 		}
 	}
 
+	// set up MJPEG port forwarding eagerly
+	d.mu.Lock()
+	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
+	d.mu.Unlock()
+
+	if needsMjpegForwarder {
+		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+		if err != nil {
+			utils.Verbose("Failed to find available port for mjpeg: %v", err)
+		} else {
+			forwarder := ios.NewPortForwarder(d.ID())
+			err = forwarder.Forward(portMjpeg, 9100)
+			if err != nil {
+				utils.Verbose("Failed to forward mjpeg port: %v", err)
+			} else {
+				mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
+				wdaClient.SetMjpegURL(mjpegUrl)
+
+				d.mu.Lock()
+				d.portForwarderMjpeg = forwarder
+				d.mu.Unlock()
+
+				utils.Verbose("MJPEG port forwarder set up on %s", mjpegUrl)
+			}
+		}
+	}
+
 	// set WDA as the control client
 	d.mu.Lock()
-	d.controlClient = d.wdaClient
+	d.controlClient = wdaClient
 	d.mu.Unlock()
 
 	return nil
@@ -1171,51 +1185,17 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		}
 	}
 
-	// handle mjpeg format via WDA
-	// set up mjpeg port forwarding if not already running
-	d.mu.Lock()
-	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
-	d.mu.Unlock()
-
-	if needsMjpegForwarder {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
-		}
-
-		forwarder := ios.NewPortForwarder(d.ID())
-		err = forwarder.Forward(portMjpeg, 9100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
-		}
-
-		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-
-		d.mu.Lock()
-		d.portForwarderMjpeg = forwarder
-		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
-		d.mu.Unlock()
-
-		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
-	}
-
-	// configure mjpeg framerate (WDA-specific)
+	// handle mjpeg format via controlClient
 	fps := config.FPS
 	if fps == 0 {
 		fps = DefaultFramerate
-	}
-	if d.wdaClient != nil {
-		err := d.wdaClient.SetMjpegFramerate(fps)
-		if err != nil {
-			return err
-		}
 	}
 
 	if config.OnProgress != nil {
 		config.OnProgress("Starting video stream")
 	}
 
-	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
+	return d.controlClient.StartMjpegStream(fps, config.OnData)
 }
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {

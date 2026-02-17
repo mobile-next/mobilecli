@@ -295,10 +295,10 @@ func TestSwipe(t *testing.T) {
 		assert.Equal(t, "device.io.swipe", method)
 		var p map[string]interface{}
 		require.NoError(t, json.Unmarshal(params, &p))
-		assert.Equal(t, float64(100), p["fromX"])
-		assert.Equal(t, float64(200), p["fromY"])
-		assert.Equal(t, float64(300), p["toX"])
-		assert.Equal(t, float64(400), p["toY"])
+		assert.Equal(t, float64(100), p["x1"])
+		assert.Equal(t, float64(200), p["y1"])
+		assert.Equal(t, float64(300), p["x2"])
+		assert.Equal(t, float64(400), p["y2"])
 		return map[string]bool{"success": true}, nil
 	})
 	defer server.Close()
