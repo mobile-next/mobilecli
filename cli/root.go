@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
-
-const version = "dev"
 
 const logo = "\x1b[92m ███╗   ███╗  ██████╗  ██████╗  ██╗ ██╗      ███████╗  ██████╗ ██╗      ██╗\x1b[39m\n" +
 	"\x1b[92m ████╗ ████║ ██╔═══██╗ ██╔══██╗ ██║ ██║      ██╔════╝ ██╔════╝ ██║      ██║\x1b[39m\n" +
@@ -108,7 +107,7 @@ COMMON FLAGS:
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
-	Version:       version,
+	Version:       server.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
