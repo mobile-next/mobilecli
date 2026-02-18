@@ -191,9 +191,6 @@ func exchangeCognitoCode(code string) (*cognitoTokenResponse, error) {
 		"code":         {code},
 		"redirect_uri": {"https://mobilenexthq.com/oauth/callback/"},
 	}
-	fmt.Printf("cognito token request: POST %s\n", cognitoTokenURL)
-	fmt.Printf("cognito token params: %s\n", params.Encode())
-
 	resp, err := http.PostForm(cognitoTokenURL, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tokens: %w", err)
@@ -204,8 +201,6 @@ func exchangeCognitoCode(code string) (*cognitoTokenResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-
-	fmt.Printf("cognito token response: %d %s\n", resp.StatusCode, string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
