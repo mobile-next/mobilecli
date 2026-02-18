@@ -33,6 +33,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.apps.terminate":     handleAppsTerminate,
 		"device.apps.list":          handleAppsList,
 		"device.apps.foreground":    handleAppsForeground,
+		"server.info":               handleServerInfo,
 		"server.shutdown":           handleServerShutdown,
 	}
 }

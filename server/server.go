@@ -47,6 +47,8 @@ const (
 	IdleTimeout  = 120 * time.Second
 )
 
+var Version = "dev"
+
 var okResponse = map[string]interface{}{"status": "ok"}
 
 // StreamSession represents a screen capture streaming session
@@ -923,6 +925,13 @@ func handleAppsForeground(params json.RawMessage) (interface{}, error) {
 	}
 
 	return response.Data, nil
+}
+
+func handleServerInfo(params json.RawMessage) (interface{}, error) {
+	return map[string]string{
+		"name":    "mobilecli",
+		"version": Version,
+	}, nil
 }
 
 // handleServerShutdown initiates graceful server shutdown
