@@ -111,8 +111,7 @@ var authLoginCmd = &cobra.Command{
 			}
 
 			// exchange authorization code for cognito tokens
-			redirectURI := fmt.Sprintf("http://localhost:%d/oauth/callback", port)
-			tokens, err := exchangeCognitoCode(code, redirectURI)
+			tokens, err := exchangeCognitoCode(code)
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprintln(w, "token exchange failed")
@@ -185,13 +184,17 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
-func exchangeCognitoCode(code, redirectURI string) (*cognitoTokenResponse, error) {
-	resp, err := http.PostForm(cognitoTokenURL, url.Values{
+func exchangeCognitoCode(code string) (*cognitoTokenResponse, error) {
+	params := url.Values{
 		"grant_type":   {"authorization_code"},
 		"client_id":    {cognitoClientID},
 		"code":         {code},
-		"redirect_uri": {redirectURI},
-	})
+		"redirect_uri": {"https://mobilenexthq.com/oauth/callback/"},
+	}
+	fmt.Printf("cognito token request: POST %s\n", cognitoTokenURL)
+	fmt.Printf("cognito token params: %s\n", params.Encode())
+
+	resp, err := http.PostForm(cognitoTokenURL, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tokens: %w", err)
 	}
@@ -201,6 +204,8 @@ func exchangeCognitoCode(code, redirectURI string) (*cognitoTokenResponse, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	fmt.Printf("cognito token response: %d %s\n", resp.StatusCode, string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
