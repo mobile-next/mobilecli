@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -12,8 +13,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"github.com/mobile-next/mobilecli/server"
 	"github.com/spf13/cobra"
@@ -27,6 +30,8 @@ const cognitoClientID = "26epocf8ss83d7uj8trmr6ktvn"
 const cognitoTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
 const cognitoRedirectURI = "https://mobilenexthq.com/oauth/callback/"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
+
+var authHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 type cognitoTokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -56,33 +61,42 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
-func runAuthLogin() error {
-	// generate csrf nonce
+func generateCSRFNonce() (string, error) {
 	nonceBytes := make([]byte, 16)
 	if _, err := rand.Read(nonceBytes); err != nil {
-		return fmt.Errorf("failed to generate csrf nonce: %w", err)
+		return "", fmt.Errorf("failed to generate csrf nonce: %w", err)
 	}
-	nonce := hex.EncodeToString(nonceBytes)
+	return hex.EncodeToString(nonceBytes), nil
+}
 
-	// generate pkce code verifier and challenge
+func generatePKCE() (verifier string, challenge string, err error) {
 	verifierBytes := make([]byte, 32)
 	if _, err := rand.Read(verifierBytes); err != nil {
-		return fmt.Errorf("failed to generate pkce verifier: %w", err)
+		return "", "", fmt.Errorf("failed to generate pkce verifier: %w", err)
 	}
-	codeVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
-	challengeHash := sha256.Sum256([]byte(codeVerifier))
-	codeChallenge := base64.RawURLEncoding.EncodeToString(challengeHash[:])
+	verifier = base64.RawURLEncoding.EncodeToString(verifierBytes)
+	hash := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(hash[:])
+	return verifier, challenge, nil
+}
 
+func buildLoginURL(port int, nonce, codeChallenge string) string {
+	return fmt.Sprintf(
+		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
+		port, nonce, server.Version, codeChallenge,
+	)
+}
+
+func startCallbackServer(nonce, codeVerifier string) (port int, result <-chan error, shutdown func(), err error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("failed to start callback server: %w", err)
+		return 0, nil, nil, fmt.Errorf("failed to start callback server: %w", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	port = listener.Addr().(*net.TCPAddr).Port
 
 	callbackErr := make(chan error, 1)
 	mux := http.NewServeMux()
 	srv := &http.Server{Handler: mux}
-	defer srv.Shutdown(context.Background())
 
 	mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
 		err := handleOAuthCallback(r, nonce, codeVerifier)
@@ -98,23 +112,40 @@ func runAuthLogin() error {
 	})
 
 	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			callbackErr <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
 
-	loginURL := fmt.Sprintf(
-		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
-		port, nonce, server.Version, codeChallenge,
-	)
+	shutdown = func() { srv.Shutdown(context.Background()) }
+	return port, callbackErr, shutdown, nil
+}
 
+func runAuthLogin() error {
+	nonce, err := generateCSRFNonce()
+	if err != nil {
+		return err
+	}
+
+	codeVerifier, codeChallenge, err := generatePKCE()
+	if err != nil {
+		return err
+	}
+
+	port, result, shutdown, err := startCallbackServer(nonce, codeVerifier)
+	if err != nil {
+		return err
+	}
+	defer shutdown()
+
+	loginURL := buildLoginURL(port, nonce, codeChallenge)
 	fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
 
 	if err := openBrowser(loginURL); err != nil {
 		return err
 	}
 
-	if err := <-callbackErr; err != nil {
+	if err := <-result; err != nil {
 		return err
 	}
 
@@ -130,7 +161,7 @@ func openBrowser(url string) error {
 	case "linux":
 		cmd = exec.Command("xdg-open", url)
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
+		cmd = exec.Command("cmd", "/c", "start", "", url)
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
@@ -196,7 +227,7 @@ func exchangeCognitoCode(code, codeVerifier string) (*cognitoTokenResponse, erro
 		"redirect_uri":  {cognitoRedirectURI},
 		"code_verifier": {codeVerifier},
 	}
-	resp, err := http.PostForm(cognitoTokenURL, params)
+	resp, err := authHTTPClient.PostForm(cognitoTokenURL, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tokens: %w", err)
 	}
@@ -220,14 +251,14 @@ func exchangeCognitoCode(code, codeVerifier string) (*cognitoTokenResponse, erro
 }
 
 func exchangeIDTokenForSession(idToken string) (string, error) {
-	req, err := http.NewRequest("POST", apiTokenURL, nil)
+	req, err := http.NewRequest("POST", apiTokenURL, strings.NewReader("{}"))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+idToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to request session token: %w", err)
 	}
@@ -256,8 +287,11 @@ var authLogoutCmd = &cobra.Command{
 	Long:  `Logs out of your current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := keyring.Delete(keyringService, keyringUser); err != nil {
-			fmt.Println("mobilecli is not logged in")
-			return nil
+			if errors.Is(err, keyring.ErrNotFound) {
+				fmt.Println("mobilecli is not logged in")
+				return nil
+			}
+			return fmt.Errorf("failed to delete credentials: %w", err)
 		}
 
 		fmt.Println("Logged out successfully.")
