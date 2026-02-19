@@ -26,14 +26,14 @@ import (
 const keyringService = "mobilecli"
 const keyringUser = "mobilenexthq.com"
 
-const cognitoClientID = "26epocf8ss83d7uj8trmr6ktvn"
-const cognitoTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
-const cognitoRedirectURI = "https://mobilenexthq.com/oauth/callback/"
+const oauthClientID = "26epocf8ss83d7uj8trmr6ktvn"
+const oauthTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
+const oauthRedirectURI = "https://mobilenexthq.com/oauth/callback/"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
 
 var authHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
-type cognitoTokenResponse struct {
+type oauthTokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	IDToken      string `json:"id_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -180,9 +180,6 @@ func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
 
 	stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
 	if err != nil {
-		stateJSON, err = base64.RawURLEncoding.DecodeString(stateParam)
-	}
-	if err != nil {
 		return fmt.Errorf("invalid state parameter: %w", err)
 	}
 
@@ -202,9 +199,9 @@ func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
 		return fmt.Errorf("missing authorization code")
 	}
 
-	tokens, err := exchangeCognitoCode(code, codeVerifier)
+	tokens, err := exchangeAuthCode(code, codeVerifier)
 	if err != nil {
-		return fmt.Errorf("cognito token exchange failed: %w", err)
+		return fmt.Errorf("oauth token exchange failed: %w", err)
 	}
 
 	sessionToken, err := exchangeIDTokenForSession(tokens.IDToken)
@@ -219,15 +216,15 @@ func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
 	return nil
 }
 
-func exchangeCognitoCode(code, codeVerifier string) (*cognitoTokenResponse, error) {
+func exchangeAuthCode(code, codeVerifier string) (*oauthTokenResponse, error) {
 	params := url.Values{
 		"grant_type":    {"authorization_code"},
-		"client_id":     {cognitoClientID},
+		"client_id":     {oauthClientID},
 		"code":          {code},
-		"redirect_uri":  {cognitoRedirectURI},
+		"redirect_uri":  {oauthRedirectURI},
 		"code_verifier": {codeVerifier},
 	}
-	resp, err := authHTTPClient.PostForm(cognitoTokenURL, params)
+	resp, err := authHTTPClient.PostForm(oauthTokenURL, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request tokens: %w", err)
 	}
@@ -242,7 +239,7 @@ func exchangeCognitoCode(code, codeVerifier string) (*cognitoTokenResponse, erro
 		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var tokens cognitoTokenResponse
+	var tokens oauthTokenResponse
 	if err := json.Unmarshal(body, &tokens); err != nil {
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
 	}
