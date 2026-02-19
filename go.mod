@@ -11,6 +11,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
+	github.com/zalando/go-keyring v0.2.6
 	gopkg.in/ini.v1 v1.67.0
 	howett.net/plist v1.0.1
 )
@@ -18,10 +19,13 @@ require (
 replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.49.1
 
 require (
+	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
+	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
