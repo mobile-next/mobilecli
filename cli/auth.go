@@ -52,84 +52,101 @@ var authLoginCmd = &cobra.Command{
 	Short: "Log in to your account",
 	Long:  `Opens the login page in your default browser to authenticate.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// generate csrf nonce
-		nonceBytes := make([]byte, 16)
-		if _, err := rand.Read(nonceBytes); err != nil {
-			return fmt.Errorf("failed to generate csrf nonce: %w", err)
-		}
-		nonce := hex.EncodeToString(nonceBytes)
-
-		// generate pkce code verifier and challenge
-		verifierBytes := make([]byte, 32)
-		if _, err := rand.Read(verifierBytes); err != nil {
-			return fmt.Errorf("failed to generate pkce verifier: %w", err)
-		}
-		codeVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
-		challengeHash := sha256.Sum256([]byte(codeVerifier))
-		codeChallenge := base64.RawURLEncoding.EncodeToString(challengeHash[:])
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return fmt.Errorf("failed to start callback server: %w", err)
-		}
-		port := listener.Addr().(*net.TCPAddr).Port
-
-		callbackErr := make(chan error, 1)
-		mux := http.NewServeMux()
-		srv := &http.Server{Handler: mux}
-
-		mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
-			err := handleOAuthCallback(r, nonce, codeVerifier)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintln(w, err.Error())
-			} else {
-				w.Header().Set("Content-Type", "text/html")
-				fmt.Fprintln(w, "<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>")
-			}
-			callbackErr <- err
-			go srv.Shutdown(context.Background())
-		})
-
-		go func() {
-			if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-				callbackErr <- fmt.Errorf("callback server error: %w", err)
-			}
-		}()
-
-		loginURL := fmt.Sprintf(
-			"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
-			port, nonce, server.Version, codeChallenge,
-		)
-
-		fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
-
-		var openCmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			openCmd = exec.Command("open", loginURL)
-		case "linux":
-			openCmd = exec.Command("xdg-open", loginURL)
-		case "windows":
-			openCmd = exec.Command("cmd", "/c", "start", loginURL)
-		default:
-			return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-		}
-
-		if err := openCmd.Run(); err != nil {
-			return fmt.Errorf("failed to open browser: %w", err)
-		}
-
-		if err := <-callbackErr; err != nil {
-			return err
-		}
-
-		fmt.Println("✅ Successfully logged in")
-		return nil
+		return runAuthLogin()
 	},
+}
+
+func runAuthLogin() error {
+	// generate csrf nonce
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return fmt.Errorf("failed to generate csrf nonce: %w", err)
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
+	// generate pkce code verifier and challenge
+	verifierBytes := make([]byte, 32)
+	if _, err := rand.Read(verifierBytes); err != nil {
+		return fmt.Errorf("failed to generate pkce verifier: %w", err)
+	}
+	codeVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
+	challengeHash := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64.RawURLEncoding.EncodeToString(challengeHash[:])
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("failed to start callback server: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	callbackErr := make(chan error, 1)
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+	defer srv.Shutdown(context.Background())
+
+	mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
+		err := handleOAuthCallback(r, nonce, codeVerifier)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintln(w, "Login failed")
+		} else {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintln(w, "<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>")
+		}
+		callbackErr <- err
+		go srv.Shutdown(context.Background())
+	})
+
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			callbackErr <- fmt.Errorf("callback server error: %w", err)
+		}
+	}()
+
+	loginURL := fmt.Sprintf(
+		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
+		port, nonce, server.Version, codeChallenge,
+	)
+
+	fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
+
+	if err := openBrowser(loginURL); err != nil {
+		return err
+	}
+
+	if err := <-callbackErr; err != nil {
+		return err
+	}
+
+	fmt.Println("✅ Successfully logged in")
+	return nil
+}
+
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to open browser: %w", err)
+	}
+	return nil
 }
 
 func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
 	stateParam := r.URL.Query().Get("state")
+	if stateParam == "" {
+		return fmt.Errorf("missing state parameter")
+	}
+
 	stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
 	if err != nil {
 		stateJSON, err = base64.RawURLEncoding.DecodeString(stateParam)
