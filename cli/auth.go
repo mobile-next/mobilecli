@@ -24,6 +24,7 @@ const keyringUser = "mobilenexthq.com"
 
 const cognitoClientID = "26epocf8ss83d7uj8trmr6ktvn"
 const cognitoTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
+const cognitoRedirectURI = "https://mobilenexthq.com/oauth/callback/"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
 
 type cognitoTokenResponse struct {
@@ -68,81 +69,15 @@ var authLoginCmd = &cobra.Command{
 		srv := &http.Server{Handler: mux}
 
 		mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
-			code := r.URL.Query().Get("code")
-			stateParam := r.URL.Query().Get("state")
-
-			stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
-			if err != nil {
-				stateJSON, err = base64.RawURLEncoding.DecodeString(stateParam)
-			}
+			err := handleOAuthCallback(r, nonce)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintln(w, "invalid state parameter")
-				callbackErr <- fmt.Errorf("failed to decode state: %w", err)
-				go srv.Shutdown(context.Background())
-				return
+				fmt.Fprintln(w, err.Error())
+			} else {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprintln(w, "<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>")
 			}
-
-			var state struct {
-				CSRF string `json:"csrf"`
-			}
-			if err := json.Unmarshal(stateJSON, &state); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintln(w, "invalid state parameter")
-				callbackErr <- fmt.Errorf("failed to parse state: %w", err)
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			if state.CSRF != nonce {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintln(w, "CSRF validation failed")
-				callbackErr <- fmt.Errorf("csrf token mismatch")
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			if code == "" {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintln(w, "missing authorization code")
-				callbackErr <- fmt.Errorf("missing authorization code")
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			// exchange authorization code for cognito tokens
-			tokens, err := exchangeCognitoCode(code)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintln(w, "token exchange failed")
-				callbackErr <- fmt.Errorf("cognito token exchange failed: %w", err)
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			// exchange id token for session token
-			sessionToken, err := exchangeIDTokenForSession(tokens.IDToken)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintln(w, "session token exchange failed")
-				callbackErr <- fmt.Errorf("session token exchange failed: %w", err)
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			// store session token in keyring
-			if err := keyring.Set(keyringService, keyringUser, sessionToken); err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintln(w, "failed to store token")
-				callbackErr <- fmt.Errorf("failed to store session token: %w", err)
-				go srv.Shutdown(context.Background())
-				return
-			}
-
-			w.Header().Set("Content-Type", "text/html")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintln(w, "<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>")
-			callbackErr <- nil
+			callbackErr <- err
 			go srv.Shutdown(context.Background())
 		})
 
@@ -184,12 +119,55 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
+func handleOAuthCallback(r *http.Request, nonce string) error {
+	stateParam := r.URL.Query().Get("state")
+	stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
+	if err != nil {
+		stateJSON, err = base64.RawURLEncoding.DecodeString(stateParam)
+	}
+	if err != nil {
+		return fmt.Errorf("invalid state parameter: %w", err)
+	}
+
+	var state struct {
+		CSRF string `json:"csrf"`
+	}
+	if err := json.Unmarshal(stateJSON, &state); err != nil {
+		return fmt.Errorf("invalid state parameter: %w", err)
+	}
+
+	if state.CSRF != nonce {
+		return fmt.Errorf("csrf token mismatch")
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		return fmt.Errorf("missing authorization code")
+	}
+
+	tokens, err := exchangeCognitoCode(code)
+	if err != nil {
+		return fmt.Errorf("cognito token exchange failed: %w", err)
+	}
+
+	sessionToken, err := exchangeIDTokenForSession(tokens.IDToken)
+	if err != nil {
+		return fmt.Errorf("session token exchange failed: %w", err)
+	}
+
+	if err := keyring.Set(keyringService, keyringUser, sessionToken); err != nil {
+		return fmt.Errorf("failed to store session token: %w", err)
+	}
+
+	return nil
+}
+
 func exchangeCognitoCode(code string) (*cognitoTokenResponse, error) {
 	params := url.Values{
 		"grant_type":   {"authorization_code"},
 		"client_id":    {cognitoClientID},
 		"code":         {code},
-		"redirect_uri": {"https://mobilenexthq.com/oauth/callback/"},
+		"redirect_uri": {cognitoRedirectURI},
 	}
 	resp, err := http.PostForm(cognitoTokenURL, params)
 	if err != nil {
