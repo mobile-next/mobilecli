@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -58,6 +59,14 @@ var authLoginCmd = &cobra.Command{
 		}
 		nonce := hex.EncodeToString(nonceBytes)
 
+		// generate pkce code verifier and challenge
+		verifierBytes := make([]byte, 32)
+		if _, err := rand.Read(verifierBytes); err != nil {
+			return fmt.Errorf("failed to generate pkce verifier: %w", err)
+		}
+		codeVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
+		challengeHash := sha256.Sum256([]byte(codeVerifier))
+		codeChallenge := base64.RawURLEncoding.EncodeToString(challengeHash[:])
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("failed to start callback server: %w", err)
@@ -69,7 +78,7 @@ var authLoginCmd = &cobra.Command{
 		srv := &http.Server{Handler: mux}
 
 		mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
-			err := handleOAuthCallback(r, nonce)
+			err := handleOAuthCallback(r, nonce, codeVerifier)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprintln(w, err.Error())
@@ -88,8 +97,8 @@ var authLoginCmd = &cobra.Command{
 		}()
 
 		loginURL := fmt.Sprintf(
-			"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s",
-			port, nonce, server.Version,
+			"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
+			port, nonce, server.Version, codeChallenge,
 		)
 
 		fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
@@ -119,7 +128,7 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
-func handleOAuthCallback(r *http.Request, nonce string) error {
+func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
 	stateParam := r.URL.Query().Get("state")
 	stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
 	if err != nil {
@@ -145,7 +154,7 @@ func handleOAuthCallback(r *http.Request, nonce string) error {
 		return fmt.Errorf("missing authorization code")
 	}
 
-	tokens, err := exchangeCognitoCode(code)
+	tokens, err := exchangeCognitoCode(code, codeVerifier)
 	if err != nil {
 		return fmt.Errorf("cognito token exchange failed: %w", err)
 	}
@@ -162,12 +171,13 @@ func handleOAuthCallback(r *http.Request, nonce string) error {
 	return nil
 }
 
-func exchangeCognitoCode(code string) (*cognitoTokenResponse, error) {
+func exchangeCognitoCode(code, codeVerifier string) (*cognitoTokenResponse, error) {
 	params := url.Values{
-		"grant_type":   {"authorization_code"},
-		"client_id":    {cognitoClientID},
-		"code":         {code},
-		"redirect_uri": {cognitoRedirectURI},
+		"grant_type":    {"authorization_code"},
+		"client_id":     {cognitoClientID},
+		"code":          {code},
+		"redirect_uri":  {cognitoRedirectURI},
+		"code_verifier": {codeVerifier},
 	}
 	resp, err := http.PostForm(cognitoTokenURL, params)
 	if err != nil {
