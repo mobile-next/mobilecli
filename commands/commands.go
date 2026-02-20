@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // CommandResponse represents a standardized response format for all commands
@@ -28,6 +29,34 @@ func NewErrorResponse(err error) *CommandResponse {
 		Status: "error",
 		Error:  err.Error(),
 	}
+}
+
+var poolToken string
+var poolEndpoint string
+
+// SetPoolConfig sets the pool server credentials for remote device access
+func SetPoolConfig(token, endpoint string) {
+	poolToken = token
+	poolEndpoint = endpoint
+}
+
+func getRemoteControllableDevices() []devices.ControllableDevice {
+	if poolToken == "" {
+		return nil
+	}
+
+	remoteInfos, err := FetchRemoteDevices(poolToken)
+	if err != nil {
+		utils.Verbose("failed to fetch remote devices: %v", err)
+		return nil
+	}
+
+	var result []devices.ControllableDevice
+	for _, info := range remoteInfos {
+		result = append(result, devices.NewRemoteDevice(info, poolToken, poolEndpoint))
+	}
+
+	return result
 }
 
 // DeviceCache provides a simple cache for devices to avoid repeated lookups
@@ -64,11 +93,14 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 		return device, nil
 	}
 
-	// Get all devices including offline ones and find the one we want
+	// get all devices including offline ones and find the one we want
 	allDevices, err := devices.GetAllControllableDevices(true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
+
+	// append remote devices
+	allDevices = append(allDevices, getRemoteControllableDevices()...)
 
 	for _, d := range allDevices {
 		if d.ID() == deviceID {
@@ -87,11 +119,14 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return FindDevice(deviceID)
 	}
 
-	// Get all devices for auto-selection
+	// get all devices for auto-selection
 	allDevices, err := devices.GetAllControllableDevices(false)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
+
+	// append remote devices
+	allDevices = append(allDevices, getRemoteControllableDevices()...)
 
 	// filter to only online devices for auto-selection
 	var onlineDevices []devices.ControllableDevice

@@ -77,6 +77,9 @@ type ControllableDevice interface {
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
+	// FIXME: NEVER COMMIT THIS
+	return allDevices, nil
+
 	startTotal := time.Now()
 
 	// get Android devices
@@ -172,6 +175,7 @@ type DeviceInfo struct {
 	Version  string `json:"version"`
 	State    string `json:"state"`
 	Model    string `json:"model"`
+	Remote   bool   `json:"remote,omitempty"`
 }
 
 type ScreenSize struct {

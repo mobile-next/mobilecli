@@ -22,7 +22,10 @@ var devicesCmd = &cobra.Command{
 			Platform:       platform,
 			DeviceType:     deviceType,
 		}
-		response := commands.DevicesCommand(opts)
+
+		token, _ := getPoolToken()
+
+		response := commands.DevicesCommand(opts, token)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
