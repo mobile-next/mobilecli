@@ -41,7 +41,7 @@ type PoolAllocateResponse struct {
 	Device    PoolAllocateDevice `json:"device"`
 }
 
-const defaultPoolServerURL = "ws://localhost:15000/ws"
+const defaultPoolServerURL = "wss://api.mobilenexthq.com/ws"
 
 func getPoolServerURL() string {
 	if url := os.Getenv("MOBILECLI_POOL_URL"); url != "" {

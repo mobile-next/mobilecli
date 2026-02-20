@@ -32,12 +32,15 @@ func NewErrorResponse(err error) *CommandResponse {
 }
 
 var poolToken string
-var poolEndpoint string
 
 // SetPoolConfig sets the pool server credentials for remote device access
-func SetPoolConfig(token, endpoint string) {
+func SetPoolConfig(token string) {
 	poolToken = token
-	poolEndpoint = endpoint
+}
+
+// GetPoolToken returns the configured pool token
+func GetPoolToken() string {
+	return poolToken
 }
 
 func getRemoteControllableDevices() []devices.ControllableDevice {
@@ -53,7 +56,7 @@ func getRemoteControllableDevices() []devices.ControllableDevice {
 
 	var result []devices.ControllableDevice
 	for _, info := range remoteInfos {
-		result = append(result, devices.NewRemoteDevice(info, poolToken, poolEndpoint))
+		result = append(result, devices.NewRemoteDevice(info, poolToken, getPoolServerURL()))
 	}
 
 	return result

@@ -362,7 +362,7 @@ func handleDevicesList(params json.RawMessage) (interface{}, error) {
 		opts.DeviceType = devicesParams.Type
 	}
 
-	response := commands.DevicesCommand(opts, "")
+	response := commands.DevicesCommand(opts, commands.GetPoolToken())
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

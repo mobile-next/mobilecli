@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/server"
@@ -115,11 +114,7 @@ COMMON FLAGS:
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		token, _ := getPoolToken()
 		if token != "" {
-			endpoint := os.Getenv("MOBILECLI_POOL_URL")
-			if endpoint == "" {
-				endpoint = "ws://localhost:15000/ws"
-			}
-			commands.SetPoolConfig(token, endpoint)
+			commands.SetPoolConfig(token)
 		}
 		return nil
 	},

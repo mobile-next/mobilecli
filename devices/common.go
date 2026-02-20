@@ -77,9 +77,6 @@ type ControllableDevice interface {
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 	var allDevices []ControllableDevice
 
-	// FIXME: NEVER COMMIT THIS
-	return allDevices, nil
-
 	startTotal := time.Now()
 
 	// get Android devices
