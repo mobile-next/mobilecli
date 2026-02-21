@@ -151,6 +151,8 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	}
 	outputPath := outputIPA.Name()
 	_ = outputIPA.Close()
+	// remove the empty temp file so zip can create it fresh
+	_ = os.Remove(outputPath)
 
 	Verbose("Repackaging IPA to %s", outputPath)
 	cmd := exec.Command("zip", "-qr", outputPath, "Payload")
@@ -360,12 +362,10 @@ func findSigningIdentity(teamID string) (string, error) {
 
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		// look for lines like: 1) HASH "Apple Development: Name (TEAMID)"
 		if !strings.Contains(line, "Apple Development") && !strings.Contains(line, "iPhone Developer") {
 			continue
 		}
 
-		// extract the identity string between quotes
 		startQuote := strings.Index(line, "\"")
 		endQuote := strings.LastIndex(line, "\"")
 		if startQuote == -1 || endQuote == -1 || startQuote == endQuote {
@@ -374,30 +374,62 @@ func findSigningIdentity(teamID string) (string, error) {
 
 		identity := line[startQuote+1 : endQuote]
 
-		// check if the identity contains the team ID
+		// check display name first (e.g. "Apple Development: Name (TEAMID)").
+		// return the SHA-1 hash to avoid ambiguity when multiple certs share the same name.
 		if strings.Contains(identity, teamID) {
+			hash := extractCertHash(line)
+			if hash != "" {
+				return hash, nil
+			}
 			return identity, nil
 		}
+
+		// the display name may contain a personal ID instead of the team ID,
+		// so also check the certificate's OU field which holds the actual team ID.
+		// return the SHA-1 hash to avoid ambiguity when multiple certs share the same name.
+		hash := extractCertHash(line)
+		if hash != "" && certOUMatchesTeam(hash, teamID) {
+			Verbose("Found signing identity via certificate OU: %s (hash: %s)", identity, hash)
+			return hash, nil
+		}
 	}
 
-	// if no team-specific match, try any valid development identity
+	return "", fmt.Errorf("no Apple Development signing identity found for team %s. create one in Xcode: Settings → Accounts → select your account → Manage Certificates → + → Apple Development", teamID)
+}
+
+func extractCertHash(identityLine string) string {
+	parts := strings.Fields(identityLine)
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return ""
+}
+
+func certOUMatchesTeam(certHash, teamID string) bool {
+	// dump all certificates with their SHA-1 hashes and attributes
+	cmd := exec.Command("security", "find-certificate", "-a", "-Z")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// parse output to find the certificate with the matching SHA-1 hash
+	// then check its subject ("snbr" or "subj" field) for OU=teamID
+	lines := strings.Split(string(output), "\n")
+	var inTargetCert bool
+
 	for _, line := range lines {
-		if !strings.Contains(line, "Apple Development") && !strings.Contains(line, "iPhone Developer") {
-			continue
+		if strings.HasPrefix(line, "SHA-1 hash:") {
+			hash := strings.TrimSpace(strings.TrimPrefix(line, "SHA-1 hash:"))
+			inTargetCert = (hash == certHash)
 		}
-
-		startQuote := strings.Index(line, "\"")
-		endQuote := strings.LastIndex(line, "\"")
-		if startQuote == -1 || endQuote == -1 || startQuote == endQuote {
-			continue
+		// the "subj" blob contains the certificate subject with OU
+		if inTargetCert && strings.Contains(line, "\"subj\"") && strings.Contains(line, teamID) {
+			return true
 		}
-
-		identity := line[startQuote+1 : endQuote]
-		Verbose("Using signing identity (no team match): %s", identity)
-		return identity, nil
 	}
 
-	return "", fmt.Errorf("no Apple Development signing identity found in keychain")
+	return false
 }
 
 func extractEntitlements(profilePath string) (string, error) {

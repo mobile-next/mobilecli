@@ -4,10 +4,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // json-rpc structs defined locally to avoid import cycle with commands package
@@ -344,8 +350,87 @@ func (r *RemoteDevice) DumpSourceRaw() (interface{}, error) {
 	return resp.RawData, nil
 }
 
+type uploadResult struct {
+	UploadID  string `json:"uploadId"`
+	UploadURL string `json:"uploadUrl"`
+}
+
+var sanitizeRe = regexp.MustCompile(`[^0-9a-zA-Z_.]`)
+
+func sanitizeFilename(name string) string {
+	return sanitizeRe.ReplaceAllString(name, "_")
+}
+
+func uploadFileToURL(filePath, uploadURL string) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	sizeMB := float64(fi.Size()) / (1024 * 1024)
+	utils.Verbose("upload started, file size: %.2f MB", sizeMB)
+
+	start := time.Now()
+
+	req, err := http.NewRequest(http.MethodPut, uploadURL, f)
+	if err != nil {
+		return fmt.Errorf("failed to create upload request: %w", err)
+	}
+	req.ContentLength = fi.Size()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upload failed with status %d", resp.StatusCode)
+	}
+
+	elapsed := time.Since(start).Seconds()
+	speedMB := sizeMB / elapsed
+	utils.Verbose("upload completed in %.1f seconds, speed: %.3f MB/sec", elapsed, speedMB)
+
+	return nil
+}
+
 func (r *RemoteDevice) InstallApp(path string) error {
-	return fmt.Errorf("install app is not supported on remote devices")
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	filename := sanitizeFilename(filepath.Base(path))
+
+	result, err := r.callRPC("uploads.new", map[string]interface{}{
+		"filename": filename,
+		"filesize": fi.Size(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to request upload url: %w", err)
+	}
+
+	var upload uploadResult
+	if err := remarshal(result, &upload); err != nil {
+		return err
+	}
+
+	if err := uploadFileToURL(path, upload.UploadURL); err != nil {
+		return err
+	}
+
+	_, err = r.callRPC("device.apps.install", map[string]interface{}{
+		"deviceId": r.deviceID,
+		"uploadId": upload.UploadID,
+	})
+	return err
 }
 
 func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
