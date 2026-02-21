@@ -71,6 +71,12 @@ var appsListCmd = &cobra.Command{
 	},
 }
 
+var (
+	forceResign         bool
+	provisioningProfile string
+	signingIdentity     string
+)
+
 var appsInstallCmd = &cobra.Command{
 	Use:   "install [path]",
 	Short: "Install an app on a device",
@@ -78,8 +84,11 @@ var appsInstallCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.InstallAppRequest{
-			DeviceID: deviceId,
-			Path:     args[0],
+			DeviceID:            deviceId,
+			Path:                args[0],
+			ForceResign:         forceResign,
+			ProvisioningProfile: provisioningProfile,
+			SigningIdentity:     signingIdentity,
 		}
 
 		response := commands.InstallAppCommand(req)
@@ -143,6 +152,9 @@ func init() {
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")
+	appsInstallCmd.Flags().BoolVar(&forceResign, "force-resign", false, "Re-sign the IPA with a local provisioning profile before installing")
+	appsInstallCmd.Flags().StringVar(&provisioningProfile, "provisioning-profile", "", "Path to a .mobileprovision file to use for re-signing")
+	appsInstallCmd.Flags().StringVar(&signingIdentity, "signing-identity", "", "Signing identity name to use for re-signing")
 	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
 	appsForegroundCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get foreground app from")
 }

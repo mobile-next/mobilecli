@@ -2,8 +2,11 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // AppRequest represents the parameters for app-related commands
@@ -103,8 +106,11 @@ func ForegroundAppCommand(req ForegroundAppRequest) *CommandResponse {
 }
 
 type InstallAppRequest struct {
-	DeviceID string `json:"deviceId"`
-	Path     string `json:"path"`
+	DeviceID            string `json:"deviceId"`
+	Path                string `json:"path"`
+	ForceResign         bool   `json:"forceResign"`
+	ProvisioningProfile string `json:"provisioningProfile"`
+	SigningIdentity     string `json:"signingIdentity"`
 }
 
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
@@ -117,9 +123,30 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.InstallApp(req.Path)
+	installPath := req.Path
+
+	// re-sign IPA if requested, only for .ipa files on real iOS devices
+	if req.ForceResign {
+		if !strings.HasSuffix(strings.ToLower(req.Path), ".ipa") {
+			return NewErrorResponse(fmt.Errorf("--force-resign only works with .ipa files"))
+		}
+
+		if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
+		}
+
+		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to re-sign IPA: %w", err))
+		}
+		defer func() { _ = os.Remove(resignedPath) }()
+
+		installPath = resignedPath
+	}
+
+	err = targetDevice.InstallApp(installPath)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %w", targetDevice.ID(), err))
 	}
 
 	return NewSuccessResponse(map[string]interface{}{
