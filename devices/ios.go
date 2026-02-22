@@ -1075,8 +1075,55 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
-	// handle avc format via DeviceKit
+	// handle avc format via DeviceKit /h264 HTTP endpoint (screenshot-based, no BroadcastExtension required)
 	if config.Format == "avc" {
+		if config.OnProgress != nil {
+			config.OnProgress("Checking DeviceKit status")
+		}
+
+		var httpPort int
+
+		d.mu.Lock()
+		hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+		d.mu.Unlock()
+
+		if hasHTTPForwarder {
+			d.mu.Lock()
+			httpPort, _ = d.portForwarderDeviceKit.GetPorts()
+			d.mu.Unlock()
+			utils.Verbose("DeviceKit HTTP forwarder already running on port %d", httpPort)
+		} else {
+			if config.OnProgress != nil {
+				config.OnProgress("Starting DeviceKit for H.264 streaming")
+			}
+
+			err := d.startDeviceKitAgent(StartAgentConfig{
+				OnProgress: config.OnProgress,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to start DeviceKit: %w", err)
+			}
+
+			d.mu.Lock()
+			httpPort, _ = d.portForwarderDeviceKit.GetPorts()
+			d.mu.Unlock()
+		}
+
+		fps := config.FPS
+		if fps == 0 {
+			fps = DefaultFramerate
+		}
+
+		if config.OnProgress != nil {
+			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d/h264", httpPort))
+		}
+
+		client := devicekit.NewClient("localhost", httpPort)
+		return client.StartH264Stream(fps, config.Quality, config.Scale, config.OnData)
+	}
+
+	// handle avc+replay-kit format via DeviceKit BroadcastExtension (ReplayKit, real devices only)
+	if config.Format == "avc+replay-kit" {
 		if config.OnProgress != nil {
 			config.OnProgress("Checking DeviceKit status")
 		}

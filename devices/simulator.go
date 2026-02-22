@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/assets"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
+	log "github.com/sirupsen/logrus"
 	"howett.net/plist"
 )
 
@@ -739,6 +741,37 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	// avc+replay-kit requires BroadcastExtension which is unavailable on simulators
+	if config.Format == "avc+replay-kit" {
+		log.Warn("avc+replay-kit is not available on simulators: requires a real device with BroadcastExtension running")
+		return fmt.Errorf("avc+replay-kit is not supported on simulators")
+	}
+
+	// avc format: use DeviceKit /h264 HTTP endpoint (screenshot-based H.264 stream)
+	if config.Format == "avc" {
+		if config.OnProgress != nil {
+			config.OnProgress("Checking DeviceKit status")
+		}
+
+		httpPort, err := s.ensureSimulatorDeviceKit(config.OnProgress)
+		if err != nil {
+			return fmt.Errorf("failed to ensure DeviceKit on simulator: %w", err)
+		}
+
+		fps := config.FPS
+		if fps == 0 {
+			fps = DefaultFramerate
+		}
+
+		if config.OnProgress != nil {
+			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d/h264", httpPort))
+		}
+
+		client := devicekit.NewClient("localhost", httpPort)
+		return client.StartH264Stream(fps, config.Quality, config.Scale, config.OnData)
+	}
+
+	// fallback: WDA MJPEG stream
 	mjpegPort, err := s.getWdaMjpegPort()
 	if err != nil {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
@@ -760,6 +793,53 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
+}
+
+// ensureSimulatorDeviceKit checks if DeviceKit is running on the simulator and starts it if not.
+// DeviceKit on a simulator binds directly to the host's network, so no port forwarding is needed.
+func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int, error) {
+	const port = deviceKitHTTPPort // 12004
+
+	client := devicekit.NewClient("localhost", port)
+	if err := client.HealthCheck(); err == nil {
+		utils.Verbose("DeviceKit already running on simulator at port %d", port)
+		return port, nil
+	}
+
+	installedApps, err := s.ListInstalledApps()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list installed apps: %w", err)
+	}
+
+	var bundleID string
+	for id := range installedApps {
+		if strings.Contains(id, "devicekit-ios") && strings.Contains(id, "UITests.xctrunner") {
+			bundleID = id
+			break
+		}
+	}
+
+	if bundleID == "" {
+		return 0, fmt.Errorf("DeviceKit not installed on simulator. Please install devicekit-ios")
+	}
+
+	if onProgress != nil {
+		onProgress("Launching DeviceKit on simulator")
+	}
+
+	if err := s.LaunchApp(bundleID); err != nil {
+		return 0, fmt.Errorf("failed to launch DeviceKit on simulator: %w", err)
+	}
+
+	if onProgress != nil {
+		onProgress("Waiting for DeviceKit to start")
+	}
+
+	if err := client.WaitForReady(20 * time.Second); err != nil {
+		return 0, fmt.Errorf("DeviceKit did not become ready on simulator: %w", err)
+	}
+
+	return port, nil
 }
 
 type ProcessInfo struct {
