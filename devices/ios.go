@@ -24,7 +24,6 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/devices/ios"
-	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
@@ -72,10 +71,8 @@ type IOSDevice struct {
 
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
-	controlClient          IOSControl // active control backend (WDA or DeviceKit)
-	wdaCancel              context.CancelFunc
-	portForwarderWda       *ios.PortForwarder
-	portForwarderMjpeg     *ios.PortForwarder
+	controlClient          IOSControl // active control backend (DeviceKit)
+	testRunnerCancel       context.CancelFunc
 	portForwarderDeviceKit *ios.PortForwarder // devicekit http forwarder
 	portForwarderAvc       *ios.PortForwarder // devicekit h264 stream forwarder
 }
@@ -148,7 +145,6 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	}
 
 	device.tunnelManager = tunnelManager
-	device.controlClient = wda.NewWdaClient("localhost:8100") // default to WDA, overridden by StartAgent if DeviceKit is available
 
 	return device, nil
 }
@@ -281,7 +277,7 @@ func (d *IOSDevice) Cleanup() error {
 	utils.Verbose("Starting cleanup for device %s (%s)", d.Udid, d.DeviceName)
 	var errs []error
 
-	// close control client (handles DeviceKit websocket close, no-op for WDA)
+	// close control client
 	d.mu.Lock()
 	if d.controlClient != nil {
 		d.controlClient.Close()
@@ -289,7 +285,7 @@ func (d *IOSDevice) Cleanup() error {
 	d.mu.Unlock()
 
 	// cleanup each resource type
-	if err := d.cleanupWDA(); err != nil {
+	if err := d.cleanupTestRunner(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -313,55 +309,37 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	hasWda := d.wdaCancel != nil
-	hasWdaPort := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
-	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
+	hasTestRunner := d.testRunnerCancel != nil
 	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
 	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
 	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
 
-	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
+	return hasTestRunner || hasHTTPPort || hasStreamPort || hasTunnel
 }
 
-// cleanupWDA cancels the WebDriverAgent context
-func (d *IOSDevice) cleanupWDA() error {
+// cleanupTestRunner cancels the XCUITest runner (DeviceKit) context
+func (d *IOSDevice) cleanupTestRunner() error {
 	d.mu.Lock()
-	cancel := d.wdaCancel
-	d.wdaCancel = nil
+	cancel := d.testRunnerCancel
+	d.testRunnerCancel = nil
 	d.mu.Unlock()
 
 	if cancel != nil {
-		utils.Verbose("Canceling WebDriverAgent for device %s", d.Udid)
+		utils.Verbose("Canceling test runner for device %s", d.Udid)
 		cancel()
 	}
 
 	return nil
 }
 
-// cleanupPortForwarders stops WDA, MJPEG, and DeviceKit port forwarders
+// cleanupPortForwarders stops DeviceKit port forwarders
 func (d *IOSDevice) cleanupPortForwarders() error {
 	d.mu.Lock()
-	wdaForwarder := d.portForwarderWda
-	mjpegForwarder := d.portForwarderMjpeg
 	httpForwarder := d.portForwarderDeviceKit
 	streamForwarder := d.portForwarderAvc
 	d.mu.Unlock()
 
 	var errs []error
-
-	if wdaForwarder != nil && wdaForwarder.IsRunning() {
-		utils.Verbose("Stopping WDA port forwarder for device %s", d.Udid)
-		if err := wdaForwarder.Stop(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to stop WDA port forwarder: %w", err))
-		}
-	}
-
-	if mjpegForwarder != nil && mjpegForwarder.IsRunning() {
-		utils.Verbose("Stopping mjpeg port forwarder for device %s", d.Udid)
-		if err := mjpegForwarder.Stop(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to stop mjpeg port forwarder: %w", err))
-		}
-	}
 
 	if httpForwarder != nil && httpForwarder.IsRunning() {
 		utils.Verbose("Stopping DeviceKit HTTP port forwarder for device %s", d.Udid)
@@ -464,14 +442,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		config.Hook.Register(hookName, d.Cleanup)
 	}
 
-	// Try DeviceKit first (preferred for real devices), fall back to WDA
-	err := d.startDeviceKitAgent(config)
-	if err == nil {
-		return nil
-	}
-	utils.Verbose("DeviceKit agent not available: %v, falling back to WDA", err)
-
-	return d.startWDAAgent(config)
+	return d.startDeviceKitAgent(config)
 }
 
 // startDeviceKitAgent starts the DeviceKit XCUITest runner as the control backend
@@ -574,170 +545,9 @@ func (d *IOSDevice) startDeviceKitAgent(config StartAgentConfig) error {
 	return nil
 }
 
-// startWDAAgent starts WebDriverAgent as the control backend (fallback for when DeviceKit is not installed)
-func (d *IOSDevice) startWDAAgent(config StartAgentConfig) error {
-	// use a local wdaClient variable throughout; assigned to d.controlClient at the end
-	var wdaClient *wda.WdaClient
-
-	// check if we already have a WDA port forwarder with a client
-	d.mu.Lock()
-	hasForwarder := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
-	d.mu.Unlock()
-
-	if hasForwarder {
-		d.mu.Lock()
-		srcPort, _ := d.portForwarderWda.GetPorts()
-		d.mu.Unlock()
-		wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
-		utils.Verbose("WDA port forwarder already running on port %d", srcPort)
-	} else {
-		// create a temporary client to check if WDA is already accessible on default port
-		wdaClient = wda.NewWdaClient("localhost:8100")
-	}
-
-	if err := wdaClient.HealthCheck(); err != nil {
-		utils.Verbose("WebdriverAgent is not running, starting it")
-
-		// list apps on device
-		apps, err := d.ListApps()
-		if err != nil {
-			return fmt.Errorf("failed to list apps: %w", err)
-		}
-
-		// check if WebDriverAgent is installed
-		webdriverBundleId := ""
-		for _, app := range apps {
-			if app.AppName == "WebDriverAgentRunner-Runner" {
-				utils.Verbose("WebDriverAgent is installed, launching it")
-				webdriverBundleId = app.PackageName
-				break
-			}
-		}
-
-		if webdriverBundleId == "" {
-			if config.OnProgress != nil {
-				config.OnProgress("Installing WebDriverAgent")
-			}
-			return fmt.Errorf("WebDriverAgent is not installed")
-		}
-
-		if config.OnProgress != nil {
-			config.OnProgress("Starting tunnel")
-		}
-
-		// start tunnel if needed (only for iOS 17+)
-		err = d.startTunnel()
-		if err != nil {
-			return err
-		}
-
-		// set up WDA port forwarding if not already running
-		if !hasForwarder {
-			port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-			if err != nil {
-				return fmt.Errorf("failed to find available port: %w", err)
-			}
-
-			forwarder := ios.NewPortForwarder(d.ID())
-			err = forwarder.Forward(port, 8100)
-			if err != nil {
-				return fmt.Errorf("failed to forward port: %w", err)
-			}
-
-			d.mu.Lock()
-			d.portForwarderWda = forwarder
-			d.mu.Unlock()
-
-			wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
-			utils.Verbose("WDA port forwarder set up on port %d", port)
-		}
-
-		// check if wda is already running, now that we have a port forwarder set up
-		status, err := wdaClient.GetStatus()
-		if err == nil {
-			utils.Verbose("WebDriverAgent is already running")
-		}
-
-		utils.Verbose("WebDriverAgent status %s", status)
-
-		if err != nil {
-			if config.OnProgress != nil {
-				config.OnProgress("Launching WebDriverAgent")
-			}
-
-			// launch WebDriverAgent using testmanagerd
-			err = d.LaunchTestRunner(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
-			if err != nil {
-				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
-			}
-
-			if config.OnProgress != nil {
-				config.OnProgress("Waiting for agent to start")
-			}
-
-			// wait for WebDriverAgent to start
-			err = wdaClient.WaitForReady(20 * time.Second)
-			if err != nil {
-				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
-			}
-
-			// check if WebDriverAgent is the active app and press HOME to background it
-			activeApp, err := wdaClient.GetForegroundApp()
-			if err == nil {
-				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
-
-				// if WDA is in foreground, press HOME to background it
-				if strings.Contains(activeApp.Name, "WebDriverAgent") {
-					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
-					_ = wdaClient.PressButton("HOME")
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}
-	}
-
-	// set up MJPEG port forwarding eagerly
-	d.mu.Lock()
-	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
-	d.mu.Unlock()
-
-	if needsMjpegForwarder {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			utils.Verbose("Failed to find available port for mjpeg: %v", err)
-		} else {
-			forwarder := ios.NewPortForwarder(d.ID())
-			err = forwarder.Forward(portMjpeg, 9100)
-			if err != nil {
-				utils.Verbose("Failed to forward mjpeg port: %v", err)
-			} else {
-				mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-				wdaClient.SetMjpegURL(mjpegUrl)
-
-				d.mu.Lock()
-				d.portForwarderMjpeg = forwarder
-				d.mu.Unlock()
-
-				utils.Verbose("MJPEG port forwarder set up on %s", mjpegUrl)
-			}
-		}
-	}
-
-	// set WDA as the control client
-	d.mu.Lock()
-	d.controlClient = wdaClient
-	d.mu.Unlock()
-
-	return nil
-}
 
 func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
-	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
-		utils.Verbose("No bundle ids specified, falling back to defaults")
-		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
-	}
-
-	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
+	utils.Verbose("Launching test runner: bundleid=%s, testbundleid=%s, xctestconfig=%s", bundleID, testRunnerBundleID, xctestConfig)
 
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
@@ -750,20 +560,20 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
 
-	// check if wda is already running (thread-safe)
+	// check if test runner is already running (thread-safe)
 	d.mu.Lock()
-	if d.wdaCancel != nil {
+	if d.testRunnerCancel != nil {
 		d.mu.Unlock()
-		utils.Verbose("WebDriverAgent is already running")
+		utils.Verbose("Test runner is already running")
 		return nil
 	}
 
 	// create context and store cancel function
 	ctx, cancel := context.WithCancel(context.Background())
-	d.wdaCancel = cancel
+	d.testRunnerCancel = cancel
 	d.mu.Unlock()
 
-	// start WDA in background using testmanagerd similar to go-ios runwda command
+	// start test runner in background using testmanagerd
 	go func() {
 		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
 			BundleId:           bundleID,
@@ -776,18 +586,18 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		})
 
 		if err != nil {
-			utils.Verbose("WebDriverAgent process ended with error: %v", err)
+			utils.Verbose("Test runner process ended with error: %v", err)
 		} else {
-			utils.Verbose("WebDriverAgent process ended")
+			utils.Verbose("Test runner process ended")
 		}
 
 		// clear cancel function when done (thread-safe)
 		d.mu.Lock()
-		d.wdaCancel = nil
+		d.testRunnerCancel = nil
 		d.mu.Unlock()
 	}()
 
-	utils.Verbose("WebDriverAgent launched in background")
+	utils.Verbose("Test runner launched in background")
 	return nil
 }
 
@@ -1051,7 +861,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := d.controlClient.GetWindowSize()
+	size, err := d.controlClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size: %w", err)
 	}
@@ -1067,9 +877,9 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Model:    d.ProductType,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  wdaSize.ScreenSize.Width,
-			Height: wdaSize.ScreenSize.Height,
-			Scale:  wdaSize.Scale,
+			Width:  size.ScreenSize.Width,
+			Height: size.ScreenSize.Height,
+			Scale:  size.Scale,
 		},
 	}, nil
 }
@@ -1683,7 +1493,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 		return nil, fmt.Errorf("failed to wait for DeviceKit app: %w", err)
 	}
 
-	// Start WebDriverAgent to be able to tap on the screen
+	// Start DeviceKit agent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
 		OnProgress: func(message string) {
 			utils.Verbose(message)

@@ -7,26 +7,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilecli/assets"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
-	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
 	"howett.net/plist"
 )
 
-const (
-	LOW_WDA_PORT    = 13001
-	HIGH_WDA_PORT   = 13200
-	LOW_MJPEG_PORT  = 13201
-	HIGH_MJPEG_PORT = 13400
-)
+
+
 
 // AppInfo corresponds to the structure from plutil output
 type AppInfo struct {
@@ -56,7 +48,7 @@ type Simulator struct {
 // SimulatorDevice wraps a Simulator to implement the AnyDevice interface
 type SimulatorDevice struct {
 	Simulator
-	wdaClient *wda.WdaClient
+	controlClient IOSControl
 }
 
 // parseSimulatorVersion parses iOS version from simulator runtime string
@@ -86,7 +78,7 @@ func (s SimulatorDevice) State() string {
 }
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	return s.wdaClient.TakeScreenshot()
+	return s.controlClient.TakeScreenshot()
 }
 
 // Reboot shuts down and then boots the iOS simulator.
@@ -289,73 +281,66 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-func getWebdriverAgentFilename(arch string) string {
+func getDeviceKitSimFilename(arch string) string {
 	if arch == "amd64" {
-		return "WebDriverAgentRunner-Build-Sim-x86_64.zip"
+		return "devicekit-ios-Sim-x86_64.zip"
 	}
-	return "WebDriverAgentRunner-Build-Sim-arm64.zip"
+	return "devicekit-ios-Sim-arm64.zip"
 }
 
-func getWebdriverAgentDownloadUrl(arch string) string {
-	filename := getWebdriverAgentFilename(arch)
-	return "https://github.com/appium/WebDriverAgent/releases/download/v10.2.5/" + filename
+func getDeviceKitSimDownloadURL(arch string) string {
+	return "https://github.com/mobile-next/devicekit-ios/releases/download/0.0.2/" + getDeviceKitSimFilename(arch)
 }
 
-func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
-	url := getWebdriverAgentDownloadUrl(runtime.GOARCH)
+func (s SimulatorDevice) downloadDeviceKitFromGitHub() (string, error) {
+	url := getDeviceKitSimDownloadURL(runtime.GOARCH)
 
-	tmpFile, err := os.CreateTemp("", "wda-*.zip")
+	tmpFile, err := os.CreateTemp("", "devicekit-*.zip")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %v", err)
 	}
 	_ = tmpFile.Close()
 
-	utils.Verbose("Downloading WebDriverAgent to: %s", tmpFile.Name())
+	utils.Verbose("Downloading DeviceKit to: %s", tmpFile.Name())
 
-	err = utils.DownloadFile(url, tmpFile.Name())
-	if err != nil {
+	if err := utils.DownloadFile(url, tmpFile.Name()); err != nil {
 		_ = os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to download WebDriverAgent: %w", err)
+		return "", fmt.Errorf("failed to download DeviceKit: %w", err)
 	}
 
-	fileInfo, err := os.Stat(tmpFile.Name())
-	if err == nil {
-		utils.Verbose("Downloaded %d bytes", fileInfo.Size())
+	if fi, err := os.Stat(tmpFile.Name()); err == nil {
+		utils.Verbose("Downloaded %d bytes", fi.Size())
 	}
 
 	return tmpFile.Name(), nil
 }
 
-func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
+func (s SimulatorDevice) InstallDeviceKit(onProgress func(string)) error {
 	var file string
 	var shouldCleanup bool
 
-	// try local file first
-	wdaPath := os.Getenv("MOBILECLI_WDA_PATH")
-	if wdaPath != "" {
-		filename := getWebdriverAgentFilename(runtime.GOARCH)
-		localPath := filepath.Join(wdaPath, filename)
-
+	// try local path first (override via MOBILECLI_DEVICEKIT_PATH env var)
+	if localBase := os.Getenv("MOBILECLI_DEVICEKIT_PATH"); localBase != "" {
+		localPath := filepath.Join(localBase, getDeviceKitSimFilename(runtime.GOARCH))
 		if _, err := os.Stat(localPath); err == nil {
-			utils.Verbose("Using local WebDriverAgent from: %s", localPath)
+			utils.Verbose("Using local DeviceKit from: %s", localPath)
 			file = localPath
-			shouldCleanup = false
 		} else {
-			utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
+			utils.Verbose("Local DeviceKit not found at: %s", localPath)
 		}
 	}
 
 	// fall back to GitHub download
 	if file == "" {
 		if onProgress != nil {
-			onProgress("Downloading WebDriverAgent")
+			onProgress("Downloading DeviceKit")
 		}
 
-		downloadedFile, err := s.downloadWebDriverAgentFromGitHub()
+		downloaded, err := s.downloadDeviceKitFromGitHub()
 		if err != nil {
-			return fmt.Errorf("failed to download WebDriverAgent: %w", err)
+			return fmt.Errorf("failed to download DeviceKit: %w", err)
 		}
-		file = downloadedFile
+		file = downloaded
 		shouldCleanup = true
 	}
 
@@ -364,66 +349,72 @@ func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
 	}
 
 	if onProgress != nil {
-		onProgress("Installing WebDriverAgent")
+		onProgress("Installing DeviceKit")
 	}
 
 	dir, err := utils.Unzip(file)
 	if err != nil {
-		return fmt.Errorf("failed to unzip WebDriverAgent: %w", err)
+		return fmt.Errorf("failed to unzip DeviceKit: %w", err)
 	}
-
 	defer func() { _ = os.RemoveAll(dir) }()
-	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
+	utils.Verbose("Unzipped DeviceKit to %s", dir)
 
-	appDir := dir + "/WebDriverAgentRunner-Runner.app"
-	infoPlistPath := appDir + "/Info.plist"
-
-	// modify info.plist to add CFBundleDisplayName
-	err = utils.ModifyPlist(utils.ModifyPlistInput{
-		PlistPath: infoPlistPath,
-		Key:       "CFBundleDisplayName",
-		Value:     "Mobile Next Kit",
-	})
-
+	// find the .app bundle inside the zip
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("failed to modify Info.plist: %w", err)
+		return fmt.Errorf("failed to read unzipped dir: %w", err)
 	}
 
-	// write embedded icon file
-	iconDest := appDir + "/AppIcon.png"
-	err = os.WriteFile(iconDest, assets.AppIconData, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write icon: %w", err)
+	var appDir string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".app") {
+			appDir = filepath.Join(dir, entry.Name())
+			break
+		}
 	}
 
-	// add icon configuration to plist
-	err = utils.AddBundleIconFilesToPlist(infoPlistPath)
-	if err != nil {
-		return fmt.Errorf("failed to add icon to plist: %w", err)
+	if appDir == "" {
+		return fmt.Errorf("no .app bundle found in DeviceKit zip")
 	}
 
-	err = InstallApp(s.UDID, appDir)
-	if err != nil {
-		return fmt.Errorf("failed to install WebDriverAgent: %w", err)
+	if err := InstallApp(s.UDID, appDir); err != nil {
+		return fmt.Errorf("failed to install DeviceKit: %w", err)
 	}
 
-	err = s.WaitUntilAppExists("com.facebook.WebDriverAgentRunner.xctrunner")
-	if err != nil {
-		return fmt.Errorf("failed to wait for WebDriverAgent to be installed: %w", err)
+	if err := s.waitForDeviceKitInstalled(); err != nil {
+		return fmt.Errorf("DeviceKit did not appear after install: %w", err)
 	}
 
 	return nil
 }
 
-func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
+func (s SimulatorDevice) IsDeviceKitInstalled() (bool, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {
 		return false, err
 	}
 
-	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-	_, ok := installedApps[webdriverPackageName]
-	return ok, nil
+	for id := range installedApps {
+		if strings.Contains(id, "devicekit-ios") && strings.Contains(id, "UITests.xctrunner") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s SimulatorDevice) waitForDeviceKitInstalled() error {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		ok, err := s.IsDeviceKitInstalled()
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("DeviceKit not found after install (timeout)")
 }
 
 func (s *SimulatorDevice) getState() (string, error) {
@@ -512,22 +503,18 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	switch state {
 	case "Booted":
-		// already booted, continue to WDA
+		// already booted, continue
 	case "Shutdown":
-		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
-		// simulator is already booting, just wait for it to finish
 		if config.OnProgress != nil {
 			config.OnProgress("Waiting for Simulator to boot")
 		}
-
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
-
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
 	case "ShuttingDown":
@@ -536,123 +523,36 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("unexpected simulator state: %s", state)
 	}
 
-	if currentPort, err := s.getWdaPort(); err == nil {
-		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
-
-		// check if we already have a client pointing to the same port
-		expectedURL := fmt.Sprintf("localhost:%d", currentPort)
-		if s.wdaClient != nil {
-			// check if the existing client is already pointing to the same port
-			if _, err := s.wdaClient.GetStatus(); err == nil {
-				return nil // already connected to the right port
-			}
-		}
-
-		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
-
-		// create new client or update with new port
-		s.wdaClient = wda.NewWdaClient(expectedURL)
-		if _, err := s.wdaClient.GetStatus(); err == nil {
-			// double check succeeded
-			return nil // Already running and accessible
-		}
-
-		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
-	} else {
-		utils.Verbose("Failed to get existing WDA port: %v", err)
-	}
-
-	installed, err := s.IsWebDriverAgentInstalled()
-	if err != nil {
-		return err
-	}
-
-	if !installed {
-		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
-		if config.OnProgress != nil {
-			config.OnProgress("Installing Agent on Simulator")
-		}
-
-		err = s.InstallWebDriverAgent(config.OnProgress)
-		if err != nil {
-			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
-		}
-
-		// from here on, we assume wda is installed
-	}
-
 	if config.OnProgress != nil {
-		config.OnProgress("Starting Agent")
+		config.OnProgress("Starting DeviceKit")
 	}
 
-	// find available ports
-	usePort, err := utils.FindAvailablePortInRange(LOW_WDA_PORT, HIGH_WDA_PORT)
-	if err != nil {
-		return fmt.Errorf("failed to find available USE_PORT: %w", err)
-	}
-
-	mjpegPort, err := utils.FindAvailablePortInRange(LOW_MJPEG_PORT, HIGH_MJPEG_PORT)
-	if err != nil {
-		return fmt.Errorf("failed to find available MJPEG_SERVER_PORT: %w", err)
-	}
-
-	utils.Verbose("Starting WebDriverAgent with USE_PORT=%d and MJPEG_SERVER_PORT=%d", usePort, mjpegPort)
-
-	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-	env := map[string]string{
-		"USE_PORT":          strconv.Itoa(usePort),
-		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
-	}
-
-	err = s.LaunchAppWithEnv(webdriverPackageName, env)
-	if err != nil {
-		return err
-	}
-
-	// update WDA client to use the actual port
-	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
-
-	if config.OnProgress != nil {
-		config.OnProgress("Waiting for agent to start")
-	}
-
-	err = s.wdaClient.WaitForAgent()
-	if err != nil {
-		// terminate the WDA process if it failed to start
-		_ = s.TerminateApp(webdriverPackageName)
-		return err
-	}
-
-	// wait 1 second after pressing home, so we make sure wda is in the background
-	_ = s.wdaClient.PressButton("HOME")
-	time.Sleep(1 * time.Second)
-
-	return nil
+	_, err = s.ensureSimulatorDeviceKit(config.OnProgress)
+	return err
 }
 
 func (s SimulatorDevice) PressButton(key string) error {
-	return s.wdaClient.PressButton(key)
+	return s.controlClient.PressButton(key)
 }
 
 func (s SimulatorDevice) SendKeys(text string) error {
-	return s.wdaClient.SendKeys(text)
+	return s.controlClient.SendKeys(text)
 }
 
 func (s SimulatorDevice) Tap(x, y int) error {
-	return s.wdaClient.Tap(x, y)
+	return s.controlClient.Tap(x, y)
 }
 
 func (s SimulatorDevice) LongPress(x, y, duration int) error {
-	return s.wdaClient.LongPress(x, y, duration)
+	return s.controlClient.LongPress(x, y, duration)
 }
 
 func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
-	return s.wdaClient.Swipe(x1, y1, x2, y2)
+	return s.controlClient.Swipe(x1, y1, x2, y2)
 }
 
 func (s SimulatorDevice) Gesture(actions []types.TapAction) error {
-	return s.wdaClient.Gesture(actions)
+	return s.controlClient.Gesture(actions)
 }
 
 func (s *SimulatorDevice) OpenURL(url string) error {
@@ -685,8 +585,7 @@ func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
 }
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	// get active app info from WDA
-	activeApp, err := s.wdaClient.GetActiveAppInfo()
+	activeApp, err := s.controlClient.GetForegroundApp()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active app info: %w", err)
 	}
@@ -708,7 +607,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 		}
 	}
 
-	// if app not found in list (e.g., system app), return info from WDA only
+	// if app not found in list (e.g., system app), return basic info from DeviceKit
 	return &ForegroundAppInfo{
 		PackageName: activeApp.BundleID,
 		AppName:     activeApp.Name,
@@ -717,9 +616,9 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := s.wdaClient.GetWindowSize()
+	size, err := s.controlClient.GetWindowSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+		return nil, fmt.Errorf("failed to get window size: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -733,9 +632,9 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 			Model:    s.Simulator.DeviceType,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  wdaSize.ScreenSize.Width,
-			Height: wdaSize.ScreenSize.Height,
-			Scale:  wdaSize.Scale,
+			Width:  size.ScreenSize.Width,
+			Height: size.ScreenSize.Height,
+			Scale:  size.Scale,
 		},
 	}, nil
 }
@@ -747,62 +646,43 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("avc+replay-kit is not supported on simulators")
 	}
 
-	// avc format: use DeviceKit /h264 HTTP endpoint (screenshot-based H.264 stream)
-	if config.Format == "avc" {
-		if config.OnProgress != nil {
-			config.OnProgress("Checking DeviceKit status")
-		}
-
-		httpPort, err := s.ensureSimulatorDeviceKit(config.OnProgress)
-		if err != nil {
-			return fmt.Errorf("failed to ensure DeviceKit on simulator: %w", err)
-		}
-
-		fps := config.FPS
-		if fps == 0 {
-			fps = DefaultFramerate
-		}
-
-		if config.OnProgress != nil {
-			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d/h264", httpPort))
-		}
-
-		client := devicekit.NewClient("localhost", httpPort)
-		return client.StartH264Stream(fps, config.Quality, config.Scale, config.OnData)
+	if config.OnProgress != nil {
+		config.OnProgress("Checking DeviceKit status")
 	}
 
-	// fallback: WDA MJPEG stream
-	mjpegPort, err := s.getWdaMjpegPort()
-	if err != nil {
-		return fmt.Errorf("failed to get MJPEG port: %w", err)
+	if _, err := s.ensureSimulatorDeviceKit(config.OnProgress); err != nil {
+		return fmt.Errorf("failed to ensure DeviceKit on simulator: %w", err)
 	}
 
-	// configure mjpeg framerate
 	fps := config.FPS
 	if fps == 0 {
 		fps = DefaultFramerate
 	}
-	err = s.wdaClient.SetMjpegFramerate(fps)
-	if err != nil {
-		return err
+
+	if config.Format == "avc" {
+		if config.OnProgress != nil {
+			config.OnProgress("Starting H.264 stream")
+		}
+		return s.controlClient.StartH264Stream(fps, config.Quality, config.Scale, config.OnData)
 	}
 
+	// default: mjpeg
 	if config.OnProgress != nil {
-		config.OnProgress("Starting video stream")
+		config.OnProgress("Starting MJPEG stream")
 	}
-
-	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
-	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
+	return s.controlClient.StartMjpegStream(fps, config.OnData)
 }
 
 // ensureSimulatorDeviceKit checks if DeviceKit is running on the simulator and starts it if not.
 // DeviceKit on a simulator binds directly to the host's network, so no port forwarding is needed.
+// On success s.controlClient is set to the active DeviceKit client.
 func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int, error) {
 	const port = deviceKitHTTPPort // 12004
 
 	client := devicekit.NewClient("localhost", port)
 	if err := client.HealthCheck(); err == nil {
 		utils.Verbose("DeviceKit already running on simulator at port %d", port)
+		s.controlClient = client
 		return port, nil
 	}
 
@@ -820,7 +700,25 @@ func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int
 	}
 
 	if bundleID == "" {
-		return 0, fmt.Errorf("DeviceKit not installed on simulator. Please install devicekit-ios")
+		// DeviceKit not installed — auto-install from GitHub
+		if err := s.InstallDeviceKit(onProgress); err != nil {
+			return 0, fmt.Errorf("DeviceKit not installed and auto-install failed: %w", err)
+		}
+
+		// re-read apps after install
+		installedApps, err = s.ListInstalledApps()
+		if err != nil {
+			return 0, fmt.Errorf("failed to list installed apps after install: %w", err)
+		}
+		for id := range installedApps {
+			if strings.Contains(id, "devicekit-ios") && strings.Contains(id, "UITests.xctrunner") {
+				bundleID = id
+				break
+			}
+		}
+		if bundleID == "" {
+			return 0, fmt.Errorf("DeviceKit not found after installation")
+		}
 	}
 
 	if onProgress != nil {
@@ -839,138 +737,17 @@ func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int
 		return 0, fmt.Errorf("DeviceKit did not become ready on simulator: %w", err)
 	}
 
+	s.controlClient = client
 	return port, nil
 }
 
-type ProcessInfo struct {
-	PID     int
-	Command string
-}
-
-// listAllProcesses returns a list of all running processes with their PIDs and command info
-func listAllProcesses() ([]ProcessInfo, error) {
-	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run ps command: %w", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
-	processes := make([]ProcessInfo, 0, len(lines))
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		// find the first space to separate PID from the rest
-		spaceIndex := strings.Index(line, " ")
-		if spaceIndex == -1 {
-			continue
-		}
-
-		pidStr := strings.TrimSpace(line[:spaceIndex])
-		pid, err := strconv.Atoi(pidStr)
-		if err != nil {
-			continue
-		}
-
-		// the rest of the line contains command and environment
-		command := line[spaceIndex+1:]
-		processes = append(processes, ProcessInfo{
-			PID:     pid,
-			Command: command,
-		})
-	}
-
-	return processes, nil
-}
-
-func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
-	processes, err := listAllProcesses()
-	if err != nil {
-		return 0, "", err
-	}
-
-	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
-
-	for _, proc := range processes {
-		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "WebDriverAgentRunner-Runner") {
-			return proc.PID, proc.Command, nil
-		}
-	}
-
-	return 0, "", fmt.Errorf("WebDriverAgent process not found for device %s", deviceUDID)
-}
-
-func extractEnvValue(output, envVar string) (string, error) {
-	// Look for " ENVVAR=" pattern (space + envvar + equals)
-	pattern := " " + envVar + "="
-	pos := strings.Index(output, pattern)
-	if pos == -1 {
-		// Also check if it's at the beginning of the line
-		pattern = envVar + "="
-		if strings.HasPrefix(output, pattern) {
-			pos = 0
-		} else {
-			return "", fmt.Errorf("%s not found in environment", envVar)
-		}
-	} else {
-		pos++ // Skip the leading space
-	}
-
-	// Find the start of the value (after the =)
-	valueStart := pos + len(envVar) + 1
-
-	// Find the end of the value (next space)
-	valueEnd := strings.Index(output[valueStart:], " ")
-	if valueEnd == -1 {
-		valueEnd = len(output)
-	} else {
-		valueEnd += valueStart
-	}
-
-	return output[valueStart:valueEnd], nil
-}
-
-func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
-	pid, processInfo, err := findWdaProcessForDevice(s.UDID)
-	if err != nil {
-		utils.Verbose("Could not find WDA process: %v", err)
-		return 0, err
-	}
-
-	utils.Verbose("Found WDA process PID=%d", pid)
-
-	portStr, err := extractEnvValue(processInfo, envVar)
-	if err != nil {
-		utils.Verbose("Could not extract %s from process info: %v", envVar, err)
-		return 0, err
-	}
-
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s value: %s", envVar, portStr)
-	}
-
-	utils.Verbose("Extracted %s=%d from WDA process", envVar, port)
-	return port, nil
-}
 
 func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
-	return s.wdaClient.GetSourceElements()
+	return s.controlClient.GetSourceElements()
 }
 
 func (s SimulatorDevice) DumpSourceRaw() (interface{}, error) {
-	return s.wdaClient.GetSourceRaw()
-}
-
-func (s *SimulatorDevice) getWdaPort() (int, error) {
-	return s.getWdaEnvPort("USE_PORT")
-}
-
-func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
-	return s.getWdaEnvPort("MJPEG_SERVER_PORT")
+	return s.controlClient.GetSourceRaw()
 }
 
 func (s SimulatorDevice) InstallApp(path string) error {
@@ -1033,10 +810,10 @@ func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, er
 
 // GetOrientation gets the current device orientation
 func (s SimulatorDevice) GetOrientation() (string, error) {
-	return s.wdaClient.GetOrientation()
+	return s.controlClient.GetOrientation()
 }
 
 // SetOrientation sets the device orientation
 func (s SimulatorDevice) SetOrientation(orientation string) error {
-	return s.wdaClient.SetOrientation(orientation)
+	return s.controlClient.SetOrientation(orientation)
 }

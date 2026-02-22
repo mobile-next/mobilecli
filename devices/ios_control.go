@@ -6,9 +6,9 @@ import (
 	"github.com/mobile-next/mobilecli/types"
 )
 
-// IOSControl is the common interface satisfied by both wda.WdaClient and devicekit.Client.
-// IOSDevice holds a single controlClient of this type and delegates all
-// interaction methods to it, so there is no per-method if/else branching.
+// IOSControl is the common interface satisfied by devicekit.Client.
+// Both IOSDevice and SimulatorDevice hold a single controlClient of this type
+// and delegate all interaction methods to it.
 type IOSControl interface {
 	TakeScreenshot() ([]byte, error)
 	Tap(x, y int) error
@@ -32,4 +32,5 @@ type IOSControl interface {
 
 	// Streaming
 	StartMjpegStream(fps int, onData func([]byte) bool) error
+	StartH264Stream(fps, quality int, scale float64, onData func([]byte) bool) error
 }
