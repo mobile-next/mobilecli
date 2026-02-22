@@ -128,7 +128,7 @@ This section documents the JSON-RPC methods registered by the server and shows e
 	- Description: Perform a gesture composed of actions (tap, move, wait, etc.).
 	- Params: object
 		- `deviceId` (string)
-		- `actions` (array of action objects) — see `devices/wda` types in code for schema.
+		- `actions` (array of action objects) — see `types.TapAction` in code for schema.
 
 - `device.url`
 	- Description: Open a URL or deep link on device.
@@ -192,7 +192,7 @@ This section documents the JSON-RPC methods registered by the server and shows e
 
 Common notes:
 - For most methods `deviceId` is optional; when omitted the server auto-selects a single online device or returns an error when multiple devices are available.
-- Methods that interact with the UI/agent (`device.io.*`, `device.dump.ui`, `device.apps.launch`, `device.info`, etc.) call `StartAgent` which may start/forward WDA for iOS devices. If WDA is unresponsive the server will attempt to relaunch it.
+- Methods that interact with the UI/agent (`device.io.*`, `device.dump.ui`, `device.apps.launch`, `device.info`, etc.) call `StartAgent` which starts the DeviceKit XCUITest runner on iOS devices.
 
 ## Curl examples
 
