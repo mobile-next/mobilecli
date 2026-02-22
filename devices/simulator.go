@@ -289,7 +289,7 @@ func getDeviceKitSimFilename(arch string) string {
 }
 
 func getDeviceKitSimDownloadURL(arch string) string {
-	return "https://github.com/mobile-next/devicekit-ios/releases/download/0.0.2/" + getDeviceKitSimFilename(arch)
+	return "https://github.com/mobile-next/devicekit-ios/releases/download/0.0.3/" + getDeviceKitSimFilename(arch)
 }
 
 func (s SimulatorDevice) downloadDeviceKitFromGitHub() (string, error) {
