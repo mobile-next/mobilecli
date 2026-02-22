@@ -3,12 +3,11 @@ import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
-	createAndLaunchSimulator,
+	getOrCreateAndLaunchSimulator,
 	printAllLogsFromSimulator,
 	shutdownSimulator,
 	deleteSimulator,
 	cleanupSimulators,
-	findIOSRuntime
 } from './simctl';
 import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
@@ -24,16 +23,17 @@ describe('iOS Simulator Tests', () => {
 	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
 		describe(`iOS ${iosVersion}`, () => {
 			let simulatorId: string;
+			let simulatorCreated = false;
 
 			before(function () {
 				this.timeout(180000);
 
-				// Check if runtime is available
 				try {
-					findIOSRuntime(iosVersion);
-					simulatorId = createAndLaunchSimulator(iosVersion);
+					const result = getOrCreateAndLaunchSimulator(iosVersion);
+					simulatorId = result.id;
+					simulatorCreated = result.created;
 				} catch (error) {
-					console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
+					console.log(`iOS ${iosVersion} simulator not available, skipping tests: ${error}`);
 					this.skip();
 				}
 			});
@@ -41,8 +41,10 @@ describe('iOS Simulator Tests', () => {
 			after(() => {
 				if (simulatorId) {
 					printAllLogsFromSimulator(simulatorId);
-					shutdownSimulator(simulatorId);
-					deleteSimulator(simulatorId);
+					if (simulatorCreated) {
+						shutdownSimulator(simulatorId);
+						deleteSimulator(simulatorId);
+					}
 				}
 			});
 
@@ -75,8 +77,8 @@ describe('iOS Simulator Tests', () => {
 				verifyAppsListContainsSafari(apps);
 			});
 
-			it('should warm up WDA by checking foreground app', async function () {
-				this.timeout(300000); // 5 minutes for WDA installation
+			it('should warm up DeviceKit by checking foreground app', async function () {
+				this.timeout(300000); // 5 minutes for DeviceKit installation
 
 				// Terminate Safari if it's running (from previous URL test)
 				try {
@@ -86,12 +88,12 @@ describe('iOS Simulator Tests', () => {
 					// Safari might not be running, that's fine
 				}
 
-				// This ensures WDA is installed and running before the Safari tests
+				// This ensures DeviceKit is installed and running before the Safari tests
 				// Check foreground app - should be SpringBoard
 				const foregroundApp = getForegroundApp(simulatorId);
 				verifySpringBoardIsForeground(foregroundApp);
 
-				// Wait a bit more to ensure WDA is fully ready
+				// Wait a bit more to ensure DeviceKit is fully ready
 				await new Promise(resolve => setTimeout(resolve, 3000));
 			});
 
@@ -239,15 +241,15 @@ describe('iOS Simulator Tests', () => {
 			it('should dump UI source in raw format', async function () {
 				this.timeout(60000);
 
-				// ensure WDA is running by checking foreground app first
+				// ensure DeviceKit is running by checking foreground app first
 				const foregroundApp = getForegroundApp(simulatorId);
 				expect(foregroundApp.data.packageName).to.not.be.empty;
 
 				// dump UI in raw format
 				const rawDump = dumpUIRaw(simulatorId);
 
-				// verify it's the raw WDA response structure
-				verifyRawWDADump(rawDump);
+				// verify it's the raw DeviceKit response structure
+				verifyRawDump(rawDump);
 			});
 		});
 	});
@@ -521,7 +523,7 @@ function dumpUIRaw(simulatorId: string): any {
 	return mobilecli(['dump', 'ui', '--device', simulatorId, '--format', 'raw']);
 }
 
-function verifyRawWDADump(response: any): void {
+function verifyRawDump(response: any): void {
 	// verify it's a valid response
 	expect(response).to.not.be.undefined;
 	expect(response.status).to.equal('ok');
@@ -531,12 +533,11 @@ function verifyRawWDADump(response: any): void {
 	expect(data).to.not.be.undefined;
 	expect(data.rawData).to.not.be.undefined;
 
-	// rawData should contain the tree structure directly from WDA
+	// DeviceKit raw response has axElement at the top level
 	const rawData = data.rawData;
-	expect(rawData.type).to.be.a('string');
-	expect(rawData.type).to.not.be.empty;
-
-	// WDA raw response typically has children array
-	expect(rawData.children).to.be.an('array');
+	expect(rawData.axElement).to.not.be.undefined;
+	expect(rawData.axElement.elementType).to.be.a('number');
+	expect(rawData.axElement.children).to.be.an('array');
+	expect(rawData.depth).to.be.a('number');
 }
 

@@ -35,15 +35,15 @@ export function createSimulator(name: string, deviceType: string, runtime: strin
 
 export function bootSimulator(simulatorId: string): void {
 	try {
-		execSync(`xcrun simctl boot "${simulatorId}"`, {stdio: 'inherit',});
-		execSync(`xcrun simctl bootstatus "${simulatorId}"`, {stdio: 'ignore',});
-	} catch (error) {
-		// Simulator might already be booted, check if it's actually an error
-		const errorMessage = (error as Error).message;
-		if (!errorMessage.includes('current state: Booted')) {
+		execSync(`xcrun simctl boot "${simulatorId}"`, {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']});
+	} catch (error: any) {
+		// Ignore "already booted" errors — check both message and stderr
+		const output = String(error?.message ?? '') + String(error?.stderr ?? '');
+		if (!output.includes('current state: Booted')) {
 			throw new Error(`Failed to boot simulator: ${error}`);
 		}
 	}
+	execSync(`xcrun simctl bootstatus "${simulatorId}"`, {stdio: 'ignore'});
 }
 
 export function waitForSimulatorReady(simulatorId: string, timeout: number = 30000): void {
@@ -94,6 +94,28 @@ export function deleteSimulator(simulatorId: string): void {
 	}
 }
 
+export function findExistingSimulator(iosVersion: string, preferredName: string = 'iPhone 17 Pro'): string | null {
+	const output = execSync('xcrun simctl list devices', {encoding: 'utf8'});
+	const lines = output.split('\n');
+
+	let inTargetRuntime = false;
+
+	for (const line of lines) {
+		if (line.startsWith('--')) {
+			inTargetRuntime = line.includes(`iOS ${iosVersion}.`);
+			continue;
+		}
+
+		if (inTargetRuntime && line.includes(preferredName)) {
+			const match = line.match(/\(([0-9A-F-]{36})\)/i);
+			if (match) {
+				return match[1];
+			}
+		}
+	}
+	return null;
+}
+
 export function createAndLaunchSimulator(iosVersion: string, deviceType: string = 'iPhone 14'): string {
 	const runtime = findIOSRuntime(iosVersion);
 	const simulatorName = `Test-iOS-${iosVersion}`;
@@ -109,6 +131,20 @@ export function createAndLaunchSimulator(iosVersion: string, deviceType: string 
 
 	// console.log(`Simulator ${simulatorId} is ready!`);
 	return simulatorId;
+}
+
+export function getOrCreateAndLaunchSimulator(iosVersion: string): { id: string; created: boolean } {
+	// Prefer reusing an existing iPhone 17 Pro simulator
+	const existingId = findExistingSimulator(iosVersion, 'iPhone 17 Pro');
+	if (existingId) {
+		bootSimulator(existingId);
+		waitForSimulatorReady(existingId);
+		return {id: existingId, created: false};
+	}
+
+	// Fall back to creating a new Test-iOS-{version} simulator
+	const id = createAndLaunchSimulator(iosVersion);
+	return {id, created: true};
 }
 
 export function cleanupSimulators(): void {
