@@ -86,7 +86,7 @@ func ForegroundAppCommand(req ForegroundAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	// start agent if needed (for WDA)
+	// start DeviceKit agent if needed
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
 		Hook: GetShutdownHook(),
 	})

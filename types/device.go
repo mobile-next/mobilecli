@@ -1,7 +1,7 @@
 package types
 
 // TapAction represents a single action in a gesture sequence.
-// Used by both WDA (W3C pointer actions) and DeviceKit (press/move/release).
+// Used by DeviceKit gesture API (press/move/release).
 type TapAction struct {
 	Type     string `json:"type"`
 	Duration int    `json:"duration"`
