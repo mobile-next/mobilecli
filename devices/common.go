@@ -139,7 +139,6 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
 				Simulator: sim,
-				wdaClient: nil,
 			})
 		}
 	}
