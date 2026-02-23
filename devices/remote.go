@@ -2,7 +2,6 @@ package devices
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,109 +10,59 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/rpc"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
-// json-rpc structs defined locally to avoid import cycle with commands package
-type rpcRequest struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
-	ID      int         `json:"id"`
-}
-
-type rpcResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   interface{} `json:"error,omitempty"`
-	ID      interface{} `json:"id"`
-}
-
 type RemoteDevice struct {
-	deviceID string
-	name     string
-	platform string
-	devType  string
-	version  string
-	state    string
-	model    string
-	token    string
-	endpoint string
+	deviceID   string
+	name       string
+	platform   string
+	deviceType string
+	version    string
+	state      string
+	model      string
+	token      string
+	endpoint   string
 }
 
 func NewRemoteDevice(info DeviceInfo, token string, endpoint string) *RemoteDevice {
+	devType := info.Type
+	if devType == "" {
+		devType = "remote"
+	}
+
 	return &RemoteDevice{
-		deviceID: info.ID,
-		name:     info.Name,
-		platform: info.Platform,
-		devType:  info.Type,
-		version:  info.Version,
-		state:    info.State,
-		model:    info.Model,
-		token:    token,
-		endpoint: endpoint,
+		deviceID:   info.ID,
+		name:       info.Name,
+		platform:   info.Platform,
+		deviceType: devType,
+		version:    info.Version,
+		state:      info.State,
+		model:      info.Model,
+		token:      token,
+		endpoint:   endpoint,
 	}
 }
 
-func (r *RemoteDevice) ID() string       { return r.deviceID }
-func (r *RemoteDevice) Name() string     { return r.name }
-func (r *RemoteDevice) Platform() string { return r.platform }
-func (r *RemoteDevice) DeviceType() string {
-	if r.devType != "" {
-		return r.devType
-	}
-	return "remote"
-}
-func (r *RemoteDevice) Version() string { return r.version }
-func (r *RemoteDevice) State() string   { return r.state }
+func (r *RemoteDevice) ID() string         { return r.deviceID }
+func (r *RemoteDevice) Name() string       { return r.name }
+func (r *RemoteDevice) Platform() string   { return r.platform }
+func (r *RemoteDevice) DeviceType() string { return r.deviceType }
+func (r *RemoteDevice) Version() string    { return r.version }
+func (r *RemoteDevice) State() string      { return r.state }
 
 func (r *RemoteDevice) StartAgent(config StartAgentConfig) error {
 	return nil
 }
 
 func (r *RemoteDevice) callRPC(method string, params map[string]interface{}) (interface{}, error) {
-	url := r.endpoint + "?token=" + r.token
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to pool server: %w", err)
+	var result interface{}
+	if err := rpc.Call(r.token, method, params, &result); err != nil {
+		return nil, err
 	}
-	defer conn.Close()
-
-	req := rpcRequest{
-		JSONRPC: "2.0",
-		ID:      1,
-		Method:  method,
-		Params:  params,
-	}
-
-	if err := conn.WriteJSON(req); err != nil {
-		return nil, fmt.Errorf("failed to send rpc request: %w", err)
-	}
-
-	var resp rpcResponse
-	if err := conn.ReadJSON(&resp); err != nil {
-		return nil, fmt.Errorf("failed to read rpc response: %w", err)
-	}
-
-	if resp.Error != nil {
-		return nil, fmt.Errorf("rpc error: %v", resp.Error)
-	}
-
-	return resp.Result, nil
-}
-
-// remarshal converts an interface{} result to a typed struct via json round-trip
-func remarshal(src interface{}, dst interface{}) error {
-	data, err := json.Marshal(src)
-	if err != nil {
-		return fmt.Errorf("failed to marshal rpc result: %w", err)
-	}
-	if err := json.Unmarshal(data, dst); err != nil {
-		return fmt.Errorf("failed to unmarshal rpc result: %w", err)
-	}
-	return nil
+	return result, nil
 }
 
 func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
@@ -127,7 +76,7 @@ func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
 	var screenshotResp struct {
 		Data string `json:"data"`
 	}
-	if err := remarshal(result, &screenshotResp); err != nil {
+	if err := rpc.Remarshal(result, &screenshotResp); err != nil {
 		return nil, err
 	}
 
@@ -250,7 +199,7 @@ func (r *RemoteDevice) GetOrientation() (string, error) {
 	var orientationResp struct {
 		Orientation string `json:"orientation"`
 	}
-	if err := remarshal(result, &orientationResp); err != nil {
+	if err := rpc.Remarshal(result, &orientationResp); err != nil {
 		return "", err
 	}
 
@@ -274,7 +223,7 @@ func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	}
 
 	var info FullDeviceInfo
-	if err := remarshal(result, &info); err != nil {
+	if err := rpc.Remarshal(result, &info); err != nil {
 		return nil, err
 	}
 
@@ -290,7 +239,7 @@ func (r *RemoteDevice) ListApps() ([]InstalledAppInfo, error) {
 	}
 
 	var apps []InstalledAppInfo
-	if err := remarshal(result, &apps); err != nil {
+	if err := rpc.Remarshal(result, &apps); err != nil {
 		return nil, err
 	}
 
@@ -306,7 +255,7 @@ func (r *RemoteDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}
 
 	var app ForegroundAppInfo
-	if err := remarshal(result, &app); err != nil {
+	if err := rpc.Remarshal(result, &app); err != nil {
 		return nil, err
 	}
 
@@ -324,7 +273,7 @@ func (r *RemoteDevice) DumpSource() ([]ScreenElement, error) {
 	var resp struct {
 		Elements []ScreenElement `json:"elements"`
 	}
-	if err := remarshal(result, &resp); err != nil {
+	if err := rpc.Remarshal(result, &resp); err != nil {
 		return nil, err
 	}
 
@@ -343,7 +292,7 @@ func (r *RemoteDevice) DumpSourceRaw() (interface{}, error) {
 	var resp struct {
 		RawData interface{} `json:"rawData"`
 	}
-	if err := remarshal(result, &resp); err != nil {
+	if err := rpc.Remarshal(result, &resp); err != nil {
 		return nil, err
 	}
 
@@ -360,6 +309,8 @@ var sanitizeRe = regexp.MustCompile(`[^0-9a-zA-Z_.]`)
 func sanitizeFilename(name string) string {
 	return sanitizeRe.ReplaceAllString(name, "_")
 }
+
+var uploadHTTPClient = &http.Client{Timeout: 5 * time.Minute}
 
 func uploadFileToURL(filePath, uploadURL string) error {
 	f, err := os.Open(filePath)
@@ -384,7 +335,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	}
 	req.ContentLength = fi.Size()
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := uploadHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
@@ -409,7 +360,7 @@ func (r *RemoteDevice) InstallApp(path string) error {
 
 	filename := sanitizeFilename(filepath.Base(path))
 
-	result, err := r.callRPC("uploads.new", map[string]interface{}{
+	result, err := r.callRPC("uploads.create", map[string]interface{}{
 		"filename": filename,
 		"filesize": fi.Size(),
 	})
@@ -418,7 +369,7 @@ func (r *RemoteDevice) InstallApp(path string) error {
 	}
 
 	var upload uploadResult
-	if err := remarshal(result, &upload); err != nil {
+	if err := rpc.Remarshal(result, &upload); err != nil {
 		return err
 	}
 

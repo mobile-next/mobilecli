@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,18 +33,17 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	Verbose("Unzipping IPA to %s", tempDir)
 	err = unzipForResign(ipaPath, tempDir)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to unzip IPA: %w", err)
 	}
 
 	// find the .app bundle inside Payload/
 	appPath, err := findAppBundle(tempDir)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to find app bundle: %w", err)
 	}
 
@@ -52,7 +52,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	// read the app's bundle ID for profile matching
 	bundleID, err := readBundleID(appPath)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to read bundle ID from app: %w", err)
 	}
 
@@ -61,7 +60,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	// find provisioning profile
 	profilePath, err := resolveProvisioningProfile(profileOverride, deviceUDID, bundleID)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", err
 	}
 
@@ -70,7 +68,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	// extract team ID from profile
 	teamID, err := extractTeamID(profilePath)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to extract team ID from profile: %w", err)
 	}
 
@@ -79,7 +76,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	// find signing identity
 	identity, err := resolveSigningIdentity(identityOverride, teamID)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", err
 	}
 
@@ -88,7 +84,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	// extract entitlements from profile
 	entitlementsPath, err := extractEntitlements(profilePath)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to extract entitlements: %w", err)
 	}
 	defer func() { _ = os.Remove(entitlementsPath) }()
@@ -99,7 +94,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	embeddedPath := filepath.Join(appPath, "embedded.mobileprovision")
 	err = CopyFile(profilePath, embeddedPath)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
@@ -112,7 +106,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 				Verbose("Signing framework: %s", entry.Name())
 				err = codesign(frameworkPath, identity, "")
 				if err != nil {
-					_ = os.RemoveAll(tempDir)
 					return "", fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
 				}
 			}
@@ -128,7 +121,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 				Verbose("Signing app extension: %s", entry.Name())
 				err = codesign(appexPath, identity, entitlementsPath)
 				if err != nil {
-					_ = os.RemoveAll(tempDir)
 					return "", fmt.Errorf("failed to sign app extension %s: %w", entry.Name(), err)
 				}
 			}
@@ -139,14 +131,12 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	Verbose("Signing main app bundle")
 	err = codesign(appPath, identity, entitlementsPath)
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to sign app bundle: %w", err)
 	}
 
 	// re-zip into a new IPA
 	outputIPA, err := os.CreateTemp("", "resigned_*.ipa")
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return "", fmt.Errorf("failed to create temp IPA file: %w", err)
 	}
 	outputPath := outputIPA.Name()
@@ -159,12 +149,10 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		_ = os.Remove(outputPath)
 		return "", fmt.Errorf("failed to repackage IPA: %w\n%s", err, output)
 	}
 
-	_ = os.RemoveAll(tempDir)
 	return outputPath, nil
 }
 
@@ -247,6 +235,48 @@ func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error)
 	return &profile, nil
 }
 
+type profileMatch int
+
+const (
+	profileMatchNone profileMatch = iota
+	profileMatchWildcard
+	profileMatchExact
+)
+
+func matchProfile(profile *provisioningProfile, deviceUDID, bundleID string) profileMatch {
+	if profile.ExpirationDate.Before(time.Now()) {
+		Verbose("Skipping expired profile: %s", profile.Name)
+		return profileMatchNone
+	}
+
+	if !profile.Entitlements.GetTaskAllow {
+		Verbose("Skipping non-development profile: %s", profile.Name)
+		return profileMatchNone
+	}
+
+	if !slices.Contains(profile.ProvisionedDevices, deviceUDID) {
+		Verbose("Skipping profile %s: device %s not included", profile.Name, deviceUDID)
+		return profileMatchNone
+	}
+
+	if len(profile.TeamIdentifier) == 0 {
+		return profileMatchNone
+	}
+
+	appID := profile.Entitlements.ApplicationIdentifier
+	teamPrefix := profile.TeamIdentifier[0] + "."
+
+	if appID == teamPrefix+bundleID {
+		return profileMatchExact
+	}
+
+	if appID == teamPrefix+"*" {
+		return profileMatchWildcard
+	}
+
+	return profileMatchNone
+}
+
 func findMatchingProfile(deviceUDID, bundleID string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -289,48 +319,15 @@ func findMatchingProfile(deviceUDID, bundleID string) (string, error) {
 				continue
 			}
 
-			// check not expired
-			if profile.ExpirationDate.Before(time.Now()) {
-				Verbose("Skipping expired profile: %s", profile.Name)
-				continue
-			}
-
-			// check it's a development profile (get-task-allow: true)
-			if !profile.Entitlements.GetTaskAllow {
-				Verbose("Skipping non-development profile: %s", profile.Name)
-				continue
-			}
-
-			// check it contains the device UDID
-			hasDevice := false
-			for _, udid := range profile.ProvisionedDevices {
-				if udid == deviceUDID {
-					hasDevice = true
-					break
-				}
-			}
-			if !hasDevice {
-				Verbose("Skipping profile %s: device %s not included", profile.Name, deviceUDID)
-				continue
-			}
-
-			appID := profile.Entitlements.ApplicationIdentifier
-			if len(profile.TeamIdentifier) == 0 {
-				continue
-			}
-
-			teamPrefix := profile.TeamIdentifier[0] + "."
-
-			// exact bundle ID match (e.g. "TEAMID.com.example.app")
-			if appID == teamPrefix+bundleID {
+			switch matchProfile(profile, deviceUDID, bundleID) {
+			case profileMatchExact:
 				Verbose("Found exact-match profile: %s (%s)", profile.Name, fullPath)
 				return fullPath, nil
-			}
-
-			// wildcard match (e.g. "TEAMID.*")
-			if appID == teamPrefix+"*" && wildcardMatch == "" {
-				Verbose("Found wildcard profile: %s (%s)", profile.Name, fullPath)
-				wildcardMatch = fullPath
+			case profileMatchWildcard:
+				if wildcardMatch == "" {
+					Verbose("Found wildcard profile: %s (%s)", profile.Name, fullPath)
+					wildcardMatch = fullPath
+				}
 			}
 		}
 	}

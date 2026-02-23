@@ -608,6 +608,19 @@ type AppsForegroundParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
+type AppsInstallParams struct {
+	DeviceID            string `json:"deviceId"`
+	Path                string `json:"path"`
+	ForceResign         bool   `json:"forceResign,omitempty"`
+	ProvisioningProfile string `json:"provisioningProfile,omitempty"`
+	SigningIdentity     string `json:"signingIdentity,omitempty"`
+}
+
+type AppsUninstallParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
 func handleIoButton(params json.RawMessage) (interface{}, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
@@ -920,6 +933,59 @@ func handleAppsForeground(params json.RawMessage) (interface{}, error) {
 	}
 
 	response := commands.ForegroundAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsInstall(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, path")
+	}
+
+	var p AppsInstallParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, path", err)
+	}
+
+	if p.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	req := commands.InstallAppRequest{
+		DeviceID:            p.DeviceID,
+		Path:                p.Path,
+		ForceResign:         p.ForceResign,
+		ProvisioningProfile: p.ProvisioningProfile,
+		SigningIdentity:     p.SigningIdentity,
+	}
+
+	response := commands.InstallAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsUninstall(params json.RawMessage) (interface{}, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var p AppsUninstallParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, bundleId", err)
+	}
+
+	req := commands.UninstallAppRequest{
+		DeviceID:    p.DeviceID,
+		PackageName: p.BundleID,
+	}
+
+	response := commands.UninstallAppCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

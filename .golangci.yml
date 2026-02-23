@@ -18,12 +18,26 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - unconvert
+    - gocyclo
+    - funlen
+    - dupl
+    - goconst
 
 linters-settings:
   revive:
     rules:
       - name: exported
         arguments: [false]
+  gocyclo:
+    min-complexity: 15
+  funlen:
+    lines: 80
+    statements: 50
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 3
+    min-occurrences: 3
   gosec:
     excludes:
       - G204 # Subprocess launched with variable

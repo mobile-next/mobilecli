@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/rpc"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -56,7 +57,7 @@ func getRemoteControllableDevices() []devices.ControllableDevice {
 
 	var result []devices.ControllableDevice
 	for _, info := range remoteInfos {
-		result = append(result, devices.NewRemoteDevice(info, poolToken, getPoolServerURL()))
+		result = append(result, devices.NewRemoteDevice(info, poolToken, rpc.GetPoolServerURL()))
 	}
 
 	return result
