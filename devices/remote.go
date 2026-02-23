@@ -217,6 +217,10 @@ func sanitizeFilename(name string) string {
 var uploadHTTPClient = &http.Client{Timeout: 5 * time.Minute}
 
 func uploadFileToURL(filePath, uploadURL string) error {
+	if !strings.HasPrefix(uploadURL, "https://") {
+		return fmt.Errorf("upload URL must use HTTPS scheme, got: %s", uploadURL)
+	}
+
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
