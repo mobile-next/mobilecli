@@ -15,10 +15,24 @@ type Request struct {
 	ID      int         `json:"id"`
 }
 
+// RPCError represents a JSON-RPC 2.0 error object
+type RPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    string `json:"data,omitempty"`
+}
+
+func (e *RPCError) Error() string {
+	if e.Data != "" {
+		return e.Data
+	}
+	return e.Message
+}
+
 type Response struct {
-	JSONRPC string      `json:"jsonrpc"`
+	JSONRPC string    `json:"jsonrpc"`
 	Result  interface{} `json:"result,omitempty"`
-	Error   interface{} `json:"error,omitempty"`
+	Error   *RPCError `json:"error,omitempty"`
 	ID      interface{} `json:"id"`
 }
 
@@ -63,7 +77,7 @@ func Call(token, method string, params interface{}, result interface{}) error {
 	}
 
 	if resp.Error != nil {
-		return fmt.Errorf("%s failed: %v", method, resp.Error)
+		return resp.Error
 	}
 
 	if result != nil {
