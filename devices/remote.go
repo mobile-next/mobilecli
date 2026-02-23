@@ -26,10 +26,9 @@ type RemoteDevice struct {
 	state      string
 	model      string
 	token      string
-	endpoint   string
 }
 
-func NewRemoteDevice(info DeviceInfo, token string, endpoint string) *RemoteDevice {
+func NewRemoteDevice(info DeviceInfo, token string) *RemoteDevice {
 	devType := info.Type
 	if devType == "" {
 		devType = "remote"
@@ -44,7 +43,6 @@ func NewRemoteDevice(info DeviceInfo, token string, endpoint string) *RemoteDevi
 		state:      info.State,
 		model:      info.Model,
 		token:      token,
-		endpoint:   endpoint,
 	}
 }
 
@@ -102,9 +100,10 @@ func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
 	}
 
 	data := resp.Data
-	// handle data URI format: data:image/png;base64,...
-	if idx := strings.Index(data, ","); idx != -1 {
-		data = data[idx+1:]
+	if strings.HasPrefix(data, "data:") {
+		if idx := strings.Index(data, ","); idx != -1 {
+			data = data[idx+1:]
+		}
 	}
 
 	return base64.StdEncoding.DecodeString(data)

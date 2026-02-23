@@ -28,7 +28,6 @@ type entitlements struct {
 // ResignIPA re-signs an IPA file so it can be installed on a specific device.
 // it returns the path to a new temporary IPA file that should be cleaned up by the caller.
 func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (string, error) {
-	// unzip IPA to temp dir
 	tempDir, err := os.MkdirTemp("", "resign_")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
@@ -36,64 +35,54 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	Verbose("Unzipping IPA to %s", tempDir)
-	err = unzipForResign(ipaPath, tempDir)
-	if err != nil {
+	if err = unzipFile(ipaPath, tempDir); err != nil {
 		return "", fmt.Errorf("failed to unzip IPA: %w", err)
 	}
 
-	// find the .app bundle inside Payload/
 	appPath, err := findAppBundle(tempDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to find app bundle: %w", err)
 	}
-
 	Verbose("Found app bundle: %s", appPath)
 
-	// read the app's bundle ID for profile matching
 	bundleID, err := readBundleID(appPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read bundle ID from app: %w", err)
 	}
-
 	Verbose("App bundle ID: %s", bundleID)
 
-	// find provisioning profile
 	profilePath, err := resolveProvisioningProfile(profileOverride, deviceUDID, bundleID)
 	if err != nil {
 		return "", err
 	}
-
 	Verbose("Using provisioning profile: %s", profilePath)
 
-	// extract team ID from profile
-	teamID, err := extractTeamID(profilePath)
+	profile, err := decodeProvisioningProfile(profilePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to extract team ID from profile: %w", err)
+		return "", fmt.Errorf("failed to decode provisioning profile: %w", err)
 	}
 
+	if len(profile.TeamIdentifier) == 0 {
+		return "", fmt.Errorf("no team identifier found in profile")
+	}
+	teamID := profile.TeamIdentifier[0]
 	Verbose("Team ID: %s", teamID)
 
-	// find signing identity
 	identity, err := resolveSigningIdentity(identityOverride, teamID)
 	if err != nil {
 		return "", err
 	}
-
 	Verbose("Using signing identity: %s", identity)
 
-	// extract entitlements from profile
-	entitlementsPath, err := extractEntitlements(profilePath)
+	entitlementsPath, err := writeEntitlementsPlist(profile)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract entitlements: %w", err)
 	}
 	defer func() { _ = os.Remove(entitlementsPath) }()
-
 	Verbose("Extracted entitlements to %s", entitlementsPath)
 
-	// copy profile into .app/embedded.mobileprovision
 	embeddedPath := filepath.Join(appPath, "embedded.mobileprovision")
-	err = CopyFile(profilePath, embeddedPath)
-	if err != nil {
+	if err = CopyFile(profilePath, embeddedPath); err != nil {
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
@@ -127,14 +116,11 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		}
 	}
 
-	// re-sign the main .app bundle
 	Verbose("Signing main app bundle")
-	err = codesign(appPath, identity, entitlementsPath)
-	if err != nil {
+	if err = codesign(appPath, identity, entitlementsPath); err != nil {
 		return "", fmt.Errorf("failed to sign app bundle: %w", err)
 	}
 
-	// re-zip into a new IPA
 	outputIPA, err := os.CreateTemp("", "resigned_*.ipa")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp IPA file: %w", err)
@@ -154,10 +140,6 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	}
 
 	return outputPath, nil
-}
-
-func unzipForResign(zipPath, destDir string) error {
-	return unzipFile(zipPath, destDir)
 }
 
 func findAppBundle(tempDir string) (string, error) {
@@ -279,7 +261,6 @@ func findMatchingProfile(deviceUDID, bundleID string) (string, error) {
 	}
 
 	profilesDir := filepath.Join(homeDir, "Library", "MobileDevice", "Provisioning Profiles")
-	// also check the Xcode managed profiles directory
 	xcodeProfilesDir := filepath.Join(homeDir, "Library", "Developer", "Xcode", "UserData", "Provisioning Profiles")
 
 	var searchDirs []string
@@ -352,6 +333,9 @@ func findSigningIdentity(teamID string) (string, error) {
 		return "", fmt.Errorf("failed to list signing identities: %w", err)
 	}
 
+	// pre-fetch all certificates so OU lookups don't shell out per identity
+	certDump := dumpAllCertificates()
+
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if !strings.Contains(line, "Apple Development") && !strings.Contains(line, "iPhone Developer") {
@@ -378,9 +362,8 @@ func findSigningIdentity(teamID string) (string, error) {
 
 		// the display name may contain a personal ID instead of the team ID,
 		// so also check the certificate's OU field which holds the actual team ID.
-		// return the SHA-1 hash to avoid ambiguity when multiple certs share the same name.
 		hash := extractCertHash(line)
-		if hash != "" && certOUMatchesTeam(hash, teamID) {
+		if hash != "" && certOUMatchesTeam(certDump, hash, teamID) {
 			Verbose("Found signing identity via certificate OU: %s (hash: %s)", identity, hash)
 			return hash, nil
 		}
@@ -397,17 +380,17 @@ func extractCertHash(identityLine string) string {
 	return ""
 }
 
-func certOUMatchesTeam(certHash, teamID string) bool {
-	// dump all certificates with their SHA-1 hashes and attributes
+func dumpAllCertificates() string {
 	cmd := exec.Command("security", "find-certificate", "-a", "-Z")
 	output, err := cmd.Output()
 	if err != nil {
-		return false
+		return ""
 	}
+	return string(output)
+}
 
-	// parse output to find the certificate with the matching SHA-1 hash
-	// then check its subject ("snbr" or "subj" field) for OU=teamID
-	lines := strings.Split(string(output), "\n")
+func certOUMatchesTeam(certDump, certHash, teamID string) bool {
+	lines := strings.Split(certDump, "\n")
 	var inTargetCert bool
 
 	for _, line := range lines {
@@ -424,19 +407,12 @@ func certOUMatchesTeam(certHash, teamID string) bool {
 	return false
 }
 
-func extractEntitlements(profilePath string) (string, error) {
-	profile, err := decodeProvisioningProfile(profilePath)
-	if err != nil {
-		return "", err
-	}
-
-	// build the entitlements plist with the values from the profile
+func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
 	entitlementsMap := map[string]interface{}{
 		"application-identifier": profile.Entitlements.ApplicationIdentifier,
 		"get-task-allow":         profile.Entitlements.GetTaskAllow,
 	}
 
-	// add team identifier if available
 	if len(profile.TeamIdentifier) > 0 {
 		entitlementsMap["com.apple.developer.team-identifier"] = profile.TeamIdentifier[0]
 	}
@@ -460,19 +436,6 @@ func extractEntitlements(profilePath string) (string, error) {
 
 	_ = tmpFile.Close()
 	return tmpFile.Name(), nil
-}
-
-func extractTeamID(profilePath string) (string, error) {
-	profile, err := decodeProvisioningProfile(profilePath)
-	if err != nil {
-		return "", err
-	}
-
-	if len(profile.TeamIdentifier) == 0 {
-		return "", fmt.Errorf("no team identifier found in profile")
-	}
-
-	return profile.TeamIdentifier[0], nil
 }
 
 func codesign(path, identity, entitlementsPath string) error {
