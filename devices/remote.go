@@ -15,6 +15,8 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+type params map[string]interface{}
+
 type RemoteDevice struct {
 	deviceID   string
 	name       string
@@ -57,7 +59,7 @@ func (r *RemoteDevice) StartAgent(config StartAgentConfig) error {
 	return nil
 }
 
-func (r *RemoteDevice) callRPC(method string, params map[string]interface{}) (interface{}, error) {
+func (r *RemoteDevice) callRPC(method string, params params) (interface{}, error) {
 	var result interface{}
 	if err := rpc.Call(r.token, method, params, &result); err != nil {
 		return nil, err
@@ -65,22 +67,41 @@ func (r *RemoteDevice) callRPC(method string, params map[string]interface{}) (in
 	return result, nil
 }
 
+func rpcCall[T any](r *RemoteDevice, method string, extra params) (T, error) {
+	p := params{"deviceId": r.deviceID}
+	for k, v := range extra {
+		p[k] = v
+	}
+	result, err := r.callRPC(method, p)
+	var zero T
+	if err != nil {
+		return zero, err
+	}
+	var out T
+	if err := rpc.Remarshal(result, &out); err != nil {
+		return zero, err
+	}
+	return out, nil
+}
+
+func (r *RemoteDevice) fireRPC(method string, extra params) error {
+	p := params{"deviceId": r.deviceID}
+	for k, v := range extra {
+		p[k] = v
+	}
+	_, err := r.callRPC(method, p)
+	return err
+}
+
 func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
-	result, err := r.callRPC("device.screenshot", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
+	resp, err := rpcCall[struct {
+		Data string `json:"data"`
+	}](r, "device.screenshot", params{})
 	if err != nil {
 		return nil, err
 	}
 
-	var screenshotResp struct {
-		Data string `json:"data"`
-	}
-	if err := rpc.Remarshal(result, &screenshotResp); err != nil {
-		return nil, err
-	}
-
-	data := screenshotResp.Data
+	data := resp.Data
 	// handle data URI format: data:image/png;base64,...
 	if idx := strings.Index(data, ","); idx != -1 {
 		data = data[idx+1:]
@@ -90,212 +111,96 @@ func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
 }
 
 func (r *RemoteDevice) Tap(x, y int) error {
-	_, err := r.callRPC("device.io.tap", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"x":        x,
-		"y":        y,
-	})
-	return err
+	return r.fireRPC("device.io.tap", params{"x": x, "y": y})
 }
 
 func (r *RemoteDevice) LongPress(x, y, duration int) error {
-	_, err := r.callRPC("device.io.longpress", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"x":        x,
-		"y":        y,
-		"duration": duration,
-	})
-	return err
+	return r.fireRPC("device.io.longpress", params{"x": x, "y": y, "duration": duration})
 }
 
 func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
-	_, err := r.callRPC("device.io.swipe", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"x1":       x1,
-		"y1":       y1,
-		"x2":       x2,
-		"y2":       y2,
-	})
-	return err
+	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
 }
 
 func (r *RemoteDevice) Gesture(actions []wda.TapAction) error {
-	_, err := r.callRPC("device.io.gesture", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"actions":  actions,
-	})
-	return err
+	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }
 
 func (r *RemoteDevice) SendKeys(text string) error {
-	_, err := r.callRPC("device.io.text", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"text":     text,
-	})
-	return err
+	return r.fireRPC("device.io.text", params{"text": text})
 }
 
 func (r *RemoteDevice) PressButton(key string) error {
-	_, err := r.callRPC("device.io.button", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"button":   key,
-	})
-	return err
+	return r.fireRPC("device.io.button", params{"button": key})
 }
 
 func (r *RemoteDevice) OpenURL(url string) error {
-	_, err := r.callRPC("device.url", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"url":      url,
-	})
-	return err
+	return r.fireRPC("device.url", params{"url": url})
 }
 
 func (r *RemoteDevice) LaunchApp(bundleID string) error {
-	_, err := r.callRPC("device.apps.launch", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"bundleId": bundleID,
-	})
-	return err
+	return r.fireRPC("device.apps.launch", params{"bundleId": bundleID})
 }
 
 func (r *RemoteDevice) TerminateApp(bundleID string) error {
-	_, err := r.callRPC("device.apps.terminate", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"bundleId": bundleID,
-	})
-	return err
+	return r.fireRPC("device.apps.terminate", params{"bundleId": bundleID})
 }
 
 func (r *RemoteDevice) Boot() error {
-	_, err := r.callRPC("device.boot", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	return err
+	return r.fireRPC("device.boot", params{})
 }
 
 func (r *RemoteDevice) Shutdown() error {
-	_, err := r.callRPC("device.shutdown", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	return err
+	return r.fireRPC("device.shutdown", params{})
 }
 
 func (r *RemoteDevice) Reboot() error {
-	_, err := r.callRPC("device.reboot", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	return err
+	return r.fireRPC("device.reboot", params{})
 }
 
 func (r *RemoteDevice) GetOrientation() (string, error) {
-	result, err := r.callRPC("device.io.orientation.get", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
+	resp, err := rpcCall[struct {
+		Orientation string `json:"orientation"`
+	}](r, "device.io.orientation.get", params{})
 	if err != nil {
 		return "", err
 	}
-
-	var orientationResp struct {
-		Orientation string `json:"orientation"`
-	}
-	if err := rpc.Remarshal(result, &orientationResp); err != nil {
-		return "", err
-	}
-
-	return orientationResp.Orientation, nil
+	return resp.Orientation, nil
 }
 
 func (r *RemoteDevice) SetOrientation(orientation string) error {
-	_, err := r.callRPC("device.io.orientation.set", map[string]interface{}{
-		"deviceId":    r.deviceID,
-		"orientation": orientation,
-	})
-	return err
+	return r.fireRPC("device.io.orientation.set", params{"orientation": orientation})
 }
 
 func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
-	result, err := r.callRPC("device.info", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var info FullDeviceInfo
-	if err := rpc.Remarshal(result, &info); err != nil {
-		return nil, err
-	}
-
-	return &info, nil
+	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }
 
 func (r *RemoteDevice) ListApps() ([]InstalledAppInfo, error) {
-	result, err := r.callRPC("device.apps.list", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var apps []InstalledAppInfo
-	if err := rpc.Remarshal(result, &apps); err != nil {
-		return nil, err
-	}
-
-	return apps, nil
+	return rpcCall[[]InstalledAppInfo](r, "device.apps.list", params{})
 }
 
 func (r *RemoteDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	result, err := r.callRPC("device.apps.foreground", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var app ForegroundAppInfo
-	if err := rpc.Remarshal(result, &app); err != nil {
-		return nil, err
-	}
-
-	return &app, nil
+	return rpcCall[*ForegroundAppInfo](r, "device.apps.foreground", params{})
 }
 
 func (r *RemoteDevice) DumpSource() ([]ScreenElement, error) {
-	result, err := r.callRPC("device.dump.ui", map[string]interface{}{
-		"deviceId": r.deviceID,
-	})
+	resp, err := rpcCall[struct {
+		Elements []ScreenElement `json:"elements"`
+	}](r, "device.dump.ui", params{})
 	if err != nil {
 		return nil, err
 	}
-
-	var resp struct {
-		Elements []ScreenElement `json:"elements"`
-	}
-	if err := rpc.Remarshal(result, &resp); err != nil {
-		return nil, err
-	}
-
 	return resp.Elements, nil
 }
 
 func (r *RemoteDevice) DumpSourceRaw() (interface{}, error) {
-	result, err := r.callRPC("device.dump.ui", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"format":   "raw",
-	})
+	resp, err := rpcCall[struct {
+		RawData interface{} `json:"rawData"`
+	}](r, "device.dump.ui", params{"format": "raw"})
 	if err != nil {
 		return nil, err
 	}
-
-	var resp struct {
-		RawData interface{} `json:"rawData"`
-	}
-	if err := rpc.Remarshal(result, &resp); err != nil {
-		return nil, err
-	}
-
 	return resp.RawData, nil
 }
 
@@ -360,7 +265,7 @@ func (r *RemoteDevice) InstallApp(path string) error {
 
 	filename := sanitizeFilename(filepath.Base(path))
 
-	result, err := r.callRPC("uploads.create", map[string]interface{}{
+	result, err := r.callRPC("uploads.create", params{
 		"filename": filename,
 		"filesize": fi.Size(),
 	})
@@ -377,11 +282,7 @@ func (r *RemoteDevice) InstallApp(path string) error {
 		return err
 	}
 
-	_, err = r.callRPC("device.apps.install", map[string]interface{}{
-		"deviceId": r.deviceID,
-		"uploadId": upload.UploadID,
-	})
-	return err
+	return r.fireRPC("device.apps.install", params{"uploadId": upload.UploadID})
 }
 
 func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {

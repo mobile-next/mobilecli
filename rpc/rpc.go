@@ -3,6 +3,7 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/gorilla/websocket"
@@ -46,8 +47,14 @@ func GetPoolServerURL() string {
 }
 
 func Dial(token string) (*websocket.Conn, error) {
-	url := GetPoolServerURL() + "?token=" + token
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	u, err := url.Parse(GetPoolServerURL())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pool server URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("token", token)
+	u.RawQuery = q.Encode()
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	return conn, err
 }
 
