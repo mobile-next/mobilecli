@@ -157,12 +157,7 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 }
 
 func unzipForResign(zipPath, destDir string) error {
-	cmd := exec.Command("unzip", "-q", "-o", zipPath, "-d", destDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("unzip failed: %w\n%s", err, output)
-	}
-	return nil
+	return unzipFile(zipPath, destDir)
 }
 
 func findAppBundle(tempDir string) (string, error) {
