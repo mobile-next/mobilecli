@@ -31,24 +31,22 @@ func NewErrorResponse(err error) *CommandResponse {
 	}
 }
 
-var poolToken string
+var fleetToken string
 
-// SetPoolConfig sets the pool server credentials for remote device access
-func SetPoolConfig(token string) {
-	poolToken = token
+func SetFleetConfig(token string) {
+	fleetToken = token
 }
 
-// GetPoolToken returns the configured pool token
-func GetPoolToken() string {
-	return poolToken
+func GetFleetToken() string {
+	return fleetToken
 }
 
 func getRemoteControllableDevices() []devices.ControllableDevice {
-	if poolToken == "" {
+	if fleetToken == "" {
 		return nil
 	}
 
-	remoteInfos, err := FetchRemoteDevices(poolToken)
+	remoteInfos, err := FetchRemoteDevices(fleetToken)
 	if err != nil {
 		utils.Verbose("failed to fetch remote devices: %v", err)
 		return nil
@@ -56,7 +54,7 @@ func getRemoteControllableDevices() []devices.ControllableDevice {
 
 	var result []devices.ControllableDevice
 	for _, info := range remoteInfos {
-		result = append(result, devices.NewRemoteDevice(info, poolToken))
+		result = append(result, devices.NewRemoteDevice(info, fleetToken))
 	}
 
 	return result

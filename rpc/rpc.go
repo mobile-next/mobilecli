@@ -37,19 +37,19 @@ type Response struct {
 	ID      any `json:"id"`
 }
 
-const defaultPoolServerURL = "wss://api.mobilenexthq.com/ws"
+const defaultFleetServerURL = "wss://api.mobilenexthq.com/ws"
 
-func GetPoolServerURL() string {
-	if url := os.Getenv("MOBILECLI_POOL_URL"); url != "" {
+func GetFleetServerURL() string {
+	if url := os.Getenv("MOBILECLI_FLEET_URL"); url != "" {
 		return url
 	}
-	return defaultPoolServerURL
+	return defaultFleetServerURL
 }
 
 func Dial(token string) (*websocket.Conn, error) {
-	u, err := url.Parse(GetPoolServerURL())
+	u, err := url.Parse(GetFleetServerURL())
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pool server URL: %w", err)
+		return nil, fmt.Errorf("failed to parse fleet server URL: %w", err)
 	}
 	q := u.Query()
 	q.Set("token", token)
@@ -58,12 +58,12 @@ func Dial(token string) (*websocket.Conn, error) {
 	return conn, err
 }
 
-// Call dials the pool server, sends a JSON-RPC request, and unmarshals the result.
+// dials the fleet server, sends a JSON-RPC request, and unmarshals the result.
 // if result is nil, the response result is discarded.
 func Call(token, method string, params any, result any) error {
 	conn, err := Dial(token)
 	if err != nil {
-		return fmt.Errorf("failed to connect to pool server: %w", err)
+		return fmt.Errorf("failed to connect to fleet server: %w", err)
 	}
 	defer conn.Close()
 

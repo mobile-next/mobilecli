@@ -112,9 +112,9 @@ COMMON FLAGS:
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		token, _ := getPoolToken()
+		token, _ := getFleetToken()
 		if token != "" {
-			commands.SetPoolConfig(token)
+			commands.SetFleetConfig(token)
 		}
 		return nil
 	},

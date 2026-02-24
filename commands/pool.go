@@ -7,12 +7,12 @@ import (
 	"github.com/mobile-next/mobilecli/rpc"
 )
 
-type PoolAllocateRequest struct {
+type FleetAllocateRequest struct {
 	Platform string
 	Token    string
 }
 
-type PoolAllocateDevice struct {
+type FleetAllocateDevice struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Platform string `json:"platform"`
@@ -20,21 +20,21 @@ type PoolAllocateDevice struct {
 	Model    string `json:"model"`
 }
 
-type PoolAllocateResponse struct {
-	SessionID string             `json:"sessionId"`
-	Device    PoolAllocateDevice `json:"device"`
+type FleetAllocateResponse struct {
+	SessionID string              `json:"sessionId"`
+	Device    FleetAllocateDevice `json:"device"`
 }
 
-func PoolAllocateCommand(req PoolAllocateRequest) *CommandResponse {
-	var result PoolAllocateResponse
-	err := rpc.Call(req.Token, "pool.allocate", map[string]string{"platform": req.Platform}, &result)
+func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
+	var result FleetAllocateResponse
+	err := rpc.Call(req.Token, "fleet.allocate", map[string]string{"platform": req.Platform}, &result)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("pool.allocate: %w", err))
+		return NewErrorResponse(fmt.Errorf("fleet.allocate: %w", err))
 	}
 	return NewSuccessResponse(result)
 }
 
-// FetchRemoteDevices fetches devices from the remote pool server via devices.list JSON-RPC
+// fetches devices from the remote fleet server via devices.list JSON-RPC
 func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	var result struct {
 		Devices []devices.DeviceInfo `json:"devices"`
@@ -50,28 +50,28 @@ func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	return result.Devices, nil
 }
 
-type PoolReleaseRequest struct {
+type FleetReleaseRequest struct {
 	DeviceID string
 	Token    string
 }
 
-func PoolReleaseCommand(req PoolReleaseRequest) *CommandResponse {
-	err := rpc.Call(req.Token, "pool.release", map[string]string{"deviceId": req.DeviceID}, nil)
+func FleetReleaseCommand(req FleetReleaseRequest) *CommandResponse {
+	err := rpc.Call(req.Token, "fleet.release", map[string]string{"deviceId": req.DeviceID}, nil)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("pool.release: %w", err))
+		return NewErrorResponse(fmt.Errorf("fleet.release: %w", err))
 	}
 	return NewSuccessResponse(nil)
 }
 
-type PoolListRequest struct {
+type FleetListDevicesRequest struct {
 	Token string
 }
 
-func PoolListCommand(req PoolListRequest) *CommandResponse {
+func FleetListDevicesCommand(req FleetListDevicesRequest) *CommandResponse {
 	var result any
-	err := rpc.Call(req.Token, "pool.list", nil, &result)
+	err := rpc.Call(req.Token, "fleet.listDevices", nil, &result)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("pool.list: %w", err))
+		return NewErrorResponse(fmt.Errorf("fleet.listDevices: %w", err))
 	}
 	return NewSuccessResponse(result)
 }

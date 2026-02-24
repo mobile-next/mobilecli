@@ -23,7 +23,7 @@ var devicesCmd = &cobra.Command{
 			DeviceType:     deviceType,
 		}
 
-		token, _ := getPoolToken()
+		token, _ := getFleetToken()
 
 		response := commands.DevicesCommand(opts, token)
 		printJson(response)

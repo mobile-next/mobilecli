@@ -9,7 +9,7 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-func getPoolToken() (string, error) {
+func getFleetToken() (string, error) {
 	if token := os.Getenv("MOBILECLI_TOKEN"); token != "" {
 		return token, nil
 	}
@@ -22,32 +22,32 @@ func getPoolToken() (string, error) {
 	return token, nil
 }
 
-var poolCmd = &cobra.Command{
-	Use:   "pool",
-	Short: "Device pool management commands",
-	Long:  `Commands for managing device pool including allocating, listing, and releasing devices.`,
+var fleetCmd = &cobra.Command{
+	Use:   "fleet",
+	Short: "Device fleet management commands",
+	Long:  `Commands for managing device fleet including allocating, listing, and releasing devices.`,
 }
 
-var poolAllocateCmd = &cobra.Command{
+var fleetAllocateCmd = &cobra.Command{
 	Use:   "allocate",
-	Short: "Allocate a device from the pool",
-	Long:  `Allocates a device from the pool for the specified platform (ios or android).`,
+	Short: "Allocate a device from the fleet",
+	Long:  `Allocates a device from the fleet for the specified platform (ios or android).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if platform != "ios" && platform != "android" {
 			return fmt.Errorf("platform must be 'ios' or 'android'")
 		}
 
-		token, err := getPoolToken()
+		token, err := getFleetToken()
 		if err != nil {
 			return err
 		}
 
-		req := commands.PoolAllocateRequest{
+		req := commands.FleetAllocateRequest{
 			Platform: platform,
 			Token:    token,
 		}
 
-		response := commands.PoolAllocateCommand(req)
+		response := commands.FleetAllocateCommand(req)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
@@ -57,21 +57,21 @@ var poolAllocateCmd = &cobra.Command{
 	},
 }
 
-var poolListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List allocated devices",
-	Long:  `Lists all devices currently allocated from the pool.`,
+var fleetListCmd = &cobra.Command{
+	Use:   "list-devices",
+	Short: "List available fleet devices",
+	Long:  `Lists available devices in the device fleet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := getPoolToken()
+		token, err := getFleetToken()
 		if err != nil {
 			return err
 		}
 
-		req := commands.PoolListRequest{
+		req := commands.FleetListDevicesRequest{
 			Token: token,
 		}
 
-		response := commands.PoolListCommand(req)
+		response := commands.FleetListDevicesCommand(req)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
@@ -81,24 +81,24 @@ var poolListCmd = &cobra.Command{
 	},
 }
 
-var poolReleaseDeviceID string
+var fleetReleaseDeviceID string
 
-var poolReleaseCmd = &cobra.Command{
+var fleetReleaseCmd = &cobra.Command{
 	Use:   "release",
-	Short: "Release a device back to the pool",
-	Long:  `Releases an allocated device back to the pool.`,
+	Short: "Release a device back to the fleet",
+	Long:  `Releases an allocated device back to the fleet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := getPoolToken()
+		token, err := getFleetToken()
 		if err != nil {
 			return err
 		}
 
-		req := commands.PoolReleaseRequest{
-			DeviceID: poolReleaseDeviceID,
+		req := commands.FleetReleaseRequest{
+			DeviceID: fleetReleaseDeviceID,
 			Token:    token,
 		}
 
-		response := commands.PoolReleaseCommand(req)
+		response := commands.FleetReleaseCommand(req)
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
@@ -109,12 +109,12 @@ var poolReleaseCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(poolCmd)
-	poolCmd.AddCommand(poolAllocateCmd, poolListCmd, poolReleaseCmd)
+	rootCmd.AddCommand(fleetCmd)
+	fleetCmd.AddCommand(fleetAllocateCmd, fleetListCmd, fleetReleaseCmd)
 
-	poolAllocateCmd.Flags().StringVar(&platform, "platform", "", "device platform (ios or android)")
-	_ = poolAllocateCmd.MarkFlagRequired("platform")
+	fleetAllocateCmd.Flags().StringVar(&platform, "platform", "", "device platform (ios or android)")
+	_ = fleetAllocateCmd.MarkFlagRequired("platform")
 
-	poolReleaseCmd.Flags().StringVar(&poolReleaseDeviceID, "device", "", "device ID to release")
-	_ = poolReleaseCmd.MarkFlagRequired("device")
+	fleetReleaseCmd.Flags().StringVar(&fleetReleaseDeviceID, "device", "", "device ID to release")
+	_ = fleetReleaseCmd.MarkFlagRequired("device")
 }
