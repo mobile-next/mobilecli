@@ -68,7 +68,7 @@ type PoolListRequest struct {
 }
 
 func PoolListCommand(req PoolListRequest) *CommandResponse {
-	var result interface{}
+	var result any
 	err := rpc.Call(req.Token, "pool.list", nil, &result)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("pool.list: %w", err))

@@ -15,7 +15,7 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
-type params map[string]interface{}
+type params map[string]any
 
 type RemoteDevice struct {
 	deviceID   string
@@ -57,8 +57,8 @@ func (r *RemoteDevice) StartAgent(config StartAgentConfig) error {
 	return nil
 }
 
-func (r *RemoteDevice) callRPC(method string, params params) (interface{}, error) {
-	var result interface{}
+func (r *RemoteDevice) callRPC(method string, params params) (any, error) {
+	var result any
 	if err := rpc.Call(r.token, method, params, &result); err != nil {
 		return nil, err
 	}
@@ -193,9 +193,9 @@ func (r *RemoteDevice) DumpSource() ([]ScreenElement, error) {
 	return resp.Elements, nil
 }
 
-func (r *RemoteDevice) DumpSourceRaw() (interface{}, error) {
+func (r *RemoteDevice) DumpSourceRaw() (any, error) {
 	resp, err := rpcCall[struct {
-		RawData interface{} `json:"rawData"`
+		RawData any `json:"rawData"`
 	}](r, "device.dump.ui", params{"format": "raw"})
 	if err != nil {
 		return nil, err

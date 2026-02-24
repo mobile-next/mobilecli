@@ -12,7 +12,7 @@ import (
 type Request struct {
 	JSONRPC string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	Params  any `json:"params,omitempty"`
 	ID      int         `json:"id"`
 }
 
@@ -32,9 +32,9 @@ func (e *RPCError) Error() string {
 
 type Response struct {
 	JSONRPC string    `json:"jsonrpc"`
-	Result  interface{} `json:"result,omitempty"`
+	Result  any `json:"result,omitempty"`
 	Error   *RPCError `json:"error,omitempty"`
-	ID      interface{} `json:"id"`
+	ID      any `json:"id"`
 }
 
 const defaultPoolServerURL = "wss://api.mobilenexthq.com/ws"
@@ -60,7 +60,7 @@ func Dial(token string) (*websocket.Conn, error) {
 
 // Call dials the pool server, sends a JSON-RPC request, and unmarshals the result.
 // if result is nil, the response result is discarded.
-func Call(token, method string, params interface{}, result interface{}) error {
+func Call(token, method string, params any, result any) error {
 	conn, err := Dial(token)
 	if err != nil {
 		return fmt.Errorf("failed to connect to pool server: %w", err)
@@ -94,8 +94,8 @@ func Call(token, method string, params interface{}, result interface{}) error {
 	return nil
 }
 
-// Remarshal converts an interface{} to a typed struct via json round-trip
-func Remarshal(src interface{}, dst interface{}) error {
+// Remarshal converts any value to a typed struct via json round-trip
+func Remarshal(src any, dst any) error {
 	data, err := json.Marshal(src)
 	if err != nil {
 		return fmt.Errorf("failed to marshal rpc result: %w", err)

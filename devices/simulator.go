@@ -250,13 +250,13 @@ func UninstallApp(udid string, bundleID string) error {
 	return nil
 }
 
-func (s SimulatorDevice) ListInstalledApps() (map[string]interface{}, error) {
+func (s SimulatorDevice) ListInstalledApps() (map[string]any, error) {
 	output, err := runSimctl("listapps", s.UDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list installed apps: %v\n%s", err, output)
 	}
 
-	var apps map[string]interface{}
+	var apps map[string]any
 	err = utils.ConvertPlistToJSON(output, &apps)
 	if err != nil {
 		return nil, err
@@ -880,7 +880,7 @@ func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
 	return s.wdaClient.GetSourceElements()
 }
 
-func (s SimulatorDevice) DumpSourceRaw() (interface{}, error) {
+func (s SimulatorDevice) DumpSourceRaw() (any, error) {
 	return s.wdaClient.GetSourceRaw()
 }
 

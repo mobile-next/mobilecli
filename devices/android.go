@@ -1119,7 +1119,7 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
 }
 
-func (d *AndroidDevice) DumpSourceRaw() (interface{}, error) {
+func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 	// get the XML dump from uiautomator
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {

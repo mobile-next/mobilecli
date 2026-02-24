@@ -49,7 +49,7 @@ func AddBundleIconFilesToPlist(plistPath string) error {
 }
 
 // ConvertPlistToJSON converts plist bytes to JSON and unmarshals into the provided result
-func ConvertPlistToJSON(plistData []byte, result interface{}) error {
+func ConvertPlistToJSON(plistData []byte, result any) error {
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
 	cmd.Stdin = bytes.NewReader(plistData)
 

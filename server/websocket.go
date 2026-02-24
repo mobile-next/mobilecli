@@ -20,7 +20,7 @@ type wsConnection struct {
 type validationError struct {
 	code    int
 	message string
-	data    interface{}
+	data    any
 }
 
 const (
@@ -217,7 +217,7 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 	wsConn.sendResponse(req.ID, result)
 }
 
-func (wsc *wsConnection) sendResponse(id interface{}, result interface{}) error {
+func (wsc *wsConnection) sendResponse(id any, result any) error {
 	response := JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
 		Result:  result,
@@ -226,10 +226,10 @@ func (wsc *wsConnection) sendResponse(id interface{}, result interface{}) error 
 	return wsc.sendJSON(response)
 }
 
-func (wsc *wsConnection) sendError(id interface{}, code int, message string, data interface{}) error {
+func (wsc *wsConnection) sendError(id any, code int, message string, data any) error {
 	response := JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
-		Error: map[string]interface{}{
+		Error: map[string]any{
 			"code":    code,
 			"message": message,
 			"data":    data,
@@ -239,7 +239,7 @@ func (wsc *wsConnection) sendError(id interface{}, code int, message string, dat
 	return wsc.sendJSON(response)
 }
 
-func (wsc *wsConnection) sendJSON(v interface{}) error {
+func (wsc *wsConnection) sendJSON(v any) error {
 	wsc.writeMu.Lock()
 	defer wsc.writeMu.Unlock()
 	return wsc.conn.WriteJSON(v)

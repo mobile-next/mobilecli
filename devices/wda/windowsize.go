@@ -27,8 +27,8 @@ func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
 
 	// log.Printf("response: %v", response["value"])
 
-	windowSize := response["value"].(map[string]interface{})
-	screenSize := windowSize["screenSize"].(map[string]interface{})
+	windowSize := response["value"].(map[string]any)
+	screenSize := windowSize["screenSize"].(map[string]any)
 
 	return &WindowSize{
 		Scale: int(windowSize["scale"].(float64)),

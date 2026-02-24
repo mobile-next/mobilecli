@@ -2,7 +2,7 @@ package wda
 
 import "fmt"
 
-func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
+func (c *WdaClient) SetAppiumSettings(settings map[string]any) error {
 	// get or create wda session
 	sessionId, err := c.GetOrCreateSession()
 	if err != nil {
@@ -11,7 +11,7 @@ func (c *WdaClient) SetAppiumSettings(settings map[string]interface{}) error {
 
 	// post settings to appium endpoint
 	endpoint := fmt.Sprintf("session/%s/appium/settings", sessionId)
-	_, err = c.PostEndpoint(endpoint, map[string]interface{}{
+	_, err = c.PostEndpoint(endpoint, map[string]any{
 		"settings": settings,
 	})
 
@@ -27,7 +27,7 @@ func (c *WdaClient) SetMjpegFramerate(framerate int) error {
 	maxRetries := 5
 
 	for i := 0; i < maxRetries; i++ {
-		err = c.SetAppiumSettings(map[string]interface{}{
+		err = c.SetAppiumSettings(map[string]any{
 			"mjpegServerFramerate": framerate,
 		})
 

@@ -93,7 +93,7 @@ func TestWebSocket_MissingJSONRPCVersion(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgInvalidJSONRPC, errorMap["data"])
@@ -119,7 +119,7 @@ func TestWebSocket_MissingID(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgIDRequired, errorMap["data"])
@@ -140,7 +140,7 @@ func TestWebSocket_MissingMethod(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgMethodRequired, errorMap["data"])
@@ -161,7 +161,7 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeMethodNotFound), errorMap["code"])
 	assert.Equal(t, "Method not found", errorMap["message"])
 }
@@ -181,7 +181,7 @@ func TestWebSocket_InvalidJSON(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeParseError), errorMap["code"])
 	assert.Equal(t, errTitleParseError, errorMap["message"])
 	assert.Equal(t, errMsgParseError, errorMap["data"])
@@ -202,7 +202,7 @@ func TestWebSocket_BinaryMessageRejected(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgTextOnly, errorMap["data"])
@@ -638,7 +638,7 @@ func TestWSConnection_SendError(t *testing.T) {
 	assert.NotNil(t, resp.Error)
 	assert.Nil(t, resp.Result)
 
-	errorMap := resp.Error.(map[string]interface{})
+	errorMap := resp.Error.(map[string]any)
 	assert.Equal(t, float64(ErrCodeMethodNotFound), errorMap["code"])
 	assert.Contains(t, fmt.Sprint(errorMap["message"]), "Method not found")
 }

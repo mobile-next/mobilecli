@@ -57,7 +57,7 @@ func (c *WdaClient) SetOrientation(orientation string) error {
 	}
 
 	endpoint := fmt.Sprintf("session/%s/orientation", sessionId)
-	data := map[string]interface{}{
+	data := map[string]any{
 		"orientation": wdaOrientation,
 	}
 

@@ -35,7 +35,7 @@ func URLCommand(req URLRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to open URL on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Opened URL '%s' on device %s", req.URL, targetDevice.ID()),
 	})
 }

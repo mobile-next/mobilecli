@@ -182,7 +182,7 @@ func readBundleID(appPath string) (string, error) {
 		return "", fmt.Errorf("failed to read Info.plist: %w", err)
 	}
 
-	var info map[string]interface{}
+	var info map[string]any
 	_, err = plist.Unmarshal(data, &info)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse Info.plist: %w", err)
@@ -408,7 +408,7 @@ func certOUMatchesTeam(certDump, certHash, teamID string) bool {
 }
 
 func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
-	entitlementsMap := map[string]interface{}{
+	entitlementsMap := map[string]any{
 		"application-identifier": profile.Entitlements.ApplicationIdentifier,
 		"get-task-allow":         profile.Entitlements.GetTaskAllow,
 	}

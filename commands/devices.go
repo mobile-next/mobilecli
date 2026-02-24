@@ -21,7 +21,7 @@ func DevicesCommand(opts devices.DeviceListOptions, token string) *CommandRespon
 		}
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"devices": deviceInfoList,
 	})
 }

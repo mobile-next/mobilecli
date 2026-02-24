@@ -38,7 +38,7 @@ type ButtonRequest struct {
 // GestureRequest represents the parameters for a gesture command
 type GestureRequest struct {
 	DeviceID string        `json:"deviceId"`
-	Actions  []interface{} `json:"actions"`
+	Actions  []any `json:"actions"`
 }
 
 // SwipeRequest represents the parameters for a swipe command
@@ -73,7 +73,7 @@ func TapCommand(req TapRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to tap on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Tapped on device %s at (%d,%d)", targetDevice.ID(), req.X, req.Y),
 	})
 }
@@ -101,7 +101,7 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to long press on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Long pressed on device %s at (%d,%d) for %dms", targetDevice.ID(), req.X, req.Y, req.Duration),
 	})
 }
@@ -129,7 +129,7 @@ func TextCommand(req TextRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to send text to device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Sent text to device %s", targetDevice.ID()),
 	})
 }
@@ -157,7 +157,7 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to press button on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Pressed button '%s' on device %s", req.Button, targetDevice.ID()),
 	})
 }
@@ -180,7 +180,7 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Convert []interface{} to []wda.TapAction
+	// Convert []any to []wda.TapAction
 	tapActions := make([]wda.TapAction, len(req.Actions))
 	for i, action := range req.Actions {
 		actionBytes, err := json.Marshal(action)
@@ -200,7 +200,7 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to perform gesture on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Performed gesture on device %s with %d actions", targetDevice.ID(), len(req.Actions)),
 	})
 }
@@ -224,7 +224,7 @@ func SwipeCommand(req SwipeRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to swipe on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Swiped on device %s from (%d,%d) to (%d,%d)", targetDevice.ID(), req.X1, req.Y1, req.X2, req.Y2),
 	})
 }

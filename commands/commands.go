@@ -11,12 +11,12 @@ import (
 // CommandResponse represents a standardized response format for all commands
 type CommandResponse struct {
 	Status string      `json:"status"`
-	Data   interface{} `json:"data,omitempty"`
+	Data   any `json:"data,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
 
 // NewSuccessResponse creates a success response
-func NewSuccessResponse(data interface{}) *CommandResponse {
+func NewSuccessResponse(data any) *CommandResponse {
 	return &CommandResponse{
 		Status: "ok",
 		Data:   data,

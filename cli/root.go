@@ -139,7 +139,7 @@ func Execute() error {
 }
 
 // printJson is a helper function to print JSON responses
-func printJson(data interface{}) {
+func printJson(data any) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		log.Fatal(err)
