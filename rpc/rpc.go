@@ -48,6 +48,8 @@ func GetFleetServerURL() string {
 	return defaultFleetServerURL
 }
 
+const rpcTimeout = 30 * time.Second
+
 var fleetDialer = websocket.Dialer{
 	HandshakeTimeout: 10 * time.Second,
 }
@@ -79,10 +81,16 @@ func Call(token, method string, params any, result any) error {
 		Params:  params,
 	}
 
+	if err := conn.SetWriteDeadline(time.Now().Add(rpcTimeout)); err != nil {
+		return fmt.Errorf("failed to set write deadline: %w", err)
+	}
 	if err := conn.WriteJSON(req); err != nil {
 		return fmt.Errorf("failed to send rpc request: %w", err)
 	}
 
+	if err := conn.SetReadDeadline(time.Now().Add(rpcTimeout)); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
+	}
 	var resp Response
 	if err := conn.ReadJSON(&resp); err != nil {
 		return fmt.Errorf("failed to read rpc response: %w", err)

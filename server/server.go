@@ -980,6 +980,14 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
 	}
 
+	if p.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	if p.BundleID == "" {
+		return nil, fmt.Errorf("'bundleId' is required")
+	}
+
 	req := commands.UninstallAppRequest{
 		DeviceID:    p.DeviceID,
 		PackageName: p.BundleID,

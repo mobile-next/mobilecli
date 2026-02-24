@@ -242,6 +242,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 		return fmt.Errorf("failed to create upload request: %w", err)
 	}
 	req.ContentLength = fi.Size()
+	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := uploadHTTPClient.Do(req)
 	if err != nil {
