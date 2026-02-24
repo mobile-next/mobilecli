@@ -3,8 +3,10 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -46,15 +48,18 @@ func GetFleetServerURL() string {
 	return defaultFleetServerURL
 }
 
+var fleetDialer = websocket.Dialer{
+	HandshakeTimeout: 10 * time.Second,
+}
+
 func Dial(token string) (*websocket.Conn, error) {
 	u, err := url.Parse(GetFleetServerURL())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse fleet server URL: %w", err)
 	}
-	q := u.Query()
-	q.Set("token", token)
-	u.RawQuery = q.Encode()
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+	conn, _, err := fleetDialer.Dial(u.String(), header)
 	return conn, err
 }
 

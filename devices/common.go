@@ -172,7 +172,7 @@ type DeviceInfo struct {
 	Version  string `json:"version"`
 	State    string `json:"state"`
 	Model    string `json:"model"`
-	Remote   bool   `json:"remote,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 type ScreenSize struct {

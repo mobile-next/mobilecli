@@ -44,7 +44,7 @@ func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	}
 
 	for i := range result.Devices {
-		result.Devices[i].Remote = true
+		result.Devices[i].Provider = "mobilefleet"
 	}
 
 	return result.Devices, nil
