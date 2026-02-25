@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -217,9 +218,12 @@ func sanitizeFilename(name string) string {
 var uploadHTTPClient = &http.Client{Timeout: 5 * time.Minute}
 
 func uploadFileToURL(filePath, uploadURL string) error {
-	const allowedPrefix = "https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/"
-	if !strings.HasPrefix(uploadURL, allowedPrefix) {
-		return fmt.Errorf("upload URL must start with %s, got: %s", allowedPrefix, uploadURL)
+	u, err := url.Parse(uploadURL)
+	if err != nil {
+		return fmt.Errorf("invalid upload URL: %w", err)
+	}
+	if u.Scheme != "https" || u.Host != "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com" {
+		return fmt.Errorf("upload URL must be https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/..., got: %s", uploadURL)
 	}
 
 	f, err := os.Open(filePath)
@@ -238,7 +242,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 
 	start := time.Now()
 
-	req, err := http.NewRequest(http.MethodPut, uploadURL, f)
+	req, err := http.NewRequest(http.MethodPut, u.String(), f)
 	if err != nil {
 		return fmt.Errorf("failed to create upload request: %w", err)
 	}
