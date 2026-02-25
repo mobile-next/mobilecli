@@ -413,5 +413,5 @@ jobs:
         cd publish/npm
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install --ignore-scripts
-        npm publish --access public
+        npm publish --access public --provenance
 
