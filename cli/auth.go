@@ -3,19 +3,19 @@ package cli
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/server"
@@ -31,7 +31,9 @@ const oauthTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
 const oauthRedirectURI = "https://mobilenexthq.com/oauth/callback/"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
 
-var authHTTPClient = &http.Client{Timeout: 30 * time.Second}
+const authHTTPTimeout = 30 * time.Second
+
+var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
 
 type oauthTokenResponse struct {
 	AccessToken  string `json:"access_token"`

@@ -34,7 +34,7 @@ type FleetAllocateResponse struct {
 
 func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
 	var result FleetAllocateResponse
-	params := map[string]interface{}{
+	params := map[string]any{
 		"filters": req.Filters,
 	}
 	err := rpc.Call(req.Token, "fleet.allocate", params, &result)
