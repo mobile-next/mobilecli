@@ -10,21 +10,22 @@ import (
 // parseVersionFilter parses a version flag value into a DeviceFilter.
 // Supports: ">=18", ">18", "<=20", "<20", "18.6.2" (exact match).
 func parseVersionFilter(value string) (commands.DeviceFilter, error) {
+	value = strings.TrimSpace(value)
 	f := commands.DeviceFilter{Attribute: "version"}
 
 	switch {
 	case strings.HasPrefix(value, ">="):
 		f.Operator = "GREATER_THAN_OR_EQUALS"
-		f.Value = value[2:]
+		f.Value = strings.TrimSpace(value[2:])
 	case strings.HasPrefix(value, ">"):
 		f.Operator = "GREATER_THAN"
-		f.Value = value[1:]
+		f.Value = strings.TrimSpace(value[1:])
 	case strings.HasPrefix(value, "<="):
 		f.Operator = "LESS_THAN_OR_EQUALS"
-		f.Value = value[2:]
+		f.Value = strings.TrimSpace(value[2:])
 	case strings.HasPrefix(value, "<"):
 		f.Operator = "LESS_THAN"
-		f.Value = value[1:]
+		f.Value = strings.TrimSpace(value[1:])
 	default:
 		f.Operator = "EQUALS"
 		f.Value = value
@@ -40,6 +41,7 @@ func parseVersionFilter(value string) (commands.DeviceFilter, error) {
 // parseNameFilter parses a name flag value into a DeviceFilter.
 // Supports: "iPhone*" (starts with), "iPhone 16" (exact match).
 func parseNameFilter(value string) (commands.DeviceFilter, error) {
+	value = strings.TrimSpace(value)
 	f := commands.DeviceFilter{Attribute: "name"}
 
 	if strings.HasSuffix(value, "*") {
