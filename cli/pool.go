@@ -31,7 +31,18 @@ var fleetCmd = &cobra.Command{
 var fleetAllocateCmd = &cobra.Command{
 	Use:   "allocate",
 	Short: "Allocate a device from the fleet",
-	Long:  `Allocates a device from the fleet for the specified platform (ios or android).`,
+	Long: `Allocates a device from the fleet matching the given filters.
+
+Flags --version and --name can be specified multiple times (all are ANDed).
+
+Version supports comparison operators:
+  --version ">=18"    (greater than or equal)
+  --version "<20"     (less than)
+  --version 18.6.2    (exact match)
+
+Name supports wildcard prefix matching:
+  --name "iPhone*"    (starts with)
+  --name "iPhone 16"  (exact match)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if platform != "ios" && platform != "android" {
 			return fmt.Errorf("platform must be 'ios' or 'android'")
@@ -42,9 +53,14 @@ var fleetAllocateCmd = &cobra.Command{
 			return err
 		}
 
+		filters, err := buildAllocateFilters(platform, fleetType, fleetVersions, fleetNames)
+		if err != nil {
+			return err
+		}
+
 		req := commands.FleetAllocateRequest{
-			Platform: platform,
-			Token:    token,
+			Filters: filters,
+			Token:   token,
 		}
 
 		response := commands.FleetAllocateCommand(req)
@@ -114,6 +130,9 @@ func init() {
 
 	fleetAllocateCmd.Flags().StringVar(&platform, "platform", "", "device platform (ios or android)")
 	_ = fleetAllocateCmd.MarkFlagRequired("platform")
+	fleetAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
+	fleetAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
+	fleetAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
 
 	fleetReleaseCmd.Flags().StringVar(&fleetReleaseDeviceID, "device", "", "device ID to release")
 	_ = fleetReleaseCmd.MarkFlagRequired("device")
