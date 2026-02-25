@@ -18,6 +18,14 @@ const (
 	DefaultFramerate = 30
 )
 
+// RecordVideoConfig contains configuration for video recording
+type RecordVideoConfig struct {
+	BitRate    int
+	TimeLimit  int
+	OutputPath string
+	OnProgress func(message string)
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
@@ -67,6 +75,7 @@ type ControllableDevice interface {
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
+	RecordVideo(config RecordVideoConfig) error
 	DumpSource() ([]ScreenElement, error)
 	DumpSourceRaw() (any, error)
 	GetOrientation() (string, error)

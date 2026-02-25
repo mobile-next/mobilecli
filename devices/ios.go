@@ -1171,6 +1171,10 @@ func (d IOSDevice) SetOrientation(orientation string) error {
 	return d.wdaClient.SetOrientation(orientation)
 }
 
+func (d IOSDevice) RecordVideo(config RecordVideoConfig) error {
+	return fmt.Errorf("not yet implemented")
+}
+
 // DeviceKitInfo contains information about the started DeviceKit session
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`

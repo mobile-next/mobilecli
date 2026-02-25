@@ -959,3 +959,7 @@ func (s SimulatorDevice) GetOrientation() (string, error) {
 func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.wdaClient.SetOrientation(orientation)
 }
+
+func (s SimulatorDevice) RecordVideo(config RecordVideoConfig) error {
+	return fmt.Errorf("not yet implemented")
+}

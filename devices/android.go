@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -1231,6 +1233,78 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	_, err = d.runAdbCommand("shell", "content", "insert", "--uri", "content://settings/system", "--bind", "name:s:user_rotation", "--bind", fmt.Sprintf("value:i:%d", androidRotation))
 	if err != nil {
 		return fmt.Errorf("failed to set orientation: %v", err)
+	}
+
+	return nil
+}
+
+func (d *AndroidDevice) RecordVideo(config RecordVideoConfig) error {
+	remotePath := fmt.Sprintf("/sdcard/Download/mobilecli-rec-%d.mp4", time.Now().UnixNano())
+
+	// build adb shell screenrecord command
+	args := []string{
+		"shell", "screenrecord",
+		"--bit-rate", strconv.Itoa(config.BitRate),
+		"--time-limit", strconv.Itoa(config.TimeLimit),
+		remotePath,
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Recording video")
+	}
+	utils.Verbose("Running: adb %s", strings.Join(append([]string{"-s", d.getAdbIdentifier()}, args...), " "))
+
+	// run screenrecord; it blocks until time-limit or the process is killed
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.Command(getAdbPath(), cmdArgs...)
+
+	// capture stderr for diagnostics
+	cmd.Stderr = os.Stderr
+
+	// set up signal handling so Ctrl+C stops recording gracefully
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start screenrecord: %w", err)
+	}
+
+	// wait for either process exit or signal
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case <-sigChan:
+		// user interrupted — send SIGINT to adb so screenrecord finalizes the mp4
+		utils.Verbose("Interrupt received, stopping recording...")
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		<-done // wait for process to finish writing
+	case err := <-done:
+		if err != nil {
+			// screenrecord may exit non-zero on some devices; log but continue
+			utils.Verbose("screenrecord exited with: %v", err)
+		}
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Pulling recorded video")
+	}
+
+	// pull the file from device
+	pullOutput, err := d.runAdbCommand("pull", remotePath, config.OutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to pull recorded file: %w\n%s", err, string(pullOutput))
+	}
+
+	utils.Verbose("Pulled recording to %s", config.OutputPath)
+
+	// remove temp file from device
+	rmOutput, err := d.runAdbCommand("shell", "rm", remotePath)
+	if err != nil {
+		utils.Verbose("Warning: failed to remove temp file on device: %v\n%s", err, string(rmOutput))
 	}
 
 	return nil

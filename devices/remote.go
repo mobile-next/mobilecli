@@ -301,3 +301,7 @@ func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, erro
 func (r *RemoteDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return fmt.Errorf("screen capture is not supported on remote devices")
 }
+
+func (r *RemoteDevice) RecordVideo(config RecordVideoConfig) error {
+	return fmt.Errorf("not yet implemented")
+}

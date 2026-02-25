@@ -18,6 +18,11 @@ var (
 	platform   string
 	deviceType string
 
+	// for screenrecord command
+	screenrecordBitRate   string
+	screenrecordTimeLimit int
+	screenrecordOutput    string
+
 	// for fleet allocate command
 	fleetType     string
 	fleetVersions []string
