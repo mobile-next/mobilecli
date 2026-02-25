@@ -217,8 +217,9 @@ func sanitizeFilename(name string) string {
 var uploadHTTPClient = &http.Client{Timeout: 5 * time.Minute}
 
 func uploadFileToURL(filePath, uploadURL string) error {
-	if !strings.HasPrefix(uploadURL, "https://") {
-		return fmt.Errorf("upload URL must use HTTPS scheme, got: %s", uploadURL)
+	const allowedPrefix = "https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/"
+	if !strings.HasPrefix(uploadURL, allowedPrefix) {
+		return fmt.Errorf("upload URL must start with %s, got: %s", allowedPrefix, uploadURL)
 	}
 
 	f, err := os.Open(filePath)
