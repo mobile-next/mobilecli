@@ -7,9 +7,16 @@ import (
 	"github.com/mobile-next/mobilecli/rpc"
 )
 
+// DeviceFilter represents a single filter criterion for device selection.
+type DeviceFilter struct {
+	Attribute string `json:"attribute"`
+	Operator  string `json:"operator"`
+	Value     string `json:"value"`
+}
+
 type FleetAllocateRequest struct {
-	Platform string
-	Token    string
+	Filters []DeviceFilter
+	Token   string
 }
 
 type FleetAllocateDevice struct {
@@ -27,7 +34,10 @@ type FleetAllocateResponse struct {
 
 func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
 	var result FleetAllocateResponse
-	err := rpc.Call(req.Token, "fleet.allocate", map[string]string{"platform": req.Platform}, &result)
+	params := map[string]interface{}{
+		"filters": req.Filters,
+	}
+	err := rpc.Call(req.Token, "fleet.allocate", params, &result)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("fleet.allocate: %w", err))
 	}

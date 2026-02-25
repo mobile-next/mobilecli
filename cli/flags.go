@@ -17,4 +17,9 @@ var (
 	// for devices command
 	platform   string
 	deviceType string
+
+	// for fleet allocate command
+	fleetType     string
+	fleetVersions []string
+	fleetNames    []string
 )
