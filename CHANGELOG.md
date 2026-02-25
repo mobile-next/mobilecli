@@ -1,3 +1,6 @@
+## [0.1.59](https://github.com/mobile-next/mobilecli/releases/tag/0.1.59) (2026-02-25)
+* General: Allocate remote Android and iOS devices on Mobile Fleet, see https://mobilenexthq.com ([#176](https://github.com/mobile-next/mobilecli/pull/176))
+
 ## [0.1.58](https://github.com/mobile-next/mobilecli/releases/tag/0.1.58) (2026-02-14)
 * iOS: Click HOME button three times after Broadcast Extension starts running ([#27afdbe](https://github.com/mobile-next/mobilecli/commit/27afdbed955aebd6649ab8645068ae83322875a3))
 
