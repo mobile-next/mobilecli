@@ -80,7 +80,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 }
 
 // GetSource gets the page source from WDA's /source endpoint with format=json
-func (c *WdaClient) GetSource() (map[string]interface{}, error) {
+func (c *WdaClient) GetSource() (map[string]any, error) {
 	endpoint := "source?format=json"
 
 	result, err := c.getEndpointWithTimeout(endpoint, 60*time.Second)
@@ -92,7 +92,7 @@ func (c *WdaClient) GetSource() (map[string]interface{}, error) {
 }
 
 // GetSourceRaw gets the raw page source from WDA's /source endpoint
-func (c *WdaClient) GetSourceRaw() (interface{}, error) {
+func (c *WdaClient) GetSourceRaw() (any, error) {
 	startTime := time.Now()
 	endpoint := "source?format=json&excluded_attributes="
 
@@ -113,7 +113,7 @@ func (c *WdaClient) GetSourceRaw() (interface{}, error) {
 }
 
 // GetSourceRawWithAttributes gets the raw page source with only the specified attributes included
-func (c *WdaClient) GetSourceRawWithAttributes(attributes []string) (interface{}, error) {
+func (c *WdaClient) GetSourceRawWithAttributes(attributes []string) (any, error) {
 	startTime := time.Now()
 
 	// all possible attributes that can be excluded

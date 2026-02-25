@@ -14,7 +14,7 @@ type DumpUIRequest struct {
 // DumpUIResponse represents the response for a dump UI command
 type DumpUIResponse struct {
 	Elements []devices.ScreenElement `json:"elements,omitempty"`
-	RawData  interface{}             `json:"rawData,omitempty"`
+	RawData  any             `json:"rawData,omitempty"`
 }
 
 // DumpUICommand starts an agent and dumps the UI tree from the specified device

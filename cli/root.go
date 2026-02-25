@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
@@ -110,6 +111,13 @@ COMMON FLAGS:
 	Version:       server.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		token, _ := getFleetToken()
+		if token != "" {
+			commands.SetFleetConfig(token)
+		}
+		return nil
+	},
 }
 
 func initConfig() {
@@ -131,7 +139,7 @@ func Execute() error {
 }
 
 // printJson is a helper function to print JSON responses
-func printJson(data interface{}) {
+func printJson(data any) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		log.Fatal(err)

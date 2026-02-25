@@ -24,7 +24,7 @@ type sessionRequest struct {
 	Capabilities sessionCapabilities `json:"capabilities"`
 }
 
-func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duration) (map[string]interface{}, error) {
+func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duration) (map[string]any, error) {
 	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -54,7 +54,7 @@ func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duratio
 	}
 
 	// Parse the JSON response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
@@ -62,11 +62,11 @@ func (c *WdaClient) getEndpointWithTimeout(endpoint string, timeout time.Duratio
 	return result, nil
 }
 
-func (c *WdaClient) GetEndpoint(endpoint string) (map[string]interface{}, error) {
+func (c *WdaClient) GetEndpoint(endpoint string) (map[string]any, error) {
 	return c.getEndpointWithTimeout(endpoint, 5*time.Second)
 }
 
-func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]interface{}, error) {
+func (c *WdaClient) PostEndpoint(endpoint string, data any) (map[string]any, error) {
 	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -102,7 +102,7 @@ func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]
 	}
 
 	// Parse the JSON response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}
@@ -110,7 +110,7 @@ func (c *WdaClient) PostEndpoint(endpoint string, data interface{}) (map[string]
 	return result, nil
 }
 
-func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]interface{}, error) {
+func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]any, error) {
 	url := fmt.Sprintf("%s/%s", c.baseURL, endpoint)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -140,7 +140,7 @@ func (c *WdaClient) DeleteEndpoint(endpoint string) (map[string]interface{}, err
 	}
 
 	// Parse the JSON response
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("invalid JSON response: %w", err)
 	}

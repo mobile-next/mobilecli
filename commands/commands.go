@@ -3,19 +3,21 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // CommandResponse represents a standardized response format for all commands
 type CommandResponse struct {
 	Status string      `json:"status"`
-	Data   interface{} `json:"data,omitempty"`
+	Data   any `json:"data,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
 
 // NewSuccessResponse creates a success response
-func NewSuccessResponse(data interface{}) *CommandResponse {
+func NewSuccessResponse(data any) *CommandResponse {
 	return &CommandResponse{
 		Status: "ok",
 		Data:   data,
@@ -28,6 +30,43 @@ func NewErrorResponse(err error) *CommandResponse {
 		Status: "error",
 		Error:  err.Error(),
 	}
+}
+
+var (
+	mu         sync.RWMutex
+	fleetToken string
+)
+
+func SetFleetConfig(token string) {
+	mu.Lock()
+	fleetToken = token
+	mu.Unlock()
+}
+
+func GetFleetToken() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fleetToken
+}
+
+func getRemoteControllableDevices() []devices.ControllableDevice {
+	token := GetFleetToken()
+	if token == "" {
+		return nil
+	}
+
+	remoteInfos, err := FetchRemoteDevices(token)
+	if err != nil {
+		utils.Verbose("failed to fetch remote devices: %v", err)
+		return nil
+	}
+
+	var result []devices.ControllableDevice
+	for _, info := range remoteInfos {
+		result = append(result, devices.NewRemoteDevice(info, token))
+	}
+
+	return result
 }
 
 // DeviceCache provides a simple cache for devices to avoid repeated lookups
@@ -43,13 +82,17 @@ var shutdownHook *devices.ShutdownHook
 // The hook is used to register cleanup functions that will be called
 // during graceful shutdown (SIGINT/SIGTERM).
 func SetShutdownHook(hook *devices.ShutdownHook) {
+	mu.Lock()
 	shutdownHook = hook
+	mu.Unlock()
 }
 
 // GetShutdownHook returns the current shutdown hook.
 // Returns nil if SetShutdownHook has not been called yet.
 // Commands use this to register cleanup functions.
 func GetShutdownHook() *devices.ShutdownHook {
+	mu.RLock()
+	defer mu.RUnlock()
 	return shutdownHook
 }
 
@@ -60,19 +103,27 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	}
 
 	// Check cache first
-	if device, exists := deviceCache[deviceID]; exists {
+	mu.RLock()
+	device, exists := deviceCache[deviceID]
+	mu.RUnlock()
+	if exists {
 		return device, nil
 	}
 
-	// Get all devices including offline ones and find the one we want
+	// get all devices including offline ones and find the one we want
 	allDevices, err := devices.GetAllControllableDevices(true)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
 
+	// append remote devices
+	allDevices = append(allDevices, getRemoteControllableDevices()...)
+
 	for _, d := range allDevices {
 		if d.ID() == deviceID {
+			mu.Lock()
 			deviceCache[deviceID] = d
+			mu.Unlock()
 			return d, nil
 		}
 	}
@@ -87,11 +138,14 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 		return FindDevice(deviceID)
 	}
 
-	// Get all devices for auto-selection
+	// get all devices for auto-selection
 	allDevices, err := devices.GetAllControllableDevices(false)
 	if err != nil {
 		return nil, fmt.Errorf("error getting devices: %w", err)
 	}
+
+	// append remote devices
+	allDevices = append(allDevices, getRemoteControllableDevices()...)
 
 	// filter to only online devices for auto-selection
 	var onlineDevices []devices.ControllableDevice
@@ -112,14 +166,18 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 
 	// exactly 1 online device - check cache first to reuse existing instance
 	deviceID = onlineDevices[0].ID()
+	mu.RLock()
 	cachedDevice, exists := deviceCache[deviceID]
+	mu.RUnlock()
 	if exists {
 		return cachedDevice, nil
 	}
 
 	// not in cache, use the new device instance and cache it
 	device := onlineDevices[0]
+	mu.Lock()
 	deviceCache[device.ID()] = device
+	mu.Unlock()
 	return device, nil
 }
 

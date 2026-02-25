@@ -49,7 +49,7 @@ const (
 
 var Version = "dev"
 
-var okResponse = map[string]interface{}{"status": "ok"}
+var okResponse = map[string]any{"status": "ok"}
 
 // StreamSession represents a screen capture streaming session
 type StreamSession struct {
@@ -80,15 +80,15 @@ type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
-	ID      interface{}     `json:"id,omitempty"`
+	ID      any     `json:"id,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC response
 type JSONRPCResponse struct {
 	JSONRPC string      `json:"jsonrpc"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   interface{} `json:"error,omitempty"`
-	ID      interface{} `json:"id"`
+	Result  any `json:"result,omitempty"`
+	Error   any `json:"error,omitempty"`
+	ID      any `json:"id"`
 }
 
 // ScreenshotParams represents the parameters for the screenshot request
@@ -213,7 +213,7 @@ func StartServer(addr string, enableCORS bool) error {
 		// convert addr to integer
 		port, err := strconv.Atoi(addr)
 		if err != nil {
-			return fmt.Errorf("invalid port: %v", err)
+			return fmt.Errorf("invalid port: %w", err)
 		}
 
 		addr = fmt.Sprintf(":%d", port)
@@ -300,7 +300,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	utils.Info("Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, string(req.Params))
 
-	var result interface{}
+	var result any
 	var err error
 
 	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
@@ -331,7 +331,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	sendJSONRPCResponse(w, req.ID, result)
 }
 
-func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface{}) {
+func sendJSONRPCResponse(w http.ResponseWriter, id any, result any) {
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
 		Result:  result,
@@ -342,7 +342,7 @@ func sendJSONRPCResponse(w http.ResponseWriter, id interface{}, result interface
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-func handleDevicesList(params json.RawMessage) (interface{}, error) {
+func handleDevicesList(params json.RawMessage) (any, error) {
 	// default to showing all devices if no params provided
 	opts := devices.DeviceListOptions{
 		IncludeOffline: false,
@@ -362,17 +362,17 @@ func handleDevicesList(params json.RawMessage) (interface{}, error) {
 		opts.DeviceType = devicesParams.Type
 	}
 
-	response := commands.DevicesCommand(opts)
+	response := commands.DevicesCommand(opts, commands.GetFleetToken())
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
 	return response.Data, nil
 }
 
-func handleScreenshot(params json.RawMessage) (interface{}, error) {
+func handleScreenshot(params json.RawMessage) (any, error) {
 	var screenshotParams ScreenshotParams
 	if err := json.Unmarshal(params, &screenshotParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v", err)
+		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
 	req := commands.ScreenshotRequest{
@@ -389,7 +389,7 @@ func handleScreenshot(params json.RawMessage) (interface{}, error) {
 
 	// Convert the response data to the expected server format
 	if screenshotResp, ok := response.Data.(commands.ScreenshotResponse); ok {
-		return map[string]interface{}{
+		return map[string]any{
 			"format": screenshotResp.Format,
 			"data":   fmt.Sprintf("data:image/%s;base64,%s", screenshotResp.Format, screenshotResp.Data),
 		}, nil
@@ -419,14 +419,14 @@ type IoSwipeParams struct {
 	Y2       int    `json:"y2"`
 }
 
-func handleIoTap(params json.RawMessage) (interface{}, error) {
+func handleIoTap(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
 	}
 
 	var ioTapParams IoTapParams
 	if err := json.Unmarshal(params, &ioTapParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, x, y", err)
 	}
 
 	req := commands.TapRequest{
@@ -443,14 +443,14 @@ func handleIoTap(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleIoLongPress(params json.RawMessage) (interface{}, error) {
+func handleIoLongPress(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
 	}
 
 	var ioLongPressParams IoLongPressParams
 	if err := json.Unmarshal(params, &ioLongPressParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x, y", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, x, y", err)
 	}
 
 	// default duration to 500ms if not provided
@@ -474,14 +474,14 @@ func handleIoLongPress(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleIoSwipe(params json.RawMessage) (interface{}, error) {
+func handleIoSwipe(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x1, y1, x2, y2")
 	}
 
 	var ioSwipeParams IoSwipeParams
 	if err := json.Unmarshal(params, &ioSwipeParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, x1, y1, x2, y2", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, x1, y1, x2, y2", err)
 	}
 
 	if ioSwipeParams.DeviceID == "" {
@@ -489,7 +489,7 @@ func handleIoSwipe(params json.RawMessage) (interface{}, error) {
 	}
 
 	// validate that coordinates are provided (x1,y1,x2,y2 must be present)
-	var rawParams map[string]interface{}
+	var rawParams map[string]any
 	if err := json.Unmarshal(params, &rawParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters format")
 	}
@@ -522,14 +522,14 @@ type IoTextParams struct {
 	Text     string `json:"text"`
 }
 
-func handleIoText(params json.RawMessage) (interface{}, error) {
+func handleIoText(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
 	}
 
 	var ioTextParams IoTextParams
 	if err := json.Unmarshal(params, &ioTextParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, text", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
 	}
 
 	req := commands.TextRequest{
@@ -552,7 +552,7 @@ type IoButtonParams struct {
 
 type IoGestureParams struct {
 	DeviceID string        `json:"deviceId"`
-	Actions  []interface{} `json:"actions"`
+	Actions  []any `json:"actions"`
 }
 
 type URLParams struct {
@@ -608,14 +608,27 @@ type AppsForegroundParams struct {
 	DeviceID string `json:"deviceId"`
 }
 
-func handleIoButton(params json.RawMessage) (interface{}, error) {
+type AppsInstallParams struct {
+	DeviceID            string `json:"deviceId"`
+	Path                string `json:"path"`
+	ForceResign         bool   `json:"forceResign,omitempty"`
+	ProvisioningProfile string `json:"provisioningProfile,omitempty"`
+	SigningIdentity     string `json:"signingIdentity,omitempty"`
+}
+
+type AppsUninstallParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+func handleIoButton(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, button")
 	}
 
 	var ioButtonParams IoButtonParams
 	if err := json.Unmarshal(params, &ioButtonParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, button", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, button", err)
 	}
 
 	req := commands.ButtonRequest{
@@ -631,14 +644,14 @@ func handleIoButton(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleIoGesture(params json.RawMessage) (interface{}, error) {
+func handleIoGesture(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, actions")
 	}
 
 	var ioGestureParams IoGestureParams
 	if err := json.Unmarshal(params, &ioGestureParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, actions", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, actions", err)
 	}
 
 	req := commands.GestureRequest{
@@ -654,14 +667,14 @@ func handleIoGesture(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleURL(params json.RawMessage) (interface{}, error) {
+func handleURL(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, url")
 	}
 
 	var urlParams URLParams
 	if err := json.Unmarshal(params, &urlParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, url", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, url", err)
 	}
 
 	req := commands.URLRequest{
@@ -677,14 +690,14 @@ func handleURL(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
+func handleDeviceInfo(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var infoParams InfoParams
 	if err := json.Unmarshal(params, &infoParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
 	}
 
 	targetDevice, err := commands.FindDeviceOrAutoSelect(infoParams.DeviceID)
@@ -707,14 +720,14 @@ func handleDeviceInfo(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleIoOrientationGet(params json.RawMessage) (interface{}, error) {
+func handleIoOrientationGet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var orientationGetParams IoOrientationGetParams
 	if err := json.Unmarshal(params, &orientationGetParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
 	}
 
 	req := commands.OrientationGetRequest{
@@ -729,14 +742,14 @@ func handleIoOrientationGet(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
+func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, orientation")
 	}
 
 	var orientationSetParams IoOrientationSetParams
 	if err := json.Unmarshal(params, &orientationSetParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, orientation", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, orientation", err)
 	}
 
 	req := commands.OrientationSetRequest{
@@ -752,14 +765,14 @@ func handleIoOrientationSet(params json.RawMessage) (interface{}, error) {
 	return okResponse, nil
 }
 
-func handleDeviceBoot(params json.RawMessage) (interface{}, error) {
+func handleDeviceBoot(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var bootParams DeviceBootParams
 	if err := json.Unmarshal(params, &bootParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
 	}
 
 	req := commands.BootRequest{
@@ -774,14 +787,14 @@ func handleDeviceBoot(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleDeviceShutdown(params json.RawMessage) (interface{}, error) {
+func handleDeviceShutdown(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var shutdownParams DeviceShutdownParams
 	if err := json.Unmarshal(params, &shutdownParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
 	}
 
 	req := commands.ShutdownRequest{
@@ -796,14 +809,14 @@ func handleDeviceShutdown(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleDeviceReboot(params json.RawMessage) (interface{}, error) {
+func handleDeviceReboot(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var rebootParams DeviceRebootParams
 	if err := json.Unmarshal(params, &rebootParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
 	}
 
 	req := commands.RebootRequest{
@@ -818,14 +831,14 @@ func handleDeviceReboot(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleDumpUI(params json.RawMessage) (interface{}, error) {
+func handleDumpUI(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
 	}
 
 	var dumpUIParams DumpUIParams
 	if err := json.Unmarshal(params, &dumpUIParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, format (optional)", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, format (optional)", err)
 	}
 
 	req := commands.DumpUIRequest{
@@ -841,14 +854,14 @@ func handleDumpUI(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleAppsLaunch(params json.RawMessage) (interface{}, error) {
+func handleAppsLaunch(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
 	}
 
 	var appsLaunchParams AppsLaunchParams
 	if err := json.Unmarshal(params, &appsLaunchParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, bundleId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
 	}
 
 	req := commands.AppRequest{
@@ -864,14 +877,14 @@ func handleAppsLaunch(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleAppsTerminate(params json.RawMessage) (interface{}, error) {
+func handleAppsTerminate(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
 	}
 
 	var appsTerminateParams AppsTerminateParams
 	if err := json.Unmarshal(params, &appsTerminateParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId, bundleId", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
 	}
 
 	req := commands.AppRequest{
@@ -887,11 +900,11 @@ func handleAppsTerminate(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleAppsList(params json.RawMessage) (interface{}, error) {
+func handleAppsList(params json.RawMessage) (any, error) {
 	var appsListParams AppsListParams
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &appsListParams); err != nil {
-			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId (optional)", err)
 		}
 	}
 
@@ -907,11 +920,11 @@ func handleAppsList(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleAppsForeground(params json.RawMessage) (interface{}, error) {
+func handleAppsForeground(params json.RawMessage) (any, error) {
 	var appsForegroundParams AppsForegroundParams
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &appsForegroundParams); err != nil {
-			return nil, fmt.Errorf("invalid parameters: %v. Expected fields: deviceId (optional)", err)
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId (optional)", err)
 		}
 	}
 
@@ -927,7 +940,68 @@ func handleAppsForeground(params json.RawMessage) (interface{}, error) {
 	return response.Data, nil
 }
 
-func handleServerInfo(params json.RawMessage) (interface{}, error) {
+func handleAppsInstall(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, path")
+	}
+
+	var p AppsInstallParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, path", err)
+	}
+
+	if p.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	req := commands.InstallAppRequest{
+		DeviceID:            p.DeviceID,
+		Path:                p.Path,
+		ForceResign:         p.ForceResign,
+		ProvisioningProfile: p.ProvisioningProfile,
+		SigningIdentity:     p.SigningIdentity,
+	}
+
+	response := commands.InstallAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsUninstall(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var p AppsUninstallParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
+	}
+
+	if p.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	if p.BundleID == "" {
+		return nil, fmt.Errorf("'bundleId' is required")
+	}
+
+	req := commands.UninstallAppRequest{
+		DeviceID:    p.DeviceID,
+		PackageName: p.BundleID,
+	}
+
+	response := commands.UninstallAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleServerInfo(params json.RawMessage) (any, error) {
 	return map[string]string{
 		"name":    "mobilecli",
 		"version": Version,
@@ -935,7 +1009,7 @@ func handleServerInfo(params json.RawMessage) (interface{}, error) {
 }
 
 // handleServerShutdown initiates graceful server shutdown
-func handleServerShutdown(params json.RawMessage) (interface{}, error) {
+func handleServerShutdown(params json.RawMessage) (any, error) {
 	// trigger shutdown in background (after response is sent)
 	go func() {
 		time.Sleep(100 * time.Millisecond) // allow response to be sent
@@ -948,10 +1022,10 @@ func handleServerShutdown(params json.RawMessage) (interface{}, error) {
 	return map[string]string{"status": "ok"}, nil
 }
 
-func sendJSONRPCError(w http.ResponseWriter, id interface{}, code int, message string, data interface{}) {
+func sendJSONRPCError(w http.ResponseWriter, id any, code int, message string, data any) {
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
-		Error: map[string]interface{}{
+		Error: map[string]any{
 			"code":    code,
 			"message": message,
 			"data":    data,
@@ -969,8 +1043,8 @@ func sendBanner(w http.ResponseWriter, r *http.Request) {
 }
 
 // newJsonRpcNotification creates a JSON-RPC notification message
-func newJsonRpcNotification(message string) map[string]interface{} {
-	return map[string]interface{}{
+func newJsonRpcNotification(message string) map[string]any {
+	return map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "notification/message",
 		"params": map[string]string{
@@ -980,10 +1054,10 @@ func newJsonRpcNotification(message string) map[string]interface{} {
 }
 
 // handleScreenCaptureSession creates a streaming session and returns sessionUrl
-func handleScreenCaptureSession(params json.RawMessage) (interface{}, error) {
+func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	var screenCaptureParams commands.ScreenCaptureRequest
 	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %v", err)
+		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
 	// set default format if not provided
@@ -1052,7 +1126,7 @@ func handleScreenCaptureSession(params json.RawMessage) (interface{}, error) {
 	}
 
 	// return response with format and sessionUrl
-	result := map[string]interface{}{
+	result := map[string]any{
 		"format":     screenCaptureParams.Format,
 		"sessionUrl": fmt.Sprintf("/stream?s=%s", sessionID),
 	}
@@ -1170,7 +1244,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 
 	var screenCaptureParams commands.ScreenCaptureRequest
 	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
-		return fmt.Errorf("invalid parameters: %v", err)
+		return fmt.Errorf("invalid parameters: %w", err)
 	}
 
 	// Find the target device
@@ -1267,7 +1341,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	})
 
 	if err != nil {
-		return fmt.Errorf("error starting screen capture: %v", err)
+		return fmt.Errorf("error starting screen capture: %w", err)
 	}
 
 	return nil

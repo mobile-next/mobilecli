@@ -21,7 +21,7 @@ func RebootCommand(req RebootRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to reboot device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]interface{}{
+	return NewSuccessResponse(map[string]any{
 		"message": fmt.Sprintf("Reboot command processed for device %s", targetDevice.ID()),
 	})
 }

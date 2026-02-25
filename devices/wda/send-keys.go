@@ -10,7 +10,7 @@ func (c *WdaClient) SendKeys(text string) error {
 	}
 
 	url := fmt.Sprintf("session/%s/wda/keys", sessionId)
-	_, err = c.PostEndpoint(url, map[string]interface{}{
+	_, err = c.PostEndpoint(url, map[string]any{
 		"value": []string{text},
 	})
 

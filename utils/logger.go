@@ -16,12 +16,12 @@ func IsVerbose() bool {
 	return isVerbose
 }
 
-func Verbose(format string, args ...interface{}) {
+func Verbose(format string, args ...any) {
 	if isVerbose {
 		log.Printf("[VERBOSE] "+format, args...)
 	}
 }
 
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	log.Printf("[INFO] "+format, args...)
 }

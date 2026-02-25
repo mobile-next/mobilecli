@@ -6,7 +6,7 @@ import (
 )
 
 // HandlerFunc is the signature for non-streaming JSON-RPC method handlers
-type HandlerFunc func(params json.RawMessage) (interface{}, error)
+type HandlerFunc func(params json.RawMessage) (any, error)
 
 // GetMethodRegistry returns a map of method names to handler functions
 // This is used by both the HTTP server and embedded clients
@@ -33,6 +33,8 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.apps.terminate":     handleAppsTerminate,
 		"device.apps.list":          handleAppsList,
 		"device.apps.foreground":    handleAppsForeground,
+		"device.apps.install":       handleAppsInstall,
+		"device.apps.uninstall":     handleAppsUninstall,
 		"server.info":               handleServerInfo,
 		"server.shutdown":           handleServerShutdown,
 	}
@@ -40,7 +42,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 
 // Execute dispatches a method call using the registry
 // This is the main entry point for embedded clients
-func Execute(method string, params json.RawMessage) (interface{}, error) {
+func Execute(method string, params json.RawMessage) (any, error) {
 	registry := GetMethodRegistry()
 
 	handler, exists := registry[method]

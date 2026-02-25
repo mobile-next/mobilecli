@@ -749,7 +749,7 @@ func (d IOSDevice) LaunchApp(bundleID string) error {
 	defer func() { _ = pControl.Close() }()
 
 	opts := map[string]any{}
-	args := []interface{}{}
+	args := []any{}
 	envs := map[string]any{}
 
 	pid, err := pControl.LaunchAppWithArgs(bundleID, args, envs, opts)
@@ -1097,7 +1097,7 @@ func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.wdaClient.GetSourceElements()
 }
 
-func (d IOSDevice) DumpSourceRaw() (interface{}, error) {
+func (d IOSDevice) DumpSourceRaw() (any, error) {
 	return d.wdaClient.GetSourceRaw()
 }
 

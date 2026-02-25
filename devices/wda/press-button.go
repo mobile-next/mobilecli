@@ -27,7 +27,7 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("failed to create session: %v", err)
 	}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"name": translatedKey,
 	}
 
