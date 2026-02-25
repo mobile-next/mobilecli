@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -875,6 +876,103 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 	return appPath, nil
 }
 
+const (
+	stderrBufferSize      = 4096
+	stdoutBufferSize      = 65536
+	serverStartupTimeout  = 500 * time.Millisecond
+)
+
+func containsServerError(output string) bool {
+	errorPatterns := []string{
+		"ClassNotFoundException",
+		"NoSuchMethodException",
+		"Error:",
+		"Fatal signal",
+		"SIGABRT",
+	}
+
+	for _, pattern := range errorPatterns {
+		if strings.Contains(output, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *AndroidDevice) parseServerError(msg, serverClass string) error {
+	if strings.Contains(msg, "ClassNotFoundException") {
+		return fmt.Errorf("server class not found: %s. the installed APK may be outdated or corrupted. try reinstalling", serverClass)
+	}
+	if strings.Contains(msg, "NoSuchMethodException") {
+		return fmt.Errorf("incompatible Android version or corrupted APK. the server failed to create virtual display")
+	}
+	if strings.Contains(msg, "Fatal signal") || strings.Contains(msg, "SIGABRT") {
+		return fmt.Errorf("server crashed during startup: %s", msg)
+	}
+	return fmt.Errorf("server error: %s", msg)
+}
+
+func (d *AndroidDevice) monitorServerStartup(stderr io.Reader, serverClass string, errorChan chan<- error) {
+	buffer := make([]byte, stderrBufferSize)
+
+	for {
+		n, err := stderr.Read(buffer)
+		if n > 0 {
+			msg := string(buffer[:n])
+			utils.Verbose("stderr: %s", msg)
+
+			if containsServerError(msg) {
+				errorChan <- d.parseServerError(msg, serverClass)
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (d *AndroidDevice) waitForServerStartup(errorChan <-chan error, cmd *exec.Cmd) error {
+	time.Sleep(serverStartupTimeout)
+	select {
+	case startupErr := <-errorChan:
+		_ = cmd.Process.Kill()
+		return startupErr
+	default:
+		return nil
+	}
+}
+
+func (d *AndroidDevice) streamServerOutput(stdout io.Reader, cmd *exec.Cmd, config ScreenCaptureConfig) error {
+	buffer := make([]byte, stdoutBufferSize)
+	firstRead := true
+
+	for {
+		n, err := stdout.Read(buffer)
+		if err != nil {
+			break
+		}
+
+		if n > 0 {
+			if firstRead {
+				firstRead = false
+				output := string(buffer[:n])
+				if containsServerError(output) {
+					_ = cmd.Process.Kill()
+					return fmt.Errorf("server error: %s", strings.TrimSpace(output))
+				}
+			}
+
+			if !config.OnData(buffer[:n]) {
+				break
+			}
+		}
+	}
+
+	_ = cmd.Process.Kill()
+	return nil
+}
+
 func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	if config.Format != "mjpeg" && config.Format != "avc" {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
@@ -907,7 +1005,17 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
-	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
+	cmdArgs := append(
+		[]string{"-s", d.getAdbIdentifier()},
+		"exec-out",
+		fmt.Sprintf("CLASSPATH=%s", appPath),
+		"app_process",
+		"/system/bin",
+		serverClass,
+		"--quality", fmt.Sprintf("%d", config.Quality),
+		"--scale", fmt.Sprintf("%.2f", config.Scale),
+		"--fps", fmt.Sprintf("%d", config.FPS),
+	)
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
@@ -916,28 +1024,23 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("failed to create stdout pipe: %v", err)
 	}
 
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %v", err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start %s: %v", serverClass, err)
 	}
 
-	// Read bytes from the command output and send to callback
-	buffer := make([]byte, 65536)
-	for {
-		n, err := stdout.Read(buffer)
-		if err != nil {
-			break
-		}
+	startupErrorChan := make(chan error, 1)
+	go d.monitorServerStartup(stderr, serverClass, startupErrorChan)
 
-		if n > 0 {
-			// Send bytes to callback, break if it returns false
-			if !config.OnData(buffer[:n]) {
-				break
-			}
-		}
+	if err := d.waitForServerStartup(startupErrorChan, cmd); err != nil {
+		return err
 	}
 
-	_ = cmd.Process.Kill()
-	return nil
+	return d.streamServerOutput(stdout, cmd, config)
 }
 
 func (d *AndroidDevice) installPackage(apkPath string) error {
