@@ -15,7 +15,6 @@ import (
 // ScreenRecordRequest contains parameters for the screenrecord command
 type ScreenRecordRequest struct {
 	DeviceID   string
-	Format     string // "mp4" or "avc"
 	OutputPath string
 	TimeLimit  int // max recording duration in seconds, 0 = no limit
 }
@@ -28,9 +27,7 @@ type ScreenRecordResponse struct {
 }
 
 // ScreenRecordCommand records the device screen to an MP4 file.
-// for mp4 format: captures AVC stream to a temp file, converts to MP4 on stop.
-// for avc format: streams raw H.264 bytes via the onData callback.
-func ScreenRecordCommand(req ScreenRecordRequest, onData func([]byte) bool) *CommandResponse {
+func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
@@ -46,25 +43,7 @@ func ScreenRecordCommand(req ScreenRecordRequest, onData func([]byte) bool) *Com
 		return NewErrorResponse(fmt.Errorf("error starting agent: %w", err))
 	}
 
-	// for avc format, just stream to the callback
-	if req.Format == "avc" {
-		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-			Format:  "avc",
-			Quality: devices.DefaultQuality,
-			Scale:   devices.DefaultScale,
-			FPS:     devices.DefaultFramerate,
-			OnProgress: func(message string) {
-				utils.Verbose(message)
-			},
-			OnData: withTimeLimit(onData, req.TimeLimit),
-		})
-		if err != nil {
-			return NewErrorResponse(fmt.Errorf("error during screen capture: %w", err))
-		}
-		return NewSuccessResponse(nil)
-	}
-
-	// mp4 format: android and ios simulator use native tools,
+	// android and ios simulator use native tools,
 	// ios real device uses avc capture + conversion
 	switch {
 	case targetDevice.Platform() == "android":
