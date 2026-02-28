@@ -68,9 +68,21 @@ func ScreenRecordCommand(req ScreenRecordRequest, onData func([]byte) bool) *Com
 	// ios real device uses avc capture + conversion
 	switch {
 	case targetDevice.Platform() == "android":
-		return screenRecordAndroid(targetDevice, req)
+		dev, ok := targetDevice.(*devices.AndroidDevice)
+		if !ok {
+			return NewErrorResponse(fmt.Errorf("expected android device"))
+		}
+		return screenRecordNative(func() error {
+			return dev.ScreenRecord(req.OutputPath, req.TimeLimit)
+		}, req)
 	case targetDevice.DeviceType() == "simulator":
-		return screenRecordSimulator(targetDevice, req)
+		dev, ok := targetDevice.(*devices.SimulatorDevice)
+		if !ok {
+			return NewErrorResponse(fmt.Errorf("expected simulator device"))
+		}
+		return screenRecordNative(func() error {
+			return dev.ScreenRecord(req.OutputPath, req.TimeLimit)
+		}, req)
 	default:
 		return screenRecordMp4(targetDevice, req)
 	}
@@ -82,6 +94,7 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		return NewErrorResponse(fmt.Errorf("error creating temp file: %w", err))
 	}
 	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
 
 	// prevent main.go's signal handler from calling os.Exit(0) before
 	// we finish converting. StartScreenCapture sets up its own handler
@@ -109,13 +122,11 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	tempFile.Close()
 
 	if err != nil {
-		os.Remove(tempPath)
 		return NewErrorResponse(fmt.Errorf("error during screen capture: %w", err))
 	}
 
 	// convert temp avc file to mp4
 	data, err := os.ReadFile(tempPath)
-	os.Remove(tempPath)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error reading temp file: %w", err))
 	}
@@ -148,43 +159,12 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	})
 }
 
-func screenRecordAndroid(targetDevice devices.ControllableDevice, req ScreenRecordRequest) *CommandResponse {
-	androidDev, ok := targetDevice.(*devices.AndroidDevice)
-	if !ok {
-		return NewErrorResponse(fmt.Errorf("expected android device"))
-	}
-
+func screenRecordNative(record func() error, req ScreenRecordRequest) *CommandResponse {
 	// prevent main.go's signal handler from calling os.Exit(0) before
-	// we finish pulling the file. ScreenRecord sets up its own handler.
+	// the recording tool finishes. ScreenRecord sets up its own handler.
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 
-	err := androidDev.ScreenRecord(req.OutputPath, req.TimeLimit)
-
-	// restore default signal behavior
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
-
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error during screen recording: %w", err))
-	}
-
-	fmt.Fprintf(os.Stderr, "wrote %s\n", req.OutputPath)
-
-	return NewSuccessResponse(ScreenRecordResponse{
-		Output: req.OutputPath,
-	})
-}
-
-func screenRecordSimulator(targetDevice devices.ControllableDevice, req ScreenRecordRequest) *CommandResponse {
-	simDev, ok := targetDevice.(*devices.SimulatorDevice)
-	if !ok {
-		return NewErrorResponse(fmt.Errorf("expected simulator device"))
-	}
-
-	// prevent main.go's signal handler from calling os.Exit(0) before
-	// simctl finishes writing the video. ScreenRecord sets up its own handler.
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
-
-	err := simDev.ScreenRecord(req.OutputPath, req.TimeLimit)
+	err := record()
 
 	// restore default signal behavior
 	signal.Reset(syscall.SIGINT, syscall.SIGTERM)

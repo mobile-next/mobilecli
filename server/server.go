@@ -304,7 +304,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
-	if req.Method == "device_boot" {
+	if req.Method == "device.boot" {
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
 	}
 

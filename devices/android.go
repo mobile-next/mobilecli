@@ -947,8 +947,10 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int) error {
 	remotePath := fmt.Sprintf("/sdcard/mobilecli-rec-%d.mp4", time.Now().UnixNano())
 
-	args := []string{"-s", d.getAdbIdentifier(), "shell", "screenrecord",
-		"--time-limit", fmt.Sprintf("%d", timeLimit)}
+	args := []string{"-s", d.getAdbIdentifier(), "shell", "screenrecord"}
+	if timeLimit > 0 {
+		args = append(args, "--time-limit", fmt.Sprintf("%d", timeLimit))
+	}
 	args = append(args, remotePath)
 
 	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
@@ -969,12 +971,16 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int) error {
 
 	select {
 	case <-sigChan:
-		// adb already received SIGINT from process group, wait for it to finalize
+		// send SIGINT to child explicitly so it finalizes the MP4
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(syscall.SIGINT)
+		}
 		<-done
 	case <-done:
 	}
 
 	signal.Stop(sigChan)
+	close(sigChan)
 
 	// pull the recording from device
 	utils.Verbose("Pulling recording from device...")

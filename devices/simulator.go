@@ -804,6 +804,7 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int) error 
 	}
 
 	signal.Stop(sigChan)
+	close(sigChan)
 	return nil
 }
 

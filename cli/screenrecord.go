@@ -17,7 +17,7 @@ var (
 var screenrecordCmd = &cobra.Command{
 	Use:   "screenrecord",
 	Short: "Record device screen to an MP4 file or stream raw AVC",
-	Long:  `Records the screen of a connected iOS real device. Supports MP4 (file) and AVC (raw H.264 stream to stdout).`,
+	Long:  `Records the screen of a connected device (iOS, Android, or simulator). Supports MP4 (file) and AVC (raw H.264 stream to stdout).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if screenrecordFormat != "mp4" && screenrecordFormat != "avc" {
 			return fmt.Errorf("format must be 'mp4' or 'avc'")
