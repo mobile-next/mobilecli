@@ -943,8 +943,13 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 }
 
 // ScreenRecord records the device screen to a local MP4 file using adb screenrecord.
-// blocks until Ctrl+C is pressed or the time limit is reached.
-func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int) error {
+// blocks until Ctrl+C is pressed, stopChan is closed, or the time limit is reached.
+// when stopChan is nil, behavior is unchanged (CLI usage).
+func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan <-chan struct{}) error {
+	if stopChan == nil {
+		stopChan = make(chan struct{})
+	}
+
 	remotePath := fmt.Sprintf("/sdcard/mobilecli-rec-%d.mp4", time.Now().UnixNano())
 
 	args := []string{"-s", d.getAdbIdentifier(), "shell", "screenrecord"}
@@ -972,6 +977,11 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int) error {
 	select {
 	case <-sigChan:
 		// send SIGINT to child explicitly so it finalizes the MP4
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(syscall.SIGINT)
+		}
+		<-done
+	case <-stopChan:
 		if cmd.Process != nil {
 			_ = cmd.Process.Signal(syscall.SIGINT)
 		}

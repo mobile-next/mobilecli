@@ -764,8 +764,13 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 }
 
 // ScreenRecord records the simulator screen to a local MP4 file using xcrun simctl.
-// blocks until Ctrl+C is pressed or the time limit is reached.
-func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int) error {
+// blocks until Ctrl+C is pressed, stopChan is closed, or the time limit is reached.
+// when stopChan is nil, behavior is unchanged (CLI usage).
+func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopChan <-chan struct{}) error {
+	if stopChan == nil {
+		stopChan = make(chan struct{})
+	}
+
 	args := []string{"simctl", "io", s.UDID, "recordVideo", "--codec=h264", "--force", localOutput}
 
 	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
@@ -794,6 +799,9 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int) error 
 	select {
 	case <-sigChan:
 		// forward SIGINT to simctl so it finalizes the MP4
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		<-done
+	case <-stopChan:
 		_ = cmd.Process.Signal(syscall.SIGINT)
 		<-done
 	case <-done:

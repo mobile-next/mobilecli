@@ -16,7 +16,8 @@ import (
 type ScreenRecordRequest struct {
 	DeviceID   string
 	OutputPath string
-	TimeLimit  int // max recording duration in seconds, 0 = no limit
+	TimeLimit  int              // max recording duration in seconds, 0 = no limit
+	StopChan   <-chan struct{}  // when non-nil, stops recording when closed (server mode)
 }
 
 // ScreenRecordResponse contains the result of a screen recording
@@ -52,22 +53,24 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("expected android device"))
 		}
 		return screenRecordNative(func() error {
-			return dev.ScreenRecord(req.OutputPath, req.TimeLimit)
+			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req)
-	case targetDevice.DeviceType() == "simulator":
+	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator":
 		dev, ok := targetDevice.(*devices.SimulatorDevice)
 		if !ok {
 			return NewErrorResponse(fmt.Errorf("expected simulator device"))
 		}
 		return screenRecordNative(func() error {
-			return dev.ScreenRecord(req.OutputPath, req.TimeLimit)
+			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req)
+	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "real":
+		return screenRecordIOSDevice(targetDevice, req)
 	default:
-		return screenRecordMp4(targetDevice, req)
+		return NewErrorResponse(fmt.Errorf("screen recording is not supported for this device type"))
 	}
 }
 
-func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRequest) *CommandResponse {
+func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRecordRequest) *CommandResponse {
 	tempFile, err := os.CreateTemp("", "screenrecord-*.avc")
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error creating temp file: %w", err))
@@ -75,10 +78,12 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	tempPath := tempFile.Name()
 	defer os.Remove(tempPath)
 
-	// prevent main.go's signal handler from calling os.Exit(0) before
-	// we finish converting. StartScreenCapture sets up its own handler
-	// internally and will return when Ctrl+C is pressed.
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	// in CLI mode, prevent main.go's signal handler from calling os.Exit(0)
+	// before we finish converting. skip in server mode to avoid disrupting
+	// the server's own signal handler.
+	if req.StopChan == nil {
+		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 		Format:  "avc",
@@ -88,15 +93,15 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		OnProgress: func(message string) {
 			utils.Verbose(message)
 		},
-		OnData: withTimeLimit(func(data []byte) bool {
+		OnData: withStopChan(func(data []byte) bool {
 			_, writeErr := tempFile.Write(data)
 			return writeErr == nil
-		}, req.TimeLimit),
+		}, req.TimeLimit, req.StopChan),
 	})
 
-	// restore default signal behavior so Ctrl+C during conversion
-	// terminates immediately
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	if req.StopChan == nil {
+		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	tempFile.Close()
 
@@ -139,14 +144,18 @@ func screenRecordMp4(targetDevice devices.ControllableDevice, req ScreenRecordRe
 }
 
 func screenRecordNative(record func() error, req ScreenRecordRequest) *CommandResponse {
-	// prevent main.go's signal handler from calling os.Exit(0) before
-	// the recording tool finishes. ScreenRecord sets up its own handler.
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	// in CLI mode, prevent main.go's signal handler from calling os.Exit(0)
+	// before the recording tool finishes. skip in server mode to avoid
+	// disrupting the server's own signal handler.
+	if req.StopChan == nil {
+		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	err := record()
 
-	// restore default signal behavior
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	if req.StopChan == nil {
+		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	}
 
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error during screen recording: %w", err))
@@ -159,17 +168,32 @@ func screenRecordNative(record func() error, req ScreenRecordRequest) *CommandRe
 	})
 }
 
-// withTimeLimit wraps an OnData callback to stop after timeLimitSec seconds.
-// if timeLimitSec is 0, returns the original callback unchanged.
-func withTimeLimit(onData func([]byte) bool, timeLimitSec int) func([]byte) bool {
-	if timeLimitSec <= 0 {
+// withStopChan wraps an OnData callback to stop when the time limit expires
+// or the stop channel is closed. if both are zero/nil, returns the original
+// callback unchanged.
+func withStopChan(onData func([]byte) bool, timeLimitSec int, stopChan <-chan struct{}) func([]byte) bool {
+	hasTimeLimit := timeLimitSec > 0
+	hasStopChan := stopChan != nil
+
+	if !hasTimeLimit && !hasStopChan {
 		return onData
 	}
 
-	deadline := time.Now().Add(time.Duration(timeLimitSec) * time.Second)
+	var deadline time.Time
+	if hasTimeLimit {
+		deadline = time.Now().Add(time.Duration(timeLimitSec) * time.Second)
+	}
+
 	return func(data []byte) bool {
-		if time.Now().After(deadline) {
+		if hasTimeLimit && time.Now().After(deadline) {
 			return false
+		}
+		if hasStopChan {
+			select {
+			case <-stopChan:
+				return false
+			default:
+			}
 		}
 		return onData(data)
 	}

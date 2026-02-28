@@ -2,6 +2,7 @@ package devices
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -75,7 +76,12 @@ type ControllableDevice interface {
 
 // GetAllControllableDevices aggregates all known devices with options
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
+
 	var allDevices []ControllableDevice
+
+	if os.Getenv("MOBILECLI_REMOTE_ONLY") != "" {
+		return allDevices, nil
+	}
 
 	startTotal := time.Now()
 
