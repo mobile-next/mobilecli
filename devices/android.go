@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -937,6 +939,53 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	_ = cmd.Process.Kill()
+	return nil
+}
+
+// ScreenRecord records the device screen to a local MP4 file using adb screenrecord.
+// blocks until Ctrl+C is pressed or the time limit is reached.
+func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int) error {
+	remotePath := fmt.Sprintf("/sdcard/mobilecli-rec-%d.mp4", time.Now().UnixNano())
+
+	args := []string{"-s", d.getAdbIdentifier(), "shell", "screenrecord",
+		"--time-limit", fmt.Sprintf("%d", timeLimit)}
+	args = append(args, remotePath)
+
+	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
+	cmd := exec.Command(getAdbPath(), args...)
+
+	// handle Ctrl+C: adb child gets SIGINT from process group automatically,
+	// which causes screenrecord to finalize the MP4 and exit.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	if err := cmd.Start(); err != nil {
+		signal.Stop(sigChan)
+		return fmt.Errorf("failed to start screenrecord: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case <-sigChan:
+		// adb already received SIGINT from process group, wait for it to finalize
+		<-done
+	case <-done:
+	}
+
+	signal.Stop(sigChan)
+
+	// pull the recording from device
+	utils.Verbose("Pulling recording from device...")
+	pullOutput, err := d.runAdbCommand("pull", remotePath, localOutput)
+	if err != nil {
+		return fmt.Errorf("failed to pull recording: %w\n%s", err, string(pullOutput))
+	}
+
+	// clean up device
+	_, _ = d.runAdbCommand("shell", "rm", remotePath)
+
 	return nil
 }
 
