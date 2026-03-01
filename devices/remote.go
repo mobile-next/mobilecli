@@ -270,7 +270,15 @@ func uploadFileToURL(filePath, uploadURL string) error {
 }
 
 func downloadFile(downloadURL, outputPath string) error {
-	resp, err := http.Get(downloadURL)
+	parsed, err := url.Parse(downloadURL)
+	if err != nil {
+		return fmt.Errorf("invalid download URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("download URL must use HTTPS scheme, got %q", parsed.Scheme)
+	}
+
+	resp, err := http.Get(parsed.String()) //nolint:gosec // URL is validated above
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}
