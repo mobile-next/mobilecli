@@ -44,8 +44,13 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error starting agent: %w", err))
 	}
 
-	// android and ios simulator use native tools,
-	// ios real device uses avc capture + conversion
+	// remote devices use RPC, local devices use native tools or avc capture
+	if dev, ok := targetDevice.(*devices.RemoteDevice); ok {
+		return screenRecordNative(func() error {
+			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
+		}, req)
+	}
+
 	switch {
 	case targetDevice.Platform() == "android":
 		dev, ok := targetDevice.(*devices.AndroidDevice)
