@@ -19,9 +19,6 @@ import (
 	"howett.net/plist"
 )
 
-
-
-
 // AppInfo corresponds to the structure from plutil output
 type AppInfo struct {
 	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
@@ -784,7 +781,7 @@ func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int
 		onProgress("Launching DeviceKit on simulator")
 	}
 
-	if err := s.LaunchApp(bundleID); err != nil {
+	if err := s.LaunchApp(bundleID, nil); err != nil {
 		return 0, fmt.Errorf("failed to launch DeviceKit on simulator: %w", err)
 	}
 
@@ -799,7 +796,6 @@ func (s *SimulatorDevice) ensureSimulatorDeviceKit(onProgress func(string)) (int
 	s.controlClient = client
 	return port, nil
 }
-
 
 func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
 	return s.controlClient.GetSourceElements()

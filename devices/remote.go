@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/rpc"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -125,7 +125,7 @@ func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
 	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
 }
 
-func (r *RemoteDevice) Gesture(actions []wda.TapAction) error {
+func (r *RemoteDevice) Gesture(actions []types.TapAction) error {
 	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }
 
