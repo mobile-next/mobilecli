@@ -269,7 +269,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	return nil
 }
 
-func downloadFile(downloadURL, outputPath string) error {
+func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) error {
 	parsed, err := url.Parse(downloadURL)
 	if err != nil {
 		return fmt.Errorf("invalid download URL: %w", err)
@@ -294,9 +294,38 @@ func downloadFile(downloadURL, outputPath string) error {
 	}
 	defer f.Close()
 
-	_, err = io.Copy(f, resp.Body)
+	deadline := time.NewTimer(1 * time.Minute)
+	var onProgress func(float64, float64)
+	if cb != nil {
+		onProgress = cb.OnDownloadProgress
+	}
+	pr := &progressReader{
+		reader:     resp.Body,
+		total:      resp.ContentLength,
+		onProgress: onProgress,
+		deadline:   deadline,
+	}
+	var body io.Reader = pr
+
+	start := time.Now()
+	written, err := io.Copy(f, body)
+	deadline.Stop()
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	// report final progress to ensure 100% is shown
+	if onProgress != nil && resp.ContentLength > 0 {
+		totalMB := float64(resp.ContentLength) / (1024 * 1024)
+		onProgress(totalMB, totalMB)
+	}
+
+	if cb != nil && cb.OnDownloaded != nil {
+		elapsed := time.Since(start).Seconds()
+		if elapsed > 0 {
+			writtenMB := float64(written) / (1024 * 1024)
+			cb.OnDownloaded(writtenMB / elapsed)
+		}
 	}
 
 	return nil
@@ -334,7 +363,62 @@ func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, erro
 	return nil, fmt.Errorf("uninstall app is not supported on remote devices")
 }
 
-func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <-chan struct{}) error {
+// ScreenRecordCallbacks provides optional progress callbacks for screen recording
+type ScreenRecordCallbacks struct {
+	OnRecordingEnded   func()
+	OnDownloadProgress func(downloadedMB, totalMB float64)
+	OnDownloaded       func(speedMBps float64)
+}
+
+type progressReader struct {
+	reader     io.Reader
+	total      int64
+	read       int64
+	onProgress func(readMB, totalMB float64)
+	lastReport time.Time
+	deadline   *time.Timer
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	if pr.deadline != nil {
+		// read with a deadline: fail if no data arrives within the timeout
+		type readResult struct {
+			n   int
+			err error
+		}
+		ch := make(chan readResult, 1)
+		go func() {
+			n, err := pr.reader.Read(p)
+			ch <- readResult{n, err}
+		}()
+		select {
+		case res := <-ch:
+			if res.n > 0 {
+				pr.deadline.Reset(1 * time.Minute)
+			}
+			pr.updateProgress(res.n)
+			return res.n, res.err
+		case <-pr.deadline.C:
+			return 0, fmt.Errorf("download stalled for over 1 minute")
+		}
+	}
+
+	n, err := pr.reader.Read(p)
+	pr.updateProgress(n)
+	return n, err
+}
+
+func (pr *progressReader) updateProgress(n int) {
+	pr.read += int64(n)
+	if pr.onProgress != nil && time.Since(pr.lastReport) >= 100*time.Millisecond {
+		pr.lastReport = time.Now()
+		readMB := float64(pr.read) / (1024 * 1024)
+		totalMB := float64(pr.total) / (1024 * 1024)
+		pr.onProgress(readMB, totalMB)
+	}
+}
+
+func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <-chan struct{}, cb *ScreenRecordCallbacks) error {
 	_, err := rpcCall[struct {
 		Status string `json:"status"`
 		Output string `json:"output"`
@@ -371,7 +455,9 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 	signal.Stop(sigChan)
 	close(sigChan)
 
-	fmt.Fprintln(os.Stderr, "Please wait while video is being finalized")
+	if cb != nil && cb.OnRecordingEnded != nil {
+		cb.OnRecordingEnded()
+	}
 
 	stopResult, err := rpcCall[struct {
 		Status   string `json:"status"`
@@ -383,7 +469,7 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 	}
 
 	if stopResult.URL != "" {
-		err = downloadFile(stopResult.URL, outputPath)
+		err = downloadFile(stopResult.URL, outputPath, cb)
 		if err != nil {
 			return fmt.Errorf("failed to download recording: %w", err)
 		}
