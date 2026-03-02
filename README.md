@@ -253,7 +253,7 @@ wscat -c ws://localhost:12000/ws
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Currently requires that you install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
+- Requires `devicekit-ios` installed on the device. mobilecli will detect and launch the DeviceKit XCUITest runner automatically.
 
 ## Development 👩‍💻
 
