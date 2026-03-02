@@ -11,6 +11,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
+	github.com/yapingcat/gomedia v0.0.0-20240906162731-17feea57090c
 	github.com/zalando/go-keyring v0.2.6
 	gopkg.in/ini.v1 v1.67.0
 	howett.net/plist v1.0.1

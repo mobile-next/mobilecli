@@ -73,7 +73,11 @@ func Call(token, method string, params any, result any) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to fleet server: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		conn.Close()
+	}()
 
 	req := Request{
 		JSONRPC: "2.0",

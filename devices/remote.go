@@ -3,12 +3,15 @@ package devices
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -266,6 +269,39 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	return nil
 }
 
+func downloadFile(downloadURL, outputPath string) error {
+	parsed, err := url.Parse(downloadURL)
+	if err != nil {
+		return fmt.Errorf("invalid download URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("download URL must use HTTPS scheme, got %q", parsed.Scheme)
+	}
+
+	resp, err := http.Get(parsed.String()) //nolint:gosec // URL is validated above
+	if err != nil {
+		return fmt.Errorf("HTTP GET failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("download returned status %d", resp.StatusCode)
+	}
+
+	f, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
+}
+
 func (r *RemoteDevice) InstallApp(path string) error {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -296,6 +332,64 @@ func (r *RemoteDevice) InstallApp(path string) error {
 
 func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	return nil, fmt.Errorf("uninstall app is not supported on remote devices")
+}
+
+func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <-chan struct{}) error {
+	_, err := rpcCall[struct {
+		Status string `json:"status"`
+		Output string `json:"output"`
+	}](r, "device.screenrecord", params{
+		"output":    outputPath,
+		"timeLimit": timeLimit,
+	})
+	if err != nil {
+		return err
+	}
+
+	if stopChan == nil {
+		stopChan = make(chan struct{})
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	if timeLimit > 0 {
+		timer := time.NewTimer(time.Duration(timeLimit) * time.Second)
+		select {
+		case <-sigChan:
+		case <-stopChan:
+		case <-timer.C:
+		}
+		timer.Stop()
+	} else {
+		select {
+		case <-sigChan:
+		case <-stopChan:
+		}
+	}
+
+	signal.Stop(sigChan)
+	close(sigChan)
+
+	fmt.Fprintln(os.Stderr, "Please wait while video is being finalized")
+
+	stopResult, err := rpcCall[struct {
+		Status   string `json:"status"`
+		Duration int    `json:"duration"`
+		URL      string `json:"url"`
+	}](r, "device.screenrecord.stop", params{})
+	if err != nil {
+		return err
+	}
+
+	if stopResult.URL != "" {
+		err = downloadFile(stopResult.URL, outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to download recording: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (r *RemoteDevice) StartScreenCapture(config ScreenCaptureConfig) error {

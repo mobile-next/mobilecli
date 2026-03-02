@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mobile-next/mobilecli/assets"
@@ -759,6 +761,59 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
+}
+
+// ScreenRecord records the simulator screen to a local MP4 file using xcrun simctl.
+// blocks until Ctrl+C is pressed, stopChan is closed, or the time limit is reached.
+// when stopChan is nil, behavior is unchanged (CLI usage).
+func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopChan <-chan struct{}) error {
+	if stopChan == nil {
+		stopChan = make(chan struct{})
+	}
+
+	args := []string{"simctl", "io", s.UDID, "recordVideo", "--codec=h264", "--force", localOutput}
+
+	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
+	cmd := exec.Command("xcrun", args...)
+
+	// handle Ctrl+C: send SIGINT to the simctl process so it finalizes the video
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	if err := cmd.Start(); err != nil {
+		signal.Stop(sigChan)
+		return fmt.Errorf("failed to start simctl recordVideo: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	// if time limit is set, stop recording after the specified duration
+	var timer *time.Timer
+	if timeLimit > 0 {
+		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, func() {
+			_ = cmd.Process.Signal(syscall.SIGINT)
+		})
+	}
+
+	select {
+	case <-sigChan:
+		// forward SIGINT to simctl so it finalizes the MP4
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		<-done
+	case <-stopChan:
+		_ = cmd.Process.Signal(syscall.SIGINT)
+		<-done
+	case <-done:
+	}
+
+	if timer != nil {
+		timer.Stop()
+	}
+
+	signal.Stop(sigChan)
+	close(sigChan)
+	return nil
 }
 
 type ProcessInfo struct {

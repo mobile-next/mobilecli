@@ -248,6 +248,16 @@ func StartServer(addr string, enableCORS bool) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	performShutdown := func() error {
+		// stop any active recording
+		if session, err := recorder.stop(); err == nil {
+			select {
+			case <-session.Done:
+			case <-time.After(10 * time.Second):
+				utils.Info("timeout waiting for recording to stop during shutdown")
+			}
+			recorder.clear()
+		}
+
 		if err := hook.Shutdown(); err != nil {
 			utils.Info("hook shutdown error: %v", err)
 		}
@@ -303,9 +313,12 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var result any
 	var err error
 
-	// HTTP-specific: device_boot needs extended timeout (can take up to 2 minutes)
-	if req.Method == "device_boot" {
+	// HTTP-specific: extend timeout for long-running operations
+	switch req.Method {
+	case "device.boot":
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
+	case "device.screenrecord.stop":
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(35 * time.Second))
 	}
 
 	// Use registry for all methods
@@ -619,6 +632,12 @@ type AppsInstallParams struct {
 type AppsUninstallParams struct {
 	DeviceID string `json:"deviceId"`
 	BundleID string `json:"bundleId"`
+}
+
+type ScreenRecordParams struct {
+	DeviceID  string `json:"deviceId"`
+	Output    string `json:"output"`
+	TimeLimit int    `json:"timeLimit"`
 }
 
 func handleIoButton(params json.RawMessage) (any, error) {
@@ -999,6 +1018,78 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 	}
 
 	return response.Data, nil
+}
+
+func handleScreenRecord(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, output")
+	}
+
+	var p ScreenRecordParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, output", err)
+	}
+
+	if p.Output == "" {
+		return nil, fmt.Errorf("'output' is required")
+	}
+
+	session, err := recorder.start(p.Output)
+	if err != nil {
+		return nil, err
+	}
+
+	req := commands.ScreenRecordRequest{
+		DeviceID:   p.DeviceID,
+		OutputPath: p.Output,
+		TimeLimit:  p.TimeLimit,
+		StopChan:   session.StopChan,
+	}
+
+	go func() {
+		resp := commands.ScreenRecordCommand(req)
+		session.Done <- resp
+	}()
+
+	return map[string]any{
+		"status": "recording",
+		"output": p.Output,
+	}, nil
+}
+
+// ScreenRecordStopParams represents the parameters for stopping a screen recording
+type ScreenRecordStopParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+func handleScreenRecordStop(params json.RawMessage) (any, error) {
+	session, err := recorder.stop()
+	if err != nil {
+		return nil, err
+	}
+	defer recorder.clear()
+
+	// wait for recording to finalize with a timeout
+	select {
+	case resp := <-session.Done:
+		if resp.Status == "error" {
+			return nil, fmt.Errorf("%s", resp.Error)
+		}
+		return enrichWithDuration(resp.Data, session.StartedAt), nil
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for recording to finalize")
+	}
+}
+
+func enrichWithDuration(data any, startedAt time.Time) any {
+	m, ok := data.(commands.ScreenRecordResponse)
+	if !ok {
+		return data
+	}
+	if m.Duration == "" {
+		m.Duration = time.Since(startedAt).Round(time.Millisecond).String()
+	}
+	return m
 }
 
 func handleServerInfo(params json.RawMessage) (any, error) {

@@ -35,6 +35,8 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.apps.foreground":    handleAppsForeground,
 		"device.apps.install":       handleAppsInstall,
 		"device.apps.uninstall":     handleAppsUninstall,
+		"device.screenrecord":       handleScreenRecord,
+		"device.screenrecord.stop":  handleScreenRecordStop,
 		"server.info":               handleServerInfo,
 		"server.shutdown":           handleServerShutdown,
 	}
