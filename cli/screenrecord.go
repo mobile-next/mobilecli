@@ -10,6 +10,7 @@ import (
 var (
 	screenrecordOutput    string
 	screenrecordTimeLimit int
+	screenrecordSilent    bool
 )
 
 var screenrecordCmd = &cobra.Command{
@@ -25,6 +26,7 @@ var screenrecordCmd = &cobra.Command{
 			DeviceID:   deviceId,
 			OutputPath: screenrecordOutput,
 			TimeLimit:  screenrecordTimeLimit,
+			Silent:     screenrecordSilent,
 		}
 
 		response := commands.ScreenRecordCommand(req)
@@ -42,4 +44,5 @@ func init() {
 
 	screenrecordCmd.Flags().StringVarP(&screenrecordOutput, "output", "o", "", "Output MP4 file path")
 	screenrecordCmd.Flags().IntVar(&screenrecordTimeLimit, "time-limit", 0, "Max recording duration in seconds (0 = no limit)")
+	screenrecordCmd.Flags().BoolVar(&screenrecordSilent, "silent", false, "Suppress progress output")
 }
