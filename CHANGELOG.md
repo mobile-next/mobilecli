@@ -1,3 +1,8 @@
+## [0.1.60](https://github.com/mobile-next/mobilecli/releases/tag/0.1.59) (2026-03-03)
+* General: Provide information like time-elapsed, and download performance for screen recording ([#180](https://github.com/mobile-next/mobilecli/pull/180))
+* iOS: Support mp4 screen recording across iOS real devices and iOS Simulators ([#179](https://github.com/mobile-next/mobilecli/pull/179))
+* Android: Support mp4 screen recording across Android real devices and Emulators ([#179](https://github.com/mobile-next/mobilecli/pull/179))
+
 ## [0.1.59](https://github.com/mobile-next/mobilecli/releases/tag/0.1.59) (2026-02-25)
 * General: Allocate remote Android and iOS devices on Mobile Fleet, see https://mobilenexthq.com ([#176](https://github.com/mobile-next/mobilecli/pull/176))
 
