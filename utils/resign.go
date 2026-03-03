@@ -197,7 +197,7 @@ func readBundleID(appPath string) (string, error) {
 }
 
 func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error) {
-	cmd := exec.Command("security", "cms", "-D", "-i", profilePath)
+	cmd := exec.Command("openssl", "smime", "-inform", "DER", "-verify", "-noverify", "-in", profilePath)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode profile %s: %w", profilePath, err)
