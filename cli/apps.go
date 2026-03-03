@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
@@ -19,9 +20,20 @@ var appsLaunchCmd = &cobra.Command{
 	Long:  `Launches an app on the specified device using its bundle ID (e.g., "com.example.app").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var locales []string
+		if locale != "" {
+			for _, l := range strings.Split(locale, ",") {
+				l = strings.TrimSpace(l)
+				if l != "" {
+					locales = append(locales, l)
+				}
+			}
+		}
+
 		req := commands.AppRequest{
 			DeviceID: deviceId,
 			BundleID: args[0],
+			Locales:  locales,
 		}
 
 		response := commands.LaunchAppCommand(req)
@@ -149,6 +161,7 @@ func init() {
 	appsCmd.AddCommand(appsForegroundCmd)
 
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
+	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")

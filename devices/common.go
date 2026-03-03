@@ -59,7 +59,7 @@ type ControllableDevice interface {
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
 	PressButton(key string) error
-	LaunchApp(bundleID string) error
+	LaunchApp(bundleID string, locales []string) error
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
 	ListApps() ([]InstalledAppInfo, error)

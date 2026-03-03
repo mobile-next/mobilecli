@@ -18,6 +18,9 @@ var (
 	platform   string
 	deviceType string
 
+	// for apps launch command
+	locale string
+
 	// for fleet allocate command
 	fleetType     string
 	fleetVersions []string
