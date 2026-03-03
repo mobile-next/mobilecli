@@ -11,8 +11,9 @@ import (
 
 // AppRequest represents the parameters for app-related commands
 type AppRequest struct {
-	DeviceID string `json:"deviceId"`
-	BundleID string `json:"bundleId"`
+	DeviceID string   `json:"deviceId"`
+	BundleID string   `json:"bundleId"`
+	Locales  []string `json:"locales,omitempty"`
 }
 
 // LaunchAppCommand launches an app on the specified device
@@ -26,7 +27,7 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.LaunchApp(req.BundleID)
+	err = targetDevice.LaunchApp(req.BundleID, req.Locales)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
 	}

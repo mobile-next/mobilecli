@@ -262,7 +262,23 @@ func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
 	return d.captureScreenshot(displayID)
 }
 
-func (d *AndroidDevice) LaunchApp(bundleID string) error {
+// validLocaleTag checks that a locale tag only contains safe BCP 47 characters
+var validLocaleTag = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
+
+func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
+	if len(locales) > 0 {
+		for _, l := range locales {
+			if !validLocaleTag.MatchString(l) {
+				return fmt.Errorf("invalid locale tag: %q", l)
+			}
+		}
+		localeArg := strings.Join(locales, ",")
+		output, err := d.runAdbCommand("shell", "cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
+		if err != nil {
+			return fmt.Errorf("failed to set app locales for %s: %v\nOutput: %s", bundleID, err, string(output))
+		}
+	}
+
 	output, err := d.runAdbCommand("shell", "monkey", "-p", bundleID, "-c", "android.intent.category.LAUNCHER", "1")
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %v\nOutput: %s", bundleID, err, string(output))

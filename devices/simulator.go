@@ -220,8 +220,12 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 	return nil
 }
 
-func (s SimulatorDevice) LaunchApp(bundleID string) error {
-	_, err := runSimctl("launch", s.UDID, bundleID)
+func (s SimulatorDevice) LaunchApp(bundleID string, locales []string) error {
+	args := []string{"launch", s.UDID, bundleID}
+	if len(locales) > 0 {
+		args = append(args, "-AppleLanguages", "("+strings.Join(locales, ", ")+")")
+	}
+	_, err := runSimctl(args...)
 	return err
 }
 
