@@ -357,6 +357,28 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 	return nil
 }
 
+// Shake simulates a shake gesture on Android emulators by injecting accelerometer data.
+// Only supported on emulators; real devices will return an error.
+func (d *AndroidDevice) Shake() error {
+	if d.DeviceType() != "emulator" {
+		return fmt.Errorf("shake gesture is only supported on Android emulators, not real devices")
+	}
+
+	_, err := d.runAdbCommand("emu", "sensor", "set", "acceleration", "100:100:100")
+	if err != nil {
+		return fmt.Errorf("failed to set accelerometer data: %w", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	_, err = d.runAdbCommand("emu", "sensor", "set", "acceleration", "0:0:0")
+	if err != nil {
+		return fmt.Errorf("failed to reset accelerometer data: %w", err)
+	}
+
+	return nil
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d *AndroidDevice) Gesture(actions []wda.TapAction) error {
 
