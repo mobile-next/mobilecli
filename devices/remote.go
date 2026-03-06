@@ -125,6 +125,10 @@ func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
 	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
 }
 
+func (r *RemoteDevice) Shake() error {
+	return r.fireRPC("device.io.shake", params{})
+}
+
 func (r *RemoteDevice) Gesture(actions []wda.TapAction) error {
 	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }

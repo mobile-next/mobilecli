@@ -654,6 +654,11 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
 	return s.wdaClient.Swipe(x1, y1, x2, y2)
 }
 
+func (s SimulatorDevice) Shake() error {
+	_, err := runSimctl("notify_post", s.ID(), "com.apple.UIKit.SimulatorShake")
+	return err
+}
+
 func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
