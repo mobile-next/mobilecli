@@ -28,12 +28,17 @@ const keyringUser = "mobilenexthq.com"
 
 const oauthClientID = "26epocf8ss83d7uj8trmr6ktvn"
 const oauthTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
-const oauthRedirectURI = "https://mobilenexthq.com/oauth/callback/"
+const oauthRedirectURI = "https://app.mobilenexthq.com/login/oauth/callback"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
+
+const deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
+const deviceCodeURL = "https://app.mobilenexthq.com/login/device/code"
+const deviceTokenURL = "https://app.mobilenexthq.com/login/device/token"
 
 const authHTTPTimeout = 30 * time.Second
 
 var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
+var webLogin bool
 
 type oauthTokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -59,8 +64,122 @@ var authLoginCmd = &cobra.Command{
 	Short: "Log in to your account",
 	Long:  `Opens the login page in your default browser to authenticate.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if webLogin {
+			return runAuthLoginWeb()
+		}
 		return runAuthLogin()
 	},
+}
+
+type deviceCodeResponse struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+}
+
+type deviceTokenResponse struct {
+	AccessToken string `json:"access_token,omitempty"`
+	TokenType   string `json:"token_type,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+func runAuthLoginWeb() error {
+	body, err := json.Marshal(map[string]string{
+		"client_id": deviceFlowClientID,
+		"scope":     "user devices",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("failed to request device code: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("device code endpoint returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var codeResp deviceCodeResponse
+	if err := json.Unmarshal(respBody, &codeResp); err != nil {
+		return fmt.Errorf("failed to parse device code response: %w", err)
+	}
+
+	fmt.Printf("-> Your one-time code: %s\nPlease open this URL in your browser: %s\n", codeResp.UserCode, codeResp.VerificationURI)
+
+	interval := time.Duration(codeResp.Interval) * time.Second
+	if interval == 0 {
+		interval = 5 * time.Second
+	}
+	deadline := time.Now().Add(time.Duration(codeResp.ExpiresIn) * time.Second)
+
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+
+		token, err := pollDeviceToken(codeResp.DeviceCode)
+		if err != nil {
+			return err
+		}
+		if token == "" {
+			continue
+		}
+
+		if err := keyring.Set(keyringService, keyringUser, token); err != nil {
+			return fmt.Errorf("failed to store session token: %w", err)
+		}
+
+		fmt.Println("✅ Successfully logged in")
+		return nil
+	}
+
+	return fmt.Errorf("device code expired, please try again")
+}
+
+func pollDeviceToken(deviceCode string) (string, error) {
+	body, err := json.Marshal(map[string]string{
+		"client_id":  deviceFlowClientID,
+		"device_code": deviceCode,
+		"grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return "", fmt.Errorf("failed to poll device token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var tokenResp deviceTokenResponse
+	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	switch tokenResp.Error {
+	case "authorization_pending":
+		return "", nil
+	case "expired_token":
+		return "", fmt.Errorf("device code expired")
+	case "":
+		return tokenResp.AccessToken, nil
+	default:
+		return "", fmt.Errorf("device token error: %s", tokenResp.Error)
+	}
 }
 
 func generateCSRFNonce() (string, error) {
@@ -84,7 +203,7 @@ func generatePKCE() (verifier string, challenge string, err error) {
 
 func buildLoginURL(port int, nonce, codeChallenge string) string {
 	return fmt.Sprintf(
-		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
+		"https://app.mobilenexthq.com/login/oauth/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
 		port, nonce, server.Version, codeChallenge,
 	)
 }
@@ -141,7 +260,7 @@ func runAuthLogin() error {
 	defer shutdown()
 
 	loginURL := buildLoginURL(port, nonce, codeChallenge)
-	fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
+	fmt.Printf("Your browser has been opened to visit:\n  %s\n\n", loginURL)
 
 	if err := openBrowser(loginURL); err != nil {
 		return err
@@ -280,6 +399,26 @@ func exchangeIDTokenForSession(idToken string) (string, error) {
 	return tokenResp.Token, nil
 }
 
+var authStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show authentication status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		token, err := keyring.Get(keyringService, keyringUser)
+		if errors.Is(err, keyring.ErrNotFound) || token == "" {
+			return fmt.Errorf("not logged into mobilenexthq.com")
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read keyring: %w", err)
+		}
+
+		masked := token[:4] + strings.Repeat("*", 40)
+		fmt.Printf("mobilenexthq.com\n")
+		fmt.Printf("  - You are logged in\n")
+		fmt.Printf("  - Token: %s\n", masked)
+		return nil
+	},
+}
+
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Log out of your account",
@@ -314,6 +453,7 @@ var authTokenCmd = &cobra.Command{
 }
 
 func init() {
+	authLoginCmd.Flags().BoolVar(&webLogin, "web", false, "use device code flow (no localhost callback needed)")
 	rootCmd.AddCommand(authCmd)
-	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd)
+	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authStatusCmd, authTokenCmd)
 }
