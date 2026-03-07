@@ -28,7 +28,7 @@ const keyringUser = "mobilenexthq.com"
 
 const oauthClientID = "26epocf8ss83d7uj8trmr6ktvn"
 const oauthTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
-const oauthRedirectURI = "https://mobilenexthq.com/oauth/callback/"
+const oauthRedirectURI = "https://app.mobilenexthq.com/login/oauth/callback"
 const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
 
 const deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
@@ -203,7 +203,7 @@ func generatePKCE() (verifier string, challenge string, err error) {
 
 func buildLoginURL(port int, nonce, codeChallenge string) string {
 	return fmt.Sprintf(
-		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
+		"https://app.mobilenexthq.com/login/oauth/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
 		port, nonce, server.Version, codeChallenge,
 	)
 }
@@ -260,7 +260,7 @@ func runAuthLogin() error {
 	defer shutdown()
 
 	loginURL := buildLoginURL(port, nonce, codeChallenge)
-	fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
+	fmt.Printf("Your browser has been opened to visit:\n  %s\n\n", loginURL)
 
 	if err := openBrowser(loginURL); err != nil {
 		return err
