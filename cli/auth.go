@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -405,9 +404,11 @@ var authStatusCmd = &cobra.Command{
 	Short: "Show authentication status",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := keyring.Get(keyringService, keyringUser)
-		if err != nil || token == "" {
-			fmt.Println("You are not logged into mobilenexthq.com")
-			os.Exit(1)
+		if errors.Is(err, keyring.ErrNotFound) || token == "" {
+			return fmt.Errorf("not logged into mobilenexthq.com")
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read keyring: %w", err)
 		}
 
 		masked := token[:4] + strings.Repeat("*", 40)
