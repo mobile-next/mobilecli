@@ -1,31 +1,41 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
 )
 
-const keyringService = "mobilecli"
-const keyringUser = "mobilenexthq.com"
+const (
+	keyringService = "mobilecli"
+	keyringUser    = "mobilenexthq.com"
 
-const deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
-const deviceCodeURL = "https://app.mobilenexthq.com/login/device/code"
-const deviceTokenURL = "https://app.mobilenexthq.com/login/device/token"
-const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
+	deviceCodeURL      = "https://app.mobilenexthq.com/login/device/code"
+	deviceTokenURL     = "https://app.mobilenexthq.com/login/device/token"
+	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 
-const authHTTPTimeout = 30 * time.Second
+	authHTTPTimeout = 30 * time.Second
+)
 
 var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
+
+type deviceCodeRequest struct {
+	ClientID string `json:"client_id"`
+}
+
+type deviceTokenRequest struct {
+	ClientID   string `json:"client_id"`
+	DeviceCode string `json:"device_code"`
+	GrantType  string `json:"grant_type"`
+}
 
 type deviceCodeResponse struct {
 	DeviceCode      string `json:"device_code"`
@@ -51,15 +61,15 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to your account",
-	Long:  `Opens the login page in your default browser to authenticate using a device code.`,
+	Long:  `Authenticates using a device code flow. Displays a URL and code to enter in your browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthLogin()
 	},
 }
 
 func requestDeviceCode() (*deviceCodeResponse, error) {
-	body := strings.NewReader(fmt.Sprintf(`{"client_id":"%s"}`, deviceFlowClientID))
-	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", body)
+	reqBody, _ := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
+	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
@@ -88,16 +98,20 @@ func requestDeviceCode() (*deviceCodeResponse, error) {
 
 func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 	pollInterval := time.Duration(interval) * time.Second
+	if pollInterval < 5*time.Second {
+		pollInterval = 5 * time.Second
+	}
 	deadline := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	for time.Now().Before(deadline) {
 		time.Sleep(pollInterval)
 
-		body := strings.NewReader(fmt.Sprintf(
-			`{"client_id":"%s","device_code":"%s","grant_type":"%s"}`,
-			deviceFlowClientID, deviceCode, deviceGrantType,
-		))
-		resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", body)
+		reqBody, _ := json.Marshal(deviceTokenRequest{
+			ClientID:   deviceFlowClientID,
+			DeviceCode: deviceCode,
+			GrantType:  deviceGrantType,
+		})
+		resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", bytes.NewReader(reqBody))
 		if err != nil {
 			return "", fmt.Errorf("failed to poll for token: %w", err)
 		}
@@ -117,7 +131,7 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 		case "authorization_pending":
 			continue
 		case "slow_down":
-			pollInterval += time.Second
+			pollInterval += 5 * time.Second
 			continue
 		case "expired_token":
 			return "", fmt.Errorf("device code expired, please try again")
@@ -157,25 +171,6 @@ func runAuthLogin() error {
 	return nil
 }
 
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to open browser: %w", err)
-	}
-	return nil
-}
-
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Log out of your account",
@@ -201,7 +196,10 @@ var authTokenCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := keyring.Get(keyringService, keyringUser)
 		if err != nil {
-			return fmt.Errorf("no auth token found for mobilecli")
+			if errors.Is(err, keyring.ErrNotFound) {
+				return fmt.Errorf("no auth token found for mobilecli")
+			}
+			return fmt.Errorf("failed to get auth token from keyring: %w", err)
 		}
 
 		fmt.Println(token)
