@@ -1,4 +1,10 @@
-## [0.1.60](https://github.com/mobile-next/mobilecli/releases/tag/0.1.59) (2026-03-03)
+## [0.1.61](https://github.com/mobile-next/mobilecli/releases/tag/0.1.61) (2026-03-20)
+* General: Fixed oauth login with device code flow ([#185](https://github.com/mobile-next/mobilecli/pull/185))
+* iOS: Use openssl instead of security cms for resigning ([#182](https://github.com/mobile-next/mobilecli/pull/182))
+* iOS: Support locale when launching apps ([#181](https://github.com/mobile-next/mobilecli/pull/181))
+* Android: Support locale when launching apps ([#181](https://github.com/mobile-next/mobilecli/pull/181))
+
+## [0.1.60](https://github.com/mobile-next/mobilecli/releases/tag/0.1.60) (2026-03-03)
 * General: Provide information like time-elapsed, and download performance for screen recording ([#180](https://github.com/mobile-next/mobilecli/pull/180))
 * iOS: Support mp4 screen recording across iOS real devices and iOS Simulators ([#179](https://github.com/mobile-next/mobilecli/pull/179))
 * Android: Support mp4 screen recording across Android real devices and Emulators ([#179](https://github.com/mobile-next/mobilecli/pull/179))
