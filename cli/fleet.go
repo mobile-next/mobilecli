@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -16,7 +17,10 @@ func getFleetToken() (string, error) {
 
 	token, err := keyring.Get(keyringService, keyringUser)
 	if err != nil {
-		return "", fmt.Errorf("not logged in, run 'mobilecli auth login' first")
+		if errors.Is(err, keyring.ErrNotFound) {
+			return "", fmt.Errorf("not logged in, run 'mobilecli auth login' first")
+		}
+		return "", fmt.Errorf("failed to get token from keyring: %w", err)
 	}
 
 	return token, nil

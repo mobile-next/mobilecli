@@ -1,51 +1,55 @@
 package cli
 
 import (
-	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
-	"os/exec"
-	"runtime"
-	"strings"
 	"time"
 
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
 )
 
-const keyringService = "mobilecli"
-const keyringUser = "mobilenexthq.com"
+const (
+	keyringService = "mobilecli"
+	keyringUser    = "mobilenexthq.com"
 
-const oauthClientID = "26epocf8ss83d7uj8trmr6ktvn"
-const oauthTokenURL = "https://auth.mobilenexthq.com/oauth2/token"
-const oauthRedirectURI = "https://mobilenexthq.com/oauth/callback/"
-const apiTokenURL = "https://api.mobilenexthq.com/auth/token"
+	deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
+	deviceCodeURL      = "https://app.mobilenexthq.com/login/device/code"
+	deviceTokenURL     = "https://app.mobilenexthq.com/login/device/token"
+	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 
-const authHTTPTimeout = 30 * time.Second
+	authHTTPTimeout = 30 * time.Second
+)
 
 var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
 
-type oauthTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	IDToken      string `json:"id_token"`
-	RefreshToken string `json:"refresh_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
+type deviceCodeRequest struct {
+	ClientID string `json:"client_id"`
 }
 
-type apiTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expiresAt"`
+type deviceTokenRequest struct {
+	ClientID   string `json:"client_id"`
+	DeviceCode string `json:"device_code"`
+	GrantType  string `json:"grant_type"`
+}
+
+type deviceCodeResponse struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+	Error           string `json:"error,omitempty"`
+}
+
+type deviceTokenResponse struct {
+	AccessToken string `json:"access_token,omitempty"`
+	TokenType   string `json:"token_type,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 var authCmd = &cobra.Command{
@@ -57,227 +61,114 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to your account",
-	Long:  `Opens the login page in your default browser to authenticate.`,
+	Long:  `Authenticates using a device code flow. Displays a URL and code to enter in your browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthLogin()
 	},
 }
 
-func generateCSRFNonce() (string, error) {
-	nonceBytes := make([]byte, 16)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		return "", fmt.Errorf("failed to generate csrf nonce: %w", err)
-	}
-	return hex.EncodeToString(nonceBytes), nil
-}
-
-func generatePKCE() (verifier string, challenge string, err error) {
-	verifierBytes := make([]byte, 32)
-	if _, err := rand.Read(verifierBytes); err != nil {
-		return "", "", fmt.Errorf("failed to generate pkce verifier: %w", err)
-	}
-	verifier = base64.RawURLEncoding.EncodeToString(verifierBytes)
-	hash := sha256.Sum256([]byte(verifier))
-	challenge = base64.RawURLEncoding.EncodeToString(hash[:])
-	return verifier, challenge, nil
-}
-
-func buildLoginURL(port int, nonce, codeChallenge string) string {
-	return fmt.Sprintf(
-		"https://mobilenexthq.com/oauth/login/?redirectUri=http://localhost:%d/oauth/callback&csrf=%s&agent=mobilecli&agentVersion=%s&code_challenge=%s&code_challenge_method=S256",
-		port, nonce, server.Version, codeChallenge,
-	)
-}
-
-func startCallbackServer(nonce, codeVerifier string) (port int, result <-chan error, shutdown func(), err error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func requestDeviceCode() (*deviceCodeResponse, error) {
+	reqBody, _ := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
+	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", bytes.NewReader(reqBody))
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to start callback server: %w", err)
-	}
-	port = listener.Addr().(*net.TCPAddr).Port
-
-	callbackErr := make(chan error, 1)
-	mux := http.NewServeMux()
-	srv := &http.Server{Handler: mux}
-
-	mux.HandleFunc("/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
-		err := handleOAuthCallback(r, nonce, codeVerifier)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintln(w, "Login failed")
-		} else {
-			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprintln(w, "<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>")
-		}
-		callbackErr <- err
-		go srv.Shutdown(context.Background())
-	})
-
-	go func() {
-		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			callbackErr <- fmt.Errorf("callback server error: %w", err)
-		}
-	}()
-
-	shutdown = func() { srv.Shutdown(context.Background()) }
-	return port, callbackErr, shutdown, nil
-}
-
-func runAuthLogin() error {
-	nonce, err := generateCSRFNonce()
-	if err != nil {
-		return err
-	}
-
-	codeVerifier, codeChallenge, err := generatePKCE()
-	if err != nil {
-		return err
-	}
-
-	port, result, shutdown, err := startCallbackServer(nonce, codeVerifier)
-	if err != nil {
-		return err
-	}
-	defer shutdown()
-
-	loginURL := buildLoginURL(port, nonce, codeChallenge)
-	fmt.Printf("Your browser has been opened to visit:\n\n\t%s\n\n", loginURL)
-
-	if err := openBrowser(loginURL); err != nil {
-		return err
-	}
-
-	if err := <-result; err != nil {
-		return err
-	}
-
-	fmt.Println("✅ Successfully logged in")
-	return nil
-}
-
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to open browser: %w", err)
-	}
-	return nil
-}
-
-func handleOAuthCallback(r *http.Request, nonce, codeVerifier string) error {
-	stateParam := r.URL.Query().Get("state")
-	if stateParam == "" {
-		return fmt.Errorf("missing state parameter")
-	}
-
-	stateJSON, err := base64.StdEncoding.DecodeString(stateParam)
-	if err != nil {
-		return fmt.Errorf("invalid state parameter: %w", err)
-	}
-
-	var state struct {
-		CSRF string `json:"csrf"`
-	}
-	if err := json.Unmarshal(stateJSON, &state); err != nil {
-		return fmt.Errorf("invalid state parameter: %w", err)
-	}
-
-	if state.CSRF != nonce {
-		return fmt.Errorf("csrf token mismatch")
-	}
-
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		return fmt.Errorf("missing authorization code")
-	}
-
-	tokens, err := exchangeAuthCode(code, codeVerifier)
-	if err != nil {
-		return fmt.Errorf("oauth token exchange failed: %w", err)
-	}
-
-	sessionToken, err := exchangeIDTokenForSession(tokens.IDToken)
-	if err != nil {
-		return fmt.Errorf("session token exchange failed: %w", err)
-	}
-
-	if err := keyring.Set(keyringService, keyringUser, sessionToken); err != nil {
-		return fmt.Errorf("failed to store session token: %w", err)
-	}
-
-	return nil
-}
-
-func exchangeAuthCode(code, codeVerifier string) (*oauthTokenResponse, error) {
-	params := url.Values{
-		"grant_type":    {"authorization_code"},
-		"client_id":     {oauthClientID},
-		"code":          {code},
-		"redirect_uri":  {oauthRedirectURI},
-		"code_verifier": {codeVerifier},
-	}
-	resp, err := authHTTPClient.PostForm(oauthTokenURL, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to request tokens: %w", err)
+		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("device code endpoint returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var tokens oauthTokenResponse
-	if err := json.Unmarshal(body, &tokens); err != nil {
-		return nil, fmt.Errorf("failed to parse token response: %w", err)
+	var result deviceCodeResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse device code response: %w", err)
 	}
 
-	return &tokens, nil
+	if result.Error != "" {
+		return nil, fmt.Errorf("device code error: %s", result.Error)
+	}
+
+	return &result, nil
 }
 
-func exchangeIDTokenForSession(idToken string) (string, error) {
-	req, err := http.NewRequest("POST", apiTokenURL, strings.NewReader("{}"))
+func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
+	pollInterval := time.Duration(interval) * time.Second
+	if pollInterval < 5*time.Second {
+		pollInterval = 5 * time.Second
+	}
+	deadline := time.Now().Add(time.Duration(expiresIn) * time.Second)
+
+	for time.Now().Before(deadline) {
+		time.Sleep(pollInterval)
+
+		reqBody, _ := json.Marshal(deviceTokenRequest{
+			ClientID:   deviceFlowClientID,
+			DeviceCode: deviceCode,
+			GrantType:  deviceGrantType,
+		})
+		resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", bytes.NewReader(reqBody))
+		if err != nil {
+			return "", fmt.Errorf("failed to poll for token: %w", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return "", fmt.Errorf("failed to read response: %w", err)
+		}
+
+		var tokenResp deviceTokenResponse
+		if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+			return "", fmt.Errorf("failed to parse token response: %w", err)
+		}
+
+		switch tokenResp.Error {
+		case "authorization_pending":
+			continue
+		case "slow_down":
+			pollInterval += 5 * time.Second
+			continue
+		case "expired_token":
+			return "", fmt.Errorf("device code expired, please try again")
+		case "":
+			if tokenResp.AccessToken != "" {
+				return tokenResp.AccessToken, nil
+			}
+			return "", fmt.Errorf("unexpected empty token response")
+		default:
+			return "", fmt.Errorf("token error: %s", tokenResp.Error)
+		}
+	}
+
+	return "", fmt.Errorf("device code expired, please try again")
+}
+
+func runAuthLogin() error {
+	codeResp, err := requestDeviceCode()
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+idToken)
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := authHTTPClient.Do(req)
+	fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
+	fmt.Printf("And enter the code: %s\n\n", codeResp.UserCode)
+	fmt.Println("Waiting for authorization...")
+
+	token, err := pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
 	if err != nil {
-		return "", fmt.Errorf("failed to request session token: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("auth token endpoint returned %d: %s", resp.StatusCode, string(body))
+	if err := keyring.Set(keyringService, keyringUser, token); err != nil {
+		return fmt.Errorf("failed to store token: %w", err)
 	}
 
-	var tokenResp apiTokenResponse
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("failed to parse session token response: %w", err)
-	}
-
-	return tokenResp.Token, nil
+	fmt.Println("Successfully logged in")
+	return nil
 }
 
 var authLogoutCmd = &cobra.Command{
@@ -305,7 +196,10 @@ var authTokenCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := keyring.Get(keyringService, keyringUser)
 		if err != nil {
-			return fmt.Errorf("no oauth token found for mobilecli")
+			if errors.Is(err, keyring.ErrNotFound) {
+				return fmt.Errorf("no auth token found for mobilecli")
+			}
+			return fmt.Errorf("failed to get auth token from keyring: %w", err)
 		}
 
 		fmt.Println(token)
