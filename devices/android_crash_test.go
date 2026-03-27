@@ -132,6 +132,39 @@ func TestLogWithNoCrashesReturnsEmptyArray(t *testing.T) {
 	assert.Empty(t, crashes)
 }
 
+func TestJavaCrashWithInnerClassFrame(t *testing.T) {
+	log := `2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: FATAL EXCEPTION: main
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: java.lang.NullPointerException
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at com.example.myapp.MainActivity$1.onClick(MainActivity.java:42)`
+
+	crashes := ParseAndroidCrashLog(log)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "com.example.myapp.MainActivity$1", crashes[0].ProcessName)
+}
+
+func TestJavaCrashWithLambdaFrame(t *testing.T) {
+	log := `2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: FATAL EXCEPTION: main
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: java.lang.NullPointerException
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at com.example.myapp.$$ExternalSyntheticLambda0.run(Unknown Source:4)`
+
+	crashes := ParseAndroidCrashLog(log)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "com.example.myapp.$$ExternalSyntheticLambda0", crashes[0].ProcessName)
+}
+
+func TestJavaCrashWithConstructorFrame(t *testing.T) {
+	log := `2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: FATAL EXCEPTION: main
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: java.lang.NullPointerException
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at com.example.myapp.MyService.<init>(MyService.java:15)`
+
+	crashes := ParseAndroidCrashLog(log)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "com.example.myapp.MyService", crashes[0].ProcessName)
+}
+
 func TestExtractedNativeCrashDoesNotIncludeJavaCrash(t *testing.T) {
 	content, err := ExtractAndroidCrash(sampleCrashLog, "2026-03-02_10:58:32.108_1300")
 

@@ -184,19 +184,40 @@ func parseJavaCrash(lines []string, start int) (*CrashReport, int) {
 	}, i
 }
 
-var stackFrameRegex = regexp.MustCompile(`at\s+([a-zA-Z0-9_.]+)\.[a-zA-Z0-9_]+\(`)
-
 func extractProcessFromStack(lines []string, start int, pid string) string {
 	for i := start + 1; i < len(lines); i++ {
 		parsed := parseLogcatLine(lines[i])
 		if parsed == nil || parsed.PID != pid || parsed.Tag != "AndroidRuntime" {
 			break
 		}
-		if m := stackFrameRegex.FindStringSubmatch(parsed.Message); m != nil {
-			return m[1]
+		if name := parseStackFrameOwner(parsed.Message); name != "" {
+			return name
 		}
 	}
 	return ""
+}
+
+// parseStackFrameOwner extracts the fully qualified class name from a stack
+// frame like "at com.example.Foo$1.onClick(Foo.java:42)". it finds the last
+// dot before the opening paren to split class from method.
+func parseStackFrameOwner(message string) string {
+	msg := strings.TrimSpace(message)
+	if !strings.HasPrefix(msg, "at ") {
+		return ""
+	}
+	fqn := msg[3:]
+
+	parenIdx := strings.Index(fqn, "(")
+	if parenIdx < 0 {
+		return ""
+	}
+	fqn = fqn[:parenIdx]
+
+	dotIdx := strings.LastIndex(fqn, ".")
+	if dotIdx < 1 {
+		return ""
+	}
+	return fqn[:dotIdx]
 }
 
 // ExtractAndroidCrash finds a specific crash by ID from the logcat output
