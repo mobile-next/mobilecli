@@ -1019,28 +1019,23 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.wdaClient.SetOrientation(orientation)
 }
 
+var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
-	dir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+	dir := diagnosticReportsDir
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read diagnostic reports: %w", err)
 	}
 
-	var crashes []CrashReport
+	var filenames []string
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		report := ParseCrashFilename(e.Name())
-		if report != nil {
-			crashes = append(crashes, *report)
+		if !e.IsDir() {
+			filenames = append(filenames, e.Name())
 		}
 	}
 
-	if crashes == nil {
-		crashes = []CrashReport{}
-	}
-	return crashes, nil
+	return ParseCrashReports(filenames), nil
 }
 
 func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
@@ -1048,6 +1043,5 @@ func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid crash id: %s", id)
 	}
 
-	dir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
-	return os.ReadFile(filepath.Join(dir, id))
+	return os.ReadFile(filepath.Join(diagnosticReportsDir, id))
 }

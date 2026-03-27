@@ -1631,24 +1631,14 @@ func (d *IOSDevice) ListCrashReports() ([]CrashReport, error) {
 		return nil, fmt.Errorf("failed to list crash reports: %w", err)
 	}
 
-	var crashes []CrashReport
-	for _, f := range files {
-		if f == "." || f == ".." {
-			continue
-		}
-		report := ParseCrashFilename(f)
-		if report != nil {
-			crashes = append(crashes, *report)
-		}
-	}
-
-	if crashes == nil {
-		crashes = []CrashReport{}
-	}
-	return crashes, nil
+	return ParseCrashReports(files), nil
 }
 
 func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
+	if strings.Contains(id, "/") || strings.Contains(id, "..") {
+		return nil, fmt.Errorf("invalid crash id: %s", id)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device: %w", err)

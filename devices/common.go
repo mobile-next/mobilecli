@@ -17,22 +17,43 @@ type CrashReport struct {
 	ID          string `json:"id"`
 }
 
+func ParseCrashReports(filenames []string) []CrashReport {
+	var crashes []CrashReport
+	for _, f := range filenames {
+		if f == "." || f == ".." {
+			continue
+		}
+		report := ParseCrashFilename(f)
+		if report != nil {
+			crashes = append(crashes, *report)
+		}
+	}
+	if crashes == nil {
+		crashes = []CrashReport{}
+	}
+	return crashes
+}
+
 func ParseCrashFilename(filename string) *CrashReport {
 	if !strings.HasSuffix(filename, ".ips") {
 		return nil
 	}
 
 	name := strings.TrimSuffix(filename, ".ips")
-	if len(name) < 20 {
+
+	// timestamp format: YYYY-MM-DD-HHMMSS (17 chars) + leading dash = 18 chars minimum suffix
+	// minimum total: at least 1 char process name + dash + 17 char timestamp = 19
+	const timestampLen = 17
+	minLen := 1 + 1 + timestampLen // processName + "-" + timestamp
+	if len(name) < minLen {
 		return nil
 	}
 
-	// find the last occurrence of a date pattern (YYYY-MM-DD-HHMMSS)
 	idx := -1
-	for i := len(name) - 19; i >= 0; i-- {
-		if name[i] == '-' && i+18 < len(name) {
+	for i := len(name) - (timestampLen + 1); i >= 0; i-- {
+		if name[i] == '-' && i+timestampLen < len(name) {
 			candidate := name[i+1:]
-			if len(candidate) >= 17 && candidate[4] == '-' && candidate[7] == '-' && candidate[10] == '-' {
+			if len(candidate) >= timestampLen && candidate[4] == '-' && candidate[7] == '-' && candidate[10] == '-' {
 				idx = i
 				break
 			}
