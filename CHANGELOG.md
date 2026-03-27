@@ -1,3 +1,9 @@
+## [0.1.62](https://github.com/mobile-next/mobilecli/releases/tag/0.1.62) (2026-03-27)
+* General: List and fetch crash reports via CLI and JSON-RPC ([#187](https://github.com/mobile-next/mobilecli/pull/187))
+* iOS: Fetch crash reports from real devices via Apple crashreport service ([#187](https://github.com/mobile-next/mobilecli/pull/187))
+* iOS: Read .ips crash reports from simulator DiagnosticReports directory ([#187](https://github.com/mobile-next/mobilecli/pull/187))
+* Android: Parse native and Java crash reports from adb logcat crash buffer ([#187](https://github.com/mobile-next/mobilecli/pull/187))
+
 ## [0.1.61](https://github.com/mobile-next/mobilecli/releases/tag/0.1.61) (2026-03-20)
 * General: Fixed oauth login with device code flow ([#185](https://github.com/mobile-next/mobilecli/pull/185))
 * iOS: Use openssl instead of security cms for resigning ([#182](https://github.com/mobile-next/mobilecli/pull/182))
