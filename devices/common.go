@@ -3,7 +3,7 @@ package devices
 import (
 	"fmt"
 	"os"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -34,42 +34,17 @@ func ParseCrashReports(filenames []string) []CrashReport {
 	return crashes
 }
 
+var crashFilenameRegex = regexp.MustCompile(`^(.+)-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})\.ips$`)
+
 func ParseCrashFilename(filename string) *CrashReport {
-	if !strings.HasSuffix(filename, ".ips") {
+	m := crashFilenameRegex.FindStringSubmatch(filename)
+	if m == nil {
 		return nil
 	}
-
-	name := strings.TrimSuffix(filename, ".ips")
-
-	// timestamp format: YYYY-MM-DD-HHMMSS (17 chars) + leading dash = 18 chars minimum suffix
-	// minimum total: at least 1 char process name + dash + 17 char timestamp = 19
-	const timestampLen = 17
-	minLen := 1 + 1 + timestampLen // processName + "-" + timestamp
-	if len(name) < minLen {
-		return nil
-	}
-
-	idx := -1
-	for i := len(name) - (timestampLen + 1); i >= 0; i-- {
-		if name[i] == '-' && i+timestampLen < len(name) {
-			candidate := name[i+1:]
-			if len(candidate) >= timestampLen && candidate[4] == '-' && candidate[7] == '-' && candidate[10] == '-' {
-				idx = i
-				break
-			}
-		}
-	}
-
-	if idx < 0 {
-		return &CrashReport{
-			ProcessName: name,
-			ID:          filename,
-		}
-	}
-
+	timestamp := fmt.Sprintf("%s %s:%s:%s", m[2], m[3], m[4], m[5])
 	return &CrashReport{
-		ProcessName: name[:idx],
-		Timestamp:   name[idx+1:],
+		ProcessName: m[1],
+		Timestamp:   timestamp,
 		ID:          filename,
 	}
 }
