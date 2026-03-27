@@ -36,6 +36,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **Crash Reports**: List and fetch crash reports from iOS and Android devices
 
 ### 🎯 Platform Support
 
@@ -220,10 +221,38 @@ Example output for `apps foreground`:
 }
 ```
 
+### Crash Reports 💥
+
+```bash
+# List crash reports from a device
+mobilecli crashes list --device <device-id>
+
+# Get a specific crash report by ID
+mobilecli crashes get <crash-id> --device <device-id>
+```
+
+Example output for `crashes list`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "processName": "ShareExtension",
+      "timestamp": "2026-01-24-195529",
+      "id": "ShareExtension-2026-01-24-195529.ips"
+    }
+  ]
+}
+```
+
+**Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
+
 ## HTTP API 🔌
 
 ***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
 use mobilecli as a webserver, so it can cache and keep tunnels alive, speeding up your interactions with the mobile device or simulator/emulator.
+
+For the full list of available JSON-RPC methods and their parameters, see the [OpenRPC specification](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md).
 
 ```bash
 # Start the server (default port 12000)
