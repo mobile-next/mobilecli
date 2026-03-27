@@ -39,11 +39,15 @@ func makeAndroidCrashID(date string, time string, pid string) string {
 	return fmt.Sprintf("%s_%s_%s", date, time, pid)
 }
 
-// ParseAndroidCrashLog parses the output of `adb logcat -b crash -d` and returns
-// a list of crash reports. It handles both native (tombstone) and java crashes.
-func ParseAndroidCrashLog(log string) []CrashReport {
+type parsedCrash struct {
+	report   CrashReport
+	startIdx int
+	endIdx   int
+}
+
+func parseAllCrashes(log string) []parsedCrash {
 	lines := strings.Split(log, "\n")
-	var crashes []CrashReport
+	var crashes []parsedCrash
 
 	i := 0
 	for i < len(lines) {
@@ -53,29 +57,34 @@ func ParseAndroidCrashLog(log string) []CrashReport {
 			continue
 		}
 
+		var crash *CrashReport
+		var end int
+
 		if isNativeCrashStart(parsed) {
-			crash, end := parseNativeCrash(lines, i)
-			if crash != nil {
-				crashes = append(crashes, *crash)
-			}
-			i = end
+			crash, end = parseNativeCrash(lines, i)
+		} else if isJavaCrashStart(parsed) {
+			crash, end = parseJavaCrash(lines, i)
+		} else {
+			i++
 			continue
 		}
 
-		if isJavaCrashStart(parsed) {
-			crash, end := parseJavaCrash(lines, i)
-			if crash != nil {
-				crashes = append(crashes, *crash)
-			}
-			i = end
-			continue
+		if crash != nil {
+			crashes = append(crashes, parsedCrash{report: *crash, startIdx: i, endIdx: end})
 		}
-
-		i++
+		i = end
 	}
 
-	if crashes == nil {
-		crashes = []CrashReport{}
+	return crashes
+}
+
+// ParseAndroidCrashLog parses the output of `adb logcat -b crash -d -v year`
+// and returns a list of crash reports
+func ParseAndroidCrashLog(log string) []CrashReport {
+	parsed := parseAllCrashes(log)
+	crashes := make([]CrashReport, len(parsed))
+	for i, p := range parsed {
+		crashes[i] = p.report
 	}
 	return crashes
 }
@@ -195,33 +204,10 @@ func extractProcessFromStack(lines []string, start int, pid string) string {
 func ExtractAndroidCrash(log string, id string) (string, error) {
 	lines := strings.Split(log, "\n")
 
-	for i := 0; i < len(lines); i++ {
-		parsed := parseLogcatLine(lines[i])
-		if parsed == nil {
-			continue
+	for _, c := range parseAllCrashes(log) {
+		if c.report.ID == id {
+			return strings.Join(lines[c.startIdx:c.endIdx], "\n"), nil
 		}
-
-		var crash *CrashReport
-		var end int
-
-		if isNativeCrashStart(parsed) {
-			crash, end = parseNativeCrash(lines, i)
-		} else if isJavaCrashStart(parsed) {
-			crash, end = parseJavaCrash(lines, i)
-		} else {
-			continue
-		}
-
-		if crash != nil && crash.ID == id {
-			// collect all raw lines for this crash
-			var result []string
-			for j := i; j < end; j++ {
-				result = append(result, lines[j])
-			}
-			return strings.Join(result, "\n"), nil
-		}
-
-		i = end - 1
 	}
 
 	return "", fmt.Errorf("crash %s not found", id)
