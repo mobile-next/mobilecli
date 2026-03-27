@@ -1317,10 +1317,30 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	return nil
 }
 
+func (d *AndroidDevice) getCrashLog() (string, error) {
+	output, err := d.runAdbCommand("logcat", "-b", "crash", "-d", "-v", "year")
+	if err != nil {
+		return "", fmt.Errorf("failed to read crash log: %w", err)
+	}
+	return string(output), nil
+}
+
 func (d *AndroidDevice) ListCrashReports() ([]CrashReport, error) {
-	return nil, fmt.Errorf("crash reports not supported for android devices")
+	log, err := d.getCrashLog()
+	if err != nil {
+		return nil, err
+	}
+	return ParseAndroidCrashLog(log), nil
 }
 
 func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
-	return nil, fmt.Errorf("crash reports not supported for android devices")
+	log, err := d.getCrashLog()
+	if err != nil {
+		return nil, err
+	}
+	content, err := ExtractAndroidCrash(log, id)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(content), nil
 }
