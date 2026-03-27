@@ -1092,6 +1092,51 @@ func enrichWithDuration(data any, startedAt time.Time) any {
 	return m
 }
 
+type CrashesListParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type CrashesGetParams struct {
+	DeviceID string `json:"deviceId"`
+	ID       string `json:"id"`
+}
+
+func handleCrashesList(params json.RawMessage) (any, error) {
+	var p CrashesListParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId (optional)", err)
+		}
+	}
+
+	response := commands.CrashesListCommand(p.DeviceID)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleCrashesGet(params json.RawMessage) (any, error) {
+	var p CrashesGetParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId (optional), id (required)", err)
+		}
+	}
+
+	if p.ID == "" {
+		return nil, fmt.Errorf("'id' is required")
+	}
+
+	response := commands.CrashesGetCommand(p.DeviceID, p.ID)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
 func handleServerInfo(params json.RawMessage) (any, error) {
 	return map[string]string{
 		"name":    "mobilecli",

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/crashreport"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"github.com/danielpaulus/go-ios/ios/instruments"
@@ -1616,4 +1618,47 @@ func findAvailablePortInRange(start, end int) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("no available ports found in range %d-%d", start, end)
+}
+
+func (d *IOSDevice) ListCrashReports() ([]CrashReport, error) {
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device: %w", err)
+	}
+
+	files, err := crashreport.ListReports(device, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list crash reports: %w", err)
+	}
+
+	return ParseCrashReports(files), nil
+}
+
+func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
+	if strings.Contains(id, "/") || strings.Contains(id, "..") {
+		return nil, fmt.Errorf("invalid crash id: %s", id)
+	}
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "mobilecli-crash-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	err = crashreport.DownloadReports(device, id, tmpDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download crash report: %w", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, id))
+	if err != nil {
+		return nil, fmt.Errorf("crash %s not found: %w", id, err)
+	}
+
+	return content, nil
 }

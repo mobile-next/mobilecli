@@ -91,6 +91,13 @@ INPUT/OUTPUT:
   # Send text input
   mobilecli io text --device <device-id> "Hello World"
 
+CRASH REPORTS:
+  # List crash reports from a device
+  mobilecli crashes list --device <device-id>
+
+  # Get a specific crash report
+  mobilecli crashes get --device <device-id> <crash-id>
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com

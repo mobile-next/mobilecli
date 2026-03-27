@@ -3,12 +3,51 @@ package devices
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+type CrashReport struct {
+	ProcessName string `json:"processName"`
+	Timestamp   string `json:"timestamp"`
+	ID          string `json:"id"`
+}
+
+func ParseCrashReports(filenames []string) []CrashReport {
+	var crashes []CrashReport
+	for _, f := range filenames {
+		if f == "." || f == ".." {
+			continue
+		}
+		report := ParseCrashFilename(f)
+		if report != nil {
+			crashes = append(crashes, *report)
+		}
+	}
+	if crashes == nil {
+		crashes = []CrashReport{}
+	}
+	return crashes
+}
+
+var crashFilenameRegex = regexp.MustCompile(`^(.+)-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})\.ips$`)
+
+func ParseCrashFilename(filename string) *CrashReport {
+	m := crashFilenameRegex.FindStringSubmatch(filename)
+	if m == nil {
+		return nil
+	}
+	timestamp := fmt.Sprintf("%s %s:%s:%s", m[2], m[3], m[4], m[5])
+	return &CrashReport{
+		ProcessName: m[1],
+		Timestamp:   timestamp,
+		ID:          filename,
+	}
+}
 
 const (
 	// default streaming quality (1-100)
@@ -72,6 +111,8 @@ type ControllableDevice interface {
 	DumpSourceRaw() (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
+	ListCrashReports() ([]CrashReport, error)
+	GetCrashReport(id string) ([]byte, error)
 }
 
 // GetAllControllableDevices aggregates all known devices with options
