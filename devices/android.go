@@ -1316,3 +1316,11 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 
 	return nil
 }
+
+func (d *AndroidDevice) ListCrashReports() ([]CrashReport, error) {
+	return nil, fmt.Errorf("crash reports not supported for android devices")
+}
+
+func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
+	return nil, fmt.Errorf("crash reports not supported for android devices")
+}

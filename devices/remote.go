@@ -485,3 +485,18 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 func (r *RemoteDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return fmt.Errorf("screen capture is not supported on remote devices")
 }
+
+func (r *RemoteDevice) ListCrashReports() ([]CrashReport, error) {
+	return rpcCall[[]CrashReport](r, "device.crashes.list", params{})
+}
+
+func (r *RemoteDevice) GetCrashReport(id string) ([]byte, error) {
+	type crashGetResult struct {
+		Content string `json:"content"`
+	}
+	result, err := rpcCall[crashGetResult](r, "device.crashes.get", params{"id": id})
+	if err != nil {
+		return nil, err
+	}
+	return []byte(result.Content), nil
+}

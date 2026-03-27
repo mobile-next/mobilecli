@@ -3,12 +3,55 @@ package devices
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+type CrashReport struct {
+	ProcessName string `json:"processName"`
+	Timestamp   string `json:"timestamp"`
+	ID          string `json:"id"`
+}
+
+func ParseCrashFilename(filename string) *CrashReport {
+	if !strings.HasSuffix(filename, ".ips") {
+		return nil
+	}
+
+	name := strings.TrimSuffix(filename, ".ips")
+	if len(name) < 20 {
+		return nil
+	}
+
+	// find the last occurrence of a date pattern (YYYY-MM-DD-HHMMSS)
+	idx := -1
+	for i := len(name) - 19; i >= 0; i-- {
+		if name[i] == '-' && i+18 < len(name) {
+			candidate := name[i+1:]
+			if len(candidate) >= 17 && candidate[4] == '-' && candidate[7] == '-' && candidate[10] == '-' {
+				idx = i
+				break
+			}
+		}
+	}
+
+	if idx < 0 {
+		return &CrashReport{
+			ProcessName: name,
+			ID:          filename,
+		}
+	}
+
+	return &CrashReport{
+		ProcessName: name[:idx],
+		Timestamp:   name[idx+1:],
+		ID:          filename,
+	}
+}
 
 const (
 	// default streaming quality (1-100)
@@ -72,6 +115,8 @@ type ControllableDevice interface {
 	DumpSourceRaw() (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
+	ListCrashReports() ([]CrashReport, error)
+	GetCrashReport(id string) ([]byte, error)
 }
 
 // GetAllControllableDevices aggregates all known devices with options

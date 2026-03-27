@@ -1018,3 +1018,36 @@ func (s SimulatorDevice) GetOrientation() (string, error) {
 func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.wdaClient.SetOrientation(orientation)
 }
+
+func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
+	dir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read diagnostic reports: %w", err)
+	}
+
+	var crashes []CrashReport
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		report := ParseCrashFilename(e.Name())
+		if report != nil {
+			crashes = append(crashes, *report)
+		}
+	}
+
+	if crashes == nil {
+		crashes = []CrashReport{}
+	}
+	return crashes, nil
+}
+
+func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
+	if strings.Contains(id, "/") || strings.Contains(id, "..") {
+		return nil, fmt.Errorf("invalid crash id: %s", id)
+	}
+
+	dir := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+	return os.ReadFile(filepath.Join(dir, id))
+}
