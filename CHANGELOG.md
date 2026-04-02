@@ -1,3 +1,6 @@
+## [0.1.64](https://github.com/mobile-next/mobilecli/releases/tag/0.1.64) (2026-04-02)
+* General: Add `--wait` and `--timeout` flags to `fleet allocate` for polling until device is ready ([#189](https://github.com/mobile-next/mobilecli/pull/189))
+
 ## [0.1.63](https://github.com/mobile-next/mobilecli/releases/tag/0.1.63) (2026-04-02)
 * General: Handle provider field as object in remote devices response ([#188](https://github.com/mobile-next/mobilecli/pull/188))
 
