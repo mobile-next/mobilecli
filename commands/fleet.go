@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/rpc"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // DeviceFilter represents a single filter criterion for device selection.
@@ -46,15 +48,24 @@ func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
 
 // fetches devices from the remote fleet server via devices.list JSON-RPC
 func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
+	var raw any
+	if err := rpc.Call(token, "devices.list", nil, &raw); err != nil {
+		return nil, err
+	}
+
+	if rawJSON, err := json.Marshal(raw); err == nil {
+		utils.Verbose("remote devices response: %s", string(rawJSON))
+	}
+
 	var result struct {
 		Devices []devices.DeviceInfo `json:"devices"`
 	}
-	if err := rpc.Call(token, "devices.list", nil, &result); err != nil {
+	if err := rpc.Remarshal(raw, &result); err != nil {
 		return nil, err
 	}
 
 	for i := range result.Devices {
-		result.Devices[i].Provider = "mobilefleet"
+		result.Devices[i].SetProvider("mobilefleet")
 	}
 
 	return result.Devices, nil

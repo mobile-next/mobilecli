@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -211,15 +212,42 @@ type DeviceListOptions struct {
 	DeviceType     string
 }
 
+type DeviceProvider struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId,omitempty"`
+}
+
 type DeviceInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Platform string `json:"platform"`
-	Type     string `json:"type"`
-	Version  string `json:"version"`
-	State    string `json:"state"`
-	Model    string `json:"model"`
-	Provider string `json:"provider,omitempty"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Platform string          `json:"platform"`
+	Type     string          `json:"type"`
+	Version  string          `json:"version"`
+	State    string          `json:"state"`
+	Model    string          `json:"model"`
+	Provider json.RawMessage `json:"provider,omitempty"`
+}
+
+func (d *DeviceInfo) ProviderType() string {
+	if len(d.Provider) == 0 {
+		return ""
+	}
+	// handle string value
+	var s string
+	if json.Unmarshal(d.Provider, &s) == nil {
+		return s
+	}
+	// handle object value
+	var p DeviceProvider
+	if json.Unmarshal(d.Provider, &p) == nil {
+		return p.Type
+	}
+	return ""
+}
+
+func (d *DeviceInfo) SetProvider(providerType string) {
+	data, _ := json.Marshal(DeviceProvider{Type: providerType})
+	d.Provider = data
 }
 
 type ScreenSize struct {
