@@ -1,3 +1,6 @@
+## [0.1.63](https://github.com/mobile-next/mobilecli/releases/tag/0.1.63) (2026-04-02)
+* General: Handle provider field as object in remote devices response ([#188](https://github.com/mobile-next/mobilecli/pull/188))
+
 ## [0.1.62](https://github.com/mobile-next/mobilecli/releases/tag/0.1.62) (2026-03-27)
 * General: List and fetch crash reports via CLI and JSON-RPC ([#187](https://github.com/mobile-next/mobilecli/pull/187))
 * iOS: Fetch crash reports from real devices via Apple crashreport service ([#187](https://github.com/mobile-next/mobilecli/pull/187))
