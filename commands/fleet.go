@@ -25,13 +25,19 @@ type FleetAllocateDevice struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Platform string `json:"platform"`
-	Status   string `json:"status"`
+	Status   string `json:"state"`
 	Model    string `json:"model"`
 }
 
 type FleetAllocateResponse struct {
-	SessionID string              `json:"sessionId"`
-	Device    FleetAllocateDevice `json:"device"`
+	SessionID   string              `json:"sessionId"`
+	Device      FleetAllocateDevice `json:"device"`
+	ProvisionID string              `json:"provisionId,omitempty"`
+	State       string              `json:"state,omitempty"`
+}
+
+func (r FleetAllocateResponse) IsAllocating() bool {
+	return r.State == "allocating" || r.Device.Status == "allocating"
 }
 
 func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
@@ -69,6 +75,30 @@ func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	}
 
 	return result.Devices, nil
+}
+
+// finds a device by session ID using devices.list and returns its info
+func FleetGetDeviceBySession(token, sessionID string) (*devices.DeviceInfo, error) {
+	var raw any
+	if err := rpc.Call(token, "devices.list", nil, &raw); err != nil {
+		return nil, fmt.Errorf("devices.list: %w", err)
+	}
+
+	var result struct {
+		Devices []devices.DeviceInfo `json:"devices"`
+	}
+	if err := rpc.Remarshal(raw, &result); err != nil {
+		return nil, err
+	}
+
+	for _, d := range result.Devices {
+		var p devices.DeviceProvider
+		if json.Unmarshal(d.Provider, &p) == nil && p.SessionID == sessionID {
+			return &d, nil
+		}
+	}
+
+	return nil, fmt.Errorf("device with session %s not found", sessionID)
 }
 
 type FleetReleaseRequest struct {

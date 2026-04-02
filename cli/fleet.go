@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
 )
@@ -68,11 +70,57 @@ Name supports wildcard prefix matching:
 		}
 
 		response := commands.FleetAllocateCommand(req)
-		printJson(response)
 		if response.Status == "error" {
+			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
 
+		if fleetWait {
+			result, ok := response.Data.(commands.FleetAllocateResponse)
+			if !ok {
+				printJson(response)
+				return fmt.Errorf("unexpected response format")
+			}
+
+			if result.IsAllocating() {
+				utils.Verbose("waiting for device allocation, session %s (0 seconds elapsed)", result.SessionID)
+				start := time.Now()
+				deadline := start.Add(time.Duration(fleetTimeout) * time.Second)
+				for {
+					if time.Now().After(deadline) {
+						err := fmt.Errorf("timed out waiting for device allocation after %d seconds (session %s)", fleetTimeout, result.SessionID)
+						printJson(commands.NewErrorResponse(err))
+						return err
+					}
+					time.Sleep(5 * time.Second)
+					elapsed := int(time.Since(start).Seconds())
+					utils.Verbose("waiting for device allocation, session %s (%d seconds elapsed)", result.SessionID, elapsed)
+					device, err := commands.FleetGetDeviceBySession(token, result.SessionID)
+					if err != nil {
+						err = fmt.Errorf("failed to check device status (session %s): %w", result.SessionID, err)
+						printJson(commands.NewErrorResponse(err))
+						return err
+					}
+					if device.State != "allocating" {
+						response = commands.NewSuccessResponse(commands.FleetAllocateResponse{
+							SessionID:   result.SessionID,
+							ProvisionID: result.ProvisionID,
+							State:       device.State,
+							Device: commands.FleetAllocateDevice{
+								ID:       device.ID,
+								Name:     device.Name,
+								Platform: device.Platform,
+								Status:   device.State,
+								Model:    device.Model,
+							},
+						})
+						break
+					}
+				}
+			}
+		}
+
+		printJson(response)
 		return nil
 	},
 }
@@ -137,6 +185,8 @@ func init() {
 	fleetAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
 	fleetAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
 	fleetAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
+	fleetAllocateCmd.Flags().BoolVar(&fleetWait, "wait", false, "wait for device to finish allocating before returning")
+	fleetAllocateCmd.Flags().IntVar(&fleetTimeout, "timeout", 900, "seconds to wait for allocation (only used with --wait)")
 
 	fleetReleaseCmd.Flags().StringVar(&fleetReleaseDeviceID, "device", "", "device ID to release")
 	_ = fleetReleaseCmd.MarkFlagRequired("device")
