@@ -83,6 +83,7 @@ Name supports wildcard prefix matching:
 			}
 
 			if result.IsAllocating() {
+				utils.Verbose("waiting for device allocation (0 seconds elapsed)")
 				start := time.Now()
 				deadline := start.Add(time.Duration(fleetTimeout) * time.Second)
 				for {
