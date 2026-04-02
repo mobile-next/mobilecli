@@ -25,4 +25,6 @@ var (
 	fleetType     string
 	fleetVersions []string
 	fleetNames    []string
+	fleetWait     bool
+	fleetTimeout  int
 )

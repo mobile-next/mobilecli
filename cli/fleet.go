@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
 )
@@ -68,11 +70,41 @@ Name supports wildcard prefix matching:
 		}
 
 		response := commands.FleetAllocateCommand(req)
-		printJson(response)
 		if response.Status == "error" {
+			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
 
+		if fleetWait {
+			result, ok := response.Data.(commands.FleetAllocateResponse)
+			if !ok {
+				printJson(response)
+				return fmt.Errorf("unexpected response format")
+			}
+
+			if result.IsAllocating() {
+				start := time.Now()
+				deadline := start.Add(time.Duration(fleetTimeout) * time.Second)
+				for {
+					if time.Now().After(deadline) {
+						return fmt.Errorf("timed out waiting for device allocation after %d seconds", fleetTimeout)
+					}
+					time.Sleep(5 * time.Second)
+					elapsed := int(time.Since(start).Seconds())
+					utils.Verbose("waiting for device allocation (%d seconds elapsed)", elapsed)
+					device, err := commands.FleetGetDeviceBySession(token, result.SessionID)
+					if err != nil {
+						return fmt.Errorf("failed to check device status: %w", err)
+					}
+					if device.State != "allocating" {
+						response = commands.NewSuccessResponse(device)
+						break
+					}
+				}
+			}
+		}
+
+		printJson(response)
 		return nil
 	},
 }
@@ -137,6 +169,8 @@ func init() {
 	fleetAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
 	fleetAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
 	fleetAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
+	fleetAllocateCmd.Flags().BoolVar(&fleetWait, "wait", false, "wait for device to finish allocating before returning")
+	fleetAllocateCmd.Flags().IntVar(&fleetTimeout, "timeout", 900, "seconds to wait for allocation (only used with --wait)")
 
 	fleetReleaseCmd.Flags().StringVar(&fleetReleaseDeviceID, "device", "", "device ID to release")
 	_ = fleetReleaseCmd.MarkFlagRequired("device")
