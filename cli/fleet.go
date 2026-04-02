@@ -97,7 +97,9 @@ Name supports wildcard prefix matching:
 					utils.Verbose("waiting for device allocation, session %s (%d seconds elapsed)", result.SessionID, elapsed)
 					device, err := commands.FleetGetDeviceBySession(token, result.SessionID)
 					if err != nil {
-						return fmt.Errorf("failed to check device status: %w", err)
+						err = fmt.Errorf("failed to check device status (session %s): %w", result.SessionID, err)
+						printJson(commands.NewErrorResponse(err))
+						return err
 					}
 					if device.State != "allocating" {
 						response = commands.NewSuccessResponse(commands.FleetAllocateResponse{
