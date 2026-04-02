@@ -100,7 +100,18 @@ Name supports wildcard prefix matching:
 						return fmt.Errorf("failed to check device status: %w", err)
 					}
 					if device.State != "allocating" {
-						response = commands.NewSuccessResponse(device)
+						response = commands.NewSuccessResponse(commands.FleetAllocateResponse{
+							SessionID:   result.SessionID,
+							ProvisionID: result.ProvisionID,
+							State:       device.State,
+							Device: commands.FleetAllocateDevice{
+								ID:       device.ID,
+								Name:     device.Name,
+								Platform: device.Platform,
+								Status:   device.State,
+								Model:    device.Model,
+							},
+						})
 						break
 					}
 				}
