@@ -1,3 +1,7 @@
+## [0.2.0](https://github.com/mobile-next/mobilecli/releases/tag/0.2.0) (2026-04-13)
+* General: Move npm package from `@mobilenext/mobilecli` to `mobilecli` ([#191](https://github.com/mobile-next/mobilecli/pull/191))
+* General: Update npm packages under 'test' directory ([#192](https://github.com/mobile-next/mobilecli/pull/192))
+
 ## [0.1.64](https://github.com/mobile-next/mobilecli/releases/tag/0.1.64) (2026-04-02)
 * General: Add `--wait` and `--timeout` flags to `fleet allocate` for polling until device is ready ([#189](https://github.com/mobile-next/mobilecli/pull/189))
 
