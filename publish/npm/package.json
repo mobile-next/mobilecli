@@ -1,6 +1,6 @@
 {
-	"name": "@mobilenext/mobilecli",
-	"version": "0.0.4",
+	"name": "mobilecli",
+	"version": "0.0.1",
 	"author": "Mobile Next",
 	"description": "A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps",
 	"repository": {
@@ -11,5 +11,4 @@
 	"bin": {
 		"mobilecli": "index.js"
 	}
-
 }
