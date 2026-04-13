@@ -9,8 +9,8 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
-  <a href="https://www.npmjs.com/package/@mobilenext/mobilecli">
-    <img src="https://img.shields.io/npm/dm/@mobilenext/mobilecli?logo=npm&style=flat&color=red" alt="npm">
+  <a href="https://www.npmjs.com/package/mobilecli">
+    <img src="https://img.shields.io/npm/dm/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
   <a href="https://github.com/mobile-next/mobilecli/releases">
     <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
@@ -55,12 +55,12 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 
 #### Run instantly with npx
 ```bash
-npx @mobilenext/mobilecli@latest
+npx mobilecli@latest
 ```
 
 #### Install globally with npm
 ```bash
-npm install -g @mobilenext/mobilecli@latest
+npm install -g mobilecli@latest
 ```
 
 #### Install from Source 🛠️
