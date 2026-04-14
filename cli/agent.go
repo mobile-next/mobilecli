@@ -14,7 +14,6 @@ import (
 )
 
 const agentVersion = "0.0.10"
-const agentBundleID = "com.mobilenext.devicekit-ios"
 const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
 
 var agentCmd = &cobra.Command{
@@ -41,19 +40,21 @@ var agentInstallCmd = &cobra.Command{
 			return fmt.Errorf("agent install is currently only supported on iOS devices")
 		}
 
-		apps, err := device.ListApps()
-		if err != nil {
-			return fmt.Errorf("failed to list apps: %w", err)
-		}
+		if !agentReinstall {
+			apps, err := device.ListApps()
+			if err != nil {
+				return fmt.Errorf("failed to list apps: %w", err)
+			}
 
-		for _, app := range apps {
-			if app.PackageName == agentBundleID {
-				utils.Verbose("agent already installed: %s %s", app.AppName, app.Version)
-				printJson(commands.NewSuccessResponse(map[string]any{
-					"message": "agent is already installed",
-					"version": app.Version,
-				}))
-				return nil
+			for _, app := range apps {
+				if app.PackageName == agentRunnerBundleID {
+					utils.Verbose("agent already installed: %s %s", app.AppName, app.Version)
+					printJson(commands.NewSuccessResponse(map[string]any{
+						"message": "agent is already installed",
+						"version": app.Version,
+					}))
+					return nil
+				}
 			}
 		}
 
@@ -144,4 +145,5 @@ func init() {
 	agentCmd.AddCommand(agentInstallCmd)
 
 	agentInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install the agent on")
+	agentInstallCmd.Flags().BoolVar(&agentReinstall, "reinstall", false, "reinstall even if agent is already installed")
 }
