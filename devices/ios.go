@@ -1082,16 +1082,6 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
 	}
 
-	// configure mjpeg framerate
-	fps := config.FPS
-	if fps == 0 {
-		fps = DefaultFramerate
-	}
-	err := d.wdaClient.SetMjpegFramerate(fps)
-	if err != nil {
-		return err
-	}
-
 	if config.OnProgress != nil {
 		config.OnProgress("Starting video stream")
 	}
