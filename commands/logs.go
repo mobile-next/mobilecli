@@ -28,7 +28,7 @@ func LogsCommand(req LogsRequest) *CommandResponse {
 		if req.Process != "" && !strings.Contains(entry.Process, req.Process) {
 			return true
 		}
-		if req.PID > 0 && entry.PID != req.PID {
+		if req.PID >= 0 && entry.PID != req.PID {
 			return true
 		}
 
