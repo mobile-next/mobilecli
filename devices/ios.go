@@ -1053,7 +1053,11 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
 	wdaPort, _ := d.portForwarderWda.GetPorts()
-	d.mjpegClient = mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d/mjpeg?fps=%d", wdaPort, config.FPS))
+	mjpegURL := fmt.Sprintf("http://localhost:%d/mjpeg", wdaPort)
+	if config.FPS > 0 {
+		mjpegURL = fmt.Sprintf("%s?fps=%d", mjpegURL, config.FPS)
+	}
+	d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegURL)
 	d.mu.Unlock()
 
 	if config.OnProgress != nil {
