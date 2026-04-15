@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const agentVersion = "0.0.10"
+const agentVersion = "0.0.12"
 const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
 
 var agentCmd = &cobra.Command{
@@ -62,6 +62,9 @@ var agentInstallCmd = &cobra.Command{
 		case "simulator":
 			return installAgentOnSimulator(device)
 		case "real":
+			if agentProvisioningProfile == "" {
+				return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+			}
 			return installAgentOnRealIOS(device)
 		default:
 			return fmt.Errorf("unsupported device type: %s", device.DeviceType())
@@ -96,8 +99,8 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 }
 
 func installAgentOnRealIOS(device devices.ControllableDevice) error {
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-unsigned.ipa", agentVersion)
-	tmpPath := filepath.Join(os.TempDir(), "devicekit-ios-unsigned.ipa")
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-runner.ipa", agentVersion)
+	tmpPath := filepath.Join(os.TempDir(), "devicekit-ios-runner.ipa")
 
 	utils.Verbose("downloading agent from %s", agentURL)
 	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
@@ -106,8 +109,15 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 	utils.Verbose("downloaded agent to %s", tmpPath)
 	defer func() { _ = os.Remove(tmpPath) }()
 
+	utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
+	resignedPath, err := utils.ResignIPA(tmpPath, device.ID(), agentProvisioningProfile, "")
+	if err != nil {
+		return fmt.Errorf("failed to re-sign agent: %w", err)
+	}
+	defer func() { _ = os.Remove(resignedPath) }()
+
 	utils.Verbose("installing agent on device %s", device.ID())
-	if err := device.InstallApp(tmpPath); err != nil {
+	if err := device.InstallApp(resignedPath); err != nil {
 		return fmt.Errorf("failed to install agent: %w", err)
 	}
 
@@ -146,4 +156,5 @@ func init() {
 
 	agentInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install the agent on")
 	agentInstallCmd.Flags().BoolVar(&agentReinstall, "reinstall", false, "reinstall even if agent is already installed")
+	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS devices)")
 }

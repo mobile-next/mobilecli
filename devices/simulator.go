@@ -289,8 +289,6 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
-
 func (s SimulatorDevice) IsAgentInstalled() (bool, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {

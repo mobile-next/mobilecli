@@ -38,6 +38,7 @@ const (
 	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
 	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
+	agentRunnerBundleID       = "com.mobilenext.devicekit-iosUITests.xctrunner"
 )
 
 // deviceInfoCache caches device name and OS version to avoid expensive GetValues() calls
@@ -484,21 +485,18 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return fmt.Errorf("failed to list apps: %w", err)
 		}
 
-		// check if WebDriverAgent is installed
-		webdriverBundleId := ""
+		// check if agent is installed
+		agentBundleId := ""
 		for _, app := range apps {
-			if app.AppName == "WebDriverAgentRunner-Runner" {
-				utils.Verbose("WebDriverAgent is installed, launching it")
-				webdriverBundleId = app.PackageName
+			if app.PackageName == agentRunnerBundleID {
+				utils.Verbose("agent is installed, launching it")
+				agentBundleId = app.PackageName
 				break
 			}
 		}
 
-		if webdriverBundleId == "" {
-			if config.OnProgress != nil {
-				config.OnProgress("Installing WebDriverAgent")
-			}
-			return fmt.Errorf("WebDriverAgent is not installed")
+		if agentBundleId == "" {
+			return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
 		}
 
 		if config.OnProgress != nil {
@@ -523,7 +521,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			forwarder := ios.NewPortForwarder(d.ID())
-			err = forwarder.Forward(port, 8100)
+			err = forwarder.Forward(port, deviceKitHTTPPort)
 			if err != nil {
 				return fmt.Errorf("failed to forward port: %w", err)
 			}
@@ -558,33 +556,31 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 		if err != nil {
 			if config.OnProgress != nil {
-				config.OnProgress("Launching WebDriverAgent")
+				config.OnProgress("Launching agent")
 			}
 
-			// launch WebDriverAgent using testmanagerd
-			err = d.LaunchTestRunner(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
+			// launch agent using testmanagerd
+			err = d.LaunchTestRunner(agentBundleId, agentBundleId, "devicekit-iosUITests.xctest")
 			if err != nil {
-				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+				return fmt.Errorf("failed to launch agent: %w", err)
 			}
 
 			if config.OnProgress != nil {
 				config.OnProgress("Waiting for agent to start")
 			}
 
-			// wait for WebDriverAgent to start
 			err = d.wdaClient.WaitForAgent()
 			if err != nil {
-				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
+				return fmt.Errorf("failed to wait for agent: %w", err)
 			}
 
-			// check if WebDriverAgent is the active app and press HOME to background it
+			// background the agent if it's in the foreground
 			activeApp, err := d.wdaClient.GetActiveAppInfo()
 			if err == nil {
 				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
 
-				// if WDA is in foreground, press HOME to background it
-				if strings.Contains(activeApp.Name, "WebDriverAgent") {
-					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
+				if activeApp.BundleID == agentBundleId {
+					utils.Verbose("agent is active, pressing HOME to background it")
 					_ = d.wdaClient.PressButton("HOME")
 					time.Sleep(1 * time.Second)
 				}
@@ -598,7 +594,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
 		utils.Verbose("No bundle ids specified, falling back to defaults")
-		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
+		bundleID, testRunnerBundleID, xctestConfig = agentRunnerBundleID, agentRunnerBundleID, "devicekit-iosUITests.xctest"
 	}
 
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
