@@ -773,6 +773,23 @@ func (d *AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
+func (d *AndroidDevice) ListAllPackages() ([]string, error) {
+	output, err := d.runAdbCommand("shell", "pm", "list", "packages")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	var packages []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package:") {
+			packages = append(packages, strings.TrimPrefix(line, "package:"))
+		}
+	}
+
+	return packages, nil
+}
+
 func (d *AndroidDevice) getForegroundPackageName() (string, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "window", "displays")
 	if err != nil {

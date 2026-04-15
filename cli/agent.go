@@ -40,24 +40,12 @@ var agentInstallCmd = &cobra.Command{
 		utils.Verbose("platform: %s", device.Platform())
 		utils.Verbose("type: %s", device.DeviceType())
 
-		agentPackage := agentPackageForPlatform(device.Platform())
-
-		if !agentReinstall {
-			apps, err := device.ListApps()
-			if err != nil {
-				return fmt.Errorf("failed to list apps: %w", err)
-			}
-
-			for _, app := range apps {
-				if app.PackageName == agentPackage {
-					utils.Verbose("agent already installed: %s %s", app.AppName, app.Version)
-					printJson(commands.NewSuccessResponse(map[string]any{
-						"message": "agent is already installed",
-						"version": app.Version,
-					}))
-					return nil
-				}
-			}
+		if !agentReinstall && isAgentInstalled(device) {
+			utils.Verbose("agent already installed")
+			printJson(commands.NewSuccessResponse(map[string]any{
+				"message": "agent is already installed",
+			}))
+			return nil
 		}
 
 		switch device.Platform() {
@@ -156,29 +144,45 @@ func installAgentOnAndroid(device devices.ControllableDevice) error {
 		return fmt.Errorf("failed to install agent: %w", err)
 	}
 
-	// adb install is synchronous, no need to poll
-	printJson(commands.NewSuccessResponse(map[string]any{
-		"message": "agent installed successfully",
-		"version": agentVersionAndroid,
-	}))
-	return nil
+	return waitForAgentInstalled(device)
+}
+
+func isAgentInstalled(device devices.ControllableDevice) bool {
+	agentPackage := agentPackageForPlatform(device.Platform())
+
+	if androidDevice, ok := device.(*devices.AndroidDevice); ok {
+		packages, err := androidDevice.ListAllPackages()
+		if err != nil {
+			return false
+		}
+		for _, pkg := range packages {
+			if pkg == agentPackage {
+				return true
+			}
+		}
+		return false
+	}
+
+	apps, err := device.ListApps()
+	if err != nil {
+		return false
+	}
+	for _, app := range apps {
+		if app.PackageName == agentPackage {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForAgentInstalled(device devices.ControllableDevice) error {
-	agentPackage := agentPackageForPlatform(device.Platform())
 	startTime := time.Now()
 	for {
-		apps, err := device.ListApps()
-		if err == nil {
-			for _, app := range apps {
-				if app.PackageName == agentPackage {
-					printJson(commands.NewSuccessResponse(map[string]any{
-						"message": "agent installed successfully",
-						"version": app.Version,
-					}))
-					return nil
-				}
-			}
+		if isAgentInstalled(device) {
+			printJson(commands.NewSuccessResponse(map[string]any{
+				"message": "agent installed successfully",
+			}))
+			return nil
 		}
 
 		if time.Since(startTime) > 30*time.Second {
