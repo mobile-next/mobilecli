@@ -20,10 +20,55 @@ const (
 	androidPackageName  = "com.mobilenext.devicekit"
 )
 
+type agentMessageResponse struct {
+	Message string `json:"message"`
+}
+
+type agentInfo struct {
+	Version  string `json:"version"`
+	BundleID string `json:"bundleId"`
+}
+
+type agentStatusResponse struct {
+	Message string    `json:"message"`
+	Agent   agentInfo `json:"agent"`
+}
+
 var agentCmd = &cobra.Command{
 	Use:   "agent",
 	Short: "Agent management commands",
 	Long:  `Commands for managing the on-device agent.`,
+}
+
+var agentStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check agent installation status on a device",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		device, err := commands.FindDeviceOrAutoSelect(deviceId)
+		if err != nil {
+			return err
+		}
+
+		agent := findInstalledAgent(device)
+		if agent == nil {
+			printJson(&commands.CommandResponse{
+				Status: "fail",
+				Data: agentMessageResponse{
+					Message: "Agent is not installed on the device",
+				},
+			})
+			return nil
+		}
+
+		printJson(commands.NewSuccessResponse(agentStatusResponse{
+			Message: fmt.Sprintf("Agent version %s is installed on device", agent.Version),
+			Agent: agentInfo{
+				Version:  agent.Version,
+				BundleID: agent.PackageName,
+			},
+		}))
+		return nil
+	},
 }
 
 var agentInstallCmd = &cobra.Command{
@@ -40,12 +85,18 @@ var agentInstallCmd = &cobra.Command{
 		utils.Verbose("platform: %s", device.Platform())
 		utils.Verbose("type: %s", device.DeviceType())
 
-		if !agentReinstall && isAgentInstalled(device) {
-			utils.Verbose("agent already installed")
-			printJson(commands.NewSuccessResponse(map[string]any{
-				"message": "agent is already installed",
-			}))
-			return nil
+		if !agentForce {
+			if agent := findInstalledAgent(device); agent != nil {
+				utils.Verbose("agent already installed")
+				printJson(commands.NewSuccessResponse(agentStatusResponse{
+					Message: "Agent is already installed",
+					Agent: agentInfo{
+						Version:  agent.Version,
+						BundleID: agent.PackageName,
+					},
+				}))
+				return nil
+			}
 		}
 
 		var installErr error
@@ -72,8 +123,17 @@ var agentInstallCmd = &cobra.Command{
 			return installErr
 		}
 
-		printJson(commands.NewSuccessResponse(map[string]any{
-			"message": "agent installed successfully",
+		agent := findInstalledAgent(device)
+		if agent == nil {
+			return fmt.Errorf("agent was installed but could not be found")
+		}
+
+		printJson(commands.NewSuccessResponse(agentStatusResponse{
+			Message: "Agent installed successfully",
+			Agent: agentInfo{
+				Version:  agent.Version,
+				BundleID: agent.PackageName,
+			},
 		}))
 		return nil
 	},
@@ -154,19 +214,23 @@ func installAgentOnAndroid(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, tmpPath, nil)
 }
 
-func isAgentInstalled(device devices.ControllableDevice) bool {
+func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledAppInfo {
 	agentPackage := agentPackageForPlatform(device.Platform())
 
 	apps, err := device.ListApps(false)
 	if err != nil {
-		return false
+		return nil
 	}
 	for _, app := range apps {
 		if app.PackageName == agentPackage {
-			return true
+			return &app
 		}
 	}
-	return false
+	return nil
+}
+
+func isAgentInstalled(device devices.ControllableDevice) bool {
+	return findInstalledAgent(device) != nil
 }
 
 func waitForAgentInstalled(device devices.ControllableDevice) error {
@@ -189,8 +253,10 @@ func init() {
 	rootCmd.AddCommand(agentCmd)
 
 	agentCmd.AddCommand(agentInstallCmd)
+	agentCmd.AddCommand(agentStatusCmd)
 
 	agentInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install the agent on")
-	agentInstallCmd.Flags().BoolVar(&agentReinstall, "reinstall", false, "reinstall even if agent is already installed")
+	agentStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check")
+	agentInstallCmd.Flags().BoolVar(&agentForce, "force", false, "force install even if agent is already installed")
 	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS devices)")
 }

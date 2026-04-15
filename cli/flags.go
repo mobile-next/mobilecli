@@ -22,7 +22,7 @@ var (
 	locale string
 
 	// for agent install command
-	agentReinstall           bool
+	agentForce               bool
 	agentProvisioningProfile string
 
 	// for fleet allocate command
