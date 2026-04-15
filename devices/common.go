@@ -20,7 +20,8 @@ type LogEntry struct {
 	Subsystem string `json:"subsystem,omitempty"`
 	Category  string `json:"category,omitempty"`
 	PID       int    `json:"pid"`
-	Process   string `json:"process"`
+	Process   string `json:"process,omitempty"`
+	Tag       string `json:"tag,omitempty"`
 	EventType string `json:"eventType"`
 }
 

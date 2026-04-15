@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/xml"
@@ -1345,6 +1346,89 @@ func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
 	return []byte(content), nil
 }
 
+// getPidToProcessMap runs "adb shell ps" and returns a map of PID→process name
+func (d *AndroidDevice) getPidToProcessMap() map[int]string {
+	output, err := d.runAdbCommand("shell", "ps", "-e", "-o", "PID,NAME")
+	if err != nil {
+		return nil
+	}
+
+	m := make(map[int]string)
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		m[pid] = fields[1]
+	}
+	return m
+}
+
+var logcatLevelMap = map[string]string{
+	"V": "Verbose",
+	"D": "Debug",
+	"I": "Info",
+	"W": "Warning",
+	"E": "Error",
+	"F": "Fatal",
+	"A": "Assert",
+}
+
 func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
-	return fmt.Errorf("device logs not yet supported for Android devices")
+	// build PID→process name map for --process filtering
+	pidMap := d.getPidToProcessMap()
+
+	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.Command(getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start logcat: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		parsed := parseLogcatLine(line)
+		if parsed == nil {
+			continue
+		}
+
+		pid, _ := strconv.Atoi(parsed.PID)
+		level := logcatLevelMap[parsed.Level]
+		if level == "" {
+			level = parsed.Level
+		}
+
+		entry := LogEntry{
+			Timestamp: parsed.Date + " " + parsed.Time,
+			PID:       pid,
+			Level:     level,
+			Tag:       parsed.Tag,
+			Message:   parsed.Message,
+		}
+
+		// resolve process name from ps map (for --process filtering)
+		if pidMap != nil {
+			entry.Process = pidMap[pid]
+		}
+
+		if !onLog(entry) {
+			_ = cmd.Process.Kill()
+			break
+		}
+	}
+
+	_ = cmd.Wait()
+	return nil
 }
