@@ -23,14 +23,8 @@ func LogsCommand(req LogsRequest) *CommandResponse {
 
 	encoder := json.NewEncoder(os.Stdout)
 	count := 0
-	err = device.StreamLogs(func(entry devices.LogEntry) bool {
-		if req.Process != "" && entry.Process != req.Process {
-			return true
-		}
-		if req.PID >= 0 && entry.PID != req.PID {
-			return true
-		}
 
+	emit := func(entry devices.LogEntry) bool {
 		if err := encoder.Encode(entry); err != nil {
 			return false
 		}
@@ -39,6 +33,23 @@ func LogsCommand(req LogsRequest) *CommandResponse {
 			return false
 		}
 		return true
+	}
+
+	matchesFilter := func(entry devices.LogEntry) bool {
+		if req.Process != "" && entry.Process != req.Process {
+			return false
+		}
+		if req.PID >= 0 && entry.PID != req.PID {
+			return false
+		}
+		return true
+	}
+
+	err = device.StreamLogs(func(entry devices.LogEntry) bool {
+		if !matchesFilter(entry) {
+			return true
+		}
+		return emit(entry)
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error streaming logs: %w", err))

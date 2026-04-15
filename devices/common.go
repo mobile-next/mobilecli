@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
@@ -23,6 +25,20 @@ type LogEntry struct {
 	Process   string `json:"process,omitempty"`
 	Tag       string `json:"tag,omitempty"`
 	EventType string `json:"eventType"`
+}
+
+// processNameFromPath extracts the binary name from a full image path
+func processNameFromPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		return path[idx+1:]
+	}
+	return path
+}
+
+// atoiOrZero converts a string to int, returning 0 on failure
+func atoiOrZero(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 type CrashReport struct {

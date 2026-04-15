@@ -1094,11 +1094,7 @@ func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
 			break
 		}
 
-		// extract process name from full path
-		processName := raw.ProcessImagePath
-		if idx := strings.LastIndex(processName, "/"); idx != -1 {
-			processName = processName[idx+1:]
-		}
+		processName := processNameFromPath(raw.ProcessImagePath)
 
 		if !onLog(LogEntry{
 			Timestamp: raw.Timestamp,

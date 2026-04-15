@@ -1716,7 +1716,3 @@ func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	}
 }
 
-func atoiOrZero(s string) int {
-	n, _ := strconv.Atoi(s)
-	return n
-}

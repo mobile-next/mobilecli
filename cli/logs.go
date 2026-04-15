@@ -34,6 +34,6 @@ func init() {
 	deviceCmd.AddCommand(deviceLogsCmd)
 	deviceLogsCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to stream logs from")
 	deviceLogsCmd.Flags().IntVar(&logsLimit, "limit", 0, "Stop after N log entries (0 = unlimited)")
-	deviceLogsCmd.Flags().StringVar(&logsProcess, "process", "", "Filter by process name (substring match)")
+	deviceLogsCmd.Flags().StringVar(&logsProcess, "process", "", "Filter by process name (exact match)")
 	deviceLogsCmd.Flags().IntVar(&logsPID, "pid", -1, "Filter by process ID")
 }
