@@ -206,17 +206,29 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 		arch = "arm64"
 	}
 
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-Sim-%s.zip", agentVersionIOS, arch)
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch))
+	filename := fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch)
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
 
-	return downloadAndInstallAgent(device, agentURL, tmpPath, nil)
+	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
 func installAgentOnRealIOS(device devices.ControllableDevice) error {
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-runner.ipa", agentVersionIOS)
-	tmpPath := filepath.Join(os.TempDir(), "devicekit-ios-runner.ipa")
+	filename := "devicekit-ios-runner.ipa"
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
 
-	return downloadAndInstallAgent(device, agentURL, tmpPath, func(downloaded string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
 		utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
 		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), agentProvisioningProfile, "")
 		if err != nil {
@@ -227,10 +239,16 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/mobilenext-devicekit.apk", agentVersionAndroid)
-	tmpPath := filepath.Join(os.TempDir(), "mobilenext-devicekit.apk")
+	filename := "mobilenext-devicekit.apk"
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
 
-	return downloadAndInstallAgent(device, agentURL, tmpPath, nil)
+	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
 func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledAppInfo {

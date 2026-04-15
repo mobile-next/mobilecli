@@ -98,6 +98,19 @@ CRASH REPORTS:
   # Get a specific crash report
   mobilecli crashes get --device <device-id> <crash-id>
 
+AGENT:
+  # Check agent installation status
+  mobilecli agent status --device <device-id>
+
+  # Install the on-device agent
+  mobilecli agent install --device <device-id>
+
+  # Force reinstall the agent
+  mobilecli agent install --device <device-id> --force
+
+  # Install on a real iOS device (requires provisioning profile)
+  mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com
