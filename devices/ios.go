@@ -1050,33 +1050,11 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		}
 	}
 
-	// handle mjpeg format via WDA
-	// set up mjpeg port forwarding if not already running
+	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
+	wdaPort, _ := d.portForwarderWda.GetPorts()
+	d.mjpegClient = mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d/mjpeg?fps=%d", wdaPort, config.FPS))
 	d.mu.Unlock()
-
-	if needsMjpegForwarder {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
-		}
-
-		forwarder := ios.NewPortForwarder(d.ID())
-		err = forwarder.Forward(portMjpeg, 9100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
-		}
-
-		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-
-		d.mu.Lock()
-		d.portForwarderMjpeg = forwarder
-		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
-		d.mu.Unlock()
-
-		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
-	}
 
 	if config.OnProgress != nil {
 		config.OnProgress("Starting video stream")
