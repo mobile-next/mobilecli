@@ -20,6 +20,14 @@ const (
 	androidPackageName  = "com.mobilenext.devicekit"
 )
 
+// pinned SHA-256 checksums for agent artifacts, keyed by download filename
+var agentChecksums = map[string]string{
+	"devicekit-ios-Sim-arm64.zip":  "0c1e501c3b0b17a59df1980e3021e92b187b57045b0776b96b0644f977c8dcfa",
+	"devicekit-ios-Sim-x86_64.zip": "6571e8846e888273ada260457debd8f7c8d20f90b90fec7d07129eda806412e7",
+	"devicekit-ios-runner.ipa":     "99a4a062f7f13bf1b5636417812a79fb2037448980d155c949572e8399350e45",
+	"mobilenext-devicekit.apk":     "843c71b81db846ccde7d34c41f3a49a2380d0c1b2acfcbcfafdcd673fadb23ab",
+}
+
 type agentMessageResponse struct {
 	Message string `json:"message"`
 }
@@ -150,9 +158,6 @@ func agentPackageForPlatform(platform string) string {
 	}
 }
 
-// downloadAndInstallAgent downloads the agent, optionally transforms the downloaded file,
-// installs it on the device, and waits for installation to complete.
-// the transform function, if non-nil, receives the downloaded path and returns a new path to install.
 func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
 	utils.Verbose("downloading agent from %s", agentURL)
 	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
@@ -160,6 +165,20 @@ func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPat
 	}
 	utils.Verbose("downloaded agent to %s", tmpPath)
 	defer func() { _ = os.Remove(tmpPath) }()
+
+	filename := filepath.Base(tmpPath)
+	expectedHash, ok := agentChecksums[filename]
+	if !ok {
+		return fmt.Errorf("no pinned checksum for %s", filename)
+	}
+	actualHash, err := utils.SHA256File(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+	if actualHash != expectedHash {
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", filename, expectedHash, actualHash)
+	}
+	utils.Verbose("checksum verified for %s", filename)
 
 	installPath := tmpPath
 	if transform != nil {
