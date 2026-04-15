@@ -12,6 +12,18 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+// LogEntry represents a single parsed log entry from a device
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem,omitempty"`
+	Category  string `json:"category,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process"`
+	EventType string `json:"eventType"`
+}
+
 type CrashReport struct {
 	ProcessName string `json:"processName"`
 	Timestamp   string `json:"timestamp"`
@@ -114,6 +126,7 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+	StreamLogs(onLog func(LogEntry) bool) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options

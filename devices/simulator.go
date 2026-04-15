@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1044,4 +1045,77 @@ func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return os.ReadFile(filepath.Join(diagnosticReportsDir, id))
+}
+
+// simctlLogEntry is the raw structure from xcrun simctl log stream --style json
+type simctlLogEntry struct {
+	Timestamp        string `json:"timestamp"`
+	EventMessage     string `json:"eventMessage"`
+	MessageType      string `json:"messageType"`
+	Subsystem        string `json:"subsystem"`
+	Category         string `json:"category"`
+	ProcessImagePath string `json:"processImagePath"`
+	ProcessID        int    `json:"processID"`
+	EventType        string `json:"eventType"`
+}
+
+func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
+	args := []string{"simctl", "spawn", s.UDID, "log", "stream", "--level", "info", "--style", "json"}
+	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
+
+	cmd := exec.Command("xcrun", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start log stream: %w", err)
+	}
+
+	decoder := json.NewDecoder(stdout)
+
+	// read opening '[' of the JSON array
+	token, err := decoder.Token()
+	if err != nil {
+		_ = cmd.Process.Kill()
+		return fmt.Errorf("failed to read opening token: %w", err)
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		_ = cmd.Process.Kill()
+		return fmt.Errorf("expected '[', got %v", token)
+	}
+
+	// decode entries one at a time until the stream ends
+	for decoder.More() {
+		var raw simctlLogEntry
+		if err := decoder.Decode(&raw); err != nil {
+			// stream ended (process killed) — not an error
+			break
+		}
+
+		// extract process name from full path
+		processName := raw.ProcessImagePath
+		if idx := strings.LastIndex(processName, "/"); idx != -1 {
+			processName = processName[idx+1:]
+		}
+
+		if !onLog(LogEntry{
+			Timestamp: raw.Timestamp,
+			Message:   raw.EventMessage,
+			Level:     raw.MessageType,
+			Subsystem: raw.Subsystem,
+			Category:  raw.Category,
+			PID:       raw.ProcessID,
+			Process:   processName,
+			EventType: raw.EventType,
+		}) {
+			_ = cmd.Process.Kill()
+			break
+		}
+	}
+
+	// we killed it ourselves, or stream ended naturally
+	_ = cmd.Wait()
+	return nil
 }

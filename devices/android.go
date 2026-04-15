@@ -1344,3 +1344,7 @@ func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 	return []byte(content), nil
 }
+
+func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
+	return fmt.Errorf("device logs not yet supported for Android devices")
+}

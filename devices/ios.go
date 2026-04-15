@@ -18,6 +18,7 @@ import (
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/crashreport"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
+	"github.com/danielpaulus/go-ios/ios/syslog"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
@@ -1661,4 +1662,61 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get device: %w", err)
+	}
+
+	conn, err := syslog.New(device)
+	if err != nil {
+		return fmt.Errorf("failed to connect to syslog: %w", err)
+	}
+	defer conn.Close()
+
+	parse := syslog.Parser()
+
+	for {
+		msg, err := conn.ReadLogMessage()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("syslog read error: %w", err)
+		}
+
+		msg = strings.TrimSuffix(msg, "\x00")
+		msg = strings.TrimSuffix(msg, "\x0A")
+		if msg == "" {
+			continue
+		}
+
+		entry, err := parse(msg)
+		if err != nil {
+			// unparseable line — emit raw message
+			if !onLog(LogEntry{
+				Message: msg,
+			}) {
+				return nil
+			}
+			continue
+		}
+
+		if !onLog(LogEntry{
+			Timestamp: entry.Timestamp,
+			Message:   entry.Message,
+			Level:     entry.Level,
+			Process:   entry.Process,
+			PID:       atoiOrZero(entry.PID),
+		}) {
+			return nil
+		}
+	}
+}
+
+func atoiOrZero(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
