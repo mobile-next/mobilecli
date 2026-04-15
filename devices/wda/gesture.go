@@ -19,6 +19,7 @@ type gestureAction struct {
 func convertActions(actions []TapAction) []gestureAction {
 	var result []gestureAction
 	pressed := false
+	hasPendingPos := false
 	var pendingX, pendingY float64
 
 	for i := range actions {
@@ -28,6 +29,7 @@ func convertActions(actions []TapAction) []gestureAction {
 			if !pressed {
 				// pointerMove before pointerDown is just positioning
 				pendingX, pendingY = float64(a.X), float64(a.Y)
+				hasPendingPos = true
 			} else {
 				// pointerMove after pointerDown is a drag
 				result = append(result, gestureAction{
@@ -41,8 +43,9 @@ func convertActions(actions []TapAction) []gestureAction {
 		case "pointerDown":
 			pressed = true
 			x, y := float64(a.X), float64(a.Y)
-			if pendingX != 0 || pendingY != 0 {
+			if hasPendingPos {
 				x, y = pendingX, pendingY
+				hasPendingPos = false
 			}
 			result = append(result, gestureAction{
 				Type:     "press",

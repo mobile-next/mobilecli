@@ -480,7 +480,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
 		// list apps on device
-		apps, err := d.ListApps()
+		apps, err := d.ListApps(true)
 		if err != nil {
 			return fmt.Errorf("failed to list apps: %w", err)
 		}
@@ -842,7 +842,7 @@ func (d IOSDevice) OpenURL(url string) error {
 	return d.wdaClient.OpenURL(url)
 }
 
-func (d *IOSDevice) ListApps() ([]InstalledAppInfo, error) {
+func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
 	// Lock to prevent concurrent access to usbmuxd (race condition on ReadPair)
@@ -891,7 +891,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}
 
 	// get all installed apps to enrich with version information
-	apps, err := d.ListApps()
+	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
@@ -1449,7 +1449,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
 
 	// find DeviceKit main app (not the xctrunner)
-	apps, err := d.ListApps()
+	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}

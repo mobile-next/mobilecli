@@ -208,12 +208,10 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 		cmd.Env = append(cmd.Env, fmt.Sprintf("SIMCTL_CHILD_%s=%s", key, value))
 	}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to launch app with env: %w", err)
 	}
 
-	_ = output // Suppress unused variable warning
 	return nil
 }
 
@@ -516,7 +514,7 @@ func (s *SimulatorDevice) OpenURL(url string) error {
 	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
 }
 
-func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
+func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	output, err := runSimctl("listapps", s.ID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w\n%s", err, output)
@@ -548,7 +546,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}
 
 	// get all installed apps to enrich with version information
-	apps, err := s.ListApps()
+	apps, err := s.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}

@@ -48,32 +48,75 @@ var agentInstallCmd = &cobra.Command{
 			return nil
 		}
 
+		var installErr error
 		switch device.Platform() {
 		case "ios":
 			switch device.DeviceType() {
 			case "simulator":
-				return installAgentOnSimulator(device)
+				installErr = installAgentOnSimulator(device)
 			case "real":
 				if agentProvisioningProfile == "" {
 					return fmt.Errorf("--provisioning-profile is required for real iOS devices")
 				}
-				return installAgentOnRealIOS(device)
+				installErr = installAgentOnRealIOS(device)
 			default:
 				return fmt.Errorf("unsupported device type: %s", device.DeviceType())
 			}
 		case "android":
-			return installAgentOnAndroid(device)
+			installErr = installAgentOnAndroid(device)
 		default:
 			return fmt.Errorf("unsupported platform: %s", device.Platform())
 		}
+
+		if installErr != nil {
+			return installErr
+		}
+
+		printJson(commands.NewSuccessResponse(map[string]any{
+			"message": "agent installed successfully",
+		}))
+		return nil
 	},
 }
 
 func agentPackageForPlatform(platform string) string {
-	if platform == "android" {
+	switch platform {
+	case "android":
 		return androidPackageName
+	case "ios":
+		return iosRunnerBundleID
+	default:
+		return ""
 	}
-	return iosRunnerBundleID
+}
+
+// downloadAndInstallAgent downloads the agent, optionally transforms the downloaded file,
+// installs it on the device, and waits for installation to complete.
+// the transform function, if non-nil, receives the downloaded path and returns a new path to install.
+func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
+	utils.Verbose("downloading agent from %s", agentURL)
+	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
+		return fmt.Errorf("failed to download agent: %w", err)
+	}
+	utils.Verbose("downloaded agent to %s", tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	installPath := tmpPath
+	if transform != nil {
+		var err error
+		installPath, err = transform(tmpPath)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.Remove(installPath) }()
+	}
+
+	utils.Verbose("installing agent on device %s", device.ID())
+	if err := device.InstallApp(installPath); err != nil {
+		return fmt.Errorf("failed to install agent: %w", err)
+	}
+
+	return waitForAgentInstalled(device)
 }
 
 func installAgentOnSimulator(device devices.ControllableDevice) error {
@@ -87,83 +130,34 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-Sim-%s.zip", agentVersionIOS, arch)
 	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch))
 
-	utils.Verbose("downloading agent from %s", agentURL)
-	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
-		return fmt.Errorf("failed to download agent: %w", err)
-	}
-	utils.Verbose("downloaded agent to %s", tmpPath)
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	utils.Verbose("installing agent on simulator %s", device.ID())
-	if err := device.InstallApp(tmpPath); err != nil {
-		return fmt.Errorf("failed to install agent: %w", err)
-	}
-
-	return waitForAgentInstalled(device)
+	return downloadAndInstallAgent(device, agentURL, tmpPath, nil)
 }
 
 func installAgentOnRealIOS(device devices.ControllableDevice) error {
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-runner.ipa", agentVersionIOS)
 	tmpPath := filepath.Join(os.TempDir(), "devicekit-ios-runner.ipa")
 
-	utils.Verbose("downloading agent from %s", agentURL)
-	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
-		return fmt.Errorf("failed to download agent: %w", err)
-	}
-	utils.Verbose("downloaded agent to %s", tmpPath)
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
-	resignedPath, err := utils.ResignIPA(tmpPath, device.ID(), agentProvisioningProfile, "")
-	if err != nil {
-		return fmt.Errorf("failed to re-sign agent: %w", err)
-	}
-	defer func() { _ = os.Remove(resignedPath) }()
-
-	utils.Verbose("installing agent on device %s", device.ID())
-	if err := device.InstallApp(resignedPath); err != nil {
-		return fmt.Errorf("failed to install agent: %w", err)
-	}
-
-	return waitForAgentInstalled(device)
+	return downloadAndInstallAgent(device, agentURL, tmpPath, func(downloaded string) (string, error) {
+		utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
+		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), agentProvisioningProfile, "")
+		if err != nil {
+			return "", fmt.Errorf("failed to re-sign agent: %w", err)
+		}
+		return resignedPath, nil
+	})
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/mobilenext-devicekit.apk", agentVersionAndroid)
 	tmpPath := filepath.Join(os.TempDir(), "mobilenext-devicekit.apk")
 
-	utils.Verbose("downloading agent from %s", agentURL)
-	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
-		return fmt.Errorf("failed to download agent: %w", err)
-	}
-	utils.Verbose("downloaded agent to %s", tmpPath)
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	utils.Verbose("installing agent on device %s", device.ID())
-	if err := device.InstallApp(tmpPath); err != nil {
-		return fmt.Errorf("failed to install agent: %w", err)
-	}
-
-	return waitForAgentInstalled(device)
+	return downloadAndInstallAgent(device, agentURL, tmpPath, nil)
 }
 
 func isAgentInstalled(device devices.ControllableDevice) bool {
 	agentPackage := agentPackageForPlatform(device.Platform())
 
-	if androidDevice, ok := device.(*devices.AndroidDevice); ok {
-		packages, err := androidDevice.ListAllPackages()
-		if err != nil {
-			return false
-		}
-		for _, pkg := range packages {
-			if pkg == agentPackage {
-				return true
-			}
-		}
-		return false
-	}
-
-	apps, err := device.ListApps()
+	apps, err := device.ListApps(false)
 	if err != nil {
 		return false
 	}
@@ -179,9 +173,6 @@ func waitForAgentInstalled(device devices.ControllableDevice) error {
 	startTime := time.Now()
 	for {
 		if isAgentInstalled(device) {
-			printJson(commands.NewSuccessResponse(map[string]any{
-				"message": "agent installed successfully",
-			}))
 			return nil
 		}
 

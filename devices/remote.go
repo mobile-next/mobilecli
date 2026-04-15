@@ -183,7 +183,7 @@ func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }
 
-func (r *RemoteDevice) ListApps() ([]InstalledAppInfo, error) {
+func (r *RemoteDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	return rpcCall[[]InstalledAppInfo](r, "device.apps.list", params{})
 }
 

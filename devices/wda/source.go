@@ -50,7 +50,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	if typeAccepted {
 		if isVisible(source.Rect) {
 			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil
-			alwaysInclude := source.Type == "TextField" || source.Type == "Button" || source.Type == "Switch" || source.Type == "SearchField"
+			alwaysInclude := elementType == "TextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField"
 			if hasIdentifier || alwaysInclude {
 				output = append(output, types.ScreenElement{
 					Type:       elementType,

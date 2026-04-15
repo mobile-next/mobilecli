@@ -102,7 +102,7 @@ type ControllableDevice interface {
 	LaunchApp(bundleID string, locales []string) error
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
-	ListApps() ([]InstalledAppInfo, error)
+	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
 	GetForegroundApp() (*ForegroundAppInfo, error)
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
