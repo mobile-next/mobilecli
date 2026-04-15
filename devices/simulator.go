@@ -604,7 +604,8 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		config.OnProgress("Starting video stream")
 	}
 
-	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
+	mjpegURL := buildMjpegURL(mjpegPort, config.FPS, config.Scale)
+	mjpegClient := mjpeg.NewWdaMjpegClient(mjpegURL)
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
