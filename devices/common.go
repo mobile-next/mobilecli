@@ -59,6 +59,20 @@ const (
 	DefaultFramerate = 30
 )
 
+func buildMjpegURL(port, fps int, scale float64) string {
+	url := fmt.Sprintf("http://localhost:%d/mjpeg", port)
+	sep := "?"
+	if fps > 0 {
+		url += fmt.Sprintf("%sfps=%d", sep, fps)
+		sep = "&"
+	}
+	scalePercent := int(scale * 100)
+	if scalePercent > 0 && scalePercent != 100 {
+		url += fmt.Sprintf("%sscale=%d", sep, scalePercent)
+	}
+	return url
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
