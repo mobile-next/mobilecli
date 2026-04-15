@@ -25,6 +25,9 @@ func NewWdaClient(hostPort string) *WdaClient {
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
 		},
 	}
 }
