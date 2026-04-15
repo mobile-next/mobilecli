@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
 )
@@ -25,7 +24,7 @@ func LogsCommand(req LogsRequest) *CommandResponse {
 	encoder := json.NewEncoder(os.Stdout)
 	count := 0
 	err = device.StreamLogs(func(entry devices.LogEntry) bool {
-		if req.Process != "" && !strings.Contains(entry.Process, req.Process) {
+		if req.Process != "" && entry.Process != req.Process {
 			return true
 		}
 		if req.PID >= 0 && entry.PID != req.PID {
