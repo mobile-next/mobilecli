@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-"path/filepath"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -13,8 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const agentVersion = "0.0.12"
-const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+const (
+	agentVersionIOS     = "0.0.12"
+	agentVersionAndroid = "1.1.5"
+	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
+	androidPackageName  = "com.mobilenext.devicekit"
+)
 
 var agentCmd = &cobra.Command{
 	Use:   "agent",
@@ -36,9 +40,7 @@ var agentInstallCmd = &cobra.Command{
 		utils.Verbose("platform: %s", device.Platform())
 		utils.Verbose("type: %s", device.DeviceType())
 
-		if device.Platform() != "ios" {
-			return fmt.Errorf("agent install is currently only supported on iOS devices")
-		}
+		agentPackage := agentPackageForPlatform(device.Platform())
 
 		if !agentReinstall {
 			apps, err := device.ListApps()
@@ -47,7 +49,7 @@ var agentInstallCmd = &cobra.Command{
 			}
 
 			for _, app := range apps {
-				if app.PackageName == agentRunnerBundleID {
+				if app.PackageName == agentPackage {
 					utils.Verbose("agent already installed: %s %s", app.AppName, app.Version)
 					printJson(commands.NewSuccessResponse(map[string]any{
 						"message": "agent is already installed",
@@ -58,18 +60,32 @@ var agentInstallCmd = &cobra.Command{
 			}
 		}
 
-		switch device.DeviceType() {
-		case "simulator":
-			return installAgentOnSimulator(device)
-		case "real":
-			if agentProvisioningProfile == "" {
-				return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+		switch device.Platform() {
+		case "ios":
+			switch device.DeviceType() {
+			case "simulator":
+				return installAgentOnSimulator(device)
+			case "real":
+				if agentProvisioningProfile == "" {
+					return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+				}
+				return installAgentOnRealIOS(device)
+			default:
+				return fmt.Errorf("unsupported device type: %s", device.DeviceType())
 			}
-			return installAgentOnRealIOS(device)
+		case "android":
+			return installAgentOnAndroid(device)
 		default:
-			return fmt.Errorf("unsupported device type: %s", device.DeviceType())
+			return fmt.Errorf("unsupported platform: %s", device.Platform())
 		}
 	},
+}
+
+func agentPackageForPlatform(platform string) string {
+	if platform == "android" {
+		return androidPackageName
+	}
+	return iosRunnerBundleID
 }
 
 func installAgentOnSimulator(device devices.ControllableDevice) error {
@@ -80,7 +96,7 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 		arch = "arm64"
 	}
 
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-Sim-%s.zip", agentVersion, arch)
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-Sim-%s.zip", agentVersionIOS, arch)
 	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch))
 
 	utils.Verbose("downloading agent from %s", agentURL)
@@ -99,7 +115,7 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 }
 
 func installAgentOnRealIOS(device devices.ControllableDevice) error {
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-runner.ipa", agentVersion)
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/devicekit-ios-runner.ipa", agentVersionIOS)
 	tmpPath := filepath.Join(os.TempDir(), "devicekit-ios-runner.ipa")
 
 	utils.Verbose("downloading agent from %s", agentURL)
@@ -124,13 +140,38 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 	return waitForAgentInstalled(device)
 }
 
+func installAgentOnAndroid(device devices.ControllableDevice) error {
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/mobilenext-devicekit.apk", agentVersionAndroid)
+	tmpPath := filepath.Join(os.TempDir(), "mobilenext-devicekit.apk")
+
+	utils.Verbose("downloading agent from %s", agentURL)
+	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
+		return fmt.Errorf("failed to download agent: %w", err)
+	}
+	utils.Verbose("downloaded agent to %s", tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	utils.Verbose("installing agent on device %s", device.ID())
+	if err := device.InstallApp(tmpPath); err != nil {
+		return fmt.Errorf("failed to install agent: %w", err)
+	}
+
+	// adb install is synchronous, no need to poll
+	printJson(commands.NewSuccessResponse(map[string]any{
+		"message": "agent installed successfully",
+		"version": agentVersionAndroid,
+	}))
+	return nil
+}
+
 func waitForAgentInstalled(device devices.ControllableDevice) error {
+	agentPackage := agentPackageForPlatform(device.Platform())
 	startTime := time.Now()
 	for {
 		apps, err := device.ListApps()
 		if err == nil {
 			for _, app := range apps {
-				if app.PackageName == agentRunnerBundleID {
+				if app.PackageName == agentPackage {
 					printJson(commands.NewSuccessResponse(map[string]any{
 						"message": "agent installed successfully",
 						"version": app.Version,
