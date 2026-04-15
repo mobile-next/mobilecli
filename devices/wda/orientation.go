@@ -1,70 +1,47 @@
 package wda
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
-// GetOrientation gets the current device orientation
 func (c *WdaClient) GetOrientation() (string, error) {
-	sessionId, err := c.CreateSession()
+	result, err := c.CallRPC("device.io.orientation.get", nil)
 	if err != nil {
-		return "", err
-	}
-	defer func() { _ = c.DeleteSession(sessionId) }()
-
-	endpoint := fmt.Sprintf("session/%s/orientation", sessionId)
-	response, err := c.GetEndpoint(endpoint)
-	if err != nil {
-		return "", fmt.Errorf("failed to get orientation: %v", err)
+		return "", fmt.Errorf("failed to get orientation: %w", err)
 	}
 
-	value, ok := response["value"].(string)
-	if !ok {
-		return "", fmt.Errorf("invalid orientation response format")
+	var response struct {
+		Orientation string `json:"orientation"`
+	}
+	if err := json.Unmarshal(result, &response); err != nil {
+		return "", fmt.Errorf("failed to parse orientation response: %w", err)
 	}
 
-	// convert WDA orientation to simplified format
-	switch value {
+	switch response.Orientation {
 	case "PORTRAIT":
-		return "portrait", nil
-	case "PORTRAIT_UPSIDEDOWN":
 		return "portrait", nil
 	case "LANDSCAPE":
 		return "landscape", nil
-	case "LANDSCAPERIGHT":
-		return "landscape", nil
 	default:
-		return "portrait", nil // default to portrait
+		return "portrait", nil
 	}
 }
 
-// SetOrientation sets the device orientation
 func (c *WdaClient) SetOrientation(orientation string) error {
 	if orientation != "portrait" && orientation != "landscape" {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}
 
-	sessionId, err := c.CreateSession()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = c.DeleteSession(sessionId) }()
-
-	// convert simplified orientation to WDA format
 	wdaOrientation := "PORTRAIT"
 	if orientation == "landscape" {
 		wdaOrientation = "LANDSCAPE"
 	}
 
-	endpoint := fmt.Sprintf("session/%s/orientation", sessionId)
-	data := map[string]any{
+	params := map[string]string{
 		"orientation": wdaOrientation,
 	}
 
-	_, err = c.PostEndpoint(endpoint, data)
-	if err != nil {
-		return fmt.Errorf("failed to set orientation: %v", err)
-	}
-
-	return nil
+	_, err := c.CallRPC("device.io.orientation.set", params)
+	return err
 }

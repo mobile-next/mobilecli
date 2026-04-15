@@ -21,6 +21,10 @@ var (
 	// for apps launch command
 	locale string
 
+	// for agent install command
+	agentForce               bool
+	agentProvisioningProfile string
+
 	// for fleet allocate command
 	fleetType     string
 	fleetVersions []string

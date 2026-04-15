@@ -70,7 +70,7 @@ func ListAppsCommand(req ListAppsRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	apps, err := targetDevice.ListApps()
+	apps, err := targetDevice.ListApps(true)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to list apps on device %s: %v", targetDevice.ID(), err))
 	}
