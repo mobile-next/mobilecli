@@ -634,6 +634,11 @@ type AppsUninstallParams struct {
 	BundleID string `json:"bundleId"`
 }
 
+type AppsClearParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
 type ScreenRecordParams struct {
 	DeviceID  string `json:"deviceId"`
 	Output    string `json:"output"`
@@ -982,6 +987,33 @@ func handleAppsInstall(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.InstallAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleAppsClear(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var p AppsClearParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
+	}
+
+	if p.BundleID == "" {
+		return nil, fmt.Errorf("'bundleId' is required")
+	}
+
+	req := commands.ClearAppRequest{
+		DeviceID: p.DeviceID,
+		BundleID: p.BundleID,
+	}
+
+	response := commands.ClearAppCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
