@@ -1056,7 +1056,6 @@ type simctlLogEntry struct {
 	Category         string `json:"category"`
 	ProcessImagePath string `json:"processImagePath"`
 	ProcessID        int    `json:"processID"`
-	EventType        string `json:"eventType"`
 }
 
 func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
@@ -1104,7 +1103,6 @@ func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
 			Category:  raw.Category,
 			PID:       raw.ProcessID,
 			Process:   processName,
-			EventType: raw.EventType,
 		}) {
 			_ = cmd.Process.Kill()
 			break

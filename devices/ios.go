@@ -18,8 +18,8 @@ import (
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/crashreport"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
-	"github.com/danielpaulus/go-ios/ios/syslog"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
+	"github.com/danielpaulus/go-ios/ios/ostrace"
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
@@ -1670,47 +1670,35 @@ func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
 		return fmt.Errorf("failed to get device: %w", err)
 	}
 
-	conn, err := syslog.New(device)
+	spec := ostrace.DefaultLevelFilter()
+	conn, err := ostrace.New(device, -1, spec.MessageFilter, spec.StreamFlags)
 	if err != nil {
-		return fmt.Errorf("failed to connect to syslog: %w", err)
+		return fmt.Errorf("failed to connect to os_trace_relay: %w", err)
 	}
-	defer conn.Close()
-
-	parse := syslog.Parser()
+	defer func() { _ = conn.Close() }()
 
 	for {
-		msg, err := conn.ReadLogMessage()
+		entry, err := conn.ReadEntry()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("syslog read error: %w", err)
+			return fmt.Errorf("os_trace read error: %w", err)
 		}
 
-		msg = strings.TrimSuffix(msg, "\x00")
-		msg = strings.TrimSuffix(msg, "\x0A")
-		if msg == "" {
-			continue
-		}
-
-		entry, err := parse(msg)
-		if err != nil {
-			// unparseable line — emit raw message
-			if !onLog(LogEntry{
-				Message: msg,
-			}) {
-				return nil
-			}
-			continue
-		}
-
-		if !onLog(LogEntry{
-			Timestamp: entry.Timestamp,
+		out := LogEntry{
+			Timestamp: entry.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
 			Message:   entry.Message,
-			Level:     entry.Level,
-			Process:   entry.Process,
-			PID:       atoiOrZero(entry.PID),
-		}) {
+			Level:     entry.LevelName,
+			PID:       int(entry.PID),
+			Process:   processNameFromPath(entry.Filename),
+		}
+		if entry.Label != nil {
+			out.Subsystem = entry.Label.Subsystem
+			out.Category = entry.Label.Category
+		}
+
+		if !onLog(out) {
 			return nil
 		}
 	}
