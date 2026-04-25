@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -903,11 +904,11 @@ type simctlLogEntry struct {
 	ProcessID        int    `json:"processID"`
 }
 
-func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	args := []string{"simctl", "spawn", s.UDID, "log", "stream", "--level", "info", "--style", "json"}
 	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
 
-	cmd := exec.Command("xcrun", args...)
+	cmd := exec.CommandContext(ctx, "xcrun", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -963,9 +964,7 @@ func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	}
 
 	waitErr := cmd.Wait()
-	if stoppedByCaller {
-		// process was killed because the caller signaled stop;
-		// the wait error reflects our own kill, not a real failure
+	if stoppedByCaller || ctx.Err() != nil {
 		return nil
 	}
 	if waitErr != nil {

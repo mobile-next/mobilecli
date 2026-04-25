@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -149,7 +150,7 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
-	StreamLogs(onLog func(LogEntry) bool) error
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options

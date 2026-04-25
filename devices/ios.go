@@ -1629,7 +1629,7 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	return content, nil
 }
 
-func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (d *IOSDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
 	if err != nil {
@@ -1646,31 +1646,65 @@ func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to os_trace_relay: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
+
+	type readResult struct {
+		entry LogEntry
+		err   error
+	}
+
+	ch := make(chan readResult, 1)
+	done := make(chan struct{})
+	var closeOnce sync.Once
+	stopStreaming := func() {
+		closeOnce.Do(func() {
+			close(done)
+			_ = conn.Close()
+		})
+	}
+	defer stopStreaming()
+
+	go func() {
+		for {
+			raw, err := conn.ReadEntry()
+			result := readResult{err: err}
+			if err == nil {
+				result.entry = LogEntry{
+					Timestamp: raw.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
+					Message:   raw.Message,
+					Level:     raw.LevelName,
+					PID:       int(raw.PID),
+					Process:   processNameFromPath(raw.Filename),
+				}
+				if raw.Label != nil {
+					result.entry.Subsystem = raw.Label.Subsystem
+					result.entry.Category = raw.Label.Category
+				}
+			}
+			select {
+			case <-done:
+				return
+			case ch <- result:
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
 
 	for {
-		entry, err := conn.ReadEntry()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+		select {
+		case <-ctx.Done():
+			return nil
+		case r := <-ch:
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("os_trace read error: %w", r.err)
+			}
+			if !onLog(r.entry) {
 				return nil
 			}
-			return fmt.Errorf("os_trace read error: %w", err)
-		}
-
-		out := LogEntry{
-			Timestamp: entry.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
-			Message:   entry.Message,
-			Level:     entry.LevelName,
-			PID:       int(entry.PID),
-			Process:   processNameFromPath(entry.Filename),
-		}
-		if entry.Label != nil {
-			out.Subsystem = entry.Label.Subsystem
-			out.Category = entry.Label.Category
-		}
-
-		if !onLog(out) {
-			return nil
 		}
 	}
 }

@@ -1404,13 +1404,13 @@ var logcatLevelMap = map[string]string{
 	"A": "Assert",
 }
 
-func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	// build PID→process name map for --process filtering
 	pidMap := d.getPidToProcessMap()
 
 	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
-	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1422,6 +1422,8 @@ func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	stoppedByCaller := false
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -1451,10 +1453,17 @@ func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
 
 		if !onLog(entry) {
 			_ = cmd.Process.Kill()
+			stoppedByCaller = true
 			break
 		}
 	}
 
 	_ = cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("logcat read error: %w", err)
+	}
 	return nil
 }

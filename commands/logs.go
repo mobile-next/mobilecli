@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -95,7 +96,7 @@ func matchesFilters(entry devices.LogEntry, filters []LogFilter) bool {
 	return true
 }
 
-func LogsCommand(req LogsRequest) *CommandResponse {
+func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
@@ -115,7 +116,7 @@ func LogsCommand(req LogsRequest) *CommandResponse {
 		return true
 	}
 
-	err = device.StreamLogs(func(entry devices.LogEntry) bool {
+	err = device.StreamLogs(ctx, func(entry devices.LogEntry) bool {
 		if !matchesFilters(entry, req.Filters) {
 			return true
 		}

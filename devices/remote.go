@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -501,6 +502,6 @@ func (r *RemoteDevice) GetCrashReport(id string) ([]byte, error) {
 	return []byte(result.Content), nil
 }
 
-func (r *RemoteDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (r *RemoteDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	return fmt.Errorf("device logs not yet supported for remote devices")
 }
