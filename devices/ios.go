@@ -1630,6 +1630,12 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 }
 
 func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get device: %w", err)
