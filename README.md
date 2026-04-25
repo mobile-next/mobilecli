@@ -35,7 +35,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 
 ### 🎯 Platform Support
@@ -207,6 +207,10 @@ mobilecli apps install <path> --device <device-id>
 
 # Uninstall an app
 mobilecli apps uninstall <bundle-id> --device <device-id>
+
+# Clear app data (cache, preferences, databases) without uninstalling
+# Supported on Android and iOS Simulator
+mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
 Example output for `apps foreground`:

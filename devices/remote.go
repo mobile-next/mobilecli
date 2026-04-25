@@ -367,6 +367,10 @@ func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, erro
 	return nil, fmt.Errorf("uninstall app is not supported on remote devices")
 }
 
+func (r *RemoteDevice) ClearApp(bundleID string) error {
+	return r.fireRPC("device.apps.clear", params{"bundleId": bundleID})
+}
+
 // ScreenRecordCallbacks provides optional progress callbacks for screen recording
 type ScreenRecordCallbacks struct {
 	OnRecordingEnded   func()
