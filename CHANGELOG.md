@@ -1,3 +1,8 @@
+## [0.3.66](https://github.com/mobile-next/mobilecli/releases/tag/0.3.66) (2026-04-16)
+* General: Add `mobilecli agent install` command for automatically installing devicekit-ios and devicekit-android ([#196](https://github.com/mobile-next/mobilecli/pull/196))
+* iOS: Disable HTTP keep-alives to fix real device port forwarding ([#197](https://github.com/mobile-next/mobilecli/pull/197))
+* iOS: Replace WebDriverAgent with devicekit-ios agent ([#196](https://github.com/mobile-next/mobilecli/pull/196))
+
 ## [0.2.0](https://github.com/mobile-next/mobilecli/releases/tag/0.2.0) (2026-04-13)
 * General: Move npm package from `@mobilenext/mobilecli` to `mobilecli` ([#191](https://github.com/mobile-next/mobilecli/pull/191))
 * General: Update npm packages under 'test' directory ([#192](https://github.com/mobile-next/mobilecli/pull/192))

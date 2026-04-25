@@ -222,6 +222,40 @@ Example output for `apps foreground`:
 }
 ```
 
+### Agent Management 🤖
+
+On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
+
+On **Android**, most features work without the agent, but installing it enables non-ASCII text input (e.g. Japanese, Chinese, Korean, emoji) which is not possible through `adb` alone.
+
+```bash
+# Check if the agent is installed on a device
+mobilecli agent status --device <device-id>
+
+# Install the agent
+mobilecli agent install --device <device-id>
+
+# Force reinstall the agent
+mobilecli agent install --device <device-id> --force
+
+# Install on a real iOS device (requires provisioning profile)
+mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
+```
+
+Example output for `agent status`:
+```json
+{
+  "status": "ok",
+  "data": {
+    "message": "Agent version 0.0.12 is installed on device",
+    "agent": {
+      "version": "0.0.12",
+      "bundleId": "com.mobilenext.devicekit-iosUITests.xctrunner"
+    }
+  }
+}
+```
+
 ### Crash Reports 💥
 
 ```bash
@@ -310,7 +344,7 @@ wscat -c ws://localhost:12000/ws
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Currently requires that you install and run WebDriverAgent manually. You may change the BUNDLE IDENTIFIER, and *mobilecli* will be able to launch it if needed, as long as the identifier ends with `*.WebDriverAgent`.
+- Requires the on-device agent. Install it with `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision`. A valid Apple provisioning profile is needed to re-sign the agent for your device.
 
 ## Development 👩‍💻
 

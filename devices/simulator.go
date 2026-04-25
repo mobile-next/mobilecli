@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/assets"
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
@@ -22,10 +21,8 @@ import (
 )
 
 const (
-	LOW_WDA_PORT    = 13001
-	HIGH_WDA_PORT   = 13200
-	LOW_MJPEG_PORT  = 13201
-	HIGH_MJPEG_PORT = 13400
+	LOW_WDA_PORT  = 13001
+	HIGH_WDA_PORT = 13200
 )
 
 // AppInfo corresponds to the structure from plutil output
@@ -212,12 +209,10 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 		cmd.Env = append(cmd.Env, fmt.Sprintf("SIMCTL_CHILD_%s=%s", key, value))
 	}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to launch app with env: %w", err)
 	}
 
-	_ = output // Suppress unused variable warning
 	return nil
 }
 
@@ -293,140 +288,13 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-func getWebdriverAgentFilename(arch string) string {
-	if arch == "amd64" {
-		return "WebDriverAgentRunner-Build-Sim-x86_64.zip"
-	}
-	return "WebDriverAgentRunner-Build-Sim-arm64.zip"
-}
-
-func getWebdriverAgentDownloadUrl(arch string) string {
-	filename := getWebdriverAgentFilename(arch)
-	return "https://github.com/appium/WebDriverAgent/releases/download/v10.2.5/" + filename
-}
-
-func (s SimulatorDevice) downloadWebDriverAgentFromGitHub() (string, error) {
-	url := getWebdriverAgentDownloadUrl(runtime.GOARCH)
-
-	tmpFile, err := os.CreateTemp("", "wda-*.zip")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %v", err)
-	}
-	_ = tmpFile.Close()
-
-	utils.Verbose("Downloading WebDriverAgent to: %s", tmpFile.Name())
-
-	err = utils.DownloadFile(url, tmpFile.Name())
-	if err != nil {
-		_ = os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to download WebDriverAgent: %w", err)
-	}
-
-	fileInfo, err := os.Stat(tmpFile.Name())
-	if err == nil {
-		utils.Verbose("Downloaded %d bytes", fileInfo.Size())
-	}
-
-	return tmpFile.Name(), nil
-}
-
-func (s SimulatorDevice) InstallWebDriverAgent(onProgress func(string)) error {
-	var file string
-	var shouldCleanup bool
-
-	// try local file first
-	wdaPath := os.Getenv("MOBILECLI_WDA_PATH")
-	if wdaPath != "" {
-		filename := getWebdriverAgentFilename(runtime.GOARCH)
-		localPath := filepath.Join(wdaPath, filename)
-
-		if _, err := os.Stat(localPath); err == nil {
-			utils.Verbose("Using local WebDriverAgent from: %s", localPath)
-			file = localPath
-			shouldCleanup = false
-		} else {
-			utils.Verbose("Local WebDriverAgent not found at: %s", localPath)
-		}
-	}
-
-	// fall back to GitHub download
-	if file == "" {
-		if onProgress != nil {
-			onProgress("Downloading WebDriverAgent")
-		}
-
-		downloadedFile, err := s.downloadWebDriverAgentFromGitHub()
-		if err != nil {
-			return fmt.Errorf("failed to download WebDriverAgent: %w", err)
-		}
-		file = downloadedFile
-		shouldCleanup = true
-	}
-
-	if shouldCleanup {
-		defer func() { _ = os.Remove(file) }()
-	}
-
-	if onProgress != nil {
-		onProgress("Installing WebDriverAgent")
-	}
-
-	dir, err := utils.Unzip(file)
-	if err != nil {
-		return fmt.Errorf("failed to unzip WebDriverAgent: %w", err)
-	}
-
-	defer func() { _ = os.RemoveAll(dir) }()
-	utils.Verbose("Unzipped WebDriverAgent to %s", dir)
-
-	appDir := dir + "/WebDriverAgentRunner-Runner.app"
-	infoPlistPath := appDir + "/Info.plist"
-
-	// modify info.plist to add CFBundleDisplayName
-	err = utils.ModifyPlist(utils.ModifyPlistInput{
-		PlistPath: infoPlistPath,
-		Key:       "CFBundleDisplayName",
-		Value:     "Mobile Next Kit",
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to modify Info.plist: %w", err)
-	}
-
-	// write embedded icon file
-	iconDest := appDir + "/AppIcon.png"
-	err = os.WriteFile(iconDest, assets.AppIconData, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write icon: %w", err)
-	}
-
-	// add icon configuration to plist
-	err = utils.AddBundleIconFilesToPlist(infoPlistPath)
-	if err != nil {
-		return fmt.Errorf("failed to add icon to plist: %w", err)
-	}
-
-	err = InstallApp(s.UDID, appDir)
-	if err != nil {
-		return fmt.Errorf("failed to install WebDriverAgent: %w", err)
-	}
-
-	err = s.WaitUntilAppExists("com.facebook.WebDriverAgentRunner.xctrunner")
-	if err != nil {
-		return fmt.Errorf("failed to wait for WebDriverAgent to be installed: %w", err)
-	}
-
-	return nil
-}
-
-func (s SimulatorDevice) IsWebDriverAgentInstalled() (bool, error) {
+func (s SimulatorDevice) IsAgentInstalled() (bool, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {
 		return false, err
 	}
 
-	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
-	_, ok := installedApps[webdriverPackageName]
+	_, ok := installedApps[agentRunnerBundleID]
 	return ok, nil
 }
 
@@ -567,49 +435,32 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("Failed to get existing WDA port: %v", err)
 	}
 
-	installed, err := s.IsWebDriverAgentInstalled()
+	installed, err := s.IsAgentInstalled()
 	if err != nil {
 		return err
 	}
 
 	if !installed {
-		utils.Verbose("WebdriverAgent is not installed. Will try to install now")
-		if config.OnProgress != nil {
-			config.OnProgress("Installing Agent on Simulator")
-		}
-
-		err = s.InstallWebDriverAgent(config.OnProgress)
-		if err != nil {
-			return fmt.Errorf("SimulatorDevice: failed to install WebDriverAgent: %v", err)
-		}
-
-		// from here on, we assume wda is installed
+		return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s' to install it", s.UDID)
 	}
 
 	if config.OnProgress != nil {
 		config.OnProgress("Starting Agent")
 	}
 
-	// find available ports
+	// find available port
 	usePort, err := utils.FindAvailablePortInRange(LOW_WDA_PORT, HIGH_WDA_PORT)
 	if err != nil {
-		return fmt.Errorf("failed to find available USE_PORT: %w", err)
+		return fmt.Errorf("failed to find available port: %w", err)
 	}
 
-	mjpegPort, err := utils.FindAvailablePortInRange(LOW_MJPEG_PORT, HIGH_MJPEG_PORT)
-	if err != nil {
-		return fmt.Errorf("failed to find available MJPEG_SERVER_PORT: %w", err)
-	}
+	utils.Verbose("Starting agent with DEVICEKIT_LISTEN_PORT=%d", usePort)
 
-	utils.Verbose("Starting WebDriverAgent with USE_PORT=%d and MJPEG_SERVER_PORT=%d", usePort, mjpegPort)
-
-	webdriverPackageName := "com.facebook.WebDriverAgentRunner.xctrunner"
 	env := map[string]string{
-		"USE_PORT":          strconv.Itoa(usePort),
-		"MJPEG_SERVER_PORT": strconv.Itoa(mjpegPort),
+		"DEVICEKIT_LISTEN_PORT": strconv.Itoa(usePort),
 	}
 
-	err = s.LaunchAppWithEnv(webdriverPackageName, env)
+	err = s.LaunchAppWithEnv(agentRunnerBundleID, env)
 	if err != nil {
 		return err
 	}
@@ -623,8 +474,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
-		// terminate the WDA process if it failed to start
-		_ = s.TerminateApp(webdriverPackageName)
+		// terminate the agent process if it failed to start
+		_ = s.TerminateApp(agentRunnerBundleID)
 		return err
 	}
 
@@ -664,7 +515,7 @@ func (s *SimulatorDevice) OpenURL(url string) error {
 	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
 }
 
-func (s *SimulatorDevice) ListApps() ([]InstalledAppInfo, error) {
+func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	output, err := runSimctl("listapps", s.ID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w\n%s", err, output)
@@ -696,7 +547,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}
 
 	// get all installed apps to enrich with version information
-	apps, err := s.ListApps()
+	apps, err := s.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
@@ -750,21 +601,12 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
 	}
 
-	// configure mjpeg framerate
-	fps := config.FPS
-	if fps == 0 {
-		fps = DefaultFramerate
-	}
-	err = s.wdaClient.SetMjpegFramerate(fps)
-	if err != nil {
-		return err
-	}
-
 	if config.OnProgress != nil {
 		config.OnProgress("Starting video stream")
 	}
 
-	mjpegClient := mjpeg.NewWdaMjpegClient(fmt.Sprintf("http://localhost:%d", mjpegPort))
+	mjpegURL := buildMjpegURL(mjpegPort, config.FPS, config.Scale)
+	mjpegClient := mjpeg.NewWdaMjpegClient(mjpegURL)
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
@@ -874,12 +716,12 @@ func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
 	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
 
 	for _, proc := range processes {
-		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "WebDriverAgentRunner-Runner") {
+		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "devicekit-iosUITests-Runner") {
 			return proc.PID, proc.Command, nil
 		}
 	}
 
-	return 0, "", fmt.Errorf("WebDriverAgent process not found for device %s", deviceUDID)
+	return 0, "", fmt.Errorf("agent process not found for device %s", deviceUDID)
 }
 
 func extractEnvValue(output, envVar string) (string, error) {
@@ -945,11 +787,12 @@ func (s SimulatorDevice) DumpSourceRaw() (any, error) {
 }
 
 func (s *SimulatorDevice) getWdaPort() (int, error) {
-	return s.getWdaEnvPort("USE_PORT")
+	return s.getWdaEnvPort("DEVICEKIT_LISTEN_PORT")
 }
 
 func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
-	return s.getWdaEnvPort("MJPEG_SERVER_PORT")
+	// mjpeg is served on the same port as the main agent at /mjpeg
+	return s.getWdaPort()
 }
 
 func (s SimulatorDevice) InstallApp(path string) error {

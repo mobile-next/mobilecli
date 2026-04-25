@@ -742,7 +742,14 @@ func (d *AndroidDevice) OpenURL(url string) error {
 	return nil
 }
 
-func (d *AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
+func (d *AndroidDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
+	if onlyLaunchable {
+		return d.listLaunchableApps()
+	}
+	return d.listAllPackages()
+}
+
+func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 	output, err := d.runAdbCommand("shell", "cmd", "package", "query-activities", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
@@ -769,6 +776,25 @@ func (d *AndroidDevice) ListApps() ([]InstalledAppInfo, error) {
 		apps = append(apps, InstalledAppInfo{
 			PackageName: packageName,
 		})
+	}
+
+	return apps, nil
+}
+
+func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
+	output, err := d.runAdbCommand("shell", "pm", "list", "packages")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	var apps []InstalledAppInfo
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "package:") {
+			apps = append(apps, InstalledAppInfo{
+				PackageName: strings.TrimPrefix(line, "package:"),
+			})
+		}
 	}
 
 	return apps, nil

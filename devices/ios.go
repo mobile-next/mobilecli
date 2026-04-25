@@ -39,6 +39,7 @@ const (
 	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
 	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
+	agentRunnerBundleID       = "com.mobilenext.devicekit-iosUITests.xctrunner"
 )
 
 // deviceInfoCache caches device name and OS version to avoid expensive GetValues() calls
@@ -480,26 +481,23 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
 		// list apps on device
-		apps, err := d.ListApps()
+		apps, err := d.ListApps(true)
 		if err != nil {
 			return fmt.Errorf("failed to list apps: %w", err)
 		}
 
-		// check if WebDriverAgent is installed
-		webdriverBundleId := ""
+		// check if agent is installed
+		agentBundleId := ""
 		for _, app := range apps {
-			if app.AppName == "WebDriverAgentRunner-Runner" {
-				utils.Verbose("WebDriverAgent is installed, launching it")
-				webdriverBundleId = app.PackageName
+			if app.PackageName == agentRunnerBundleID {
+				utils.Verbose("agent is installed, launching it")
+				agentBundleId = app.PackageName
 				break
 			}
 		}
 
-		if webdriverBundleId == "" {
-			if config.OnProgress != nil {
-				config.OnProgress("Installing WebDriverAgent")
-			}
-			return fmt.Errorf("WebDriverAgent is not installed")
+		if agentBundleId == "" {
+			return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
 		}
 
 		if config.OnProgress != nil {
@@ -524,7 +522,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			forwarder := ios.NewPortForwarder(d.ID())
-			err = forwarder.Forward(port, 8100)
+			err = forwarder.Forward(port, deviceKitHTTPPort)
 			if err != nil {
 				return fmt.Errorf("failed to forward port: %w", err)
 			}
@@ -559,33 +557,31 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 		if err != nil {
 			if config.OnProgress != nil {
-				config.OnProgress("Launching WebDriverAgent")
+				config.OnProgress("Launching agent")
 			}
 
-			// launch WebDriverAgent using testmanagerd
-			err = d.LaunchTestRunner(webdriverBundleId, webdriverBundleId, "WebDriverAgentRunner.xctest")
+			// launch agent using testmanagerd
+			err = d.LaunchTestRunner(agentBundleId, agentBundleId, "devicekit-iosUITests.xctest")
 			if err != nil {
-				return fmt.Errorf("failed to launch WebDriverAgent: %w", err)
+				return fmt.Errorf("failed to launch agent: %w", err)
 			}
 
 			if config.OnProgress != nil {
 				config.OnProgress("Waiting for agent to start")
 			}
 
-			// wait for WebDriverAgent to start
 			err = d.wdaClient.WaitForAgent()
 			if err != nil {
-				return fmt.Errorf("failed to wait for WebDriverAgent: %w", err)
+				return fmt.Errorf("failed to wait for agent: %w", err)
 			}
 
-			// check if WebDriverAgent is the active app and press HOME to background it
+			// background the agent if it's in the foreground
 			activeApp, err := d.wdaClient.GetActiveAppInfo()
 			if err == nil {
 				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
 
-				// if WDA is in foreground, press HOME to background it
-				if strings.Contains(activeApp.Name, "WebDriverAgent") {
-					utils.Verbose("WebDriverAgent is active, pressing HOME to background it")
+				if activeApp.BundleID == agentBundleId {
+					utils.Verbose("agent is active, pressing HOME to background it")
 					_ = d.wdaClient.PressButton("HOME")
 					time.Sleep(1 * time.Second)
 				}
@@ -599,7 +595,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig string) error {
 	if bundleID == "" && testRunnerBundleID == "" && xctestConfig == "" {
 		utils.Verbose("No bundle ids specified, falling back to defaults")
-		bundleID, testRunnerBundleID, xctestConfig = "com.facebook.WebDriverAgentRunner.xctrunner", "com.facebook.WebDriverAgentRunner.xctrunner", "WebDriverAgentRunner.xctest"
+		bundleID, testRunnerBundleID, xctestConfig = agentRunnerBundleID, agentRunnerBundleID, "devicekit-iosUITests.xctest"
 	}
 
 	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
@@ -847,7 +843,7 @@ func (d IOSDevice) OpenURL(url string) error {
 	return d.wdaClient.OpenURL(url)
 }
 
-func (d *IOSDevice) ListApps() ([]InstalledAppInfo, error) {
+func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
 	// Lock to prevent concurrent access to usbmuxd (race condition on ReadPair)
@@ -896,7 +892,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}
 
 	// get all installed apps to enrich with version information
-	apps, err := d.ListApps()
+	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
@@ -1055,43 +1051,12 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		}
 	}
 
-	// handle mjpeg format via WDA
-	// set up mjpeg port forwarding if not already running
+	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	needsMjpegForwarder := d.portForwarderMjpeg == nil || !d.portForwarderMjpeg.IsRunning()
+	wdaPort, _ := d.portForwarderWda.GetPorts()
+	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
+	d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegURL)
 	d.mu.Unlock()
-
-	if needsMjpegForwarder {
-		portMjpeg, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-		if err != nil {
-			return fmt.Errorf("failed to find available port for mjpeg: %w", err)
-		}
-
-		forwarder := ios.NewPortForwarder(d.ID())
-		err = forwarder.Forward(portMjpeg, 9100)
-		if err != nil {
-			return fmt.Errorf("failed to forward port for mjpeg: %w", err)
-		}
-
-		mjpegUrl := fmt.Sprintf("http://localhost:%d/", portMjpeg)
-
-		d.mu.Lock()
-		d.portForwarderMjpeg = forwarder
-		d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegUrl)
-		d.mu.Unlock()
-
-		utils.Verbose("Mjpeg client set up on %s", mjpegUrl)
-	}
-
-	// configure mjpeg framerate
-	fps := config.FPS
-	if fps == 0 {
-		fps = DefaultFramerate
-	}
-	err := d.wdaClient.SetMjpegFramerate(fps)
-	if err != nil {
-		return err
-	}
 
 	if config.OnProgress != nil {
 		config.OnProgress("Starting video stream")
@@ -1464,7 +1429,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
 
 	// find DeviceKit main app (not the xctrunner)
-	apps, err := d.ListApps()
+	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
