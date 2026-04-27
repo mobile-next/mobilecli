@@ -19,6 +19,8 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+const artifactsHost = "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com"
+
 type params map[string]any
 
 type RemoteDevice struct {
@@ -229,8 +231,8 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("invalid upload URL: %w", err)
 	}
-	if u.Scheme != "https" || u.Host != "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com" {
-		return fmt.Errorf("upload URL must be https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/..., got: %s", uploadURL)
+	if u.Scheme != "https" || u.Hostname() != artifactsHost {
+		return fmt.Errorf("upload URL must be https://%s/..., got: %s", artifactsHost, uploadURL)
 	}
 
 	f, err := os.Open(filePath)
@@ -278,11 +280,13 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("invalid download URL: %w", err)
 	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("download URL must use HTTPS scheme, got %q", parsed.Scheme)
+
+	if parsed.Scheme != "https" || parsed.Hostname() != artifactsHost {
+		return fmt.Errorf("download URL must be https://%s/..., got: %s", artifactsHost, downloadURL)
 	}
 
-	resp, err := http.Get(parsed.String()) //nolint:gosec // URL is validated above
+	utils.Verbose("downloading from %v", parsed)
+	resp, err := http.Get(parsed.String())
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}
