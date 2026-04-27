@@ -1,3 +1,8 @@
+## [0.3.67](https://github.com/mobile-next/mobilecli/releases/tag/0.3.67) (2026-04-27)
+* General: Validate artifact host for upload and download to address codeql ssrf alerts ([#207](https://github.com/mobile-next/mobilecli/pull/207))
+* iOS: Fix race condition when assigning device kit agent a random port for iOS Simulator ([#204](https://github.com/mobile-next/mobilecli/pull/204))
+* iOS: Remove redundant HOME button press after launching device kit agent ([#203](https://github.com/mobile-next/mobilecli/pull/203))
+
 ## [0.3.66](https://github.com/mobile-next/mobilecli/releases/tag/0.3.66) (2026-04-16)
 * General: Add `mobilecli agent install` command for automatically installing devicekit-ios and devicekit-android ([#196](https://github.com/mobile-next/mobilecli/pull/196))
 * iOS: Disable HTTP keep-alives to fix real device port forwarding ([#197](https://github.com/mobile-next/mobilecli/pull/197))
