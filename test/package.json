@@ -24,5 +24,8 @@
 		"mocha": "^11.7.2",
 		"ts-node": "^10.9.2",
 		"typescript": "^5.9.2"
+	},
+	"overrides": {
+		"serialize-javascript": "^7.0.3"
 	}
 }
