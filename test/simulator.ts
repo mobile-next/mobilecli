@@ -32,6 +32,7 @@ describe('iOS Simulator Tests', () => {
 				try {
 					findIOSRuntime(iosVersion);
 					simulatorId = createAndLaunchSimulator(iosVersion);
+					installDeviceKitAgent(simulatorId);
 				} catch (error) {
 					console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
 					this.skip();
@@ -73,26 +74,6 @@ describe('iOS Simulator Tests', () => {
 			it('should list installed apps', async function () {
 				const apps = listApps(simulatorId);
 				verifyAppsListContainsSafari(apps);
-			});
-
-			it('should warm up WDA by checking foreground app', async function () {
-				this.timeout(300000); // 5 minutes for WDA installation
-
-				// Terminate Safari if it's running (from previous URL test)
-				try {
-					terminateApp(simulatorId, 'com.apple.mobilesafari');
-					await new Promise(resolve => setTimeout(resolve, 2000));
-				} catch (e) {
-					// Safari might not be running, that's fine
-				}
-
-				// This ensures WDA is installed and running before the Safari tests
-				// Check foreground app - should be SpringBoard
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundApp);
-
-				// Wait a bit more to ensure WDA is fully ready
-				await new Promise(resolve => setTimeout(resolve, 3000));
 			});
 
 			it('should launch Safari app and verify it is in foreground', async function () {
@@ -239,15 +220,8 @@ describe('iOS Simulator Tests', () => {
 			it('should dump UI source in raw format', async function () {
 				this.timeout(60000);
 
-				// ensure WDA is running by checking foreground app first
-				const foregroundApp = getForegroundApp(simulatorId);
-				expect(foregroundApp.data.packageName).to.not.be.empty;
-
-				// dump UI in raw format
 				const rawDump = dumpUIRaw(simulatorId);
-
-				// verify it's the raw WDA response structure
-				verifyRawWDADump(rawDump);
+				verifyRawViewtreeDump(rawDump);
 			});
 		});
 	});
@@ -288,6 +262,10 @@ function mobilecli(args: string[]): any {
 		}
 		throw error;
 	}
+}
+
+function installDeviceKitAgent(simulatorId: string): void {
+	mobilecli(['agent', 'install', '--device', simulatorId]);
 }
 
 function takeScreenshot(simulatorId: string, screenshotPath: string): void {
@@ -521,7 +499,7 @@ function dumpUIRaw(simulatorId: string): any {
 	return mobilecli(['dump', 'ui', '--device', simulatorId, '--format', 'raw']);
 }
 
-function verifyRawWDADump(response: any): void {
+function verifyRawViewtreeDump(response: any): void {
 	// verify it's a valid response
 	expect(response).to.not.be.undefined;
 	expect(response.status).to.equal('ok');
@@ -533,10 +511,6 @@ function verifyRawWDADump(response: any): void {
 
 	// rawData should contain the tree structure directly from WDA
 	const rawData = data.rawData;
-	expect(rawData.type).to.be.a('string');
-	expect(rawData.type).to.not.be.empty;
-
-	// WDA raw response typically has children array
 	expect(rawData.children).to.be.an('array');
 }
 
