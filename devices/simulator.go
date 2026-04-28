@@ -1,7 +1,11 @@
 package devices
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -883,4 +887,84 @@ func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return os.ReadFile(filepath.Join(diagnosticReportsDir, id))
+}
+
+// simctlLogEntry is the raw structure from xcrun simctl log stream --style json
+type simctlLogEntry struct {
+	Timestamp        string `json:"timestamp"`
+	EventMessage     string `json:"eventMessage"`
+	MessageType      string `json:"messageType"`
+	Subsystem        string `json:"subsystem"`
+	Category         string `json:"category"`
+	ProcessImagePath string `json:"processImagePath"`
+	ProcessID        int    `json:"processID"`
+}
+
+func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	args := []string{"simctl", "spawn", s.UDID, "log", "stream", "--level", "info", "--style", "json"}
+	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
+
+	cmd := exec.CommandContext(ctx, "xcrun", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start log stream: %w", err)
+	}
+
+	decoder := json.NewDecoder(stdout)
+
+	// read opening '[' of the JSON array
+	token, err := decoder.Token()
+	if err != nil {
+		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		return fmt.Errorf("failed to read opening token: %w (process exit: %v)", err, waitErr)
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		return fmt.Errorf("expected '[', got %v (process exit: %v)", token, waitErr)
+	}
+
+	// decode entries one at a time until the stream ends
+	stoppedByCaller := false
+	for decoder.More() {
+		var raw simctlLogEntry
+		if err := decoder.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			_ = cmd.Process.Kill()
+			waitErr := cmd.Wait()
+			return fmt.Errorf("failed to decode log entry: %w (process exit: %v)", err, waitErr)
+		}
+
+		processName := processNameFromPath(raw.ProcessImagePath)
+
+		if !onLog(LogEntry{
+			Timestamp: raw.Timestamp,
+			Message:   raw.EventMessage,
+			Level:     raw.MessageType,
+			Subsystem: raw.Subsystem,
+			Category:  raw.Category,
+			PID:       raw.ProcessID,
+			Process:   processName,
+		}) {
+			_ = cmd.Process.Kill()
+			stoppedByCaller = true
+			break
+		}
+	}
+
+	waitErr := cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if waitErr != nil {
+		return fmt.Errorf("log stream ended with error: %w", waitErr)
+	}
+	return nil
 }

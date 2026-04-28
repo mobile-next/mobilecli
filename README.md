@@ -37,6 +37,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
+- **Device Logs**: Stream real-time device logs with filtering from iOS and Android devices
 
 ### 🎯 Platform Support
 
@@ -280,6 +281,33 @@ Example output for `crashes list`:
 ```
 
 **Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
+
+### Device Logs 📋
+
+```bash
+# Stream logs from a device (Ctrl+C to stop)
+mobilecli device logs --device <device-id>
+
+# Stop after 100 entries
+mobilecli device logs --device <device-id> --limit 100
+
+# Filter by field (exact match)
+mobilecli device logs --filter process=SpringBoard
+mobilecli device logs --filter tag=ActivityManager
+
+# Exclude by field
+mobilecli device logs --filter process!=SpringBoard
+
+# Combine filters (AND logic)
+mobilecli device logs --filter level=Error --filter process!=SpringBoard
+```
+
+Supported filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
+
+Each log entry is printed as a JSON line:
+```json
+{"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
+```
 
 ## HTTP API 🔌
 

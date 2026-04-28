@@ -1,16 +1,38 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+// LogEntry represents a single parsed log entry from a device
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem,omitempty"`
+	Category  string `json:"category,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+}
+
+// processNameFromPath extracts the binary name from a full image path
+func processNameFromPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		return path[idx+1:]
+	}
+	return path
+}
 
 type CrashReport struct {
 	ProcessName string `json:"processName"`
@@ -128,6 +150,7 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options

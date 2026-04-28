@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/xml"
@@ -13,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -1369,4 +1372,101 @@ func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(content), nil
+}
+
+type androidPidCache struct {
+	mu    sync.Mutex
+	names map[int]string
+}
+
+func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) string {
+	c.mu.Lock()
+	name, ok := c.names[pid]
+	c.mu.Unlock()
+	if ok {
+		return name
+	}
+
+	fmt.Fprintf(os.Stderr, "resolving pid %d\n", pid)
+	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || len(out) == 0 {
+		return ""
+	}
+	// cmdline is null-delimited; first entry is the executable path
+	first, _, _ := bytes.Cut(out, []byte{0})
+	name = processNameFromPath(string(first))
+
+	c.mu.Lock()
+	c.names[pid] = name
+	c.mu.Unlock()
+	return name
+}
+
+var logcatLevelMap = map[string]string{
+	"V": "Verbose",
+	"D": "Debug",
+	"I": "Info",
+	"W": "Warning",
+	"E": "Error",
+	"F": "Fatal",
+	"A": "Assert",
+}
+
+func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	pidCache := &androidPidCache{names: make(map[int]string)}
+
+	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start logcat: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	stoppedByCaller := false
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		parsed := parseLogcatLine(line)
+		if parsed == nil {
+			continue
+		}
+
+		pid, _ := strconv.Atoi(parsed.PID)
+		level := logcatLevelMap[parsed.Level]
+		if level == "" {
+			level = parsed.Level
+		}
+
+		entry := LogEntry{
+			Timestamp: parsed.Date + " " + parsed.Time,
+			PID:       pid,
+			Level:     level,
+			Tag:       parsed.Tag,
+			Message:   parsed.Message,
+			Process:   pidCache.resolveProcessNameByPid(d, pid),
+		}
+
+		if !onLog(entry) {
+			_ = cmd.Process.Kill()
+			stoppedByCaller = true
+			break
+		}
+	}
+
+	_ = cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("logcat read error: %w", err)
+	}
+	return nil
 }
