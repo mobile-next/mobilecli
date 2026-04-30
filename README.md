@@ -259,10 +259,10 @@ Example output for `agent status`:
 
 ```bash
 # List crash reports from a device
-mobilecli crashes list --device <device-id>
+mobilecli device crashes list --device <device-id>
 
 # Get a specific crash report by ID
-mobilecli crashes get <crash-id> --device <device-id>
+mobilecli device crashes get <crash-id> --device <device-id>
 ```
 
 Example output for `crashes list`:

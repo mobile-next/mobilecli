@@ -93,10 +93,10 @@ INPUT/OUTPUT:
 
 CRASH REPORTS:
   # List crash reports from a device
-  mobilecli crashes list --device <device-id>
+  mobilecli device crashes list --device <device-id>
 
   # Get a specific crash report
-  mobilecli crashes get --device <device-id> <crash-id>
+  mobilecli device crashes get --device <device-id> <crash-id>
 
 AGENT:
   # Check agent installation status
