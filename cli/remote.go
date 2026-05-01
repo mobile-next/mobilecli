@@ -12,7 +12,7 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-func getFleetToken() (string, error) {
+func getRemoteToken() (string, error) {
 	if token := os.Getenv("MOBILECLI_TOKEN"); token != "" {
 		return token, nil
 	}
@@ -28,17 +28,16 @@ func getFleetToken() (string, error) {
 	return token, nil
 }
 
-var fleetCmd = &cobra.Command{
-	Use:        "fleet",
-	Short:      "Device fleet management commands",
-	Long:       `Commands for managing device fleet including allocating, listing, and releasing devices.`,
-	Deprecated: "use 'mobilecli remote' instead",
+var remoteCmd = &cobra.Command{
+	Use:   "remote",
+	Short: "Remote device management commands",
+	Long:  `Commands for managing remote devices including allocating, listing, and releasing devices.`,
 }
 
-var fleetAllocateCmd = &cobra.Command{
+var remoteAllocateCmd = &cobra.Command{
 	Use:   "allocate",
-	Short: "Allocate a device from the fleet",
-	Long: `Allocates a device from the fleet matching the given filters.
+	Short: "Allocate a remote device",
+	Long: `Allocates a device from the remote fleet matching the given filters.
 
 Flags --version and --name can be specified multiple times (all are ANDed).
 
@@ -55,7 +54,7 @@ Name supports wildcard prefix matching:
 			return fmt.Errorf("platform must be 'ios' or 'android'")
 		}
 
-		token, err := getFleetToken()
+		token, err := getRemoteToken()
 		if err != nil {
 			return err
 		}
@@ -126,12 +125,12 @@ Name supports wildcard prefix matching:
 	},
 }
 
-var fleetListCmd = &cobra.Command{
+var remoteListDevicesCmd = &cobra.Command{
 	Use:   "list-devices",
-	Short: "List available fleet devices",
-	Long:  `Lists available devices in the device fleet.`,
+	Short: "List available remote devices",
+	Long:  `Lists available devices in the remote fleet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := getFleetToken()
+		token, err := getRemoteToken()
 		if err != nil {
 			return err
 		}
@@ -150,20 +149,20 @@ var fleetListCmd = &cobra.Command{
 	},
 }
 
-var fleetReleaseDeviceID string
+var remoteReleaseDeviceID string
 
-var fleetReleaseCmd = &cobra.Command{
+var remoteReleaseCmd = &cobra.Command{
 	Use:   "release",
-	Short: "Release a device back to the fleet",
-	Long:  `Releases an allocated device back to the fleet.`,
+	Short: "Release a remote device",
+	Long:  `Releases an allocated device back to the remote fleet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := getFleetToken()
+		token, err := getRemoteToken()
 		if err != nil {
 			return err
 		}
 
 		req := commands.FleetReleaseRequest{
-			DeviceID: fleetReleaseDeviceID,
+			DeviceID: remoteReleaseDeviceID,
 			Token:    token,
 		}
 
@@ -178,17 +177,17 @@ var fleetReleaseCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(fleetCmd)
-	fleetCmd.AddCommand(fleetAllocateCmd, fleetListCmd, fleetReleaseCmd)
+	rootCmd.AddCommand(remoteCmd)
+	remoteCmd.AddCommand(remoteAllocateCmd, remoteListDevicesCmd, remoteReleaseCmd)
 
-	fleetAllocateCmd.Flags().StringVar(&platform, "platform", "", "device platform (ios or android)")
-	_ = fleetAllocateCmd.MarkFlagRequired("platform")
-	fleetAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
-	fleetAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
-	fleetAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
-	fleetAllocateCmd.Flags().BoolVar(&fleetWait, "wait", false, "wait for device to finish allocating before returning")
-	fleetAllocateCmd.Flags().IntVar(&fleetTimeout, "timeout", 900, "seconds to wait for allocation (only used with --wait)")
+	remoteAllocateCmd.Flags().StringVar(&platform, "platform", "", "device platform (ios or android)")
+	_ = remoteAllocateCmd.MarkFlagRequired("platform")
+	remoteAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
+	remoteAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
+	remoteAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
+	remoteAllocateCmd.Flags().BoolVar(&fleetWait, "wait", false, "wait for device to finish allocating before returning")
+	remoteAllocateCmd.Flags().IntVar(&fleetTimeout, "timeout", 900, "seconds to wait for allocation (only used with --wait)")
 
-	fleetReleaseCmd.Flags().StringVar(&fleetReleaseDeviceID, "device", "", "device ID to release")
-	_ = fleetReleaseCmd.MarkFlagRequired("device")
+	remoteReleaseCmd.Flags().StringVar(&remoteReleaseDeviceID, "device", "", "device ID to release")
+	_ = remoteReleaseCmd.MarkFlagRequired("device")
 }

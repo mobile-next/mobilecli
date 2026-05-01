@@ -1,3 +1,7 @@
+## [0.3.68](https://github.com/mobile-next/mobilecli/releases/tag/0.3.68) (2026-05-01)
+* General: Add `mobilecli remote` commands for allocating, listing, and releasing remote devices, deprecate `mobilecli fleet`
+* General: Move `crashes` commands under `device crashes`, deprecate root `crashes` ([#209](https://github.com/mobile-next/mobilecli/pull/209))
+
 ## [0.3.67](https://github.com/mobile-next/mobilecli/releases/tag/0.3.67) (2026-04-27)
 * General: Validate artifact host for upload and download to address codeql ssrf alerts ([#207](https://github.com/mobile-next/mobilecli/pull/207))
 * iOS: Fix race condition when assigning device kit agent a random port for iOS Simulator ([#204](https://github.com/mobile-next/mobilecli/pull/204))
