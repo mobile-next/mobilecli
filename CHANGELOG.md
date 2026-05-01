@@ -1,3 +1,6 @@
+## [0.3.69](https://github.com/mobile-next/mobilecli/releases/tag/0.3.69) (2026-05-01)
+* iOS: update go-ios library to v1.0.211 which fixes iOS 26 on OSX Tahoe ([#212](https://github.com/mobile-next/mobilecli/pull/212))
+
 ## [0.3.68](https://github.com/mobile-next/mobilecli/releases/tag/0.3.68) (2026-05-01)
 * General: Add `mobilecli remote` commands for allocating, listing, and releasing remote devices, deprecate `mobilecli fleet`
 * General: Move `crashes` commands under `device crashes`, deprecate root `crashes` ([#209](https://github.com/mobile-next/mobilecli/pull/209))
