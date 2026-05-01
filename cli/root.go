@@ -111,6 +111,16 @@ AGENT:
   # Install on a real iOS device (requires provisioning profile)
   mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
 
+REMOTE DEVICES:
+  # Allocate a remote iOS device
+  mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wait
+
+  # List available remote devices
+  mobilecli remote list-devices
+
+  # Release an allocated remote device
+  mobilecli remote release --device <device-id>
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com
@@ -132,7 +142,7 @@ COMMON FLAGS:
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		token, _ := getFleetToken()
+		token, _ := getRemoteToken()
 		if token != "" {
 			commands.SetFleetConfig(token)
 		}

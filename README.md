@@ -281,6 +281,22 @@ Example output for `crashes list`:
 
 **Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
 
+### Remote Devices ☁️
+
+```bash
+# Allocate a remote iOS device
+mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wait
+
+# Allocate a remote Android device (exact OS version)
+mobilecli remote allocate --platform android --version 14 --wait
+
+# List available remote devices
+mobilecli remote list-devices
+
+# Release an allocated remote device
+mobilecli remote release --device <device-id>
+```
+
 ## HTTP API 🔌
 
 ***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
