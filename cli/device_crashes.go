@@ -7,13 +7,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var crashesCmd = &cobra.Command{
-	Use:        "crashes",
-	Short:      "Manage crash reports from devices",
-	Deprecated: "use 'device crashes' instead",
+var deviceCrashesCmd = &cobra.Command{
+	Use:   "crashes",
+	Short: "Manage crash reports from a device",
 }
 
-var crashesListCmd = &cobra.Command{
+var deviceCrashesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List crash reports from a device",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -26,7 +25,7 @@ var crashesListCmd = &cobra.Command{
 	},
 }
 
-var crashesGetCmd = &cobra.Command{
+var deviceCrashesGetCmd = &cobra.Command{
 	Use:   "get [id]",
 	Short: "Get a crash report by ID",
 	Args:  cobra.ExactArgs(1),
@@ -41,11 +40,11 @@ var crashesGetCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(crashesCmd)
+	deviceCmd.AddCommand(deviceCrashesCmd)
 
-	crashesCmd.AddCommand(crashesListCmd)
-	crashesCmd.AddCommand(crashesGetCmd)
+	deviceCrashesCmd.AddCommand(deviceCrashesListCmd)
+	deviceCrashesCmd.AddCommand(deviceCrashesGetCmd)
 
-	crashesListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list crashes from")
-	crashesGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get crash from")
+	deviceCrashesListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list crashes from")
+	deviceCrashesGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get crash from")
 }
