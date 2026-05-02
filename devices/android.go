@@ -1273,6 +1273,17 @@ func (d *AndroidDevice) InstallApp(path string) error {
 	return fmt.Errorf("installation failed: %s", string(output))
 }
 
+func (d *AndroidDevice) ClearApp(bundleID string) error {
+	output, err := d.runAdbCommand("shell", "pm", "clear", bundleID)
+	if err != nil {
+		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	if !strings.Contains(string(output), "Success") {
+		return fmt.Errorf("failed to clear app %s: %s", bundleID, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	appInfo := &InstalledAppInfo{
 		PackageName: packageName,

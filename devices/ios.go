@@ -1100,6 +1100,10 @@ func (d IOSDevice) InstallApp(path string) error {
 	return nil
 }
 
+func (d IOSDevice) ClearApp(bundleID string) error {
+	return fmt.Errorf("clearing app data is not supported on real iOS devices")
+}
+
 func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
