@@ -42,6 +42,11 @@ jobs:
         go install golang.org/x/tools/cmd/goimports@latest
         go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
+    - name: Check formatting
+      run: |
+        go fmt ./...
+        git diff --exit-code
+
     - name: Lint
       run: |
         go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.2
