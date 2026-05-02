@@ -36,4 +36,3 @@ type TapAction struct {
 	Y        int    `json:"y"`
 	Button   int    `json:"button"`
 }
-

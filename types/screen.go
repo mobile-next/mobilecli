@@ -8,12 +8,13 @@ type ScreenElementRect struct {
 }
 
 type ScreenElement struct {
-	Type       string             `json:"type"`
-	Label      *string            `json:"label,omitempty"`
-	Text       *string            `json:"text,omitempty"`
-	Name       *string            `json:"name,omitempty"`
-	Value      *string            `json:"value,omitempty"`
-	Identifier *string            `json:"identifier,omitempty"`
-	Rect       ScreenElementRect  `json:"rect"`
-	Focused    *bool              `json:"focused,omitempty"` // currently only on android tv
+	Type        string            `json:"type"`
+	Label       *string           `json:"label,omitempty"`
+	Text        *string           `json:"text,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	Value       *string           `json:"value,omitempty"`
+	Placeholder *string           `json:"placeholder,omitempty"`
+	Identifier  *string           `json:"identifier,omitempty"`
+	Rect        ScreenElementRect `json:"rect"`
+	Focused     *bool             `json:"focused,omitempty"` // currently only on android tv
 }

@@ -55,7 +55,7 @@ var okResponse = map[string]any{"status": "ok"}
 type StreamSession struct {
 	ID        string
 	DeviceID  string
-	Format    string  // "mjpeg" or "avc"
+	Format    string // "mjpeg" or "avc"
 	Quality   int
 	Scale     float64
 	CreatedAt time.Time
@@ -80,15 +80,15 @@ type JSONRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
-	ID      any     `json:"id,omitempty"`
+	ID      any             `json:"id,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC response
 type JSONRPCResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Result  any `json:"result,omitempty"`
-	Error   any `json:"error,omitempty"`
-	ID      any `json:"id"`
+	JSONRPC string `json:"jsonrpc"`
+	Result  any    `json:"result,omitempty"`
+	Error   any    `json:"error,omitempty"`
+	ID      any    `json:"id"`
 }
 
 // ScreenshotParams represents the parameters for the screenshot request
@@ -564,8 +564,8 @@ type IoButtonParams struct {
 }
 
 type IoGestureParams struct {
-	DeviceID string        `json:"deviceId"`
-	Actions  []any `json:"actions"`
+	DeviceID string `json:"deviceId"`
+	Actions  []any  `json:"actions"`
 }
 
 type URLParams struct {
