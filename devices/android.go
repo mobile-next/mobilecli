@@ -671,7 +671,7 @@ func isAscii(text string) bool {
 // escapeShellText escapes shell special characters
 func escapeShellText(text string) string {
 	// escape all shell special characters that could be used for injection
-	specialChars := `\'"`+ "`" + `
+	specialChars := `\'"` + "`" + `
 |&;()<>{}[]$*? `
 	result := ""
 	for _, char := range text {

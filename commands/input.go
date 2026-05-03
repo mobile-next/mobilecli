@@ -37,8 +37,8 @@ type ButtonRequest struct {
 
 // GestureRequest represents the parameters for a gesture command
 type GestureRequest struct {
-	DeviceID string        `json:"deviceId"`
-	Actions  []any `json:"actions"`
+	DeviceID string `json:"deviceId"`
+	Actions  []any  `json:"actions"`
 }
 
 // SwipeRequest represents the parameters for a swipe command

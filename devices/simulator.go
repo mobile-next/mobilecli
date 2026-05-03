@@ -465,6 +465,14 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return err
 	}
 
+	if config.Hook != nil {
+		hookName := fmt.Sprintf("simulator-agent-%s", s.UDID)
+		config.Hook.Register(hookName, func() error {
+			_ = s.TerminateApp(agentRunnerBundleID)
+			return cmd.Process.Kill()
+		})
+	}
+
 	// update WDA client to use the actual port
 	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
 
@@ -475,6 +483,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
 		_ = s.TerminateApp(agentRunnerBundleID)
+		_ = cmd.Process.Kill()
 		return err
 	}
 

@@ -18,13 +18,14 @@ type sourceTreeElementRect struct {
 }
 
 type sourceTreeElement struct {
-	Type          string                `json:"type"`
-	Label         *string               `json:"label"`
-	Name          *string               `json:"name"`
-	Value         *string               `json:"value"`
-	RawIdentifier *string               `json:"rawIdentifier"`
-	Rect          sourceTreeElementRect `json:"rect"`
-	Children      []sourceTreeElement   `json:"children"`
+	Type             string                `json:"type"`
+	Label            *string               `json:"label"`
+	Name             *string               `json:"name"`
+	Value            *string               `json:"value"`
+	PlaceholderValue *string               `json:"placeholderValue"`
+	RawIdentifier    *string               `json:"rawIdentifier"`
+	Rect             sourceTreeElementRect `json:"rect"`
+	Children         []sourceTreeElement   `json:"children"`
 }
 
 func isVisible(rect sourceTreeElementRect) bool {
@@ -34,7 +35,7 @@ func isVisible(rect sourceTreeElementRect) bool {
 func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	var output []types.ScreenElement
 
-	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image"}
+	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField"}
 
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
@@ -49,15 +50,16 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 
 	if typeAccepted {
 		if isVisible(source.Rect) {
-			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil
-			alwaysInclude := elementType == "TextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField"
+			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
+			alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField"
 			if hasIdentifier || alwaysInclude {
 				output = append(output, types.ScreenElement{
-					Type:       elementType,
-					Label:      source.Label,
-					Name:       source.Name,
-					Value:      source.Value,
-					Identifier: source.RawIdentifier,
+					Type:        elementType,
+					Label:       source.Label,
+					Name:        source.Name,
+					Value:       source.Value,
+					Placeholder: source.PlaceholderValue,
+					Identifier:  source.RawIdentifier,
 					Rect: types.ScreenElementRect{
 						X:      int(source.Rect.X),
 						Y:      int(source.Rect.Y),

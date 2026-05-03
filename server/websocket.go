@@ -29,7 +29,7 @@ const (
 	wsPongWait       = 60 * time.Second
 	wsPingPeriod     = (wsPongWait * 9) / 10
 
-	jsonRPCVersion       = "2.0"
+	jsonRPCVersion        = "2.0"
 	errMsgParseError      = "expecting jsonrpc payload"
 	errMsgInvalidJSONRPC  = "'jsonrpc' must be '2.0'"
 	errMsgIDRequired      = "'id' field is required"

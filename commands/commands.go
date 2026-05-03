@@ -11,9 +11,9 @@ import (
 
 // CommandResponse represents a standardized response format for all commands
 type CommandResponse struct {
-	Status string      `json:"status"`
-	Data   any `json:"data,omitempty"`
-	Error  string      `json:"error,omitempty"`
+	Status string `json:"status"`
+	Data   any    `json:"data,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // NewSuccessResponse creates a success response
