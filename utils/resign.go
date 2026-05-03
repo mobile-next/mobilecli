@@ -13,11 +13,11 @@ import (
 )
 
 type provisioningProfile struct {
-	Name              string        `plist:"Name"`
-	TeamIdentifier    []string      `plist:"TeamIdentifier"`
+	Name               string       `plist:"Name"`
+	TeamIdentifier     []string     `plist:"TeamIdentifier"`
 	ProvisionedDevices []string     `plist:"ProvisionedDevices"`
-	Entitlements      entitlements  `plist:"Entitlements"`
-	ExpirationDate    time.Time     `plist:"ExpirationDate"`
+	Entitlements       entitlements `plist:"Entitlements"`
+	ExpirationDate     time.Time    `plist:"ExpirationDate"`
 }
 
 type entitlements struct {

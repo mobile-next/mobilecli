@@ -12,10 +12,10 @@ import (
 )
 
 type Request struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Method  string      `json:"method"`
-	Params  any `json:"params,omitempty"`
-	ID      int         `json:"id"`
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+	ID      int    `json:"id"`
 }
 
 // RPCError represents a JSON-RPC 2.0 error object
@@ -34,9 +34,9 @@ func (e *RPCError) Error() string {
 
 type Response struct {
 	JSONRPC string    `json:"jsonrpc"`
-	Result  any `json:"result,omitempty"`
+	Result  any       `json:"result,omitempty"`
 	Error   *RPCError `json:"error,omitempty"`
-	ID      any `json:"id"`
+	ID      any       `json:"id"`
 }
 
 const defaultFleetServerURL = "wss://api.mobilenexthq.com/ws"
