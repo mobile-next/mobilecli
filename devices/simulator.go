@@ -215,38 +215,6 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 	return nil
 }
 
-// spawnRunner starts the XCUITest runner via simctl spawn, bypassing SpringBoard
-// so the foreground app is not displaced. Returns the running process.
-func (s SimulatorDevice) spawnRunner(env map[string]string) (*exec.Cmd, error) {
-	output, err := runSimctl("get_app_container", s.UDID, agentRunnerBundleID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get runner container: %w", err)
-	}
-	containerPath := strings.TrimSpace(string(output))
-
-	binaryPath := filepath.Join(containerPath, "devicekit-iosUITests-Runner")
-	xctestPath := filepath.Join(containerPath, "PlugIns", "devicekit-iosUITests.xctest")
-
-	args := []string{"simctl", "spawn", s.UDID, binaryPath, "-XCTest", "All", xctestPath}
-
-	cmd := exec.Command("xcrun", args...)
-	cmd.Env = os.Environ()
-	for key, value := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("SIMCTL_CHILD_%s=%s", key, value))
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to spawn runner: %w", err)
-	}
-
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			utils.Verbose("runner exited: %v", err)
-		}
-	}()
-
-	return cmd, nil
-}
 
 func (s SimulatorDevice) LaunchApp(bundleID string, locales []string) error {
 	args := []string{"launch", s.UDID, bundleID}
@@ -492,17 +460,9 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		"DEVICEKIT_LISTEN_PORT": strconv.Itoa(usePort),
 	}
 
-	cmd, err := s.spawnRunner(env)
+	err = s.LaunchAppWithEnv(agentRunnerBundleID, env)
 	if err != nil {
 		return err
-	}
-
-	if config.Hook != nil {
-		hookName := fmt.Sprintf("simulator-agent-%s", s.UDID)
-		config.Hook.Register(hookName, func() error {
-			_ = s.TerminateApp(agentRunnerBundleID)
-			return cmd.Process.Kill()
-		})
 	}
 
 	// update WDA client to use the actual port
@@ -515,7 +475,6 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
 		_ = s.TerminateApp(agentRunnerBundleID)
-		_ = cmd.Process.Kill()
 		return err
 	}
 
@@ -752,7 +711,7 @@ func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
 	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
 
 	for _, proc := range processes {
-		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "devicekit-iosUITests-Runner") && !strings.Contains(proc.Command, "simctl") {
+		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "devicekit-iosUITests-Runner") {
 			return proc.PID, proc.Command, nil
 		}
 	}
