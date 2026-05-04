@@ -655,6 +655,10 @@ func (d *IOSDevice) PressButton(key string) error {
 	return d.wdaClient.PressButton(key)
 }
 
+func (d *IOSDevice) Shake() error {
+	return fmt.Errorf("shake gesture is not supported on real iOS devices")
+}
+
 func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
 	rsdService, err := goios.NewWithAddrPortDevice(address, rsdPort, device)
 	if err != nil {
