@@ -1,3 +1,8 @@
+## [0.3.70](https://github.com/mobile-next/mobilecli/releases/tag/0.3.70) (2026-05-04)
+* iOS: Fix terminating simulator runner and register shutdown hook on agent start ([#217](https://github.com/mobile-next/mobilecli/pull/217))
+* iOS: Update devicekit-ios agent to 0.0.18 ([#220](https://github.com/mobile-next/mobilecli/pull/220))
+* iOS: Include `placeholder` field in dump UI view tree response
+
 ## [0.3.69](https://github.com/mobile-next/mobilecli/releases/tag/0.3.69) (2026-05-01)
 * iOS: update go-ios library to v1.0.211 which fixes iOS 26 on OSX Tahoe ([#212](https://github.com/mobile-next/mobilecli/pull/212))
 
