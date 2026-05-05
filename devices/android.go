@@ -279,7 +279,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
 		}
 	}
 
-	output, err := d.runAdbCommand("shell", "monkey", "-p", bundleID, "-c", "android.intent.category.LAUNCHER", "1")
+	output, err := d.runAdbCommand("shell", "monkey", "-p", bundleID, "--pct-syskeys", "0", "-c", "android.intent.category.LAUNCHER", "1")
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %v\nOutput: %s", bundleID, err, string(output))
 	}

@@ -1,3 +1,6 @@
+## [Unreleased]
+* Android: Fix launching apps on emulators with `hw.keyboard = no` by passing `--pct-syskeys 0` to monkey
+
 ## [0.3.70](https://github.com/mobile-next/mobilecli/releases/tag/0.3.70) (2026-05-04)
 * iOS: Fix terminating simulator runner and register shutdown hook on agent start ([#217](https://github.com/mobile-next/mobilecli/pull/217))
 * iOS: Update devicekit-ios agent to 0.0.18 ([#220](https://github.com/mobile-next/mobilecli/pull/220))
