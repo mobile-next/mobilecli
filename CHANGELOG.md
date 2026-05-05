@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.71](https://github.com/mobile-next/mobilecli/releases/tag/0.3.71) (2026-05-05)
 * Android: Fix launching apps on emulators with `hw.keyboard = no` by passing `--pct-syskeys 0` to monkey
 
 ## [0.3.70](https://github.com/mobile-next/mobilecli/releases/tag/0.3.70) (2026-05-04)
