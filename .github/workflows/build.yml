@@ -6,8 +6,14 @@ on:
     branches: [ "main" ]
     tags:
       - "*.*.*"
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
 
 jobs:
 
