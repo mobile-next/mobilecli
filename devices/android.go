@@ -265,6 +265,34 @@ func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
 // validLocaleTag checks that a locale tag only contains safe BCP 47 characters
 var validLocaleTag = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
 
+// resolvedActivityPattern matches a "package/activity" component name.
+var resolvedActivityPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]*/[a-zA-Z0-9_.$]+$`)
+
+// parseResolveActivityOutput extracts the "pkg/activity" component from the
+// output of `cmd package resolve-activity --brief <pkg>`. Returns "" if no
+// launcher activity is present (e.g. unknown package, or output is "{}").
+func parseResolveActivityOutput(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if resolvedActivityPattern.MatchString(line) {
+			return line
+		}
+	}
+	return ""
+}
+
+func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error) {
+	output, err := d.runAdbCommand("shell", "cmd", "package", "resolve-activity", "--brief", bundleID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve launcher activity for %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	component := parseResolveActivityOutput(string(output))
+	if component == "" {
+		return "", fmt.Errorf("no launcher activity found for %s (is it installed?)", bundleID)
+	}
+	return component, nil
+}
+
 func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
 	if len(locales) > 0 {
 		for _, l := range locales {
@@ -275,13 +303,18 @@ func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
 		localeArg := strings.Join(locales, ",")
 		output, err := d.runAdbCommand("shell", "cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
 		if err != nil {
-			return fmt.Errorf("failed to set app locales for %s: %v\nOutput: %s", bundleID, err, string(output))
+			return fmt.Errorf("failed to set app locales for %s: %w\nOutput: %s", bundleID, err, string(output))
 		}
 	}
 
-	output, err := d.runAdbCommand("shell", "monkey", "-p", bundleID, "--pct-syskeys", "0", "-c", "android.intent.category.LAUNCHER", "1")
+	component, err := d.resolveLauncherActivity(bundleID)
 	if err != nil {
-		return fmt.Errorf("failed to launch app %s: %v\nOutput: %s", bundleID, err, string(output))
+		return err
+	}
+
+	output, err := d.runAdbCommand("shell", "am", "start", "-n", component)
+	if err != nil {
+		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
 
 	return nil
