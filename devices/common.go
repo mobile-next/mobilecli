@@ -275,6 +275,27 @@ type FullDeviceInfo struct {
 	ScreenSize *ScreenSize `json:"screenSize"`
 }
 
+func deviceModel(d ControllableDevice) string {
+	switch d.Platform() {
+	case "ios":
+		switch d.DeviceType() {
+		case "real":
+			if dev, ok := d.(*IOSDevice); ok {
+				return dev.ProductType
+			}
+		case "simulator":
+			if dev, ok := d.(*SimulatorDevice); ok {
+				return dev.Simulator.DeviceType
+			}
+		}
+	case "android":
+		if dev, ok := d.(*AndroidDevice); ok {
+			return dev.model
+		}
+	}
+	return ""
+}
+
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 	startTime := time.Now()
@@ -302,23 +323,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			continue
 		}
 
-		// get model for devices
-		model := ""
-		if d.Platform() == "ios" {
-			if d.DeviceType() == "real" {
-				if iosDevice, ok := d.(*IOSDevice); ok {
-					model = iosDevice.ProductType
-				}
-			} else if d.DeviceType() == "simulator" {
-				if simDevice, ok := d.(*SimulatorDevice); ok {
-					model = simDevice.Simulator.DeviceType
-				}
-			}
-		} else if d.Platform() == "android" {
-			if androidDevice, ok := d.(*AndroidDevice); ok {
-				model = androidDevice.model
-			}
-		}
+		model := deviceModel(d)
 
 		deviceInfoList = append(deviceInfoList, DeviceInfo{
 			ID:       d.ID(),

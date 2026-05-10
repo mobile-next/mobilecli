@@ -27,33 +27,44 @@ type ScreenshotResponse struct {
 	FilePath string `json:"filePath,omitempty"` // path where file was saved
 }
 
+func normalizeFormat(req *ScreenshotRequest) error {
+	if req.Format == "" {
+		req.Format = "png"
+	}
+	req.Format = strings.ToLower(req.Format)
+	if req.Format != "png" && req.Format != "jpeg" {
+		return fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", req.Format)
+	}
+	if req.Format == "jpeg" && (req.Quality < 1 || req.Quality > 100) {
+		req.Quality = 90
+	}
+	return nil
+}
+
+func resolveFilePath(req ScreenshotRequest, deviceID string) (string, error) {
+	if req.OutputPath != "" {
+		return filepath.Abs(req.OutputPath)
+	}
+	ext := "png"
+	if req.Format == "jpeg" {
+		ext = "jpg"
+	}
+	safeID := strings.ReplaceAll(deviceID, ":", "_")
+	name := fmt.Sprintf("screenshot-%s-%s.%s", safeID, time.Now().Format("20060102150405"), ext)
+	return filepath.Abs("./" + name)
+}
+
 // ScreenshotCommand takes a screenshot of the specified device
 func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
-	// Find the target device
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	// Set default format
-	if req.Format == "" {
-		req.Format = "png"
+	if err := normalizeFormat(&req); err != nil {
+		return NewErrorResponse(err)
 	}
 
-	// Validate format
-	req.Format = strings.ToLower(req.Format)
-	if req.Format != "png" && req.Format != "jpeg" {
-		return NewErrorResponse(fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", req.Format))
-	}
-
-	// Validate JPEG quality
-	if req.Format == "jpeg" {
-		if req.Quality < 1 || req.Quality > 100 {
-			req.Quality = 90 // Default quality
-		}
-	}
-
-	// Start agent if needed
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
 		Hook: GetShutdownHook(),
 	})
@@ -61,58 +72,30 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Take screenshot
 	imageBytes, err := targetDevice.TakeScreenshot()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
 	}
 
-	// Convert to JPEG if requested
 	if req.Format == "jpeg" {
-		convertedBytes, err := utils.ConvertPngToJpeg(imageBytes, req.Quality)
+		imageBytes, err = utils.ConvertPngToJpeg(imageBytes, req.Quality)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("error converting to JPEG: %v", err))
 		}
-		imageBytes = convertedBytes
 	}
 
-	response := ScreenshotResponse{
-		Format: req.Format,
-	}
+	response := ScreenshotResponse{Format: req.Format}
 
-	// Handle output
 	if req.OutputPath == "-" {
-		// Return as base64 data for stdout
 		response.Data = base64.StdEncoding.EncodeToString(imageBytes)
 	} else {
-		// Save to file
-		var finalPath string
-		if req.OutputPath != "" {
-			finalPath, err = filepath.Abs(req.OutputPath)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("invalid output path: %v", err))
-			}
-		} else {
-			// Default filename generation
-			timestamp := time.Now().Format("20060102150405")
-			safeDeviceID := strings.ReplaceAll(targetDevice.ID(), ":", "_")
-			extension := "png"
-			if req.Format == "jpeg" {
-				extension = "jpg"
-			}
-			fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
-			finalPath, err = filepath.Abs("./" + fileName)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("error creating default path: %v", err))
-			}
-		}
-
-		// Write file
-		err = os.WriteFile(finalPath, imageBytes, 0o600)
+		finalPath, err := resolveFilePath(req, targetDevice.ID())
 		if err != nil {
+			return NewErrorResponse(fmt.Errorf("invalid output path: %v", err))
+		}
+		if err := os.WriteFile(finalPath, imageBytes, 0o600); err != nil {
 			return NewErrorResponse(fmt.Errorf("error writing file: %v", err))
 		}
-
 		response.FilePath = finalPath
 	}
 
