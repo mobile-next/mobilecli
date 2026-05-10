@@ -25,6 +25,54 @@ type entitlements struct {
 	ApplicationIdentifier string `plist:"application-identifier"`
 }
 
+func signBundlesInDir(dir, identity, entitlementsPath string, exts ...string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil // directory absent is fine
+	}
+	for _, entry := range entries {
+		if !slices.ContainsFunc(exts, func(ext string) bool { return strings.HasSuffix(entry.Name(), ext) }) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		Verbose("Signing %s", entry.Name())
+		if err := codesign(path, identity, entitlementsPath); err != nil {
+			return fmt.Errorf("failed to sign %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+func resolveSigningMaterials(profileOverride, identityOverride, deviceUDID, bundleID string) (profilePath, identity, entitlementsPath string, err error) {
+	profilePath, err = resolveProvisioningProfile(profileOverride, deviceUDID, bundleID)
+	if err != nil {
+		return "", "", "", err
+	}
+	Verbose("Using provisioning profile: %s", profilePath)
+
+	profile, err := decodeProvisioningProfile(profilePath)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to decode provisioning profile: %w", err)
+	}
+	if len(profile.TeamIdentifier) == 0 {
+		return "", "", "", fmt.Errorf("no team identifier found in profile")
+	}
+	Verbose("Team ID: %s", profile.TeamIdentifier[0])
+
+	identity, err = resolveSigningIdentity(identityOverride, profile.TeamIdentifier[0])
+	if err != nil {
+		return "", "", "", err
+	}
+	Verbose("Using signing identity: %s", identity)
+
+	entitlementsPath, err = writeEntitlementsPlist(profile)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to extract entitlements: %w", err)
+	}
+	Verbose("Extracted entitlements to %s", entitlementsPath)
+	return profilePath, identity, entitlementsPath, nil
+}
+
 // ResignIPA re-signs an IPA file so it can be installed on a specific device.
 // it returns the path to a new temporary IPA file that should be cleaned up by the caller.
 func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (string, error) {
@@ -51,69 +99,22 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	}
 	Verbose("App bundle ID: %s", bundleID)
 
-	profilePath, err := resolveProvisioningProfile(profileOverride, deviceUDID, bundleID)
+	profilePath, identity, entitlementsPath, err := resolveSigningMaterials(profileOverride, identityOverride, deviceUDID, bundleID)
 	if err != nil {
 		return "", err
-	}
-	Verbose("Using provisioning profile: %s", profilePath)
-
-	profile, err := decodeProvisioningProfile(profilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode provisioning profile: %w", err)
-	}
-
-	if len(profile.TeamIdentifier) == 0 {
-		return "", fmt.Errorf("no team identifier found in profile")
-	}
-	teamID := profile.TeamIdentifier[0]
-	Verbose("Team ID: %s", teamID)
-
-	identity, err := resolveSigningIdentity(identityOverride, teamID)
-	if err != nil {
-		return "", err
-	}
-	Verbose("Using signing identity: %s", identity)
-
-	entitlementsPath, err := writeEntitlementsPlist(profile)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract entitlements: %w", err)
 	}
 	defer func() { _ = os.Remove(entitlementsPath) }()
-	Verbose("Extracted entitlements to %s", entitlementsPath)
 
 	embeddedPath := filepath.Join(appPath, "embedded.mobileprovision")
 	if err = CopyFile(profilePath, embeddedPath); err != nil {
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
-	// re-sign embedded frameworks
-	frameworksDir := filepath.Join(appPath, "Frameworks")
-	if entries, err := os.ReadDir(frameworksDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".framework") || strings.HasSuffix(entry.Name(), ".dylib") {
-				frameworkPath := filepath.Join(frameworksDir, entry.Name())
-				Verbose("Signing framework: %s", entry.Name())
-				err = codesign(frameworkPath, identity, "")
-				if err != nil {
-					return "", fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
-				}
-			}
-		}
+	if err = signBundlesInDir(filepath.Join(appPath, "Frameworks"), identity, "", ".framework", ".dylib"); err != nil {
+		return "", err
 	}
-
-	// re-sign app extensions and xctest bundles
-	pluginsDir := filepath.Join(appPath, "PlugIns")
-	if entries, err := os.ReadDir(pluginsDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".appex") || strings.HasSuffix(entry.Name(), ".xctest") {
-				pluginPath := filepath.Join(pluginsDir, entry.Name())
-				Verbose("Signing plugin: %s", entry.Name())
-				err = codesign(pluginPath, identity, entitlementsPath)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
-				}
-			}
-		}
+	if err = signBundlesInDir(filepath.Join(appPath, "PlugIns"), identity, entitlementsPath, ".appex", ".xctest"); err != nil {
+		return "", err
 	}
 
 	Verbose("Signing main app bundle")

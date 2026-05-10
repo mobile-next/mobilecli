@@ -374,37 +374,38 @@ func (s *SimulatorDevice) Shutdown() error {
 	return nil
 }
 
-func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
-	// check simulator state - it must be booted
+func (s *SimulatorDevice) ensureBooted(onProgress func(string)) error {
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
-
 	switch state {
 	case "Booted":
-		// already booted, continue to WDA
+		return nil
 	case "Shutdown":
-		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
 	case "Booting":
-		// simulator is already booting, just wait for it to finish
-		if config.OnProgress != nil {
-			config.OnProgress("Waiting for Simulator to boot")
+		if onProgress != nil {
+			onProgress("Waiting for Simulator to boot")
 		}
-
 		utils.Verbose("Simulator is booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
 			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
 		}
-
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = "Booted"
+		return nil
 	case "ShuttingDown":
 		return fmt.Errorf("simulator is shutting down, please try again")
 	default:
 		return fmt.Errorf("unexpected simulator state: %s", state)
+	}
+}
+
+func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
+	if err := s.ensureBooted(config.OnProgress); err != nil {
+		return err
 	}
 
 	if currentPort, err := s.getWdaPort(); err == nil {

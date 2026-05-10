@@ -1374,108 +1374,98 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	// session cleaned up by defer
 }
 
-func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {
+func validateScreenCaptureFormat(p *commands.ScreenCaptureRequest, d devices.ControllableDevice) error {
+	if p.Format == "" {
+		p.Format = "mjpeg"
+	}
+	if p.Format != "mjpeg" && p.Format != "avc" {
+		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+	if p.Format == "avc" && d.Platform() == "ios" && d.DeviceType() == "simulator" {
+		return fmt.Errorf("avc format is not supported on iOS simulators")
+	}
+	return nil
+}
 
+func buildMjpegProgressCallback(w http.ResponseWriter) func(string) {
+	return func(message string) {
+		notification := newJsonRpcNotification(message)
+		statusJSON, err := json.Marshal(notification)
+		if err != nil {
+			log.Printf("Failed to marshal progress message: %v", err)
+			return
+		}
+		mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
+		_, _ = w.Write([]byte(mimeMessage))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+}
+
+func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
 
-	var screenCaptureParams commands.ScreenCaptureRequest
-	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
+	var p commands.ScreenCaptureRequest
+	if err := json.Unmarshal(params, &p); err != nil {
 		return fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	// Find the target device
-	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	targetDevice, err := commands.FindDeviceOrAutoSelect(p.DeviceID)
 	if err != nil {
 		return fmt.Errorf("error finding device: %w", err)
 	}
 
-	// Set default format if not provided
-	if screenCaptureParams.Format == "" {
-		screenCaptureParams.Format = "mjpeg"
+	if err := validateScreenCaptureFormat(&p, targetDevice); err != nil {
+		return err
 	}
 
-	// Validate format
-	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
-		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
-	}
-
-	// avc format is supported on Android and iOS real devices (not simulators)
-	if screenCaptureParams.Format == "avc" {
-		if targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator" {
-			return fmt.Errorf("avc format is not supported on iOS simulators")
-		}
-	}
-
-	// Set defaults if not provided
-	quality := screenCaptureParams.Quality
+	quality := p.Quality
 	if quality == 0 {
 		quality = devices.DefaultQuality
 	}
-
-	scale := screenCaptureParams.Scale
+	scale := p.Scale
 	if scale == 0.0 {
 		scale = devices.DefaultScale
 	}
 
-	// Set headers for streaming response based on format
-	if screenCaptureParams.Format == "mjpeg" {
+	if p.Format == "mjpeg" {
 		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
 	} else {
-		// avc format
 		w.Header().Set("Content-Type", "video/h264")
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// progress callback sends JSON-RPC notifications through the MJPEG stream
-	// only used for MJPEG format, not for AVC
 	var progressCallback func(string)
-	if screenCaptureParams.Format == "mjpeg" {
-		progressCallback = func(message string) {
-			notification := newJsonRpcNotification(message)
-			statusJSON, err := json.Marshal(notification)
-			if err != nil {
-				log.Printf("Failed to marshal progress message: %v", err)
-				return
-			}
-			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
-			_, _ = w.Write([]byte(mimeMessage))
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			}
-		}
+	if p.Format == "mjpeg" {
+		progressCallback = buildMjpegProgressCallback(w)
 	}
 
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
+	if err := targetDevice.StartAgent(devices.StartAgentConfig{
 		OnProgress: progressCallback,
 		Hook:       commands.GetShutdownHook(),
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("error starting agent: %w", err)
 	}
 
-	// start screen capture and stream to the response writer
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-		Format:     screenCaptureParams.Format,
+		Format:     p.Format,
 		Quality:    quality,
 		Scale:      scale,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
-			_, writeErr := w.Write(data)
-			if writeErr != nil {
+			if _, writeErr := w.Write(data); writeErr != nil {
 				fmt.Println("Error writing data:", writeErr)
 				return false
 			}
-
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
-
 			return true
 		},
 	})
-
 	if err != nil {
 		return fmt.Errorf("error starting screen capture: %w", err)
 	}
