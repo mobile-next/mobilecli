@@ -10,9 +10,6 @@ type FsPushRequest struct {
 }
 
 func FsPushCommand(req FsPushRequest) *CommandResponse {
-	if req.BundleID == "" {
-		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
-	}
 	if req.LocalPath == "" {
 		return NewErrorResponse(fmt.Errorf("local path is required"))
 	}

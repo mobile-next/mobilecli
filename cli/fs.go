@@ -15,15 +15,24 @@ var appsFsCmd = &cobra.Command{
 }
 
 var appsFsPushCmd = &cobra.Command{
-	Use:   "push <bundle-id> <local-path> <remote-path>",
-	Short: "Push a file into an app's container",
-	Args:  cobra.ExactArgs(3),
+	Use:   "push [bundle-id] <local-path> <remote-path>",
+	Short: "Push a file into an app's container or to an absolute path",
+	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var bundleID, localPath, remotePath string
+		if len(args) == 2 {
+			localPath = args[0]
+			remotePath = args[1]
+		} else {
+			bundleID = args[0]
+			localPath = args[1]
+			remotePath = args[2]
+		}
 		req := commands.FsPushRequest{
 			DeviceID:   deviceId,
-			BundleID:   args[0],
-			LocalPath:  args[1],
-			RemotePath: args[2],
+			BundleID:   bundleID,
+			LocalPath:  localPath,
+			RemotePath: remotePath,
 		}
 		response := commands.FsPushCommand(req)
 		printJson(response)

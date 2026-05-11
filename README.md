@@ -36,6 +36,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **App Filesystem**: Push, pull, and list files in app containers and on-device storage (Android)
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 
 ### 🎯 Platform Support
@@ -220,6 +221,73 @@ Example output for `apps foreground`:
   }
 }
 ```
+
+### App Filesystem 📂
+
+Access files inside an app's data container or any on-device path. Currently supported on **Android** only.
+
+```bash
+# Get the data container path of an app
+mobilecli apps path <bundle-id> --device <device-id>
+
+# List files at any absolute path (defaults to / if omitted)
+mobilecli apps fs ls --device <device-id>
+mobilecli apps fs ls --device <device-id> /sdcard
+mobilecli apps fs ls --device <device-id> /sdcard/Download
+
+# List files inside an app's data container
+mobilecli apps fs ls --device <device-id> /data/user/0/com.example.app
+
+# Pull a file from the device to local disk
+mobilecli apps fs pull --device <device-id> /sdcard/recording.mp4 ./recording.mp4
+
+# Pull a file from an app's private container
+mobilecli apps fs pull --device <device-id> /data/user/0/com.example.app/files/db.sqlite ./db.sqlite
+
+# Push a file to the device
+mobilecli apps fs push --device <device-id> ./config.json /sdcard/config.json
+
+# Push a file into an app's private container
+mobilecli apps fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
+```
+
+Example output for `apps path`:
+```json
+{
+  "status": "ok",
+  "data": {
+    "path": "/data/user/0/com.example.app"
+  }
+}
+```
+
+Example output for `apps fs ls`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "name": "files",
+      "path": "/data/user/0/com.example.app/files",
+      "size": 4096,
+      "modTime": "2026-05-11T19:20:00Z",
+      "isDir": true
+    },
+    {
+      "name": "shared_prefs",
+      "path": "/data/user/0/com.example.app/shared_prefs",
+      "size": 4096,
+      "modTime": "2026-05-11T12:49:00Z",
+      "isDir": true
+    }
+  ]
+}
+```
+
+**Notes:**
+- Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
+- Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
+- Pulling binary files (images, databases, DEX files) is fully supported.
 
 ### Agent Management 🤖
 

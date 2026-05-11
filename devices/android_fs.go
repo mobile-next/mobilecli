@@ -3,6 +3,7 @@ package devices
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -10,7 +11,33 @@ import (
 )
 
 func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
-	return errors.New("not implemented")
+	if !strings.HasPrefix(remotePath, "/data/user/") {
+		_, err := d.runAdbCommand("push", localPath, remotePath)
+		return err
+	}
+
+	parts := strings.SplitN(remotePath, "/", 6)
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+	}
+	packageName := parts[4]
+
+	tmpPath := fmt.Sprintf("/data/local/tmp/%d", rand.Int())
+	if _, err := d.runAdbCommand("push", localPath, tmpPath); err != nil {
+		return fmt.Errorf("push to tmp failed: %w", err)
+	}
+
+	_, cpErr := d.runAdbCommand("shell", "run-as", packageName, "cp", tmpPath, remotePath)
+	_, rmErr := d.runAdbCommand("shell", "rm", tmpPath)
+
+	if cpErr != nil {
+		return fmt.Errorf("copy to app container failed: %w", cpErr)
+	}
+	if rmErr != nil {
+		return fmt.Errorf("cleanup of tmp file failed: %w", rmErr)
+	}
+
+	return nil
 }
 
 func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
