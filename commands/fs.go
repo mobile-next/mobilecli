@@ -88,12 +88,10 @@ type FsMkdirRequest struct {
 	DeviceID   string `json:"deviceId"`
 	BundleID   string `json:"bundleId"`
 	RemotePath string `json:"remotePath"`
+	Parents    bool   `json:"parents"`
 }
 
 func FsMkdirCommand(req FsMkdirRequest) *CommandResponse {
-	if req.BundleID == "" {
-		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
-	}
 	if req.RemotePath == "" {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
 	}
@@ -103,12 +101,12 @@ func FsMkdirCommand(req FsMkdirRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	if err := device.Mkdir(req.BundleID, req.RemotePath); err != nil {
+	if err := device.Mkdir(req.BundleID, req.RemotePath, req.Parents); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to create directory: %v", err))
 	}
 
 	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Created directory '%s' in app '%s'", req.RemotePath, req.BundleID),
+		"message": fmt.Sprintf("Created directory '%s'", req.RemotePath),
 	})
 }
 
@@ -116,12 +114,10 @@ type FsRmRequest struct {
 	DeviceID   string `json:"deviceId"`
 	BundleID   string `json:"bundleId"`
 	RemotePath string `json:"remotePath"`
+	Recursive  bool   `json:"recursive"`
 }
 
 func FsRmCommand(req FsRmRequest) *CommandResponse {
-	if req.BundleID == "" {
-		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
-	}
 	if req.RemotePath == "" {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
 	}
@@ -131,11 +127,11 @@ func FsRmCommand(req FsRmRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	if err := device.Rm(req.BundleID, req.RemotePath); err != nil {
+	if err := device.Rm(req.BundleID, req.RemotePath, req.Recursive); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to remove: %v", err))
 	}
 
 	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Removed '%s' from app '%s'", req.RemotePath, req.BundleID),
+		"message": fmt.Sprintf("Removed '%s'", req.RemotePath),
 	})
 }

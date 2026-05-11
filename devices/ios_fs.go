@@ -14,11 +14,11 @@ func (d IOSDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (d IOSDevice) Mkdir(bundleID, remotePath string) error {
+func (d IOSDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 	return errors.New("not implemented")
 }
 
-func (d IOSDevice) Rm(bundleID, remotePath string) error {
+func (d IOSDevice) Rm(bundleID, remotePath string, recursive bool) error {
 	return errors.New("not implemented")
 }
 

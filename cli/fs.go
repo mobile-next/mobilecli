@@ -102,15 +102,28 @@ var appsFsLsCmd = &cobra.Command{
 	},
 }
 
+var (
+	fsMkdirParents bool
+	fsRmRecursive  bool
+)
+
 var appsFsMkdirCmd = &cobra.Command{
-	Use:   "mkdir <bundle-id> <remote-path>",
-	Short: "Create a directory in an app's container",
-	Args:  cobra.ExactArgs(2),
+	Use:   "mkdir [bundle-id] <remote-path>",
+	Short: "Create a directory at an absolute path or in an app's container",
+	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var bundleID, remotePath string
+		if len(args) == 1 {
+			remotePath = args[0]
+		} else {
+			bundleID = args[0]
+			remotePath = args[1]
+		}
 		req := commands.FsMkdirRequest{
 			DeviceID:   deviceId,
-			BundleID:   args[0],
-			RemotePath: args[1],
+			BundleID:   bundleID,
+			RemotePath: remotePath,
+			Parents:    fsMkdirParents,
 		}
 		response := commands.FsMkdirCommand(req)
 		printJson(response)
@@ -122,14 +135,22 @@ var appsFsMkdirCmd = &cobra.Command{
 }
 
 var appsFsRmCmd = &cobra.Command{
-	Use:   "rm <bundle-id> <remote-path>",
-	Short: "Remove a file or directory (recursive) from an app's container",
-	Args:  cobra.ExactArgs(2),
+	Use:   "rm [bundle-id] <remote-path>",
+	Short: "Remove a file or directory from an absolute path or an app's container",
+	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var bundleID, remotePath string
+		if len(args) == 1 {
+			remotePath = args[0]
+		} else {
+			bundleID = args[0]
+			remotePath = args[1]
+		}
 		req := commands.FsRmRequest{
 			DeviceID:   deviceId,
-			BundleID:   args[0],
-			RemotePath: args[1],
+			BundleID:   bundleID,
+			RemotePath: remotePath,
+			Recursive:  fsRmRecursive,
 		}
 		response := commands.FsRmCommand(req)
 		printJson(response)
@@ -153,5 +174,7 @@ func init() {
 	appsFsPullCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
 	appsFsLsCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
 	appsFsMkdirCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsMkdirCmd.Flags().BoolVarP(&fsMkdirParents, "parents", "p", false, "Create parent directories as needed")
 	appsFsRmCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsRmCmd.Flags().BoolVarP(&fsRmRecursive, "recursive", "r", false, "Remove directories and their contents recursively")
 }

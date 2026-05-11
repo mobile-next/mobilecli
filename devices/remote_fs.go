@@ -14,11 +14,11 @@ func (r *RemoteDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, erro
 	return nil, errors.New("not implemented")
 }
 
-func (r *RemoteDevice) Mkdir(bundleID, remotePath string) error {
+func (r *RemoteDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 	return errors.New("not implemented")
 }
 
-func (r *RemoteDevice) Rm(bundleID, remotePath string) error {
+func (r *RemoteDevice) Rm(bundleID, remotePath string, recursive bool) error {
 	return errors.New("not implemented")
 }
 

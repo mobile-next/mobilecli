@@ -1,7 +1,6 @@
 package devices
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -156,10 +155,44 @@ func parseLsLine(line, dirPath string) *FileEntry {
 	}
 }
 
-func (d *AndroidDevice) Mkdir(bundleID, remotePath string) error {
-	return errors.New("not implemented")
+func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
+	args := []string{"mkdir"}
+	if parents {
+		args = append(args, "-p")
+	}
+	args = append(args, remotePath)
+
+	if strings.HasPrefix(remotePath, "/data/user/") {
+		parts := strings.SplitN(remotePath, "/", 6)
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		}
+		packageName := parts[4]
+		_, err := d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+		return err
+	}
+
+	_, err := d.runAdbCommand(append([]string{"shell"}, args...)...)
+	return err
 }
 
-func (d *AndroidDevice) Rm(bundleID, remotePath string) error {
-	return errors.New("not implemented")
+func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
+	args := []string{"rm"}
+	if recursive {
+		args = append(args, "-rf")
+	}
+	args = append(args, remotePath)
+
+	if strings.HasPrefix(remotePath, "/data/user/") {
+		parts := strings.SplitN(remotePath, "/", 6)
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		}
+		packageName := parts[4]
+		_, err := d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+		return err
+	}
+
+	_, err := d.runAdbCommand(append([]string{"shell"}, args...)...)
+	return err
 }

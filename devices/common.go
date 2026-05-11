@@ -141,8 +141,8 @@ type ControllableDevice interface {
 	PushFile(bundleID, localPath, remotePath string) error
 	PullFile(bundleID, remotePath, localPath string) error
 	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
-	Mkdir(bundleID, remotePath string) error
-	Rm(bundleID, remotePath string) error
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
 	GetAppContainerPath(bundleID string) (string, error)
 }
 
