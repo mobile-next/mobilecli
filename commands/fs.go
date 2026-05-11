@@ -42,9 +42,6 @@ type FsPullRequest struct {
 }
 
 func FsPullCommand(req FsPullRequest) *CommandResponse {
-	if req.BundleID == "" {
-		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
-	}
 	if req.RemotePath == "" {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
 	}
@@ -62,7 +59,7 @@ func FsPullCommand(req FsPullRequest) *CommandResponse {
 	}
 
 	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Pulled '%s' to '%s' from app '%s'", req.RemotePath, req.LocalPath, req.BundleID),
+		"message": fmt.Sprintf("Pulled '%s' to '%s'", req.RemotePath, req.LocalPath),
 	})
 }
 

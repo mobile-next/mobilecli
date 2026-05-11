@@ -35,15 +35,24 @@ var appsFsPushCmd = &cobra.Command{
 }
 
 var appsFsPullCmd = &cobra.Command{
-	Use:   "pull <bundle-id> <remote-path> <local-path>",
-	Short: "Pull a file from an app's container",
-	Args:  cobra.ExactArgs(3),
+	Use:   "pull [bundle-id] <remote-path> <local-path>",
+	Short: "Pull a file from an app's container or an absolute path",
+	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var bundleID, remotePath, localPath string
+		if len(args) == 2 {
+			remotePath = args[0]
+			localPath = args[1]
+		} else {
+			bundleID = args[0]
+			remotePath = args[1]
+			localPath = args[2]
+		}
 		req := commands.FsPullRequest{
 			DeviceID:   deviceId,
-			BundleID:   args[0],
-			RemotePath: args[1],
-			LocalPath:  args[2],
+			BundleID:   bundleID,
+			RemotePath: remotePath,
+			LocalPath:  localPath,
 		}
 		response := commands.FsPullCommand(req)
 		printJson(response)

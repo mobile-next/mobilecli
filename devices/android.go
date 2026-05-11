@@ -147,6 +147,15 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+// runAdbCommandStdout is like runAdbCommand but captures stdout only.
+// Use this for binary data where stderr must not contaminate the output.
+func (d *AndroidDevice) runAdbCommandStdout(args ...string) ([]byte, error) {
+	deviceID := d.getAdbIdentifier()
+	cmdArgs := append([]string{"-s", deviceID}, args...)
+	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	return cmd.Output()
+}
+
 // getDisplayCount counts the number of displays on the device
 func (d *AndroidDevice) getDisplayCount() int {
 	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")

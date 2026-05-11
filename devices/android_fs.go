@@ -3,6 +3,7 @@ package devices
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,25 @@ func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
 }
 
 func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
-	return errors.New("not implemented")
+	var data []byte
+	var err error
+
+	if strings.HasPrefix(remotePath, "/data/user/") {
+		parts := strings.SplitN(remotePath, "/", 6)
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		}
+		packageName := parts[4]
+		data, err = d.runAdbCommandStdout("shell", "run-as", packageName, "cat", remotePath)
+	} else {
+		data, err = d.runAdbCommandStdout("exec-out", "cat", remotePath)
+	}
+
+	if err != nil {
+		return fmt.Errorf("pull failed: %w", err)
+	}
+
+	return os.WriteFile(localPath, data, 0644)
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
