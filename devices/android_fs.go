@@ -50,7 +50,8 @@ func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
 			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
 		}
 		packageName := parts[4]
-		data, err = d.runAdbCommandStdout("shell", "run-as", packageName, "cat", remotePath)
+		// exec-out instead of shell avoids PTY CRLF translation on Windows
+		data, err = d.runAdbCommandStdout("exec-out", "run-as", packageName, "cat", remotePath)
 	} else {
 		data, err = d.runAdbCommandStdout("exec-out", "cat", remotePath)
 	}
