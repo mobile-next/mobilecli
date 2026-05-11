@@ -1,3 +1,6 @@
+## [0.3.72](https://github.com/mobile-next/mobilecli/releases/tag/0.3.72) (2026-05-11)
+* Android: Fix launching apps installed with `-t` (test) flag ([#225](https://github.com/mobile-next/mobilecli/pull/225))
+
 ## [0.3.71](https://github.com/mobile-next/mobilecli/releases/tag/0.3.71) (2026-05-05)
 * Android: Fix launching apps on emulators with `hw.keyboard = no` by passing `--pct-syskeys 0` to monkey
 
