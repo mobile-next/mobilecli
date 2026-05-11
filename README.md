@@ -249,6 +249,20 @@ mobilecli apps fs push --device <device-id> ./config.json /sdcard/config.json
 
 # Push a file into an app's private container
 mobilecli apps fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
+
+# Create a directory
+mobilecli apps fs mkdir --device <device-id> /sdcard/myfolder
+
+# Create a directory and all parent directories
+mobilecli apps fs mkdir --device <device-id> -p /sdcard/a/b/c
+mobilecli apps fs mkdir --device <device-id> -p /data/user/0/com.example.app/files/cache/v2
+
+# Remove a file
+mobilecli apps fs rm --device <device-id> /sdcard/old_file.txt
+
+# Remove a directory recursively
+mobilecli apps fs rm --device <device-id> -r /sdcard/myfolder
+mobilecli apps fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
 ```
 
 Example output for `apps path`:
@@ -287,7 +301,7 @@ Example output for `apps fs ls`:
 **Notes:**
 - Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
 - Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
-- Pulling binary files (images, databases, DEX files) is fully supported.
+- Pulling binary files (images, databases, DEX files) is fully supported and binary-safe on all platforms.
 
 ### Agent Management 🤖
 
