@@ -63,6 +63,10 @@ func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
+	if remotePath == "" {
+		remotePath = "/"
+	}
+
 	var output []byte
 	var err error
 
@@ -127,7 +131,10 @@ func parseLsLine(line, dirPath string) *FileEntry {
 	perms := fields[0]
 	isDir := strings.HasPrefix(perms, "d")
 
-	size, _ := strconv.ParseInt(fields[4], 10, 64)
+	var size int64
+	if !isDir {
+		size, _ = strconv.ParseInt(fields[4], 10, 64)
+	}
 
 	modTime, _ := time.Parse("2006-01-02 15:04", fields[5]+" "+fields[6])
 

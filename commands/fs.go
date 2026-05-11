@@ -67,10 +67,6 @@ type FsListRequest struct {
 }
 
 func FsListCommand(req FsListRequest) *CommandResponse {
-	if req.BundleID == "" && req.RemotePath == "" {
-		return NewErrorResponse(fmt.Errorf("bundle ID or remote path is required"))
-	}
-
 	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))

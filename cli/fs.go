@@ -79,7 +79,7 @@ var appsFsLsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var bundleID, remotePath string
 		if len(args) == 0 {
-			remotePath = "/"
+			// leave remotePath empty; each device picks its own default
 		} else if len(args) == 1 && strings.HasPrefix(args[0], "/") {
 			remotePath = args[0]
 		} else {
