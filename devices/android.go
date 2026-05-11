@@ -945,11 +945,27 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 		return "", nil
 	}
 
-	// remove the "package:" prefix
-	appPath := strings.TrimPrefix(string(output), "package:")
-	// trim all whitespace including \r\n (CRLF on Windows)
+	// take only the first line (split APKs produce multiple package: lines)
+	firstLine := strings.SplitN(string(output), "\n", 2)[0]
+	appPath := strings.TrimPrefix(firstLine, "package:")
 	appPath = strings.TrimSpace(appPath)
 	return appPath, nil
+}
+
+func (d *AndroidDevice) GetAppContainerPath(packageName string) (string, error) {
+	output, err := d.runAdbCommand("shell", "pm", "dump", packageName)
+	if err != nil {
+		return "", fmt.Errorf("pm dump failed: %w", err)
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "dataDir=") {
+			return strings.TrimPrefix(line, "dataDir="), nil
+		}
+	}
+
+	return "", fmt.Errorf("dataDir not found for package %s", packageName)
 }
 
 func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {

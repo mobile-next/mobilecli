@@ -1,0 +1,139 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/mobile-next/mobilecli/commands"
+	"github.com/spf13/cobra"
+)
+
+var appsFsCmd = &cobra.Command{
+	Use:   "fs",
+	Short: "Access app container filesystem",
+	Long:  `Push, pull, list, and manage files within an app's container filesystem.`,
+}
+
+var appsFsPushCmd = &cobra.Command{
+	Use:   "push <bundle-id> <local-path> <remote-path>",
+	Short: "Push a file into an app's container",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FsPushRequest{
+			DeviceID:   deviceId,
+			BundleID:   args[0],
+			LocalPath:  args[1],
+			RemotePath: args[2],
+		}
+		response := commands.FsPushCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var appsFsPullCmd = &cobra.Command{
+	Use:   "pull <bundle-id> <remote-path> <local-path>",
+	Short: "Pull a file from an app's container",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FsPullRequest{
+			DeviceID:   deviceId,
+			BundleID:   args[0],
+			RemotePath: args[1],
+			LocalPath:  args[2],
+		}
+		response := commands.FsPullCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var appsFsLsCmd = &cobra.Command{
+	Use:   "ls [bundle-id] [remote-path]",
+	Short: "List files in an app's container or at an absolute path",
+	Args:  cobra.RangeArgs(0, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var bundleID, remotePath string
+		if len(args) == 0 {
+			remotePath = "/"
+		} else if len(args) == 1 && strings.HasPrefix(args[0], "/") {
+			remotePath = args[0]
+		} else {
+			bundleID = args[0]
+			if len(args) == 2 {
+				remotePath = args[1]
+			}
+		}
+		req := commands.FsListRequest{
+			DeviceID:   deviceId,
+			BundleID:   bundleID,
+			RemotePath: remotePath,
+		}
+		response := commands.FsListCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var appsFsMkdirCmd = &cobra.Command{
+	Use:   "mkdir <bundle-id> <remote-path>",
+	Short: "Create a directory in an app's container",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FsMkdirRequest{
+			DeviceID:   deviceId,
+			BundleID:   args[0],
+			RemotePath: args[1],
+		}
+		response := commands.FsMkdirCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var appsFsRmCmd = &cobra.Command{
+	Use:   "rm <bundle-id> <remote-path>",
+	Short: "Remove a file or directory (recursive) from an app's container",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FsRmRequest{
+			DeviceID:   deviceId,
+			BundleID:   args[0],
+			RemotePath: args[1],
+		}
+		response := commands.FsRmCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+func init() {
+	appsCmd.AddCommand(appsFsCmd)
+
+	appsFsCmd.AddCommand(appsFsPushCmd)
+	appsFsCmd.AddCommand(appsFsPullCmd)
+	appsFsCmd.AddCommand(appsFsLsCmd)
+	appsFsCmd.AddCommand(appsFsMkdirCmd)
+	appsFsCmd.AddCommand(appsFsRmCmd)
+
+	appsFsPushCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsPullCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsLsCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsMkdirCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+	appsFsRmCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
+}
