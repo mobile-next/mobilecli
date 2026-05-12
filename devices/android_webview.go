@@ -282,7 +282,7 @@ func (d *AndroidDevice) WebViewGoForward(pkg, webviewID string) error {
 
 // WebViewContent returns the full outer HTML of the page in the given webview.
 func (d *AndroidDevice) WebViewContent(pkg, webviewID string) (string, error) {
-	result, err := d.WebViewEvaluate(pkg, webviewID, "document.documentElement.outerHTML", nil)
+	result, err := d.WebViewEvaluate(pkg, webviewID, "return document.documentElement.outerHTML", nil)
 	if err != nil {
 		return "", err
 	}
@@ -306,6 +306,20 @@ func (d *AndroidDevice) WebViewGoto(pkg, webviewID, url string) error {
 	return err
 }
 
+// ensureReturnExpression prepends "return" to bare expressions so the agent's
+// eval wrapper can capture their value. Expressions that already start with
+// "return", contain a statement separator, or look like a block are left as-is.
+func ensureReturnExpression(expression string) string {
+	trimmed := strings.TrimSpace(expression)
+	if strings.HasPrefix(trimmed, "return ") ||
+		strings.Contains(trimmed, ";") ||
+		strings.Contains(trimmed, "\n") ||
+		strings.HasPrefix(trimmed, "{") {
+		return expression
+	}
+	return "return (" + trimmed + ")"
+}
+
 // WebViewEvaluate runs expression inside the given webview and returns the result.
 // The Java agent wraps the value as {"result": <value>}; this method unwraps it.
 func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args []any) (any, error) {
@@ -316,7 +330,7 @@ func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args 
 
 	params := map[string]any{
 		"id":         webviewID,
-		"expression": expression,
+		"expression": ensureReturnExpression(expression),
 	}
 	if len(args) > 0 {
 		params["args"] = args
