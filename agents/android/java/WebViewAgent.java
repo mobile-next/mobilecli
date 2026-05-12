@@ -76,10 +76,14 @@ class WebViewAgent {
 	static JSONObject evaluateExpression(WebView wv, String expression, JSONArray args) throws Exception {
 		String argsJson = (args != null && args.length() > 0) ? args.toString() : "[]";
 		String raw = AndroidBridge.evalJs(wv, buildEvalScript(expression, argsJson));
-		if (raw == null) {
-			throw new Exception("script returned null");
+		if (raw == null || "null".equals(raw)) {
+			throw new Exception("script execution failed — check for syntax errors or missing DOM elements");
 		}
-		JSONObject outcome = new JSONObject((String) new JSONTokener(raw).nextValue());
+		Object tokenized = new JSONTokener(raw).nextValue();
+		if (!(tokenized instanceof String)) {
+			throw new Exception("unexpected script result: " + raw);
+		}
+		JSONObject outcome = new JSONObject((String) tokenized);
 		if (!outcome.optBoolean("ok", false)) {
 			throw new Exception(outcome.optString("error", "script error"));
 		}
