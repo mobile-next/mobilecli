@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -1481,4 +1482,206 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	}
 
 	return nil
+}
+
+const fsSizeLimit = 1 * 1024 * 1024 // 1 MB
+
+type AppsPathParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+type FsLsParams struct {
+	DeviceID   string `json:"deviceId"`
+	BundleID   string `json:"bundleId"`
+	RemotePath string `json:"remotePath"`
+}
+
+type FsPullParams struct {
+	DeviceID   string `json:"deviceId"`
+	RemotePath string `json:"remotePath"`
+}
+
+type FsPushParams struct {
+	DeviceID   string `json:"deviceId"`
+	RemotePath string `json:"remotePath"`
+	Content    string `json:"content"` // base64-encoded file contents
+}
+
+type FsMkdirParams struct {
+	DeviceID   string `json:"deviceId"`
+	BundleID   string `json:"bundleId"`
+	RemotePath string `json:"remotePath"`
+	Parents    bool   `json:"parents"`
+}
+
+type FsRmParams struct {
+	DeviceID   string `json:"deviceId"`
+	BundleID   string `json:"bundleId"`
+	RemotePath string `json:"remotePath"`
+	Recursive  bool   `json:"recursive"`
+}
+
+func handleAppsPath(params json.RawMessage) (any, error) {
+	var p AppsPathParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if p.BundleID == "" {
+		return nil, fmt.Errorf("'bundleId' is required")
+	}
+
+	response := commands.AppPathCommand(commands.AppPathRequest{
+		DeviceID: p.DeviceID,
+		BundleID: p.BundleID,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return response.Data, nil
+}
+
+func handleFsLs(params json.RawMessage) (any, error) {
+	var p FsLsParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w", err)
+		}
+	}
+
+	response := commands.FsListCommand(commands.FsListRequest{
+		DeviceID:   p.DeviceID,
+		BundleID:   p.BundleID,
+		RemotePath: p.RemotePath,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return response.Data, nil
+}
+
+func handleFsPull(params json.RawMessage) (any, error) {
+	var p FsPullParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if p.RemotePath == "" {
+		return nil, fmt.Errorf("'remotePath' is required")
+	}
+
+	tmp, err := os.CreateTemp("", "mobilecli-pull-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	response := commands.FsPullCommand(commands.FsPullRequest{
+		DeviceID:   p.DeviceID,
+		RemotePath: p.RemotePath,
+		LocalPath:  tmpPath,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pulled file: %w", err)
+	}
+	if len(data) > fsSizeLimit {
+		return nil, fmt.Errorf("file too large (%d bytes); maximum allowed size for JSON-RPC transfer is 1 MB", len(data))
+	}
+
+	return map[string]any{
+		"content": base64.StdEncoding.EncodeToString(data),
+		"size":    len(data),
+	}, nil
+}
+
+func handleFsPush(params json.RawMessage) (any, error) {
+	var p FsPushParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if p.RemotePath == "" {
+		return nil, fmt.Errorf("'remotePath' is required")
+	}
+	if p.Content == "" {
+		return nil, fmt.Errorf("'content' is required")
+	}
+
+	data, err := base64.StdEncoding.DecodeString(p.Content)
+	if err != nil {
+		return nil, fmt.Errorf("'content' is not valid base64: %w", err)
+	}
+	if len(data) > fsSizeLimit {
+		return nil, fmt.Errorf("file too large (%d bytes); maximum allowed size for JSON-RPC transfer is 1 MB", len(data))
+	}
+
+	tmp, err := os.CreateTemp("", "mobilecli-push-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	}
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	response := commands.FsPushCommand(commands.FsPushRequest{
+		DeviceID:   p.DeviceID,
+		LocalPath:  tmpPath,
+		RemotePath: p.RemotePath,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return response.Data, nil
+}
+
+func handleFsMkdir(params json.RawMessage) (any, error) {
+	var p FsMkdirParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if p.RemotePath == "" {
+		return nil, fmt.Errorf("'remotePath' is required")
+	}
+
+	response := commands.FsMkdirCommand(commands.FsMkdirRequest{
+		DeviceID:   p.DeviceID,
+		BundleID:   p.BundleID,
+		RemotePath: p.RemotePath,
+		Parents:    p.Parents,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return response.Data, nil
+}
+
+func handleFsRm(params json.RawMessage) (any, error) {
+	var p FsRmParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if p.RemotePath == "" {
+		return nil, fmt.Errorf("'remotePath' is required")
+	}
+
+	response := commands.FsRmCommand(commands.FsRmRequest{
+		DeviceID:   p.DeviceID,
+		BundleID:   p.BundleID,
+		RemotePath: p.RemotePath,
+		Recursive:  p.Recursive,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+	return response.Data, nil
 }
