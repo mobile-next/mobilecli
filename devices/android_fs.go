@@ -2,12 +2,22 @@ package devices
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+// androidPackageName extracts the package name from a /data/user/<uid>/<package>/... path.
+func androidPackageName(remotePath string) (string, error) {
+	parts := strings.SplitN(remotePath, "/", 6)
+	if len(parts) < 5 {
+		return "", fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+	}
+	return parts[4], nil
+}
 
 func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
 	if !strings.HasPrefix(remotePath, "/data/user/") {
@@ -15,13 +25,12 @@ func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
 		return err
 	}
 
-	parts := strings.SplitN(remotePath, "/", 6)
-	if len(parts) < 5 {
-		return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+	packageName, err := androidPackageName(remotePath)
+	if err != nil {
+		return err
 	}
-	packageName := parts[4]
 
-	tmpPath := fmt.Sprintf("/data/local/tmp/%d", rand.Int())
+	tmpPath := fmt.Sprintf("/data/local/tmp/mobilecli-%s", uuid.NewString())
 	if _, err := d.runAdbCommand("push", localPath, tmpPath); err != nil {
 		return fmt.Errorf("push to tmp failed: %w", err)
 	}
@@ -44,11 +53,10 @@ func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
 	var err error
 
 	if strings.HasPrefix(remotePath, "/data/user/") {
-		parts := strings.SplitN(remotePath, "/", 6)
-		if len(parts) < 5 {
-			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		packageName, pErr := androidPackageName(remotePath)
+		if pErr != nil {
+			return pErr
 		}
-		packageName := parts[4]
 		// exec-out instead of shell avoids PTY CRLF translation on Windows
 		data, err = d.runAdbCommandStdout("exec-out", "run-as", packageName, "cat", remotePath)
 	} else {
@@ -75,13 +83,10 @@ func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, err
 	lsPath := strings.TrimRight(remotePath, "/") + "/"
 
 	if strings.HasPrefix(remotePath, "/data/user/") {
-		// path structure: /data/user/<uid>/<package>/...
-		// extract package name as the 5th segment
-		parts := strings.SplitN(remotePath, "/", 6)
-		if len(parts) < 5 {
-			return nil, fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		packageName, pErr := androidPackageName(remotePath)
+		if pErr != nil {
+			return nil, pErr
 		}
-		packageName := parts[4]
 		output, err = d.runAdbCommand("shell", "run-as", packageName, "ls", "-la", lsPath)
 		if err != nil {
 			output, err = d.runAdbCommand("shell", "run-as", packageName, "ls", "-la", remotePath)
@@ -97,10 +102,10 @@ func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, err
 		return nil, fmt.Errorf("ls failed: %w", err)
 	}
 
-	return parseLsOutput(string(output), remotePath), nil
+	return androidParseLsOutput(string(output), remotePath), nil
 }
 
-func parseLsOutput(output, dirPath string) []FileEntry {
+func androidParseLsOutput(output, dirPath string) []FileEntry {
 	dirPath = strings.TrimRight(dirPath, "/")
 	var entries []FileEntry
 	for _, line := range strings.Split(output, "\n") {
@@ -108,7 +113,7 @@ func parseLsOutput(output, dirPath string) []FileEntry {
 		if line == "" || strings.HasPrefix(line, "total ") {
 			continue
 		}
-		entry := parseLsLine(line, dirPath)
+		entry := androidParseLsLine(line, dirPath)
 		if entry == nil || entry.Name == "." || entry.Name == ".." {
 			continue
 		}
@@ -120,9 +125,9 @@ func parseLsOutput(output, dirPath string) []FileEntry {
 	return entries
 }
 
-// parseLsLine parses a single line of Android ls -la output.
+// androidParseLsLine parses a single line of Android ls -la output.
 // Expected format: <perms> <links> <owner> <group> <size> <date> <time> <name>
-func parseLsLine(line, dirPath string) *FileEntry {
+func androidParseLsLine(line, dirPath string) *FileEntry {
 	fields := strings.Fields(line)
 	if len(fields) < 8 {
 		return nil
@@ -170,12 +175,11 @@ func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 	args = append(args, remotePath)
 
 	if strings.HasPrefix(remotePath, "/data/user/") {
-		parts := strings.SplitN(remotePath, "/", 6)
-		if len(parts) < 5 {
-			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		packageName, err := androidPackageName(remotePath)
+		if err != nil {
+			return err
 		}
-		packageName := parts[4]
-		_, err := d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+		_, err = d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
 		return err
 	}
 
@@ -191,12 +195,11 @@ func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
 	args = append(args, remotePath)
 
 	if strings.HasPrefix(remotePath, "/data/user/") {
-		parts := strings.SplitN(remotePath, "/", 6)
-		if len(parts) < 5 {
-			return fmt.Errorf("invalid /data/user/ path: %s", remotePath)
+		packageName, err := androidPackageName(remotePath)
+		if err != nil {
+			return err
 		}
-		packageName := parts[4]
-		_, err := d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+		_, err = d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
 		return err
 	}
 

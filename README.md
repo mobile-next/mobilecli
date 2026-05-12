@@ -36,7 +36,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
-- **App Filesystem**: Push, pull, and list files in app containers and on-device storage (Android)
+- **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 
 ### 🎯 Platform Support
@@ -222,47 +222,48 @@ Example output for `apps foreground`:
 }
 ```
 
-### App Filesystem 📂
+### Filesystem 📂
 
-Access files inside an app's data container or any on-device path. Currently supported on **Android** only.
+Access files on the device or inside an app's data container. Currently supported on **Android** and **iOS Simulator**.
 
 ```bash
-# Get the data container path of an app
+# Get the data container path of an app (Android)
 mobilecli apps path <bundle-id> --device <device-id>
 
-# List files at any absolute path (defaults to / if omitted)
-mobilecli apps fs ls --device <device-id>
-mobilecli apps fs ls --device <device-id> /sdcard
-mobilecli apps fs ls --device <device-id> /sdcard/Download
+# List files at any absolute path (defaults to device root if omitted)
+mobilecli fs ls --device <device-id>
+mobilecli fs ls --device <device-id> /sdcard
+mobilecli fs ls --device <device-id> /sdcard/Download
 
 # List files inside an app's data container
-mobilecli apps fs ls --device <device-id> /data/user/0/com.example.app
+mobilecli fs ls --device <device-id> com.example.app
+mobilecli fs ls --device <device-id> com.example.app /Documents
 
 # Pull a file from the device to local disk
-mobilecli apps fs pull --device <device-id> /sdcard/recording.mp4 ./recording.mp4
+mobilecli fs pull --device <device-id> /sdcard/recording.mp4 ./recording.mp4
 
 # Pull a file from an app's private container
-mobilecli apps fs pull --device <device-id> /data/user/0/com.example.app/files/db.sqlite ./db.sqlite
+mobilecli fs pull --device <device-id> /data/user/0/com.example.app/files/db.sqlite ./db.sqlite
 
 # Push a file to the device
-mobilecli apps fs push --device <device-id> ./config.json /sdcard/config.json
+mobilecli fs push --device <device-id> ./config.json /sdcard/config.json
 
 # Push a file into an app's private container
-mobilecli apps fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
+mobilecli fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
 
 # Create a directory
-mobilecli apps fs mkdir --device <device-id> /sdcard/myfolder
+mobilecli fs mkdir --device <device-id> /sdcard/myfolder
 
 # Create a directory and all parent directories
-mobilecli apps fs mkdir --device <device-id> -p /sdcard/a/b/c
-mobilecli apps fs mkdir --device <device-id> -p /data/user/0/com.example.app/files/cache/v2
+mobilecli fs mkdir --device <device-id> -p /sdcard/a/b/c
+mobilecli fs mkdir --device <device-id> -p /data/user/0/com.example.app/files/cache/v2
 
 # Remove a file
-mobilecli apps fs rm --device <device-id> /sdcard/old_file.txt
+mobilecli fs rm --device <device-id> /sdcard/old_file.txt
 
 # Remove a directory recursively
-mobilecli apps fs rm --device <device-id> -r /sdcard/myfolder
-mobilecli apps fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
+mobilecli fs rm --device <device-id> -r /sdcard/myfolder
+mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
 ```
 
 Example output for `apps path`:
