@@ -87,7 +87,7 @@ func WebViewGotoCommand(req WebViewGotoRequest) *CommandResponse {
 	if err := androidDevice.WebViewGoto(pkg, req.WebViewID, req.URL); err != nil {
 		return NewErrorResponse(fmt.Errorf("webview goto failed: %w", err))
 	}
-	return NewSuccessResponse(map[string]any{"status": "ok"})
+	return NewSuccessResponse(OK)
 }
 
 func WebViewReloadCommand(req WebViewReloadRequest) *CommandResponse {
@@ -98,7 +98,7 @@ func WebViewReloadCommand(req WebViewReloadRequest) *CommandResponse {
 	if err := androidDevice.WebViewReload(pkg, req.WebViewID); err != nil {
 		return NewErrorResponse(fmt.Errorf("webview reload failed: %w", err))
 	}
-	return NewSuccessResponse(map[string]any{"status": "ok"})
+	return NewSuccessResponse(OK)
 }
 
 func WebViewGoBackCommand(req WebViewRequest) *CommandResponse {
@@ -109,7 +109,7 @@ func WebViewGoBackCommand(req WebViewRequest) *CommandResponse {
 	if err := androidDevice.WebViewGoBack(pkg, req.WebViewID); err != nil {
 		return NewErrorResponse(fmt.Errorf("webview back failed: %w", err))
 	}
-	return NewSuccessResponse(map[string]any{"status": "ok"})
+	return NewSuccessResponse(OK)
 }
 
 func WebViewGoForwardCommand(req WebViewRequest) *CommandResponse {
@@ -120,7 +120,7 @@ func WebViewGoForwardCommand(req WebViewRequest) *CommandResponse {
 	if err := androidDevice.WebViewGoForward(pkg, req.WebViewID); err != nil {
 		return NewErrorResponse(fmt.Errorf("webview forward failed: %w", err))
 	}
-	return NewSuccessResponse(map[string]any{"status": "ok"})
+	return NewSuccessResponse(OK)
 }
 
 func WebViewContentCommand(req WebViewRequest) *CommandResponse {
@@ -155,5 +155,5 @@ func WebViewWaitForLoadStateCommand(req WebViewWaitForLoadStateRequest) *Command
 	if err := androidDevice.WebViewWaitForLoadState(pkg, req.WebViewID, req.State, req.Timeout); err != nil {
 		return NewErrorResponse(fmt.Errorf("webview wait failed: %w", err))
 	}
-	return NewSuccessResponse(map[string]any{"status": "ok"})
+	return NewSuccessResponse(OK)
 }
