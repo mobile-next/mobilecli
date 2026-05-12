@@ -68,24 +68,55 @@ func androidDeviceForWebView(deviceID string) (*devices.AndroidDevice, string, e
 // ─── Commands ─────────────────────────────────────────────────
 
 func WebViewListCommand(req WebViewListRequest) *CommandResponse {
-	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(err)
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
-	webviews, err := androidDevice.ListWebViews(pkg)
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("webview list failed: %w", err))
+
+	switch d := device.(type) {
+	case *devices.AndroidDevice:
+		foreground, err := d.GetForegroundApp()
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("could not determine foreground app: %w", err))
+		}
+		webviews, err := d.ListWebViews(foreground.PackageName)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("webview list failed: %w", err))
+		}
+		return NewSuccessResponse(webviews)
+
+	case *devices.SimulatorDevice:
+		webviews, err := d.ListWebViews()
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("webview list failed: %w", err))
+		}
+		return NewSuccessResponse(webviews)
+
+	default:
+		return NewErrorResponse(fmt.Errorf("webview list is not supported on %s (%s)", device.ID(), device.Platform()))
 	}
-	return NewSuccessResponse(webviews)
 }
 
 func WebViewGotoCommand(req WebViewGotoRequest) *CommandResponse {
-	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(err)
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
-	if err := androidDevice.WebViewGoto(pkg, req.WebViewID, req.URL); err != nil {
-		return NewErrorResponse(fmt.Errorf("webview goto failed: %w", err))
+	switch d := device.(type) {
+	case *devices.AndroidDevice:
+		foreground, err := d.GetForegroundApp()
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("could not determine foreground app: %w", err))
+		}
+		if err := d.WebViewGoto(foreground.PackageName, req.WebViewID, req.URL); err != nil {
+			return NewErrorResponse(fmt.Errorf("webview goto failed: %w", err))
+		}
+	case *devices.SimulatorDevice:
+		if err := d.WebViewGoto(req.WebViewID, req.URL); err != nil {
+			return NewErrorResponse(fmt.Errorf("webview goto failed: %w", err))
+		}
+	default:
+		return NewErrorResponse(fmt.Errorf("webview goto is not supported on %s (%s)", device.ID(), device.Platform()))
 	}
 	return NewSuccessResponse(OK)
 }
@@ -136,15 +167,30 @@ func WebViewContentCommand(req WebViewRequest) *CommandResponse {
 }
 
 func WebViewEvaluateCommand(req WebViewEvaluateRequest) *CommandResponse {
-	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(err)
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
-	result, err := androidDevice.WebViewEvaluate(pkg, req.WebViewID, req.Expression, req.Args)
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("webview evaluate failed: %w", err))
+	switch d := device.(type) {
+	case *devices.AndroidDevice:
+		foreground, err := d.GetForegroundApp()
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("could not determine foreground app: %w", err))
+		}
+		result, err := d.WebViewEvaluate(foreground.PackageName, req.WebViewID, req.Expression, req.Args)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("webview evaluate failed: %w", err))
+		}
+		return NewSuccessResponse(result)
+	case *devices.SimulatorDevice:
+		result, err := d.WebViewEvaluate(req.WebViewID, req.Expression, req.Args)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("webview evaluate failed: %w", err))
+		}
+		return NewSuccessResponse(result)
+	default:
+		return NewErrorResponse(fmt.Errorf("webview evaluate is not supported on %s (%s)", device.ID(), device.Platform()))
 	}
-	return NewSuccessResponse(result)
 }
 
 func WebViewWaitForLoadStateCommand(req WebViewWaitForLoadStateRequest) *CommandResponse {
