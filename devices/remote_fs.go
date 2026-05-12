@@ -2,11 +2,11 @@ package devices
 
 import "errors"
 
-func (r *RemoteDevice) PushFile(bundleID, localPath, remotePath string) error {
+func (r *RemoteDevice) PushFile(localPath, remotePath string) error {
 	return errors.New("not implemented")
 }
 
-func (r *RemoteDevice) PullFile(bundleID, remotePath, localPath string) error {
+func (r *RemoteDevice) PullFile(remotePath, localPath string) error {
 	return errors.New("not implemented")
 }
 

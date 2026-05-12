@@ -96,7 +96,7 @@ func (s *SimulatorDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, e
 	return entries, nil
 }
 
-func (s *SimulatorDevice) PullFile(bundleID, remotePath, localPath string) error {
+func (s *SimulatorDevice) PullFile(remotePath, localPath string) error {
 	if err := s.validatePath(remotePath); err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s *SimulatorDevice) PullFile(bundleID, remotePath, localPath string) error
 	return os.WriteFile(localPath, data, 0644)
 }
 
-func (s *SimulatorDevice) PushFile(bundleID, localPath, remotePath string) error {
+func (s *SimulatorDevice) PushFile(localPath, remotePath string) error {
 	if err := s.validatePath(remotePath); err != nil {
 		return err
 	}

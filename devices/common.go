@@ -138,8 +138,8 @@ type ControllableDevice interface {
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
 
-	PushFile(bundleID, localPath, remotePath string) error
-	PullFile(bundleID, remotePath, localPath string) error
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
 	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
 	Mkdir(bundleID, remotePath string, parents bool) error
 	Rm(bundleID, remotePath string, recursive bool) error

@@ -19,7 +19,7 @@ func androidPackageName(remotePath string) (string, error) {
 	return parts[4], nil
 }
 
-func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
+func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 	if !strings.HasPrefix(remotePath, "/data/user/") {
 		_, err := d.runAdbCommand("push", localPath, remotePath)
 		return err
@@ -48,7 +48,7 @@ func (d *AndroidDevice) PushFile(bundleID, localPath, remotePath string) error {
 	return nil
 }
 
-func (d *AndroidDevice) PullFile(bundleID, remotePath, localPath string) error {
+func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 	var data []byte
 	var err error
 

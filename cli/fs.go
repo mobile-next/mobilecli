@@ -15,24 +15,14 @@ var fsCmd = &cobra.Command{
 }
 
 var fsPushCmd = &cobra.Command{
-	Use:   "push [bundle-id] <local-path> <remote-path>",
+	Use:   "push <local-path> <remote-path>",
 	Short: "Push a file to the device or into an app's container",
-	Args:  cobra.RangeArgs(2, 3),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var bundleID, localPath, remotePath string
-		if len(args) == 2 {
-			localPath = args[0]
-			remotePath = args[1]
-		} else {
-			bundleID = args[0]
-			localPath = args[1]
-			remotePath = args[2]
-		}
 		req := commands.FsPushRequest{
 			DeviceID:   deviceId,
-			BundleID:   bundleID,
-			LocalPath:  localPath,
-			RemotePath: remotePath,
+			LocalPath:  args[0],
+			RemotePath: args[1],
 		}
 		response := commands.FsPushCommand(req)
 		printJson(response)
@@ -44,24 +34,14 @@ var fsPushCmd = &cobra.Command{
 }
 
 var fsPullCmd = &cobra.Command{
-	Use:   "pull [bundle-id] <remote-path> <local-path>",
+	Use:   "pull <remote-path> <local-path>",
 	Short: "Pull a file from the device or from an app's container",
-	Args:  cobra.RangeArgs(2, 3),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var bundleID, remotePath, localPath string
-		if len(args) == 2 {
-			remotePath = args[0]
-			localPath = args[1]
-		} else {
-			bundleID = args[0]
-			remotePath = args[1]
-			localPath = args[2]
-		}
 		req := commands.FsPullRequest{
 			DeviceID:   deviceId,
-			BundleID:   bundleID,
-			RemotePath: remotePath,
-			LocalPath:  localPath,
+			RemotePath: args[0],
+			LocalPath:  args[1],
 		}
 		response := commands.FsPullCommand(req)
 		printJson(response)

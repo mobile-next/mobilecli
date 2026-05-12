@@ -4,7 +4,6 @@ import "fmt"
 
 type FsPushRequest struct {
 	DeviceID   string `json:"deviceId"`
-	BundleID   string `json:"bundleId"`
 	LocalPath  string `json:"localPath"`
 	RemotePath string `json:"remotePath"`
 }
@@ -22,7 +21,7 @@ func FsPushCommand(req FsPushRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.PushFile(req.BundleID, req.LocalPath, req.RemotePath); err != nil {
+	if err := device.PushFile(req.LocalPath, req.RemotePath); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to push file: %w", err))
 	}
 
@@ -33,7 +32,6 @@ func FsPushCommand(req FsPushRequest) *CommandResponse {
 
 type FsPullRequest struct {
 	DeviceID   string `json:"deviceId"`
-	BundleID   string `json:"bundleId"`
 	RemotePath string `json:"remotePath"`
 	LocalPath  string `json:"localPath"`
 }
@@ -51,7 +49,7 @@ func FsPullCommand(req FsPullRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.PullFile(req.BundleID, req.RemotePath, req.LocalPath); err != nil {
+	if err := device.PullFile(req.RemotePath, req.LocalPath); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to pull file: %w", err))
 	}
 
