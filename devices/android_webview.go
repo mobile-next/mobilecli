@@ -137,10 +137,11 @@ func (d *AndroidDevice) getProcessPID(pkg string) (string, error) {
 	return pid, nil
 }
 
-// attachJVMTIAgent attaches the .so to the running process via am attach-agent.
-// The soPath is the on-device path to the agent shared library.
-func (d *AndroidDevice) attachJVMTIAgent(pid, soPath string) error {
-	out, err := d.runAdbCommand("shell", "am", "attach-agent", pid, soPath)
+// attachJVMTIAgent attaches the .so to the running process via am attach-agent,
+// passing the dex path as the agent option (agent.so=<dex_path>).
+func (d *AndroidDevice) attachJVMTIAgent(pid, soPath, dexPath string) error {
+	agentArg := soPath + "=" + dexPath
+	out, err := d.runAdbCommand("shell", "am", "attach-agent", pid, agentArg)
 	if err != nil {
 		return fmt.Errorf("am attach-agent: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -226,7 +227,7 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := d.attachJVMTIAgent(pid, agentDir+"/devicekit.so"); err != nil {
+		if err := d.attachJVMTIAgent(pid, agentDir+"/devicekit.so", agentDir+"/devicekit.dex"); err != nil {
 			return nil, fmt.Errorf("attach agent: %w", err)
 		}
 		// wait for agent to initialise and open the socket
