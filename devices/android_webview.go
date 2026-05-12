@@ -208,36 +208,44 @@ func isAgentReady(port int) bool {
 	return true
 }
 
-// ListWebViews installs the agent into the given app, attaches it to the
-// running process, and returns all embedded WebViews found in that app.
-func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
+// ensureAgentReady installs the kit, sets up the port forward, and attaches
+// the agent if it is not already responding. Returns the local TCP port.
+func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 	agentDir, err := d.installWebViewKit(pkg)
 	if err != nil {
-		return nil, fmt.Errorf("install webview kit: %w", err)
+		return 0, fmt.Errorf("install webview kit: %w", err)
 	}
 
 	port, err := d.forwardWebViewSocket(pkg)
 	if err != nil {
-		return nil, fmt.Errorf("forward socket: %w", err)
+		return 0, fmt.Errorf("forward socket: %w", err)
 	}
 
-	// attach agent only if the socket is not already responding
 	if !isAgentReady(port) {
 		pid, err := d.getProcessPID(pkg)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		if err := d.attachJVMTIAgent(pid, agentDir+"/devicekit.so", agentDir+"/devicekit.dex"); err != nil {
-			return nil, fmt.Errorf("attach agent: %w", err)
+			return 0, fmt.Errorf("attach agent: %w", err)
 		}
-		// wait for agent to initialise and open the socket
 		deadline := time.Now().Add(5 * time.Second)
 		for !isAgentReady(port) {
 			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("agent did not start within 5s on port %d", port)
+				return 0, fmt.Errorf("agent did not start within 5s on port %d", port)
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
+	}
+
+	return port, nil
+}
+
+// ListWebViews returns all embedded WebViews found in the given app.
+func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := agentRequest(port, "device.webview.list", nil)
@@ -250,4 +258,48 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 		return nil, fmt.Errorf("parse webview list: %w", err)
 	}
 	return webviews, nil
+}
+
+// WebViewGoto navigates the given webview to url.
+func (d *AndroidDevice) WebViewGoto(pkg, webviewID, url string) error {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, "device.webview.goto", map[string]any{
+		"id":  webviewID,
+		"url": url,
+	})
+	return err
+}
+
+// WebViewEvaluate runs expression inside the given webview and returns the result.
+// The Java agent wraps the value as {"result": <value>}; this method unwraps it.
+func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args []any) (any, error) {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return nil, err
+	}
+
+	params := map[string]any{
+		"id":         webviewID,
+		"expression": expression,
+	}
+	if len(args) > 0 {
+		params["args"] = args
+	}
+
+	raw, err := agentRequest(port, "device.webview.evaluate", params)
+	if err != nil {
+		return nil, err
+	}
+
+	// agent returns {"result": <value>} — unwrap one level
+	var wrapper struct {
+		Result any `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse evaluate result: %w", err)
+	}
+	return wrapper.Result, nil
 }
