@@ -126,4 +126,16 @@
     }];
 }
 
++ (void)reloadWebView:(UIView *)webView {
+    [self runOnMainThread:^{ [(WKWebView *)webView reload]; }];
+}
+
++ (void)goBackWebView:(UIView *)webView {
+    [self runOnMainThread:^{ [(WKWebView *)webView goBack]; }];
+}
+
++ (void)goForwardWebView:(UIView *)webView {
+    [self runOnMainThread:^{ [(WKWebView *)webView goForward]; }];
+}
+
 @end

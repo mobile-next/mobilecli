@@ -130,6 +130,18 @@ type ControllableDevice interface {
 	GetCrashReport(id string) ([]byte, error)
 }
 
+// WebViewable is implemented by devices that support webview inspection and control.
+type WebViewable interface {
+	ListWebViews() ([]WebViewInfo, error)
+	WebViewGoto(webviewID, url string) error
+	WebViewReload(webviewID string) error
+	WebViewGoBack(webviewID string) error
+	WebViewGoForward(webviewID string) error
+	WebViewContent(webviewID string) (string, error)
+	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
+	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
+}
+
 // GetAllControllableDevices aggregates all known devices with options
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 

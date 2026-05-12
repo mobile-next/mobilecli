@@ -7,3 +7,5 @@ screenshot.png
 test/coverage
 agents/android/devicekit.so
 agents/android/devicekit.dex
+agents/ios/agent-sim.dylib
+agents/ios/agent-dev.dylib

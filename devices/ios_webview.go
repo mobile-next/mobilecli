@@ -180,6 +180,64 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	return port, nil
 }
 
+func (s *SimulatorDevice) webViewAction(wvID, method string) error {
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, method, map[string]any{"id": wvID})
+	return err
+}
+
+// WebViewReload reloads the page in the given webview.
+func (s *SimulatorDevice) WebViewReload(wvID string) error {
+	return s.webViewAction(wvID, "device.webview.reload")
+}
+
+// WebViewGoBack navigates the given webview back in history.
+func (s *SimulatorDevice) WebViewGoBack(wvID string) error {
+	return s.webViewAction(wvID, "device.webview.goBack")
+}
+
+// WebViewGoForward navigates the given webview forward in history.
+func (s *SimulatorDevice) WebViewGoForward(wvID string) error {
+	return s.webViewAction(wvID, "device.webview.goForward")
+}
+
+// WebViewContent returns the full outer HTML of the page in the given webview.
+func (s *SimulatorDevice) WebViewContent(wvID string) (string, error) {
+	result, err := s.WebViewEvaluate(wvID, "return document.documentElement.outerHTML", nil)
+	if err != nil {
+		return "", err
+	}
+	content, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected content type %T", result)
+	}
+	return content, nil
+}
+
+// WebViewWaitForLoadState blocks until the webview reaches the given load state.
+// timeoutMs of 0 uses the agent's default (30s).
+func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs int) error {
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return err
+	}
+	const agentDefaultMs = 30_000
+	waitMs := agentDefaultMs
+	if timeoutMs > 0 {
+		waitMs = timeoutMs
+	}
+	params := map[string]any{"id": wvID, "timeout": waitMs}
+	if state != "" {
+		params["state"] = state
+	}
+	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
+	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
+	return err
+}
+
 // WebViewGoto navigates the webview identified by wvID to url.
 func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
 	port, err := s.ensureIOSAgentReady()
@@ -251,3 +309,16 @@ func (s *SimulatorDevice) ListWebViews() ([]WebViewInfo, error) {
 	}
 	return webviews, nil
 }
+
+// ── IOSDevice stubs (real device support coming soon) ─────────────────────────
+
+var errIOSWebViewNotSupported = fmt.Errorf("webview commands are not yet supported on real iOS devices")
+
+func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error)                              { return nil, errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewGoto(webviewID, url string) error                           { return errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewReload(webviewID string) error                              { return errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewGoBack(webviewID string) error                              { return errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewGoForward(webviewID string) error                           { return errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewContent(webviewID string) (string, error)                   { return "", errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) { return nil, errIOSWebViewNotSupported }
+func (d *IOSDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error { return errIOSWebViewNotSupported }

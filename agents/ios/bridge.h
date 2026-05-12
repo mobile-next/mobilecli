@@ -9,6 +9,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable UIView *)webViewWithID:(NSString *)wvId;
 + (NSDictionary *)evaluateJS:(NSString *)expression inWebView:(UIView *)webView;
 + (void)gotoURL:(NSString *)urlStr inWebView:(UIView *)webView;
++ (void)reloadWebView:(UIView *)webView;
++ (void)goBackWebView:(UIView *)webView;
++ (void)goForwardWebView:(UIView *)webView;
 @end
 
 NS_ASSUME_NONNULL_END

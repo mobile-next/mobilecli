@@ -64,14 +64,50 @@ NSData *dispatch_rpc(NSData *body) {
         return rpc_result(reqId, eval);  // {"result": <value>}
     }
 
+    if ([@[@"device.webview.reload", @"device.webview.goBack", @"device.webview.goForward"] containsObject:method]) {
+        NSData *err = nil;
+        NSString *wvId = requireParam(params, @"id", &err);
+        if (!wvId) return err;
+        UIView *wv = [IosBridge webViewWithID:wvId];
+        if (!wv) return rpc_error(reqId, -32000, [NSString stringWithFormat:@"webview not found: %@", wvId]);
+        if ([method isEqualToString:@"device.webview.reload"])    [IosBridge reloadWebView:wv];
+        else if ([method isEqualToString:@"device.webview.goBack"])    [IosBridge goBackWebView:wv];
+        else if ([method isEqualToString:@"device.webview.goForward"]) [IosBridge goForwardWebView:wv];
+        return rpc_result(reqId, @{@"status": @"ok"});
+    }
+
+    if ([method isEqualToString:@"device.webview.waitForLoadState"]) {
+        NSData *err = nil;
+        NSString *wvId = requireParam(params, @"id", &err);
+        if (!wvId) return err;
+        UIView *wv = [IosBridge webViewWithID:wvId];
+        if (!wv) return rpc_error(reqId, -32000, [NSString stringWithFormat:@"webview not found: %@", wvId]);
+
+        NSString *state     = params[@"state"] ?: @"load";
+        NSInteger timeoutMs = params[@"timeout"] ? [params[@"timeout"] integerValue] : 30000;
+
+        NSString *js = [@"domcontentloaded" isEqualToString:state]
+            ? @"return String(document.readyState === 'interactive' || document.readyState === 'complete')"
+            : @"return String(document.readyState === 'complete')";
+
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutMs / 1000.0];
+        while (YES) {
+            NSDictionary *result = [IosBridge evaluateJS:js inWebView:wv];
+            if ([@"true" isEqualToString:result[@"result"]]) {
+                return rpc_result(reqId, @{@"status": @"ok"});
+            }
+            if ([[NSDate date] compare:deadline] != NSOrderedAscending) {
+                return rpc_error(reqId, -32000,
+                    [NSString stringWithFormat:@"waitForLoadState timed out waiting for '%@'", state]);
+            }
+            [NSThread sleepForTimeInterval:0.2];
+        }
+    }
+
     static NSArray *stubMethods;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         stubMethods = @[
-            @"device.webview.reload",
-            @"device.webview.goBack",
-            @"device.webview.goForward",
-            @"device.webview.waitForLoadState",
             @"device.dump.ui",
         ];
     });

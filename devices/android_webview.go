@@ -247,18 +247,25 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 	return port, nil
 }
 
-// ListWebViews returns all embedded WebViews found in the given app.
-func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
-	port, err := d.ensureAgentReady(pkg)
+// getWebViewPort resolves the foreground app and ensures the agent is ready,
+// returning the local TCP port to use for RPC calls.
+func (d *AndroidDevice) getWebViewPort() (int, error) {
+	foreground, err := d.GetForegroundApp()
+	if err != nil {
+		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	}
+	return d.ensureAgentReady(foreground.PackageName)
+}
+
+func (d *AndroidDevice) ListWebViews() ([]WebViewInfo, error) {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return nil, err
 	}
-
 	result, err := agentRequest(port, "device.webview.list", nil)
 	if err != nil {
 		return nil, err
 	}
-
 	var webviews []WebViewInfo
 	if err := json.Unmarshal(result, &webviews); err != nil {
 		return nil, fmt.Errorf("parse webview list: %w", err)
@@ -266,35 +273,17 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 	return webviews, nil
 }
 
-// WebViewWaitForLoadState blocks until the webview reaches the given load state
-// ("load" or "domcontentloaded"). timeoutMs of 0 uses the agent's default (30s).
-func (d *AndroidDevice) WebViewWaitForLoadState(pkg, webviewID, state string, timeoutMs int) error {
-	port, err := d.ensureAgentReady(pkg)
+func (d *AndroidDevice) WebViewGoto(webviewID, url string) error {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return err
 	}
-
-	const agentDefaultMs = 30_000
-	waitMs := agentDefaultMs
-	if timeoutMs > 0 {
-		waitMs = timeoutMs
-	}
-
-	params := map[string]any{"id": webviewID}
-	if state != "" {
-		params["state"] = state
-	}
-	params["timeout"] = waitMs
-
-	// HTTP timeout must exceed the agent's blocking wait; add 5s buffer.
-	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
-	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
+	_, err = agentRequest(port, "device.webview.goto", map[string]any{"id": webviewID, "url": url})
 	return err
 }
 
-// WebViewReload reloads the page in the given webview.
-func (d *AndroidDevice) WebViewReload(pkg, webviewID string) error {
-	port, err := d.ensureAgentReady(pkg)
+func (d *AndroidDevice) WebViewReload(webviewID string) error {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return err
 	}
@@ -302,9 +291,8 @@ func (d *AndroidDevice) WebViewReload(pkg, webviewID string) error {
 	return err
 }
 
-// WebViewGoBack navigates the given webview back in its history.
-func (d *AndroidDevice) WebViewGoBack(pkg, webviewID string) error {
-	port, err := d.ensureAgentReady(pkg)
+func (d *AndroidDevice) WebViewGoBack(webviewID string) error {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return err
 	}
@@ -312,9 +300,8 @@ func (d *AndroidDevice) WebViewGoBack(pkg, webviewID string) error {
 	return err
 }
 
-// WebViewGoForward navigates the given webview forward in its history.
-func (d *AndroidDevice) WebViewGoForward(pkg, webviewID string) error {
-	port, err := d.ensureAgentReady(pkg)
+func (d *AndroidDevice) WebViewGoForward(webviewID string) error {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return err
 	}
@@ -322,9 +309,8 @@ func (d *AndroidDevice) WebViewGoForward(pkg, webviewID string) error {
 	return err
 }
 
-// WebViewContent returns the full outer HTML of the page in the given webview.
-func (d *AndroidDevice) WebViewContent(pkg, webviewID string) (string, error) {
-	result, err := d.WebViewEvaluate(pkg, webviewID, "return document.documentElement.outerHTML", nil)
+func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
+	result, err := d.WebViewEvaluate(webviewID, "return document.documentElement.outerHTML", nil)
 	if err != nil {
 		return "", err
 	}
@@ -333,19 +319,6 @@ func (d *AndroidDevice) WebViewContent(pkg, webviewID string) (string, error) {
 		return "", fmt.Errorf("unexpected content type %T", result)
 	}
 	return content, nil
-}
-
-// WebViewGoto navigates the given webview to url.
-func (d *AndroidDevice) WebViewGoto(pkg, webviewID, url string) error {
-	port, err := d.ensureAgentReady(pkg)
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goto", map[string]any{
-		"id":  webviewID,
-		"url": url,
-	})
-	return err
 }
 
 // ensureReturnExpression prepends "return" to bare expressions so the agent's
@@ -362,14 +335,11 @@ func ensureReturnExpression(expression string) string {
 	return "return (" + trimmed + ")"
 }
 
-// WebViewEvaluate runs expression inside the given webview and returns the result.
-// The Java agent wraps the value as {"result": <value>}; this method unwraps it.
-func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args []any) (any, error) {
-	port, err := d.ensureAgentReady(pkg)
+func (d *AndroidDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
+	port, err := d.getWebViewPort()
 	if err != nil {
 		return nil, err
 	}
-
 	params := map[string]any{
 		"id":         webviewID,
 		"expression": ensureReturnExpression(expression),
@@ -377,12 +347,10 @@ func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args 
 	if len(args) > 0 {
 		params["args"] = args
 	}
-
 	raw, err := agentRequest(port, "device.webview.evaluate", params)
 	if err != nil {
 		return nil, err
 	}
-
 	// agent returns {"result": <value>} — unwrap one level
 	var wrapper struct {
 		Result any `json:"result"`
@@ -391,4 +359,23 @@ func (d *AndroidDevice) WebViewEvaluate(pkg, webviewID, expression string, args 
 		return nil, fmt.Errorf("parse evaluate result: %w", err)
 	}
 	return wrapper.Result, nil
+}
+
+func (d *AndroidDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
+	port, err := d.getWebViewPort()
+	if err != nil {
+		return err
+	}
+	const agentDefaultMs = 30_000
+	waitMs := agentDefaultMs
+	if timeoutMs > 0 {
+		waitMs = timeoutMs
+	}
+	params := map[string]any{"id": webviewID, "timeout": waitMs}
+	if state != "" {
+		params["state"] = state
+	}
+	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
+	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
+	return err
 }
