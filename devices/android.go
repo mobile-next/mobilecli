@@ -1192,7 +1192,7 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	}
 
 	// process current node if it has text, content-desc, or hint
-	if node.Text != "" || node.ContentDesc != "" || node.Hint != "" {
+	if node.Text != "" || node.ContentDesc != "" || node.Hint != "" || node.ResourceID != "" {
 		rect := d.getScreenElementRect(node.Bounds)
 
 		// only include elements with positive width and height
