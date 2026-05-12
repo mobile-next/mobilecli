@@ -91,6 +91,35 @@ INPUT/OUTPUT:
   # Send text input
   mobilecli io text --device <device-id> "Hello World"
 
+WEBVIEW:
+  # List embedded webviews in the foreground app
+  mobilecli webview list --device <device-id>
+
+  # Navigate a webview to a URL
+  mobilecli webview goto <id> https://example.com --device <device-id>
+
+  # Reload, go back or forward
+  mobilecli webview reload <id> --device <device-id>
+  mobilecli webview back <id> --device <device-id>
+  mobilecli webview forward <id> --device <device-id>
+
+  # Get current URL and page title
+  mobilecli webview url <id> --device <device-id>
+  mobilecli webview title <id> --device <device-id>
+
+  # Dump full HTML content
+  mobilecli webview content <id> --device <device-id>
+
+  # Query DOM elements by CSS selector
+  mobilecli webview query <id> "button" --device <device-id>
+  mobilecli webview query <id> "[data-testid='submit']" --device <device-id>
+
+  # Evaluate arbitrary JavaScript
+  mobilecli webview eval <id> "document.querySelectorAll('a').length" --device <device-id>
+
+  # Wait for page load
+  mobilecli webview wait <id> --state load --device <device-id>
+
 CRASH REPORTS:
   # List crash reports from a device
   mobilecli device crashes list --device <device-id>

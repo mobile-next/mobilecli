@@ -37,6 +37,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
+- **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
 ### 🎯 Platform Support
 
@@ -252,6 +253,66 @@ Example output for `agent status`:
       "bundleId": "com.mobilenext.devicekit-iosUITests.xctrunner"
     }
   }
+}
+```
+
+### Webview Inspection 🌐
+
+Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
+
+```bash
+# List embedded webviews in the foreground app
+mobilecli webview list --device <device-id>
+
+# Navigate a webview to a URL
+mobilecli webview goto <id> https://example.com --device <device-id>
+
+# Reload, go back or forward
+mobilecli webview reload <id> --device <device-id>
+mobilecli webview back <id> --device <device-id>
+mobilecli webview forward <id> --device <device-id>
+
+# Get current URL and page title
+mobilecli webview url <id> --device <device-id>
+mobilecli webview title <id> --device <device-id>
+
+# Dump the full HTML content of the page
+mobilecli webview content <id> --device <device-id>
+
+# Query DOM elements by CSS selector
+mobilecli webview query <id> "button" --device <device-id>
+mobilecli webview query <id> "[data-testid='submit']" --device <device-id>
+
+# Evaluate arbitrary JavaScript
+mobilecli webview eval <id> "document.querySelectorAll('a').length" --device <device-id>
+
+# Wait for the page to finish loading
+mobilecli webview wait <id> --state load --device <device-id>
+mobilecli webview wait <id> --state domcontentloaded --timeout 5000 --device <device-id>
+```
+
+Example output for `webview list`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "id": "1",
+      "url": "https://example.com",
+      "title": "Example Domain"
+    }
+  ]
+}
+```
+
+Example output for `webview query <id> "button"`:
+```json
+{
+  "status": "ok",
+  "data": [
+    { "tag": "button", "text": "Sign In", "id": "login-btn", "class": "btn-primary", "value": null, "href": null },
+    { "tag": "button", "text": "Cancel", "id": null, "class": "btn-secondary", "value": null, "href": null }
+  ]
 }
 ```
 
