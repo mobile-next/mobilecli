@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import {
 	createAndLaunchEmulator,
 	shutdownEmulator,
@@ -90,6 +91,119 @@ describe('Android Emulator Tests', () => {
 
 				getDeviceInfo(deviceId);
 			});
+
+			describe('fs operations on /sdcard/Download', () => {
+				const remoteDir = '/sdcard/Download/mobilecli-test';
+				const remoteFile = `${remoteDir}/hello.txt`;
+
+				it('should create a nested directory with mkdir -p', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					fsMkdir(deviceId, remoteDir, true);
+				});
+
+				it('should push a file into /sdcard/Download', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const localFile = writeTempFile('hello from mobilecli');
+					fsPush(deviceId, localFile, remoteFile);
+					fs.unlinkSync(localFile);
+				});
+
+				it('should list the pushed file in /sdcard/Download', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const entries = fsList(deviceId, remoteDir);
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.include('hello.txt');
+				});
+
+				it('should pull the file back and verify contents match', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-${Date.now()}.txt`);
+					fsPull(deviceId, remoteFile, localDest);
+					const contents = fs.readFileSync(localDest, 'utf8');
+					expect(contents.trim()).to.equal('hello from mobilecli');
+					fs.unlinkSync(localDest);
+				});
+
+				it('should remove the test directory recursively', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					fsRm(deviceId, remoteDir, true);
+					const entries = fsList(deviceId, '/sdcard/Download');
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.not.include('mobilecli-test');
+				});
+			});
+
+			describe('fs operations on app container (com.mobilenext.mobilewright_demo)', () => {
+				const packageName = 'com.mobilenext.mobilewright_demo';
+				let containerPath: string;
+				let remoteDir: string;
+				let remoteFile: string;
+
+				before(function () {
+					if (!systemImageAvailable) return;
+					containerPath = getAppPath(deviceId, packageName);
+					remoteDir = `${containerPath}/files/mobilecli-test`;
+					remoteFile = `${remoteDir}/data.txt`;
+				});
+
+				it('should return a valid container path for com.mobilenext.mobilewright_demo', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					expect(containerPath).to.match(/^\/data\/user\/\d+\/com\.mobilenext\.mobilewright_demo/);
+				});
+
+				it('should list the app container root', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const entries = fsList(deviceId, containerPath);
+					expect(entries).to.be.an('array');
+				});
+
+				it('should create a directory inside the app container', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					fsMkdir(deviceId, remoteDir, true);
+				});
+
+				it('should push a file into the app container', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const localFile = writeTempFile('app container test');
+					fsPush(deviceId, localFile, remoteFile);
+					fs.unlinkSync(localFile);
+				});
+
+				it('should list the file inside the app container', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const entries = fsList(deviceId, remoteDir);
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.include('data.txt');
+				});
+
+				it('should pull the file from the app container and verify contents', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					fsPull(deviceId, remoteFile, localDest);
+					const contents = fs.readFileSync(localDest, 'utf8');
+					expect(contents.trim()).to.equal('app container test');
+					fs.unlinkSync(localDest);
+				});
+
+				it('should remove the test directory from the app container', function () {
+					if (!systemImageAvailable) { this.skip(); return; }
+					this.timeout(30000);
+					fsRm(deviceId, remoteDir, true);
+					const entries = fsList(deviceId, `${containerPath}/files`);
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.not.include('mobilecli-test');
+				});
+			});
 		});
 	});
 });
@@ -145,4 +259,51 @@ function openUrl(deviceId: string, url: string): void {
 
 function getDeviceInfo(deviceId: string): void {
 	mobilecli(`device info --device ${deviceId}`);
+}
+
+function mobilecliJson(args: string): any {
+	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+	const result = execSync(`${mobilecliBinary} ${args}`, {
+		encoding: 'utf8',
+		timeout: 60000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: { ANDROID_HOME: process.env.ANDROID_HOME || '' },
+	});
+	return JSON.parse(result);
+}
+
+function getAppPath(deviceId: string, packageName: string): string {
+	const response = mobilecliJson(`apps path ${packageName} --device ${deviceId}`);
+	expect(response.status).to.equal('ok');
+	return response.data.path;
+}
+
+function fsList(deviceId: string, remotePath: string): any[] {
+	const response = mobilecliJson(`fs ls --device ${deviceId} "${remotePath}"`);
+	expect(response.status).to.equal('ok');
+	return response.data;
+}
+
+function fsPush(deviceId: string, localPath: string, remotePath: string): void {
+	mobilecli(`fs push --device ${deviceId} "${localPath}" "${remotePath}"`);
+}
+
+function fsPull(deviceId: string, remotePath: string, localPath: string): void {
+	mobilecli(`fs pull --device ${deviceId} "${remotePath}" "${localPath}"`);
+}
+
+function fsMkdir(deviceId: string, remotePath: string, parents: boolean): void {
+	const flag = parents ? '-p ' : '';
+	mobilecli(`fs mkdir --device ${deviceId} ${flag}"${remotePath}"`);
+}
+
+function fsRm(deviceId: string, remotePath: string, recursive: boolean): void {
+	const flag = recursive ? '-r ' : '';
+	mobilecli(`fs rm --device ${deviceId} ${flag}"${remotePath}"`);
+}
+
+function writeTempFile(content: string): string {
+	const tmpPath = path.join(os.tmpdir(), `mobilecli-push-${Date.now()}.txt`);
+	fs.writeFileSync(tmpPath, content, 'utf8');
+	return tmpPath;
 }
