@@ -260,6 +260,16 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 	return webviews, nil
 }
 
+// WebViewReload reloads the page in the given webview.
+func (d *AndroidDevice) WebViewReload(pkg, webviewID string) error {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, "device.webview.reload", map[string]any{"id": webviewID})
+	return err
+}
+
 // WebViewGoBack navigates the given webview back in its history.
 func (d *AndroidDevice) WebViewGoBack(pkg, webviewID string) error {
 	port, err := d.ensureAgentReady(pkg)

@@ -91,7 +91,14 @@ func WebViewGotoCommand(req WebViewGotoRequest) *CommandResponse {
 }
 
 func WebViewReloadCommand(req WebViewReloadRequest) *CommandResponse {
-	return NewErrorResponse(fmt.Errorf("not implemented"))
+	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if err := androidDevice.WebViewReload(pkg, req.WebViewID); err != nil {
+		return NewErrorResponse(fmt.Errorf("webview reload failed: %w", err))
+	}
+	return NewSuccessResponse(map[string]any{"status": "ok"})
 }
 
 func WebViewGoBackCommand(req WebViewRequest) *CommandResponse {
