@@ -1,6 +1,9 @@
 package commands
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 type FsPushRequest struct {
 	DeviceID   string `json:"deviceId"`
@@ -14,6 +17,10 @@ func FsPushCommand(req FsPushRequest) *CommandResponse {
 	}
 	if req.RemotePath == "" {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
+	}
+
+	if _, err := os.Stat(req.LocalPath); err != nil {
+		return NewErrorResponse(fmt.Errorf("local file not found: %s", req.LocalPath))
 	}
 
 	device, err := FindDeviceOrAutoSelect(req.DeviceID)
