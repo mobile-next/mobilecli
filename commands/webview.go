@@ -1,6 +1,10 @@
 package commands
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices"
+)
 
 // ─── Request types ────────────────────────────────────────────
 
@@ -44,7 +48,27 @@ type WebViewWaitForLoadStateRequest struct {
 // ─── Stubs ────────────────────────────────────────────────────
 
 func WebViewListCommand(req WebViewListRequest) *CommandResponse {
-	return NewErrorResponse(fmt.Errorf("not implemented"))
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
+	}
+
+	androidDevice, ok := device.(*devices.AndroidDevice)
+	if !ok {
+		return NewErrorResponse(fmt.Errorf("webview list is only supported on Android (device %s is %s)", device.ID(), device.Platform()))
+	}
+
+	foreground, err := androidDevice.GetForegroundApp()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("could not determine foreground app: %w", err))
+	}
+
+	webviews, err := androidDevice.ListWebViews(foreground.PackageName)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("webview list failed: %w", err))
+	}
+
+	return NewSuccessResponse(webviews)
 }
 
 func WebViewGotoCommand(req WebViewGotoRequest) *CommandResponse {
