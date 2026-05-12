@@ -3,6 +3,7 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielpaulus/go-ios/ios/installationproxy"
+	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/mobile-next/mobilecli/agents"
+	iosutil "github.com/mobile-next/mobilecli/devices/ios"
 )
 
 // findSimulatorForegroundApp searches the Mac process list for an app process
@@ -310,11 +314,215 @@ func (s *SimulatorDevice) ListWebViews() ([]WebViewInfo, error) {
 	return webviews, nil
 }
 
-// ── IOSDevice stubs (real device support coming soon) ─────────────────────────
+// ── IOSDevice (real device) ───────────────────────────────────────────────────
 
-var errIOSWebViewNotSupported = fmt.Errorf("webview commands are not yet supported on real iOS devices")
+var errIOSWebViewNotSupported = fmt.Errorf("not yet supported on real iOS devices")
 
-func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error)                              { return nil, errIOSWebViewNotSupported }
+// findAppPID returns the PID of the running process for the given bundle ID,
+// using the same instruments + installationproxy pattern as TerminateApp.
+func (d *IOSDevice) findAppPID(bundleID string) (int, error) {
+	if err := d.startTunnel(); err != nil {
+		return 0, fmt.Errorf("start tunnel: %w", err)
+	}
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return 0, fmt.Errorf("get device: %w", err)
+	}
+
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return 0, fmt.Errorf("installationproxy: %w", err)
+	}
+	defer svc.Close()
+
+	apps, err := svc.BrowseAllApps()
+	if err != nil {
+		return 0, fmt.Errorf("browse apps: %w", err)
+	}
+	var execName string
+	for _, app := range apps {
+		if app.CFBundleIdentifier() == bundleID {
+			execName = app.CFBundleExecutable()
+			break
+		}
+	}
+	if execName == "" {
+		return 0, fmt.Errorf("app %s not installed", bundleID)
+	}
+
+	infoSvc, err := instruments.NewDeviceInfoService(device)
+	if err != nil {
+		return 0, fmt.Errorf("device info service: %w", err)
+	}
+	defer infoSvc.Close()
+
+	processes, err := infoSvc.ProcessList()
+	if err != nil {
+		return 0, fmt.Errorf("process list: %w", err)
+	}
+	for _, p := range processes {
+		if p.Name == execName {
+			return int(p.Pid), nil
+		}
+	}
+	return 0, fmt.Errorf("process %q (%s) not found — is the app running?", execName, bundleID)
+}
+
+// writeIOSDeviceAgentDylib writes the embedded device dylib to a temp file.
+func writeIOSDeviceAgentDylib() (string, error) {
+	f, err := os.CreateTemp("", "mobilecli-agent-dev-*.dylib")
+	if err != nil {
+		return "", fmt.Errorf("create temp dylib: %w", err)
+	}
+	if _, err := f.Write(agents.IOSAgentDevDylib); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write dylib: %w", err)
+	}
+	f.Close()
+	return f.Name(), nil
+}
+
+var tmpDirFromLLDB = regexp.MustCompile(`"(/private/var/[^"]+/tmp/)"`)
+
+// injectIOSDeviceAgent injects the dylib into the given process on the device
+// using two lldb sessions: one to discover NSTemporaryDirectory, one to push
+// the file and dlopen it. Returns the device-side TCP port.
+func injectIOSDeviceAgent(udid string, pid int, localDylibPath string) (int, error) {
+	connect := fmt.Sprintf("platform connect connect://%s", udid)
+
+	// pass 1: discover the app's temp directory
+	out, _ := exec.Command("lldb",
+		"-o", "platform select remote-ios",
+		"-o", connect,
+		"-o", fmt.Sprintf("process attach --pid %d", pid),
+		"-o", `expr (const char*)[(NSString*)NSTemporaryDirectory() UTF8String]`,
+		"-o", "detach",
+		"-o", "quit",
+	).CombinedOutput()
+
+	m := tmpDirFromLLDB.FindStringSubmatch(string(out))
+	if m == nil {
+		return 0, fmt.Errorf("could not read NSTemporaryDirectory from process %d\nlldb output:\n%s", pid, out)
+	}
+	remoteDylibPath := m[1] + "mobilecli-agent.dylib"
+
+	// pass 2: push dylib, dlopen, read port
+	out, _ = exec.Command("lldb",
+		"-o", "platform select remote-ios",
+		"-o", connect,
+		"-o", fmt.Sprintf("platform put-file %s %s", localDylibPath, remoteDylibPath),
+		"-o", fmt.Sprintf("process attach --pid %d", pid),
+		"-o", fmt.Sprintf("expr (void*)dlopen(%q, 2)", remoteDylibPath),
+		"-o", "expr (int)mobilecli_get_port()",
+		"-o", "detach",
+		"-o", "quit",
+	).CombinedOutput()
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "mobilecli_get_port") {
+			continue
+		}
+		if m := portFromLLDB.FindStringSubmatch(line); m != nil {
+			port, err := strconv.Atoi(m[1])
+			if err == nil && port > 0 {
+				return port, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
+}
+
+// findFreeLocalPort returns the first available local TCP port in the given range.
+func findFreeLocalPort(start, end int) (int, error) {
+	for p := start; p <= end; p++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+		if err == nil {
+			ln.Close()
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("no free port in range %d-%d", start, end)
+}
+
+func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
+	// fast path: agent already forwarded from a previous call
+	for port := 27042; port <= 27051; port++ {
+		if isAgentReady(port) {
+			return port, nil
+		}
+	}
+
+	foreground, err := d.GetForegroundApp()
+	if err != nil {
+		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	}
+
+	pid, err := d.findAppPID(foreground.PackageName)
+	if err != nil {
+		return 0, err
+	}
+
+	localDylibPath, err := writeIOSDeviceAgentDylib()
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(localDylibPath)
+
+	devicePort, err := injectIOSDeviceAgent(d.Udid, pid, localDylibPath)
+	if err != nil {
+		return 0, fmt.Errorf("inject agent: %w", err)
+	}
+
+	localPort, err := findFreeLocalPort(27042, 27051)
+	if err != nil {
+		return 0, err
+	}
+
+	pf := iosutil.NewPortForwarder(d.Udid)
+	if err := pf.Forward(localPort, devicePort); err != nil {
+		return 0, fmt.Errorf("port forward %d->%d: %w", localPort, devicePort, err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !isAgentReady(localPort) {
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("iOS device agent did not respond on port %d within 3s", localPort)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return localPort, nil
+}
+
+func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error) {
+	port, err := d.ensureIOSDeviceAgentReady()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := agentRequest(port, "device.webview.list", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []struct {
+		ID      string         `json:"id"`
+		URL     string         `json:"url"`
+		Title   string         `json:"title"`
+		Bounds  map[string]any `json:"bounds"`
+		Visible bool           `json:"visible"`
+	}
+	if err := json.Unmarshal(result, &raw); err != nil {
+		return nil, fmt.Errorf("parse webview list: %w", err)
+	}
+
+	webviews := make([]WebViewInfo, len(raw))
+	for i, wv := range raw {
+		webviews[i] = WebViewInfo{ID: wv.ID, URL: wv.URL, Title: wv.Title, Bounds: wv.Bounds, IsVisible: wv.Visible}
+	}
+	return webviews, nil
+}
+
 func (d *IOSDevice) WebViewGoto(webviewID, url string) error                           { return errIOSWebViewNotSupported }
 func (d *IOSDevice) WebViewReload(webviewID string) error                              { return errIOSWebViewNotSupported }
 func (d *IOSDevice) WebViewGoBack(webviewID string) error                              { return errIOSWebViewNotSupported }

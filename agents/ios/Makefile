@@ -6,7 +6,7 @@ FLAGS = -arch $(ARCH) \
         -dynamiclib -fPIC -fobjc-arc \
         -framework Foundation -framework UIKit -framework WebKit
 
-all: agent-sim.dylib
+all: agent-sim.dylib agent-dev.dylib
 
 agent-sim.dylib: $(SRCS) server.h bridge.h dispatcher.h
 	xcrun -sdk iphonesimulator clang $(FLAGS) \
@@ -17,6 +17,7 @@ agent-dev.dylib: $(SRCS) server.h bridge.h dispatcher.h
 	xcrun -sdk iphoneos clang $(FLAGS) \
 		-miphoneos-version-min=$(MIN) \
 		-o $@ $(SRCS)
+	codesign -s - --force $@
 
 # legacy test dylib
 devicekit.dylib: devicekit.m

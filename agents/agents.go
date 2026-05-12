@@ -10,3 +10,6 @@ var AndroidDevicekitDEX []byte
 
 //go:embed ios/agent-sim.dylib
 var IOSAgentSimDylib []byte
+
+//go:embed ios/agent-dev.dylib
+var IOSAgentDevDylib []byte

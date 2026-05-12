@@ -4,6 +4,7 @@ all: build
 
 agents:
 	$(MAKE) -C agents/android all
+	$(MAKE) -C agents/ios all
 
 build: agents
 	go mod tidy
