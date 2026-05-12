@@ -152,7 +152,7 @@ var webviewURLCmd = &cobra.Command{
 		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
-			Expression: "location.href",
+			Expression: "return location.href",
 		})
 		printJson(response)
 		if response.Status == "error" {
@@ -171,7 +171,7 @@ var webviewTitleCmd = &cobra.Command{
 		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
-			Expression: "document.title",
+			Expression: "return document.title",
 		})
 		printJson(response)
 		if response.Status == "error" {
@@ -190,7 +190,7 @@ var webviewContentCmd = &cobra.Command{
 		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
-			Expression: "document.documentElement.outerHTML",
+			Expression: "return document.documentElement.outerHTML",
 		})
 		printJson(response)
 		if response.Status == "error" {
