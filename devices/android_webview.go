@@ -188,7 +188,7 @@ func agentRequestWithTimeout(port int, method string, params map[string]any, tim
 	}
 
 	var rpc struct {
-		Result json.RawMessage    `json:"result"`
+		Result json.RawMessage `json:"result"`
 		Error  *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`

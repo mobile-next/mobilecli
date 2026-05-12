@@ -17,9 +17,45 @@ on:
 
 jobs:
 
+  build_agents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Install Android NDK and build tools
+      run: |
+        sdkmanager --install \
+          "ndk;29.0.13113456" \
+          "build-tools;36.0.0" \
+          "platforms;android-35"
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+
+    - name: Build agents
+      run: make -C agents/android all
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+
+    - name: Upload agent binaries
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-agents
+        path: |
+          agents/android/devicekit.so
+          agents/android/devicekit.dex
+        retention-days: 1
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: [build_agents]
     steps:
     - uses: actions/checkout@v5
 
@@ -28,9 +64,14 @@ jobs:
       with:
         go-version-file: go.mod
 
+    - name: Download agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
     - name: Run Unit Tests
-      run: |
-        make build test
+      run: make build test
 
   lint:
     runs-on: ubuntu-latest
@@ -80,7 +121,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
 
@@ -88,6 +129,12 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Download agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
 
     - name: Install dependencies
       run: |
@@ -120,7 +167,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
 
@@ -128,6 +175,12 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Download agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
 
     - name: Install dependencies
       run: |
@@ -161,9 +214,16 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
+
+    - name: Download agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
