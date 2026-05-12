@@ -148,9 +148,15 @@ func (d *AndroidDevice) attachJVMTIAgent(pid, soPath, dexPath string) error {
 	return nil
 }
 
+const defaultAgentTimeout = 10 * time.Second
+
 // agentRequest sends a JSON-RPC 2.0 request to the agent over HTTP and returns
 // the result field from the response.
 func agentRequest(port int, method string, params map[string]any) (json.RawMessage, error) {
+	return agentRequestWithTimeout(port, method, params, defaultAgentTimeout)
+}
+
+func agentRequestWithTimeout(port int, method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
 	body := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "1",
@@ -165,7 +171,7 @@ func agentRequest(port int, method string, params map[string]any) (json.RawMessa
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Post(
 		fmt.Sprintf("http://localhost:%d/", port),
 		"application/json",
@@ -258,6 +264,32 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 		return nil, fmt.Errorf("parse webview list: %w", err)
 	}
 	return webviews, nil
+}
+
+// WebViewWaitForLoadState blocks until the webview reaches the given load state
+// ("load" or "domcontentloaded"). timeoutMs of 0 uses the agent's default (30s).
+func (d *AndroidDevice) WebViewWaitForLoadState(pkg, webviewID, state string, timeoutMs int) error {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return err
+	}
+
+	const agentDefaultMs = 30_000
+	waitMs := agentDefaultMs
+	if timeoutMs > 0 {
+		waitMs = timeoutMs
+	}
+
+	params := map[string]any{"id": webviewID}
+	if state != "" {
+		params["state"] = state
+	}
+	params["timeout"] = waitMs
+
+	// HTTP timeout must exceed the agent's blocking wait; add 5s buffer.
+	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
+	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
+	return err
 }
 
 // WebViewReload reloads the page in the given webview.

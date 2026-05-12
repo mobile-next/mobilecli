@@ -148,5 +148,12 @@ func WebViewEvaluateCommand(req WebViewEvaluateRequest) *CommandResponse {
 }
 
 func WebViewWaitForLoadStateCommand(req WebViewWaitForLoadStateRequest) *CommandResponse {
-	return NewErrorResponse(fmt.Errorf("not implemented"))
+	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if err := androidDevice.WebViewWaitForLoadState(pkg, req.WebViewID, req.State, req.Timeout); err != nil {
+		return NewErrorResponse(fmt.Errorf("webview wait failed: %w", err))
+	}
+	return NewSuccessResponse(map[string]any{"status": "ok"})
 }
