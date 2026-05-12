@@ -1142,6 +1142,14 @@ func (d IOSDevice) SetOrientation(orientation string) error {
 	return d.wdaClient.SetOrientation(orientation)
 }
 
+func (d IOSDevice) GetAnimationScales() (AnimationScales, error) {
+	return AnimationScales{}, fmt.Errorf("animation scales are not supported on iOS")
+}
+
+func (d IOSDevice) SetAnimationScales(_ AnimationScales) error {
+	return fmt.Errorf("animation scales are not supported on iOS")
+}
+
 // DeviceKitInfo contains information about the started DeviceKit session
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`

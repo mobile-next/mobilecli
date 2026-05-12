@@ -181,6 +181,22 @@ func (r *RemoteDevice) SetOrientation(orientation string) error {
 	return r.fireRPC("device.io.orientation.set", params{"orientation": orientation})
 }
 
+func (r *RemoteDevice) GetAnimationScales() (AnimationScales, error) {
+	resp, err := rpcCall[AnimationScales](r, "device.io.animation-scales.get", params{})
+	if err != nil {
+		return AnimationScales{}, err
+	}
+	return resp, nil
+}
+
+func (r *RemoteDevice) SetAnimationScales(scales AnimationScales) error {
+	return r.fireRPC("device.io.animation-scales.set", params{
+		"window":     scales.Window,
+		"transition": scales.Transition,
+		"animator":   scales.Animator,
+	})
+}
+
 func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }

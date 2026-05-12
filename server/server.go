@@ -586,6 +586,17 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+type IoAnimationScalesGetParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type IoAnimationScalesSetParams struct {
+	DeviceID   string  `json:"deviceId"`
+	Window     float64 `json:"window"`
+	Transition float64 `json:"transition"`
+	Animator   float64 `json:"animator"`
+}
+
 type DeviceBootParams struct {
 	DeviceID string `json:"deviceId"`
 }
@@ -777,6 +788,49 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.OrientationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleIoAnimationScalesGet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var p IoAnimationScalesGetParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+
+	response := commands.AnimationScalesGetCommand(commands.AnimationScalesGetRequest{
+		DeviceID: p.DeviceID,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleIoAnimationScalesSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, window, transition, animator")
+	}
+
+	var p IoAnimationScalesSetParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, window, transition, animator", err)
+	}
+
+	response := commands.AnimationScalesSetCommand(commands.AnimationScalesSetRequest{
+		DeviceID:   p.DeviceID,
+		Window:     p.Window,
+		Transition: p.Transition,
+		Animator:   p.Animator,
+	})
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

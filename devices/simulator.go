@@ -857,6 +857,14 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.wdaClient.SetOrientation(orientation)
 }
 
+func (s SimulatorDevice) GetAnimationScales() (AnimationScales, error) {
+	return AnimationScales{}, fmt.Errorf("animation scales are not supported on iOS simulator")
+}
+
+func (s SimulatorDevice) SetAnimationScales(_ AnimationScales) error {
+	return fmt.Errorf("animation scales are not supported on iOS simulator")
+}
+
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
 
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
