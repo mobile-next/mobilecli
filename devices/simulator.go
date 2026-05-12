@@ -857,10 +857,12 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.wdaClient.SetOrientation(orientation)
 }
 
+// GetAnimationScales is not supported on iOS simulators.
 func (s SimulatorDevice) GetAnimationScales() (AnimationScales, error) {
 	return AnimationScales{}, fmt.Errorf("animation scales are not supported on iOS simulator")
 }
 
+// SetAnimationScales is not supported on iOS simulators.
 func (s SimulatorDevice) SetAnimationScales(_ AnimationScales) error {
 	return fmt.Errorf("animation scales are not supported on iOS simulator")
 }

@@ -795,6 +795,7 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	return okResponse, nil
 }
 
+// handleIoAnimationScalesGet handles the device.io.animation-scales.get RPC method.
 func handleIoAnimationScalesGet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
@@ -815,6 +816,7 @@ func handleIoAnimationScalesGet(params json.RawMessage) (any, error) {
 	return response.Data, nil
 }
 
+// handleIoAnimationScalesSet handles the device.io.animation-scales.set RPC method.
 func handleIoAnimationScalesSet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, window, transition, animator")

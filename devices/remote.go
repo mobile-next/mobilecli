@@ -181,6 +181,7 @@ func (r *RemoteDevice) SetOrientation(orientation string) error {
 	return r.fireRPC("device.io.orientation.set", params{"orientation": orientation})
 }
 
+// GetAnimationScales retrieves the current animation scale values from the remote device.
 func (r *RemoteDevice) GetAnimationScales() (AnimationScales, error) {
 	resp, err := rpcCall[AnimationScales](r, "device.io.animation-scales.get", params{})
 	if err != nil {
@@ -189,6 +190,7 @@ func (r *RemoteDevice) GetAnimationScales() (AnimationScales, error) {
 	return resp, nil
 }
 
+// SetAnimationScales sets the animation scale values on the remote device.
 func (r *RemoteDevice) SetAnimationScales(scales AnimationScales) error {
 	return r.fireRPC("device.io.animation-scales.set", params{
 		"window":     scales.Window,
