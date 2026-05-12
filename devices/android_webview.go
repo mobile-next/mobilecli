@@ -260,6 +260,39 @@ func (d *AndroidDevice) ListWebViews(pkg string) ([]WebViewInfo, error) {
 	return webviews, nil
 }
 
+// WebViewGoBack navigates the given webview back in its history.
+func (d *AndroidDevice) WebViewGoBack(pkg, webviewID string) error {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, "device.webview.goBack", map[string]any{"id": webviewID})
+	return err
+}
+
+// WebViewGoForward navigates the given webview forward in its history.
+func (d *AndroidDevice) WebViewGoForward(pkg, webviewID string) error {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, "device.webview.goForward", map[string]any{"id": webviewID})
+	return err
+}
+
+// WebViewContent returns the full outer HTML of the page in the given webview.
+func (d *AndroidDevice) WebViewContent(pkg, webviewID string) (string, error) {
+	result, err := d.WebViewEvaluate(pkg, webviewID, "document.documentElement.outerHTML", nil)
+	if err != nil {
+		return "", err
+	}
+	content, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected content type %T", result)
+	}
+	return content, nil
+}
+
 // WebViewGoto navigates the given webview to url.
 func (d *AndroidDevice) WebViewGoto(pkg, webviewID, url string) error {
 	port, err := d.ensureAgentReady(pkg)

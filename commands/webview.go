@@ -95,11 +95,37 @@ func WebViewReloadCommand(req WebViewReloadRequest) *CommandResponse {
 }
 
 func WebViewGoBackCommand(req WebViewRequest) *CommandResponse {
-	return NewErrorResponse(fmt.Errorf("not implemented"))
+	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if err := androidDevice.WebViewGoBack(pkg, req.WebViewID); err != nil {
+		return NewErrorResponse(fmt.Errorf("webview back failed: %w", err))
+	}
+	return NewSuccessResponse(map[string]any{"status": "ok"})
 }
 
 func WebViewGoForwardCommand(req WebViewRequest) *CommandResponse {
-	return NewErrorResponse(fmt.Errorf("not implemented"))
+	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if err := androidDevice.WebViewGoForward(pkg, req.WebViewID); err != nil {
+		return NewErrorResponse(fmt.Errorf("webview forward failed: %w", err))
+	}
+	return NewSuccessResponse(map[string]any{"status": "ok"})
+}
+
+func WebViewContentCommand(req WebViewRequest) *CommandResponse {
+	androidDevice, pkg, err := androidDeviceForWebView(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	content, err := androidDevice.WebViewContent(pkg, req.WebViewID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("webview content failed: %w", err))
+	}
+	return NewSuccessResponse(content)
 }
 
 func WebViewEvaluateCommand(req WebViewEvaluateRequest) *CommandResponse {

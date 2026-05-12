@@ -187,10 +187,9 @@ var webviewContentCmd = &cobra.Command{
 	Long:  `Returns the full outer HTML of the page currently loaded in the specified webview.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
-			DeviceID:   deviceId,
-			WebViewID:  args[0],
-			Expression: "return document.documentElement.outerHTML",
+		response := commands.WebViewContentCommand(commands.WebViewRequest{
+			DeviceID:  deviceId,
+			WebViewID: args[0],
 		})
 		printJson(response)
 		if response.Status == "error" {
