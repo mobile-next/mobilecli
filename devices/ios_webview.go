@@ -459,7 +459,9 @@ func (d *IOSDevice) findForegroundApp(device goios.DeviceEntry, apps []userApp) 
 // accept loop on a GCD background queue. The accept loop persists after LLDB
 // detaches. The expression evaluates to the bound port number.
 const iosDeviceAgentExpr = `
-@import Foundation; @import UIKit; @import WebKit;
+@import Foundation;
+// UIKit/WebKit class metadata avoided — calls cast result to silence LLDB strict mode
+extern Class objc_getClass(const char *);
 // inline C declarations — LLDB remote-ios doesn't have SDK headers on include path
 typedef unsigned int __socklen_t;
 typedef unsigned short __in_port_t;
@@ -501,21 +503,23 @@ if (__port > 0) {
     listen(__sfd, 8);
     int __srv = __sfd;
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        WKWebView *(^__findWV)(NSString *) = ^WKWebView *(NSString *wvId) {
-            __block WKWebView *found = nil;
+        id (^__findWV)(NSString *) = ^id(NSString *wvId) {
+            __block id found = nil;
             id sem = dispatch_semaphore_create(0);
             [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                 Class wk = NSClassFromString(@"WKWebView");
-                for (UIScene *sc in [UIApplication sharedApplication].connectedScenes)
-                    if ([sc isKindOfClass:[UIWindowScene class]])
-                        for (UIWindow *w in ((UIWindowScene *)sc).windows) {
+                Class wsCls = (Class)objc_getClass("UIWindowScene");
+                id app = (id)[(Class)objc_getClass("UIApplication") sharedApplication];
+                for (id sc in (NSArray *)[app connectedScenes])
+                    if ([(NSObject *)sc isKindOfClass:wsCls])
+                        for (id w in (NSArray *)[sc windows]) {
                             NSMutableArray *stk = [NSMutableArray arrayWithObject:w];
-                            while (stk.count) {
-                                UIView *v = stk[0]; [stk removeObjectAtIndex:0];
-                                if (wk && [v isKindOfClass:wk] &&
+                            while ([stk count]) {
+                                id v = stk[0]; [stk removeObjectAtIndex:0];
+                                if (wk && [(NSObject *)v isKindOfClass:wk] &&
                                     [[NSString stringWithFormat:@"%p", v] isEqualToString:wvId])
-                                { found = (WKWebView *)v; break; }
-                                [stk addObjectsFromArray:v.subviews];
+                                { found = v; break; }
+                                [stk addObjectsFromArray:(NSArray *)[v subviews]];
                             }
                             if (found) break;
                         }
@@ -559,23 +563,24 @@ if (__port > 0) {
                     id sem = dispatch_semaphore_create(0);
                     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                         Class wk = NSClassFromString(@"WKWebView");
-                        for (UIScene *sc in [UIApplication sharedApplication].connectedScenes)
-                            if ([sc isKindOfClass:[UIWindowScene class]])
-                                for (UIWindow *win in ((UIWindowScene *)sc).windows) {
+                        Class wsCls = (Class)objc_getClass("UIWindowScene");
+                        id app = (id)[(Class)objc_getClass("UIApplication") sharedApplication];
+                        for (id sc in (NSArray *)[app connectedScenes])
+                            if ([(NSObject *)sc isKindOfClass:wsCls])
+                                for (id win in (NSArray *)[sc windows]) {
                                     NSMutableArray *stk = [NSMutableArray arrayWithObject:win];
-                                    while (stk.count) {
-                                        UIView *v = stk[0]; [stk removeObjectAtIndex:0];
-                                        if (wk && [v isKindOfClass:wk]) {
-                                            WKWebView *wv = (WKWebView *)v;
+                                    while ([stk count]) {
+                                        id v = stk[0]; [stk removeObjectAtIndex:0];
+                                        if (wk && [(NSObject *)v isKindOfClass:wk]) {
                                             [wvs addObject:@{
-                                                @"id": [NSString stringWithFormat:@"%p", wv],
-                                                @"url": wv.URL.absoluteString ?: @"",
-                                                @"title": wv.title ?: @"",
+                                                @"id": [NSString stringWithFormat:@"%p", v],
+                                                @"url": [(NSURL *)[v URL] absoluteString] ?: @"",
+                                                @"title": (NSString *)[v title] ?: @"",
                                                 @"bounds": @{@"x":@0,@"y":@0,@"width":@0,@"height":@0},
-                                                @"visible": @(!wv.isHidden && wv.window != nil)
+                                                @"visible": @(!(BOOL)[v isHidden] && (id)[v window] != nil)
                                             }];
                                         }
-                                        [stk addObjectsFromArray:v.subviews];
+                                        [stk addObjectsFromArray:(NSArray *)[v subviews]];
                                     }
                                 }
                         dispatch_semaphore_signal(sem);
@@ -584,26 +589,26 @@ if (__port > 0) {
                     resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":wvs} options:0 error:nil];
                 } else if ([method isEqualToString:@"device.webview.goto"]) {
                     NSString *wvId = params[@"id"], *url = params[@"url"];
-                    WKWebView *wv = (wvId && url) ? __findWV(wvId) : nil;
+                    id wv = (wvId && url) ? __findWV(wvId) : nil;
                     if (!wvId || !url) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id or url"}} options:0 error:nil];
                     else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
                         id sem = dispatch_semaphore_create(0);
-                        [[NSOperationQueue mainQueue] addOperationWithBlock:^{ [wv loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]]; dispatch_semaphore_signal(sem); }];
+                        [[NSOperationQueue mainQueue] addOperationWithBlock:^{ (void)[wv loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]]; dispatch_semaphore_signal(sem); }];
                         dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
                         resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"status":@"ok"}} options:0 error:nil];
                     }
                 } else if ([@[@"device.webview.reload",@"device.webview.goBack",@"device.webview.goForward"] containsObject:method]) {
                     NSString *wvId = params[@"id"];
-                    WKWebView *wv = wvId ? __findWV(wvId) : nil;
+                    id wv = wvId ? __findWV(wvId) : nil;
                     if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id"}} options:0 error:nil];
                     else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
                         id sem = dispatch_semaphore_create(0);
                         [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                            if ([method isEqualToString:@"device.webview.reload"]) [wv reload];
-                            else if ([method isEqualToString:@"device.webview.goBack"]) [wv goBack];
-                            else [wv goForward];
+                            if ([method isEqualToString:@"device.webview.reload"]) (void)[wv reload];
+                            else if ([method isEqualToString:@"device.webview.goBack"]) (void)[wv goBack];
+                            else (void)[wv goForward];
                             dispatch_semaphore_signal(sem);
                         }];
                         dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
@@ -611,7 +616,7 @@ if (__port > 0) {
                     }
                 } else if ([method isEqualToString:@"device.webview.evaluate"]) {
                     NSString *wvId = params[@"id"], *expr = params[@"expression"];
-                    WKWebView *wv = (wvId && expr) ? __findWV(wvId) : nil;
+                    id wv = (wvId && expr) ? __findWV(wvId) : nil;
                     if (!wvId || !expr) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id or expression"}} options:0 error:nil];
                     else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
@@ -619,7 +624,7 @@ if (__port > 0) {
                         __block id jsResult = nil; __block NSError *jsError = nil;
                         id sem = dispatch_semaphore_create(0);
                         [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                            [wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsResult = r; jsError = e; dispatch_semaphore_signal(sem); }];
+                            (void)[wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsResult = r; jsError = e; dispatch_semaphore_signal(sem); }];
                         }];
                         dispatch_semaphore_wait(sem, dispatch_time(0, 10000000000LL));
                         if (jsError) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":jsError.localizedDescription}} options:0 error:nil];
@@ -628,7 +633,7 @@ if (__port > 0) {
                     }
                 } else if ([method isEqualToString:@"device.webview.waitForLoadState"]) {
                     NSString *wvId = params[@"id"];
-                    WKWebView *wv = wvId ? __findWV(wvId) : nil;
+                    id wv = wvId ? __findWV(wvId) : nil;
                     if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id"}} options:0 error:nil];
                     else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
@@ -644,7 +649,7 @@ if (__port > 0) {
                             id sem2 = dispatch_semaphore_create(0);
                             NSString *wrapped = [NSString stringWithFormat:@"(function(){try{%@}catch(e){return null}})()", checkJS];
                             [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                                [wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsR = r; dispatch_semaphore_signal(sem2); }];
+                                (void)[wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsR = r; dispatch_semaphore_signal(sem2); }];
                             }];
                             dispatch_semaphore_wait(sem2, dispatch_time(0, 5000000000LL));
                             if ([@"true" isEqualToString:jsR]) done = YES;
@@ -836,6 +841,7 @@ func injectServerViaLLDB(localProxyPort int) (int, error) {
 
 	utils.Verbose("running LLDB (timeout %s)", lldbTimeout)
 	cmd := exec.CommandContext(ctx, "lldb",
+		"-o", "settings set target.process.memory-cache-line-size 16384",
 		"-o", "platform select remote-ios",
 		"-o", fmt.Sprintf("process connect connect://localhost:%d", localProxyPort),
 		"-o", "expr -l objc -- "+iosDeviceAgentExpr,
