@@ -19,13 +19,26 @@ func androidPackageName(remotePath string) (string, error) {
 	return parts[4], nil
 }
 
+// runAsArgs returns the adb shell prefix for the given path.
+// App container paths under /data/user/ are prefixed with run-as <package>.
+func (d *AndroidDevice) runAsArgs(remotePath string) ([]string, error) {
+	if !strings.HasPrefix(remotePath, "/data/user/") {
+		return []string{"shell"}, nil
+	}
+	pkg, err := androidPackageName(remotePath)
+	if err != nil {
+		return nil, err
+	}
+	return []string{"shell", "run-as", pkg}, nil
+}
+
 func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 	if !strings.HasPrefix(remotePath, "/data/user/") {
 		_, err := d.runAdbCommand("push", localPath, remotePath)
 		return err
 	}
 
-	packageName, err := androidPackageName(remotePath)
+	shellArgs, err := d.runAsArgs(remotePath)
 	if err != nil {
 		return err
 	}
@@ -35,7 +48,7 @@ func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 		return fmt.Errorf("push to tmp failed: %w", err)
 	}
 
-	_, cpErr := d.runAdbCommand("shell", "run-as", packageName, "cp", tmpPath, remotePath)
+	_, cpErr := d.runAdbCommand(append(shellArgs, "cp", tmpPath, remotePath)...)
 	_, rmErr := d.runAdbCommand("shell", "rm", tmpPath)
 
 	if cpErr != nil {
@@ -49,24 +62,17 @@ func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 }
 
 func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
-	var data []byte
-	var err error
-
-	if strings.HasPrefix(remotePath, "/data/user/") {
-		packageName, pErr := androidPackageName(remotePath)
-		if pErr != nil {
-			return pErr
-		}
-		// exec-out instead of shell avoids PTY CRLF translation on Windows
-		data, err = d.runAdbCommandStdout("exec-out", "run-as", packageName, "cat", remotePath)
-	} else {
-		data, err = d.runAdbCommandStdout("exec-out", "cat", remotePath)
+	shellArgs, err := d.runAsArgs(remotePath)
+	if err != nil {
+		return err
 	}
-
+	// exec-out instead of shell avoids PTY CRLF translation on Windows
+	// replace "shell" with "exec-out" so the rest of the args are forwarded as-is
+	shellArgs[0] = "exec-out"
+	data, err := d.runAdbCommandStdout(append(shellArgs, "cat", remotePath)...)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
-
 	return os.WriteFile(localPath, data, 0644)
 }
 
@@ -75,27 +81,17 @@ func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, err
 		remotePath = "/"
 	}
 
-	var output []byte
-	var err error
+	shellArgs, err := d.runAsArgs(remotePath)
+	if err != nil {
+		return nil, err
+	}
 
 	// append trailing slash so symlinks (e.g. /sdcard) are followed;
 	// fall back to the original path if that fails (path is a file, not a dir)
 	lsPath := strings.TrimRight(remotePath, "/") + "/"
-
-	if strings.HasPrefix(remotePath, "/data/user/") {
-		packageName, pErr := androidPackageName(remotePath)
-		if pErr != nil {
-			return nil, pErr
-		}
-		output, err = d.runAdbCommand("shell", "run-as", packageName, "ls", "-la", lsPath)
-		if err != nil {
-			output, err = d.runAdbCommand("shell", "run-as", packageName, "ls", "-la", remotePath)
-		}
-	} else {
-		output, err = d.runAdbCommand("shell", "ls", "-la", lsPath)
-		if err != nil {
-			output, err = d.runAdbCommand("shell", "ls", "-la", remotePath)
-		}
+	output, err := d.runAdbCommand(append(shellArgs, "ls", "-la", lsPath)...)
+	if err != nil {
+		output, err = d.runAdbCommand(append(shellArgs, "ls", "-la", remotePath)...)
 	}
 
 	if err != nil {
@@ -168,41 +164,29 @@ func androidParseLsLine(line, dirPath string) *FileEntry {
 }
 
 func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
-	args := []string{"mkdir"}
-	if parents {
-		args = append(args, "-p")
-	}
-	args = append(args, remotePath)
-
-	if strings.HasPrefix(remotePath, "/data/user/") {
-		packageName, err := androidPackageName(remotePath)
-		if err != nil {
-			return err
-		}
-		_, err = d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+	shellArgs, err := d.runAsArgs(remotePath)
+	if err != nil {
 		return err
 	}
-
-	_, err := d.runAdbCommand(append([]string{"shell"}, args...)...)
+	mkdirArgs := []string{"mkdir"}
+	if parents {
+		mkdirArgs = append(mkdirArgs, "-p")
+	}
+	mkdirArgs = append(mkdirArgs, remotePath)
+	_, err = d.runAdbCommand(append(shellArgs, mkdirArgs...)...)
 	return err
 }
 
 func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
-	args := []string{"rm"}
-	if recursive {
-		args = append(args, "-rf")
-	}
-	args = append(args, remotePath)
-
-	if strings.HasPrefix(remotePath, "/data/user/") {
-		packageName, err := androidPackageName(remotePath)
-		if err != nil {
-			return err
-		}
-		_, err = d.runAdbCommand(append([]string{"shell", "run-as", packageName}, args...)...)
+	shellArgs, err := d.runAsArgs(remotePath)
+	if err != nil {
 		return err
 	}
-
-	_, err := d.runAdbCommand(append([]string{"shell"}, args...)...)
+	rmArgs := []string{"rm"}
+	if recursive {
+		rmArgs = append(rmArgs, "-rf")
+	}
+	rmArgs = append(rmArgs, remotePath)
+	_, err = d.runAdbCommand(append(shellArgs, rmArgs...)...)
 	return err
 }

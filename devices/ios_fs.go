@@ -110,10 +110,11 @@ func (d *IOSDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) 
 		remotePath = "/"
 	}
 
-	d.mu.Lock()
-	err := d.startTunnel()
-	d.mu.Unlock()
-	if err != nil {
+	if err := func() error {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.startTunnel()
+	}(); err != nil {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
 	}
 

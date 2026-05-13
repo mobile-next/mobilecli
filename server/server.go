@@ -1484,7 +1484,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	return nil
 }
 
-const fsSizeLimit = 1 * 1024 * 1024 // 1 MB
+const fsSizeLimit = 1 << 20 // 1 MB
 
 type AppsPathParams struct {
 	DeviceID string `json:"deviceId"`
@@ -1625,13 +1625,12 @@ func handleFsPush(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		os.Remove(tmpPath)
 		return nil, fmt.Errorf("failed to write temp file: %w", err)
 	}
 	tmp.Close()
-	defer os.Remove(tmpPath)
 
 	response := commands.FsPushCommand(commands.FsPushRequest{
 		DeviceID:   p.DeviceID,
