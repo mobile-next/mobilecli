@@ -276,7 +276,7 @@ Example output for `apps path`:
 }
 ```
 
-Example output for `apps fs ls`:
+Example output for `fs ls`:
 ```json
 {
   "status": "ok",

@@ -58,9 +58,7 @@ var fsLsCmd = &cobra.Command{
 	Args:  cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var bundleID, remotePath string
-		if len(args) == 0 {
-			// leave remotePath empty; each device picks its own default
-		} else if len(args) == 1 && strings.HasPrefix(args[0], "/") {
+		if len(args) == 1 && strings.HasPrefix(args[0], "/") {
 			remotePath = args[0]
 		} else {
 			bundleID = args[0]

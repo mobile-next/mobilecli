@@ -165,14 +165,14 @@ func AppPathCommand(req AppPathRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	path, err := targetDevice.GetAppContainerPath(req.BundleID)
+	path, err := device.GetAppContainerPath(req.BundleID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to get app path on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(fmt.Errorf("failed to get app path on device %s: %w", device.ID(), err))
 	}
 
 	return NewSuccessResponse(map[string]any{

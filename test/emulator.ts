@@ -146,7 +146,7 @@ describe('Android Emulator Tests', () => {
 
 				before(function () {
 					if (!systemImageAvailable) return;
-					containerPath = getAppPath(deviceId, packageName);
+					containerPath = getAppContainerPath(deviceId, packageName);
 					remoteDir = `${containerPath}/files/mobilecli-test`;
 					remoteFile = `${remoteDir}/data.txt`;
 				});
@@ -272,7 +272,7 @@ function mobilecliJson(args: string): any {
 	return JSON.parse(result);
 }
 
-function getAppPath(deviceId: string, packageName: string): string {
+function getAppContainerPath(deviceId: string, packageName: string): string {
 	const response = mobilecliJson(`apps path ${packageName} --device ${deviceId}`);
 	expect(response.status).to.equal('ok');
 	return response.data.path;

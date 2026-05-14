@@ -68,8 +68,8 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 	}
 	// exec-out instead of shell avoids PTY CRLF translation on Windows
 	// replace "shell" with "exec-out" so the rest of the args are forwarded as-is
-	shellArgs[0] = "exec-out"
-	data, err := d.runAdbCommandStdout(append(shellArgs, "cat", remotePath)...)
+	pullArgs := append([]string{"exec-out"}, shellArgs[1:]...)
+	data, err := d.runAdbCommandStdout(append(pullArgs, "cat", remotePath)...)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
