@@ -1,3 +1,6 @@
+## [0.3.73](https://github.com/mobile-next/mobilecli/releases/tag/0.3.73) (2026-05-12)
+* Android: Include elements with `resource-id` in UI element tree dump even when text and content-desc are empty
+
 ## [0.3.72](https://github.com/mobile-next/mobilecli/releases/tag/0.3.72) (2026-05-11)
 * Android: Fix launching apps installed with `-t` (test) flag ([#225](https://github.com/mobile-next/mobilecli/pull/225))
 
