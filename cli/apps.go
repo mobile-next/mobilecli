@@ -180,7 +180,6 @@ func init() {
 	appsCmd.AddCommand(appsForegroundCmd)
 	appsCmd.AddCommand(appsPathCmd)
 
-
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
