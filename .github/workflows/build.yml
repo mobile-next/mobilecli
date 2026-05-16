@@ -325,7 +325,7 @@ jobs:
         disable-animations: true
         target: google_apis
         working-directory: test
-	script: npm run test:android -- --grep "Android API ${{ matrix.api_level }}"
+        script: npm run test:android -- --grep "Android API ${{ matrix.api_level }}"
 
 #    - name: Run tests for Android API ${{ matrix.api_level }}
 #      run: |
