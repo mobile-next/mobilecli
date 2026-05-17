@@ -1,3 +1,6 @@
+## [0.3.74](https://github.com/mobile-next/mobilecli/releases/tag/0.3.74) (2026-05-17)
+* Android: Use devicekit instrumentation for android view tree dump ([#233](https://github.com/mobile-next/mobilecli/pull/233))
+
 ## [0.3.73](https://github.com/mobile-next/mobilecli/releases/tag/0.3.73) (2026-05-12)
 * Android: Include elements with `resource-id` in UI element tree dump even when text and content-desc are empty
 
