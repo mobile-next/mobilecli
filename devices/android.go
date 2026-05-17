@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -1316,6 +1318,7 @@ func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
 	const prefix = "INSTRUMENTATION_STATUS: json="
 	var allNodes []deviceKitNode
 	for _, line := range strings.Split(dump, "\n") {
+		line = strings.TrimRight(line, "\r")
 		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
@@ -1376,6 +1379,8 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 	if jsonStr, err := d.getDeviceKitDump(); err == nil {
 		return jsonStr, nil
+	} else {
+		log.Debugf("devicekit dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
@@ -1389,6 +1394,8 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 	if nodes, err := d.getDeviceKitNodes(); err == nil {
 		return collectDeviceKitElements(nodes), nil
+	} else {
+		log.Debugf("devicekit dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
