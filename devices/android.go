@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -144,6 +145,13 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	deviceID := d.getAdbIdentifier()
 	cmdArgs := append([]string{"-s", deviceID}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	return cmd.CombinedOutput()
+}
+
+func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
+	deviceID := d.getAdbIdentifier()
+	cmdArgs := append([]string{"-s", deviceID}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
 }
 
@@ -858,7 +866,7 @@ func (d *AndroidDevice) getForegroundPackageName() (string, error) {
 	return "", fmt.Errorf("could not determine foreground app")
 }
 
-func (d *AndroidDevice) getAppVersion(packageName string) (string, error) {
+func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "package", packageName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get package info: %w", err)
@@ -885,7 +893,7 @@ func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 		return nil, err
 	}
 
-	version, err := d.getAppVersion(packageName)
+	version, err := d.GetAppVersion(packageName)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,6 +1169,28 @@ type uiAutomatorXml struct {
 	RootNode uiAutomatorXmlNode `xml:"node"`
 }
 
+type deviceKitRect struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type deviceKitNode struct {
+	Class       string          `json:"class"`
+	Text        string          `json:"text"`
+	ContentDesc string          `json:"content-desc"`
+	ResourceID  string          `json:"resource-id"`
+	Focused     bool            `json:"focused"`
+	Visible     bool            `json:"visible"`
+	Rect        deviceKitRect   `json:"rect"`
+	Children    []deviceKitNode `json:"children"`
+}
+
+type deviceKitHierarchy struct {
+	Hierarchy []deviceKitNode `json:"hierarchy"`
+}
+
 func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
 	re := regexp.MustCompile(`^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$`)
 	matches := re.FindStringSubmatch(bounds)
@@ -1233,6 +1263,101 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	return elements
 }
 
+func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
+	var elements []types.ScreenElement
+
+	for _, node := range nodes {
+		elements = append(elements, collectDeviceKitElements(node.Children)...)
+
+		if node.Text == "" && node.ContentDesc == "" && node.ResourceID == "" {
+			continue
+		}
+		if node.Rect.Width <= 0 || node.Rect.Height <= 0 {
+			continue
+		}
+
+		rect := types.ScreenElementRect{
+			X:      node.Rect.X,
+			Y:      node.Rect.Y,
+			Width:  node.Rect.Width,
+			Height: node.Rect.Height,
+		}
+
+		element := types.ScreenElement{
+			Type: node.Class,
+			Text: &node.Text,
+			Rect: rect,
+		}
+
+		if node.ContentDesc != "" {
+			element.Label = &node.ContentDesc
+		}
+		if node.Focused {
+			focused := true
+			element.Focused = &focused
+		}
+		if node.ResourceID != "" {
+			element.Identifier = &node.ResourceID
+		}
+		if element.Type == "" {
+			element.Type = "text"
+		}
+
+		elements = append(elements, element)
+	}
+
+	return elements
+}
+
+func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output, err := d.runAdbCommandContext(ctx, "shell", "am", "instrument", "-w", "-e", "waitUntilIdle", "2000", "com.mobilenext.devicekit/.ViewTreeDump")
+	if err != nil {
+		return nil, fmt.Errorf("devicekit instrument failed: %w", err)
+	}
+
+	dump := string(output)
+	if strings.Contains(dump, "INSTRUMENTATION_ABORTED") || strings.Contains(dump, "does not have a signature matching") {
+		return nil, fmt.Errorf("devicekit instrument aborted")
+	}
+
+	const prefix = "INSTRUMENTATION_STATUS: json="
+	var allNodes []deviceKitNode
+	for _, line := range strings.Split(dump, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		var h deviceKitHierarchy
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &h); err != nil {
+			return nil, fmt.Errorf("failed to parse devicekit JSON: %w", err)
+		}
+		allNodes = append(allNodes, h.Hierarchy...)
+	}
+
+	if len(allNodes) == 0 {
+		return nil, fmt.Errorf("no hierarchy found in devicekit dump")
+	}
+
+	return allNodes, nil
+}
+
+func (d *AndroidDevice) getDeviceKitDump() (string, error) {
+	nodes, err := d.getDeviceKitNodes()
+	if err != nil {
+		return "", err
+	}
+
+	jsonBytes, err := json.Marshal(deviceKitHierarchy{Hierarchy: nodes})
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize devicekit hierarchy: %w", err)
+	}
+
+	return string(jsonBytes), nil
+}
+
 func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	for tries := 0; tries < 10; tries++ {
 		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
@@ -1260,37 +1385,38 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
-	// get the XML dump from uiautomator
+	if jsonStr, err := d.getDeviceKitDump(); err == nil {
+		return jsonStr, nil
+	} else {
+		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+	}
+
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get uiautomator dump: %w", err)
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
 	}
 
 	return xmlContent, nil
 }
 
 func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
-	// get the raw XML dump
-	rawData, err := d.DumpSourceRaw()
+	if nodes, err := d.getDeviceKitNodes(); err == nil {
+		return collectDeviceKitElements(nodes), nil
+	} else {
+		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+	}
+
+	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
 	}
 
-	xmlContent, ok := rawData.(string)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type for raw XML data")
-	}
-
-	// parse the XML
 	var uiXml uiAutomatorXml
 	if err := xml.Unmarshal([]byte(xmlContent), &uiXml); err != nil {
 		return nil, fmt.Errorf("failed to parse uiautomator XML: %w", err)
 	}
 
-	// collect elements from the hierarchy
-	elements := d.collectElements(uiXml.RootNode)
-
-	return elements, nil
+	return d.collectElements(uiXml.RootNode), nil
 }
 
 func (d *AndroidDevice) InstallApp(path string) error {

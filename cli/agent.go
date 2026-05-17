@@ -15,7 +15,7 @@ import (
 
 const (
 	agentVersionIOS     = "0.0.18"
-	agentVersionAndroid = "1.1.5"
+	agentVersionAndroid = "1.2.0"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
@@ -25,7 +25,7 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "445c8e7f5ea95b84e4350ae1930df26f4edfa01a0ceebb1ac3b8b94a26714920",
 	"devicekit-ios-Sim-x86_64.zip": "5e007d70bd6bb94ac71debaea011775ba7d381f616803f1ed66d6eb6b9d49ea4",
 	"devicekit-ios-runner.ipa":     "45457d3f11de2b5370b14ba45e6c8502328e28825ee8222e8517245898a4c57f",
-	"mobilenext-devicekit.apk":     "843c71b81db846ccde7d34c41f3a49a2380d0c1b2acfcbcfafdcd673fadb23ab",
+	"mobilenext-devicekit.apk":     "2d47d820413e9cdfcdd81d44cc0a30ce09d81723d10f2929da8d08b079f5f6d1",
 }
 
 type agentMessageResponse struct {
@@ -260,6 +260,13 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 	}
 	for _, app := range apps {
 		if app.PackageName == agentPackage {
+			if app.Version == "" {
+				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
+					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
+						app.Version = v
+					}
+				}
+			}
 			return &app
 		}
 	}
