@@ -260,6 +260,13 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 	}
 	for _, app := range apps {
 		if app.PackageName == agentPackage {
+			if app.Version == "" {
+				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
+					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
+						app.Version = v
+					}
+				}
+			}
 			return &app
 		}
 	}

@@ -859,7 +859,7 @@ func (d *AndroidDevice) getForegroundPackageName() (string, error) {
 	return "", fmt.Errorf("could not determine foreground app")
 }
 
-func (d *AndroidDevice) getAppVersion(packageName string) (string, error) {
+func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "package", packageName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get package info: %w", err)
@@ -886,7 +886,7 @@ func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 		return nil, err
 	}
 
-	version, err := d.getAppVersion(packageName)
+	version, err := d.GetAppVersion(packageName)
 	if err != nil {
 		return nil, err
 	}
