@@ -148,6 +148,13 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
+	deviceID := d.getAdbIdentifier()
+	cmdArgs := append([]string{"-s", deviceID}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+	return cmd.CombinedOutput()
+}
+
 // getDisplayCount counts the number of displays on the device
 func (d *AndroidDevice) getDisplayCount() int {
 	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
@@ -1303,7 +1310,10 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 }
 
 func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
-	output, err := d.runAdbCommand("shell", "am", "instrument", "-w", "-e", "waitUntilIdle", "2000", "com.mobilenext.devicekit/.ViewTreeDump")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output, err := d.runAdbCommandContext(ctx, "shell", "am", "instrument", "-w", "-e", "waitUntilIdle", "2000", "com.mobilenext.devicekit/.ViewTreeDump")
 	if err != nil {
 		return nil, fmt.Errorf("devicekit instrument failed: %w", err)
 	}
