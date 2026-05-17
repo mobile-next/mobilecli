@@ -17,8 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/mobile-next/mobilecli/devices/wda"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -1380,7 +1378,7 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 	if jsonStr, err := d.getDeviceKitDump(); err == nil {
 		return jsonStr, nil
 	} else {
-		log.Debugf("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
@@ -1395,7 +1393,7 @@ func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 	if nodes, err := d.getDeviceKitNodes(); err == nil {
 		return collectDeviceKitElements(nodes), nil
 	} else {
-		log.Debugf("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
