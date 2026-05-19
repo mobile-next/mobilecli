@@ -141,13 +141,6 @@ func (d *AndroidDevice) getAdbIdentifier() string {
 	return d.id
 }
 
-func (d *AndroidDevice) runAdbCommandStdout(args ...string) ([]byte, error) {
-	deviceID := d.getAdbIdentifier()
-	cmdArgs := append([]string{"-s", deviceID}, args...)
-	cmd := exec.Command(getAdbPath(), cmdArgs...)
-	return cmd.Output()
-}
-
 func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	deviceID := d.getAdbIdentifier()
 	cmdArgs := append([]string{"-s", deviceID}, args...)

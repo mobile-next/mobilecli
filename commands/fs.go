@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -20,7 +21,10 @@ func FsPushCommand(req FsPushRequest) *CommandResponse {
 	}
 
 	if _, err := os.Stat(req.LocalPath); err != nil {
-		return NewErrorResponse(fmt.Errorf("local file not found: %s", req.LocalPath))
+		if errors.Is(err, os.ErrNotExist) {
+			return NewErrorResponse(fmt.Errorf("local file not found: %s", req.LocalPath))
+		}
+		return NewErrorResponse(fmt.Errorf("cannot stat local file %s: %w", req.LocalPath, err))
 	}
 
 	device, err := FindDeviceOrAutoSelect(req.DeviceID)

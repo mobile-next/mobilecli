@@ -58,13 +58,16 @@ var fsLsCmd = &cobra.Command{
 	Args:  cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var bundleID, remotePath string
-		if len(args) == 1 && strings.HasPrefix(args[0], "/") {
-			remotePath = args[0]
-		} else {
-			bundleID = args[0]
-			if len(args) == 2 {
-				remotePath = args[1]
+		switch len(args) {
+		case 1:
+			if strings.HasPrefix(args[0], "/") {
+				remotePath = args[0]
+			} else {
+				bundleID = args[0]
 			}
+		case 2:
+			bundleID = args[0]
+			remotePath = args[1]
 		}
 		req := commands.FsListRequest{
 			DeviceID:   deviceId,
@@ -148,11 +151,6 @@ func init() {
 	fsCmd.AddCommand(fsMkdirCmd)
 	fsCmd.AddCommand(fsRmCmd)
 
-	fsPushCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
-	fsPullCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
-	fsLsCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
-	fsMkdirCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
 	fsMkdirCmd.Flags().BoolVarP(&fsMkdirParents, "parents", "p", false, "Create parent directories as needed")
-	fsRmCmd.Flags().StringVar(&deviceId, "device", "", "ID of the target device")
 	fsRmCmd.Flags().BoolVarP(&fsRmRecursive, "recursive", "r", false, "Remove directories and their contents recursively")
 }

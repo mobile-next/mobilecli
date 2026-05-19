@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -1567,6 +1568,27 @@ func handleFsPull(params json.RawMessage) (any, error) {
 	}
 	if p.RemotePath == "" {
 		return nil, fmt.Errorf("'remotePath' is required")
+	}
+
+	// stat the file first via a single-path ListFiles so we can reject oversized
+	// transfers before pulling the bytes from the device.
+	statResp := commands.FsListCommand(commands.FsListRequest{
+		DeviceID:   p.DeviceID,
+		RemotePath: p.RemotePath,
+	})
+	if statResp.Status == "error" {
+		return nil, fmt.Errorf("%s", statResp.Error)
+	}
+	if entries, ok := statResp.Data.([]devices.FileEntry); ok && len(entries) == 1 {
+		e := entries[0]
+		if path.Clean(e.Path) == path.Clean(p.RemotePath) {
+			if e.IsDir {
+				return nil, fmt.Errorf("path is a directory: %s", p.RemotePath)
+			}
+			if e.Size > fsSizeLimit {
+				return nil, fmt.Errorf("file too large (%d bytes); maximum allowed size for JSON-RPC transfer is 1 MB", e.Size)
+			}
+		}
 	}
 
 	tmp, err := os.CreateTemp("", "mobilecli-pull-*")

@@ -1,12 +1,16 @@
 package devices
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/google/uuid"
 )
 
@@ -19,17 +23,20 @@ func androidPackageName(remotePath string) (string, error) {
 	return parts[4], nil
 }
 
-// runAsArgs returns the adb shell prefix for the given path.
-// App container paths under /data/user/ are prefixed with run-as <package>.
-func (d *AndroidDevice) runAsArgs(remotePath string) ([]string, error) {
+// buildShellCommand returns a single shell-safe command string for `adb shell` or
+// `adb exec-out`. every token is quoted so package names and paths containing spaces
+// or shell metacharacters cannot escape into the device shell. paths under /data/user/
+// are wrapped with `run-as <pkg>`.
+func (d *AndroidDevice) buildShellCommand(remotePath string, parts ...string) (string, error) {
+	cmd := shellescape.QuoteCommand(parts)
 	if !strings.HasPrefix(remotePath, "/data/user/") {
-		return []string{"shell"}, nil
+		return cmd, nil
 	}
 	pkg, err := androidPackageName(remotePath)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return []string{"shell", "run-as", pkg}, nil
+	return "run-as " + shellescape.Quote(pkg) + " " + cmd, nil
 }
 
 func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
@@ -38,18 +45,19 @@ func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 		return err
 	}
 
-	shellArgs, err := d.runAsArgs(remotePath)
-	if err != nil {
-		return err
-	}
-
 	tmpPath := fmt.Sprintf("/data/local/tmp/mobilecli-%s", uuid.NewString())
 	if _, err := d.runAdbCommand("push", localPath, tmpPath); err != nil {
 		return fmt.Errorf("push to tmp failed: %w", err)
 	}
 
-	_, cpErr := d.runAdbCommand(append(shellArgs, "cp", tmpPath, remotePath)...)
-	_, rmErr := d.runAdbCommand("shell", "rm", tmpPath)
+	cpCmd, err := d.buildShellCommand(remotePath, "cp", tmpPath, remotePath)
+	if err != nil {
+		return err
+	}
+	_, cpErr := d.runAdbCommand("shell", cpCmd)
+
+	rmCmd := shellescape.QuoteCommand([]string{"rm", tmpPath})
+	_, rmErr := d.runAdbCommand("shell", rmCmd)
 
 	if cpErr != nil {
 		return fmt.Errorf("copy to app container failed: %w", cpErr)
@@ -57,20 +65,27 @@ func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 	if rmErr != nil {
 		return fmt.Errorf("cleanup of tmp file failed: %w", rmErr)
 	}
-
 	return nil
 }
 
 func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
-	shellArgs, err := d.runAsArgs(remotePath)
+	shellCmd, err := d.buildShellCommand(remotePath, "cat", remotePath)
 	if err != nil {
 		return err
 	}
-	// exec-out instead of shell avoids PTY CRLF translation on Windows
-	// replace "shell" with "exec-out" so the rest of the args are forwarded as-is
-	pullArgs := append([]string{"exec-out"}, shellArgs[1:]...)
-	data, err := d.runAdbCommandStdout(append(pullArgs, "cat", remotePath)...)
+
+	// exec-out (instead of shell) bypasses the PTY, preserving binary bytes on Windows
+	// and keeping stderr separate so we can surface it on failure
+	deviceID := d.getAdbIdentifier()
+	cmd := exec.Command(getAdbPath(), "-s", deviceID, "exec-out", shellCmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	data, err := cmd.Output()
 	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return fmt.Errorf("pull failed: %w: %s", err, msg)
+		}
 		return fmt.Errorf("pull failed: %w", err)
 	}
 	return os.WriteFile(localPath, data, 0644)
@@ -81,19 +96,22 @@ func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, err
 		remotePath = "/"
 	}
 
-	shellArgs, err := d.runAsArgs(remotePath)
+	// LANG=C pins the date format to YYYY-MM-DD HH:MM regardless of device locale.
+	// trailing slash makes ls follow symlinks (e.g. /sdcard -> /storage/self/primary);
+	// fall back to the original path if that fails (path is a file, not a dir).
+	lsPath := strings.TrimRight(remotePath, "/") + "/"
+	lsCmd, err := d.buildShellCommand(remotePath, "ls", "-la", lsPath)
 	if err != nil {
 		return nil, err
 	}
-
-	// append trailing slash so symlinks (e.g. /sdcard) are followed;
-	// fall back to the original path if that fails (path is a file, not a dir)
-	lsPath := strings.TrimRight(remotePath, "/") + "/"
-	output, err := d.runAdbCommand(append(shellArgs, "ls", "-la", lsPath)...)
+	output, err := d.runAdbCommand("shell", "LANG=C "+lsCmd)
 	if err != nil {
-		output, err = d.runAdbCommand(append(shellArgs, "ls", "-la", remotePath)...)
+		lsCmd, err = d.buildShellCommand(remotePath, "ls", "-la", remotePath)
+		if err != nil {
+			return nil, err
+		}
+		output, err = d.runAdbCommand("shell", "LANG=C "+lsCmd)
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("ls failed: %w", err)
 	}
@@ -101,11 +119,21 @@ func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, err
 	return androidParseLsOutput(string(output), remotePath), nil
 }
 
+// toybox `ls -la` line under LANG=C:
+//
+//	<perms> <links> <owner> <group> <size|major,minor> <YYYY-MM-DD> <HH:MM> <name>[ -> <target>]
+//
+// the size column is numeric for files; character/block devices show `<major>, <minor>`
+// (with optional spaces around the comma).
+var androidLsLineRe = regexp.MustCompile(
+	`^([-dlbcps])\S*\s+\d+\s+\S+\s+\S+\s+(?:\d+,\s*\d+|\d+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+(.+)$`,
+)
+
 func androidParseLsOutput(output, dirPath string) []FileEntry {
 	dirPath = strings.TrimRight(dirPath, "/")
-	var entries []FileEntry
+	entries := []FileEntry{}
 	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
+		line = strings.TrimRight(line, "\r")
 		if line == "" || strings.HasPrefix(line, "total ") {
 			continue
 		}
@@ -115,43 +143,43 @@ func androidParseLsOutput(output, dirPath string) []FileEntry {
 		}
 		entries = append(entries, *entry)
 	}
-	if entries == nil {
-		entries = []FileEntry{}
-	}
 	return entries
 }
 
-// androidParseLsLine parses a single line of Android ls -la output.
-// Expected format: <perms> <links> <owner> <group> <size> <date> <time> <name>
 func androidParseLsLine(line, dirPath string) *FileEntry {
-	fields := strings.Fields(line)
-	if len(fields) < 8 {
+	m := androidLsLineRe.FindStringSubmatch(line)
+	if m == nil {
 		return nil
 	}
 
-	perms := fields[0]
-	isDir := strings.HasPrefix(perms, "d")
+	typeChar := m[1]
+	isDir := typeChar == "d"
 
+	// re-extract numeric size from the original tokens; we've already validated layout
 	var size int64
 	if !isDir {
-		size, _ = strconv.ParseInt(fields[4], 10, 64)
+		fields := strings.Fields(line)
+		if len(fields) >= 5 {
+			size, _ = strconv.ParseInt(fields[4], 10, 64)
+		}
 	}
 
-	modTime, _ := time.Parse("2006-01-02 15:04", fields[5]+" "+fields[6])
+	modTime, _ := time.Parse("2006-01-02 15:04", m[2]+" "+m[3])
 
-	name := strings.Join(fields[7:], " ")
-	// strip symlink target if present
-	if idx := strings.Index(name, " -> "); idx != -1 {
-		name = name[:idx]
+	name := m[4]
+	if typeChar == "l" {
+		if idx := strings.Index(name, " -> "); idx != -1 {
+			name = name[:idx]
+		}
 	}
 
-	// when listing a single file, ls emits the absolute path as the name
+	// when listing a single file, ls echoes the absolute path as the name
 	var entryPath string
 	if strings.HasPrefix(name, "/") {
 		entryPath = name
 		name = name[strings.LastIndex(name, "/")+1:]
 	} else {
-		entryPath = dirPath + "/" + name
+		entryPath = strings.TrimRight(dirPath, "/") + "/" + name
 	}
 
 	return &FileEntry{
@@ -164,29 +192,29 @@ func androidParseLsLine(line, dirPath string) *FileEntry {
 }
 
 func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
-	shellArgs, err := d.runAsArgs(remotePath)
+	parts := []string{"mkdir"}
+	if parents {
+		parts = append(parts, "-p")
+	}
+	parts = append(parts, remotePath)
+	cmd, err := d.buildShellCommand(remotePath, parts...)
 	if err != nil {
 		return err
 	}
-	mkdirArgs := []string{"mkdir"}
-	if parents {
-		mkdirArgs = append(mkdirArgs, "-p")
-	}
-	mkdirArgs = append(mkdirArgs, remotePath)
-	_, err = d.runAdbCommand(append(shellArgs, mkdirArgs...)...)
+	_, err = d.runAdbCommand("shell", cmd)
 	return err
 }
 
 func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
-	shellArgs, err := d.runAsArgs(remotePath)
+	parts := []string{"rm"}
+	if recursive {
+		parts = append(parts, "-rf")
+	}
+	parts = append(parts, remotePath)
+	cmd, err := d.buildShellCommand(remotePath, parts...)
 	if err != nil {
 		return err
 	}
-	rmArgs := []string{"rm"}
-	if recursive {
-		rmArgs = append(rmArgs, "-rf")
-	}
-	rmArgs = append(rmArgs, remotePath)
-	_, err = d.runAdbCommand(append(shellArgs, rmArgs...)...)
+	_, err = d.runAdbCommand("shell", cmd)
 	return err
 }
