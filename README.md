@@ -16,7 +16,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
     <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
   </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
+    <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
 </p>
 
