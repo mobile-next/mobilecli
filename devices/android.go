@@ -1502,6 +1502,53 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	return nil
 }
 
+// GetAnimationScales reads the current values of all three global animation
+// scales. Callers should save the result and pass it to SetAnimationScales to
+// restore the original values rather than assuming they were 1.
+func (d *AndroidDevice) GetAnimationScales() (AnimationScales, error) {
+	keys := []string{"window_animation_scale", "transition_animation_scale", "animator_duration_scale"}
+	values := make([]float64, len(keys))
+
+	for i, key := range keys {
+		out, err := d.runAdbCommand("shell", "settings", "get", "global", key)
+		if err != nil {
+			return AnimationScales{}, fmt.Errorf("failed to get %s: %v", key, err)
+		}
+		val, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+		if err != nil {
+			return AnimationScales{}, fmt.Errorf("failed to parse %s value %q: %v", key, strings.TrimSpace(string(out)), err)
+		}
+		values[i] = val
+	}
+
+	return AnimationScales{
+		Window:     values[0],
+		Transition: values[1],
+		Animator:   values[2],
+	}, nil
+}
+
+// SetAnimationScales writes the three global animation scales.
+// Pass the result of GetAnimationScales to restore original values.
+func (d *AndroidDevice) SetAnimationScales(scales AnimationScales) error {
+	entries := []struct {
+		key   string
+		value float64
+	}{
+		{"window_animation_scale", scales.Window},
+		{"transition_animation_scale", scales.Transition},
+		{"animator_duration_scale", scales.Animator},
+	}
+
+	for _, e := range entries {
+		_, err := d.runAdbCommand("shell", "settings", "put", "global", e.key, strconv.FormatFloat(e.value, 'f', -1, 64))
+		if err != nil {
+			return fmt.Errorf("failed to set %s: %v", e.key, err)
+		}
+	}
+	return nil
+}
+
 func (d *AndroidDevice) getCrashLog() (string, error) {
 	output, err := d.runAdbCommand("logcat", "-b", "crash", "-d", "-v", "year")
 	if err != nil {

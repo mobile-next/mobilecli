@@ -126,8 +126,18 @@ type ControllableDevice interface {
 	DumpSourceRaw() (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
+	GetAnimationScales() (AnimationScales, error)
+	SetAnimationScales(scales AnimationScales) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+}
+
+// AnimationScales holds the three Android global animation scale values.
+// A value of 0 disables the animation; 1 is the system default.
+type AnimationScales struct {
+	Window     float64 `json:"window"`
+	Transition float64 `json:"transition"`
+	Animator   float64 `json:"animator"`
 }
 
 // GetAllControllableDevices aggregates all known devices with options
