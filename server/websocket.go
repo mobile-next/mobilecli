@@ -2,9 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -206,6 +208,13 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 		wsConn.sendError(req.ID, ErrCodeMethodNotFound, "Method not found", req.Method+" not found")
 		return
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handler %s: %v\n%s", req.Method, r, debug.Stack())
+			wsConn.sendError(req.ID, ErrCodeServerError, "Server error", fmt.Sprintf("panic: %v", r))
+		}
+	}()
 
 	result, err := handler(req.Params)
 	if err != nil {
