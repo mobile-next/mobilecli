@@ -121,6 +121,25 @@ REMOTE DEVICES:
   # Release an allocated remote device
   mobilecli remote release --device <device-id>
 
+FILESYSTEM:
+  # List files on the device
+  mobilecli fs ls --device <device-id> /sdcard
+
+  # List files in an app's container
+  mobilecli fs ls --device <device-id> com.example.app /Documents
+
+  # Pull a file from the device
+  mobilecli fs pull --device <device-id> /sdcard/file.txt ./file.txt
+
+  # Push a file to the device
+  mobilecli fs push --device <device-id> ./file.txt /sdcard/file.txt
+
+  # Create a directory
+  mobilecli fs mkdir --device <device-id> -p /sdcard/a/b/c
+
+  # Remove a file or directory
+  mobilecli fs rm --device <device-id> -r /sdcard/myfolder
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com

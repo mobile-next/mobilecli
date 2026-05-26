@@ -94,6 +94,15 @@ type StartAgentConfig struct {
 type ScreenElementRect = types.ScreenElementRect
 type ScreenElement = types.ScreenElement
 
+// FileEntry represents a file or directory in an app's container
+type FileEntry struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	IsDir   bool      `json:"isDir"`
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -128,6 +137,13 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
+	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
+	GetAppContainerPath(bundleID string) (string, error)
 }
 
 // GetAllControllableDevices aggregates all known devices with options

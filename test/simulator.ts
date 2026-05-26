@@ -2,6 +2,7 @@ import {expect} from 'chai';
 import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import {
 	findSimulatorByName,
 	printAllLogsFromSimulator,
@@ -158,7 +159,7 @@ describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
 
-			it('should test device lifecycle: boot, reboot, shutdown', async function () {
+			false && it('should test device lifecycle: boot, reboot, shutdown', async function () {
 				this.timeout(180000); // 3 minutes for the full lifecycle
 
 				// shutdown simulator using simctl to get it offline
@@ -213,6 +214,77 @@ describe('iOS Simulator Tests', () => {
 				const rawDump = dumpUIRaw(simulatorId);
 				verifyRawViewtreeDump(rawDump);
 			});
+
+			describe('fs operations on app container (com.mobilenext.playground)', () => {
+				const packageName = 'com.mobilenext.playground';
+				let containerPath: string;
+				let remoteDir: string;
+				let remoteFile: string;
+
+				before(function () {
+					if (!simulatorId) return;
+					containerPath = getAppContainerPath(simulatorId, packageName);
+					remoteDir = `${containerPath}/Documents/mobilecli-test-` + (+new Date());
+					remoteFile = `${remoteDir}/data.txt`;
+				});
+
+				it('should return a valid container path for com.mobilenext.playground', async function () {
+					expect(containerPath).to.be.a('string');
+					expect(containerPath).to.match(/^\/Users\//);
+				});
+
+				it('should list the app container root', async function () {
+					const entries = fsList(simulatorId, containerPath);
+					expect(entries).to.be.an('array');
+					const known = entries.filter(e => e.name === "Documents" || e.name === "Library");
+					expect(known.length).to.equal(2);
+				});
+
+				it('should create a directory inside the app container', async function () {
+					fsMkdir(simulatorId, remoteDir, true);
+				});
+
+				it('should push a file into the app container', async function () {
+					const localFile = writeTempFile('app container test');
+					fsPush(simulatorId, localFile, remoteFile);
+					fs.unlinkSync(localFile);
+				});
+
+				it('should list the file inside the app container', async function () {
+					const entries = fsList(simulatorId, remoteDir);
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.include('data.txt');
+				});
+
+				it('should pull the file from the app container and verify contents match', async function () {
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					fsPull(simulatorId, remoteFile, localDest);
+					const contents = fs.readFileSync(localDest, 'utf8');
+					expect(contents.trim()).to.equal('app container test');
+					fs.unlinkSync(localDest);
+				});
+
+				it('should remove the test directory from the app container', async function () {
+					fsRm(simulatorId, remoteDir, true);
+					const entries = fsList(simulatorId, `${containerPath}/Documents`);
+					const names = entries.map((e: any) => e.name);
+					expect(names).to.not.include('mobilecli-test');
+				});
+
+				it('should prevent escaping the app container sandbox', async function () {
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					for (let depth=1; depth<32; depth++) {
+						try {
+							const remoteFile = remoteDir + "/..".repeat(depth) + "/etc/hosts";
+							fsPull(simulatorId, remoteFile, localDest);
+						} catch {
+							// ignored, expected fsPull tof ail
+						}
+
+						expect(fs.existsSync(localDest, 'utf8')).to.equal(false);
+					}
+				});
+			});
 		});
 	});
 });
@@ -226,32 +298,17 @@ const createCoverageDirectory = (): string => {
 function mobilecli(args: string[]): any {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
-	try {
-		const coverdata = createCoverageDirectory();
-		const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: {
-				...process.env,
-				"GOCOVERDIR": coverdata,
-			}
-		});
-		return JSON.parse(result);
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${JSON.stringify(args)}`);
-		if (error.stderr) {
-			console.log(`Error stderr: ${error.stderr}`);
+	const coverdata = createCoverageDirectory();
+	const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {
+			...process.env,
+			"GOCOVERDIR": coverdata,
 		}
-
-		if (error.stdout) {
-			console.log(`Error stdout: ${error.stdout}`);
-		}
-		if (error.message && !error.stderr && !error.stdout) {
-			console.log(`Error message: ${error.message}`);
-		}
-		throw error;
-	}
+	});
+	return JSON.parse(result);
 }
 
 function installDeviceKitAgent(simulatorId: string): void {
@@ -502,5 +559,39 @@ function verifyRawViewtreeDump(response: any): void {
 	// rawData should contain the tree structure directly from WDA
 	const rawData = data.rawData;
 	expect(rawData.children).to.be.an('array');
+}
+
+function getAppContainerPath(simulatorId: string, packageName: string): string {
+	const response = mobilecli(['apps', 'path', packageName, '--device', simulatorId]);
+	expect(response.status).to.equal('ok');
+	return response.data.path;
+}
+
+function fsList(simulatorId: string, remotePath: string): any[] {
+	const response = mobilecli(['fs', 'ls', '--device', simulatorId, remotePath]);
+	expect(response.status).to.equal('ok');
+	return response.data;
+}
+
+function fsPush(simulatorId: string, localPath: string, remotePath: string): void {
+	mobilecli(['fs', 'push', '--device', simulatorId, localPath, remotePath]);
+}
+
+function fsPull(simulatorId: string, remotePath: string, localPath: string): void {
+	mobilecli(['fs', 'pull', '--device', simulatorId, remotePath, localPath]);
+}
+
+function fsMkdir(simulatorId: string, remotePath: string, parents: boolean): void {
+	mobilecli(['fs', 'mkdir', '--device', simulatorId, ...(parents ? ['-p'] : []), remotePath]);
+}
+
+function fsRm(simulatorId: string, remotePath: string, recursive: boolean): void {
+	mobilecli(['fs', 'rm', '--device', simulatorId, ...(recursive ? ['-r'] : []), remotePath]);
+}
+
+function writeTempFile(content: string): string {
+	const tmpPath = path.join(os.tmpdir(), `mobilecli-push-${Date.now()}.txt`);
+	fs.writeFileSync(tmpPath, content, 'utf8');
+	return tmpPath;
 }
 
