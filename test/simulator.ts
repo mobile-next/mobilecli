@@ -3,24 +3,17 @@ import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import {
-	createAndLaunchSimulator,
+	findSimulatorByName,
 	printAllLogsFromSimulator,
 	shutdownSimulator,
-	deleteSimulator,
-	cleanupSimulators,
-	findIOSRuntime
 } from './simctl';
 import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
-import {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
+import type {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 
 describe('iOS Simulator Tests', () => {
-	after(() => {
-		cleanupSimulators();
-	});
-
 	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
 		describe(`iOS ${iosVersion}`, () => {
 			let simulatorId: string;
@@ -28,13 +21,12 @@ describe('iOS Simulator Tests', () => {
 			before(function () {
 				this.timeout(180000);
 
-				// Check if runtime is available
+				const simulatorName = `Test-iOS-${iosVersion}`;
 				try {
-					findIOSRuntime(iosVersion);
-					simulatorId = createAndLaunchSimulator(iosVersion);
+					simulatorId = findSimulatorByName(simulatorName);
 					installDeviceKitAgent(simulatorId);
 				} catch (error) {
-					console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
+					console.log(`Simulator "${simulatorName}" not found, skipping tests: ${error}`);
 					this.skip();
 				}
 			});
@@ -42,8 +34,6 @@ describe('iOS Simulator Tests', () => {
 			after(() => {
 				if (simulatorId) {
 					printAllLogsFromSimulator(simulatorId);
-					shutdownSimulator(simulatorId);
-					deleteSimulator(simulatorId);
 				}
 			});
 

@@ -1,13 +1,9 @@
 import {expect} from 'chai';
-import {spawn, ChildProcess} from 'child_process';
-import axios from 'axios';
+import {spawn} from 'child_process';
+import type {ChildProcess} from 'child_process';
 import * as path from 'path';
+import type {JSONRPCRequest, JSONRPCResponse} from './jsonrpc';
 import {
-	cleanupSimulators
-} from './simctl';
-import {
-	JSONRPCRequest,
-	JSONRPCResponse,
 	ErrCodeParseError,
 	ErrCodeInvalidRequest,
 	ErrCodeMethodNotFound,
@@ -40,37 +36,30 @@ describe('server jsonrpc', () => {
 	// Stop server after all tests
 	after(() => {
 		stopTestServer();
-		cleanupSimulators();
 	});
 
 	it('should return status "ok" for root endpoint', async () => {
-		const response = await axios.get(TEST_SERVER_URL);
+		const response = await fetch(TEST_SERVER_URL);
 
 		expect(response.status).to.equal(200);
-		expect(response.data).to.have.property('status', 'ok');
+		expect(await response.json()).to.have.property('status', 'ok');
 	});
 
 	it('GET should return 405 Method Not Allowed for /rpc endpoint', async () => {
-		try {
-			await axios.get(`${TEST_SERVER_URL}/rpc`);
-			throw new Error('Expected request to fail');
-		} catch (error: any) {
-			expect(error.response.status).to.equal(405);
-		}
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`);
+		expect(response.status).to.equal(405);
 	});
 
 	it('Empty POST body should return parse error', async () => {
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			'',
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: ''
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.jsonrpc).to.equal('2.0');
 		expect(jsonResp.error).to.not.be.null;
 		expect(jsonResp.error).to.not.be.undefined;
@@ -88,20 +77,19 @@ describe('server jsonrpc', () => {
 			id: 1,
 		};
 
-		const response = await axios.post<JSONRPCResponse>(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
+		const data: JSONRPCResponse = await response.json();
 
 		expect(response.status).to.equal(200);
-		expect(response.data.jsonrpc).to.equal('2.0');
-		expect(response.data.error).to.not.be.null;
-		expect(response.data.error).to.not.be.undefined;
-		expect(response.data.error!.code).to.equal(ErrCodeInvalidRequest);
-		expect(response.data.error!.data).to.equal("'jsonrpc' must be '2.0'");
+		expect(data.jsonrpc).to.equal('2.0');
+		expect(data.error).to.not.be.null;
+		expect(data.error).to.not.be.undefined;
+		expect(data.error!.code).to.equal(ErrCodeInvalidRequest);
+		expect(data.error!.data).to.equal("'jsonrpc' must be '2.0'");
 	});
 
 	it('Missing id field should return error', async () => {
@@ -111,17 +99,15 @@ describe('server jsonrpc', () => {
 			params: {}
 		};
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.jsonrpc).to.equal('2.0');
 		expect(jsonResp.error).to.not.be.null;
 		expect(jsonResp.error).to.not.be.undefined;
@@ -139,17 +125,15 @@ describe('server jsonrpc', () => {
 			id: 1
 		};
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.jsonrpc).to.equal('2.0');
 		expect(jsonResp.id).to.equal(1);
 		expect(jsonResp.error).to.not.be.null;
@@ -167,17 +151,15 @@ describe('server jsonrpc', () => {
 			id: 1
 		};
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.error).to.not.be.null;
 
 		if (jsonResp.error) {
@@ -191,15 +173,13 @@ describe('server jsonrpc', () => {
 			id: 1
 		};
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.error).to.not.be.null;
 
 		if (jsonResp.error) {
@@ -211,17 +191,15 @@ describe('server jsonrpc', () => {
 	it('should handle invalid JSON gracefully', async () => {
 		const invalidJson = '{invalid json}';
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			invalidJson,
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: invalidJson
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.error).to.not.be.null;
 
 		if (jsonResp.error) {
@@ -236,17 +214,15 @@ describe('server jsonrpc', () => {
 			id: 1
 		};
 
-		const response = await axios.post(
-			`${TEST_SERVER_URL}/rpc`,
-			JSON.stringify(payload),
-			{
-				headers: {'Content-Type': 'application/json'}
-			}
-		);
+		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(payload)
+		});
 
 		expect(response.status).to.equal(200);
 
-		const jsonResp: JSONRPCResponse = response.data;
+		const jsonResp: JSONRPCResponse = await response.json();
 		expect(jsonResp.error).to.not.be.null;
 	});
 });
@@ -303,7 +279,10 @@ async function waitForServer(url: string, timeout: number): Promise<void> {
 
 	while (Date.now() - startTime < timeout) {
 		try {
-			const response = await axios.get(url, {timeout: 1000});
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), 1000);
+			const response = await fetch(url, {signal: controller.signal});
+			clearTimeout(timer);
 			if (response.status === 200) {
 				return;
 			}
