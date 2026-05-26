@@ -207,14 +207,19 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 		return
 	}
 
-	result, err := handler(req.Params)
-	if err != nil {
-		log.Printf("Error executing method %s: %v", req.Method, err)
-		wsConn.sendError(req.ID, ErrCodeServerError, "Server error", err.Error())
-		return
-	}
+	// run in a goroutine so the read loop stays unblocked and can process
+	// pong frames — without this, long-running handlers cause the read
+	// deadline to expire and the connection closes with 1006
+	go func() {
+		result, err := handler(req.Params)
+		if err != nil {
+			log.Printf("Error executing method %s: %v", req.Method, err)
+			wsConn.sendError(req.ID, ErrCodeServerError, "Server error", err.Error())
+			return
+		}
 
-	wsConn.sendResponse(req.ID, result)
+		wsConn.sendResponse(req.ID, result)
+	}()
 }
 
 func (wsc *wsConnection) sendResponse(id any, result any) error {
@@ -242,5 +247,8 @@ func (wsc *wsConnection) sendError(id any, code int, message string, data any) e
 func (wsc *wsConnection) sendJSON(v any) error {
 	wsc.writeMu.Lock()
 	defer wsc.writeMu.Unlock()
+	if err := wsc.conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+		return err
+	}
 	return wsc.conn.WriteJSON(v)
 }
