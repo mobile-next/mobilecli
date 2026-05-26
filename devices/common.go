@@ -109,6 +109,7 @@ type ControllableDevice interface {
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
 	Swipe(x1, y1, x2, y2 int) error
+	Shake() error
 	Gesture(actions []wda.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error

@@ -663,6 +663,28 @@ func handleIoButton(params json.RawMessage) (any, error) {
 	return okResponse, nil
 }
 
+func handleIoShake(params json.RawMessage) (any, error) {
+	var shakeParams struct {
+		DeviceID string `json:"deviceId"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &shakeParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w", err)
+		}
+	}
+
+	req := commands.ShakeRequest{
+		DeviceID: shakeParams.DeviceID,
+	}
+
+	response := commands.ShakeCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
 func handleIoGesture(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, actions")
