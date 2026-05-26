@@ -155,6 +155,31 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	})
 }
 
+type ClearAppRequest struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+func ClearAppCommand(req ClearAppRequest) *CommandResponse {
+	if req.BundleID == "" {
+		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
+	}
+
+	err = targetDevice.ClearApp(req.BundleID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to clear app on device %s: %w", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]any{
+		"message": fmt.Sprintf("Cleared app '%s' on device %s", req.BundleID, targetDevice.ID()),
+	})
+}
+
 type UninstallAppRequest struct {
 	DeviceID    string `json:"deviceId"`
 	PackageName string `json:"packageName"`

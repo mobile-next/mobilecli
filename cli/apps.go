@@ -132,6 +132,26 @@ var appsUninstallCmd = &cobra.Command{
 	},
 }
 
+var appsClearCmd = &cobra.Command{
+	Use:   "clear [bundle_id]",
+	Short: "Clear app data on a device",
+	Long:  `Clears all data (cache, preferences, databases) for an app without uninstalling it. Supported on Android and iOS Simulator.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ClearAppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+		}
+
+		response := commands.ClearAppCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 var appsForegroundCmd = &cobra.Command{
 	Use:   "foreground",
 	Short: "Get the currently foreground app on a device",
@@ -158,6 +178,7 @@ func init() {
 	appsCmd.AddCommand(appsListCmd)
 	appsCmd.AddCommand(appsInstallCmd)
 	appsCmd.AddCommand(appsUninstallCmd)
+	appsCmd.AddCommand(appsClearCmd)
 	appsCmd.AddCommand(appsForegroundCmd)
 
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
@@ -169,5 +190,6 @@ func init() {
 	appsInstallCmd.Flags().StringVar(&provisioningProfile, "provisioning-profile", "", "Path to a .mobileprovision file to use for re-signing")
 	appsInstallCmd.Flags().StringVar(&signingIdentity, "signing-identity", "", "Signing identity name to use for re-signing")
 	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
+	appsClearCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to clear app data on")
 	appsForegroundCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get foreground app from")
 }
