@@ -121,8 +121,8 @@ describe('Android Emulator Tests', () => {
 		});
 	});
 
-	describe('fs operations on app container (com.mobilenext.mobilewright_demo)', () => {
-		const packageName = 'com.mobilenext.mobilewright_demo';
+	describe('fs operations on app container (com.mobilenext.playground)', () => {
+		const packageName = 'com.mobilenext.playground';
 		let containerPath: string;
 		let remoteDir: string;
 		let remoteFile: string;
@@ -134,9 +134,9 @@ describe('Android Emulator Tests', () => {
 			remoteFile = `${remoteDir}/data.txt`;
 		});
 
-		it('should return a valid container path for com.mobilenext.mobilewright_demo', function () {
+		it('should return a valid container path for com.mobilenext.playground', function () {
 			if (!device) { this.skip(); return; }
-			expect(containerPath).to.match(/^\/data\/user\/\d+\/com\.mobilenext\.mobilewright_demo/);
+			expect(containerPath).to.match(/^\/data\/user\/\d+\/com\.mobilenext\.playground/);
 		});
 
 		it('should list the app container root', function () {
