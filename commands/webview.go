@@ -38,6 +38,12 @@ type WebViewEvaluateRequest struct {
 	Args       []any
 }
 
+type WebViewQueryRequest struct {
+	DeviceID  string
+	WebViewID string
+	Selector  string
+}
+
 type WebViewWaitForLoadStateRequest struct {
 	DeviceID  string
 	WebViewID string
@@ -127,6 +133,25 @@ func WebViewContentCommand(req WebViewRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("webview content failed: %w", err))
 	}
 	return NewSuccessResponse(content)
+}
+
+func WebViewQueryCommand(req WebViewQueryRequest) *CommandResponse {
+	expression := fmt.Sprintf(
+		`Array.from(document.querySelectorAll(%q)).map(el => ({`+
+			`tag: el.tagName.toLowerCase(),`+
+			`text: (el.textContent || "").trim().slice(0, 200),`+
+			`id: el.id || null,`+
+			`class: el.className || null,`+
+			`value: el.value || null,`+
+			`href: el.href || null`+
+			`}))`,
+		req.Selector,
+	)
+	return WebViewEvaluateCommand(WebViewEvaluateRequest{
+		DeviceID:  req.DeviceID,
+		WebViewID: req.WebViewID,
+		Expression: expression,
+	})
 }
 
 func WebViewEvaluateCommand(req WebViewEvaluateRequest) *CommandResponse {

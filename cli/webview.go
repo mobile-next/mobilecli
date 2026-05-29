@@ -205,22 +205,10 @@ var webviewQueryCmd = &cobra.Command{
 	Long:  `Finds elements matching a CSS selector and returns their tag, text, id, and value. Useful for inspecting webview content.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		selector := args[1]
-		expression := fmt.Sprintf(
-			`Array.from(document.querySelectorAll(%q)).map(el => ({`+
-				`tag: el.tagName.toLowerCase(),`+
-				`text: (el.textContent || "").trim().slice(0, 200),`+
-				`id: el.id || null,`+
-				`class: el.className || null,`+
-				`value: el.value || null,`+
-				`href: el.href || null`+
-				`}))`,
-			selector,
-		)
-		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
-			DeviceID:   deviceId,
-			WebViewID:  args[0],
-			Expression: expression,
+		response := commands.WebViewQueryCommand(commands.WebViewQueryRequest{
+			DeviceID:  deviceId,
+			WebViewID: args[0],
+			Selector:  args[1],
 		})
 		printJson(response)
 		if response.Status == "error" {

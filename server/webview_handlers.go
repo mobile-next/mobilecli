@@ -38,6 +38,12 @@ type WebViewEvaluateParams struct {
 	Args       []any  `json:"args,omitempty"`
 }
 
+type WebViewQueryParams struct {
+	DeviceID  string `json:"deviceId"`
+	WebViewID string `json:"id"`
+	Selector  string `json:"selector"`
+}
+
 type WebViewWaitForLoadStateParams struct {
 	DeviceID  string `json:"deviceId"`
 	WebViewID string `json:"id"`
@@ -153,6 +159,24 @@ func handleWebViewGoForward(params json.RawMessage) (any, error) {
 	return voidOf(commands.WebViewGoForwardCommand(commands.WebViewRequest{
 		DeviceID:  p.DeviceID,
 		WebViewID: p.WebViewID,
+	}))
+}
+
+func handleWebViewQuery(params json.RawMessage) (any, error) {
+	p, err := unmarshal[WebViewQueryParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireWebViewParams(p.DeviceID, p.WebViewID); err != nil {
+		return nil, err
+	}
+	if p.Selector == "" {
+		return nil, fmt.Errorf("selector is required")
+	}
+	return resultOf(commands.WebViewQueryCommand(commands.WebViewQueryRequest{
+		DeviceID:  p.DeviceID,
+		WebViewID: p.WebViewID,
+		Selector:  p.Selector,
 	}))
 }
 
