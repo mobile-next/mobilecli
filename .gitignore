@@ -5,3 +5,7 @@ screenshot.png
 **/coverage*.out
 **/coverage*.html
 test/coverage
+agents/android/mobilecli.so
+agents/android/mobilecli.dex
+agents/ios/agent-sim.dylib
+agents/ios/agent-dev.dylib

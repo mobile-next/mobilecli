@@ -16,6 +16,28 @@ type CommandResponse struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// OKResult is returned by commands that produce no meaningful output data.
+type OKResult struct {
+	Status string `json:"status"`
+}
+
+// MessageResult is returned by commands that produce a human-readable message.
+type MessageResult struct {
+	Message string `json:"message"`
+}
+
+// DeviceActionResult is returned by device lifecycle commands (boot, shutdown)
+// that include device metadata alongside a message.
+type DeviceActionResult struct {
+	Message  string `json:"message"`
+	Platform string `json:"platform"`
+	Type     string `json:"type"`
+	Version  string `json:"version"`
+}
+
+// OK is the canonical success response for void commands.
+var OK = OKResult{Status: "ok"}
+
 // NewSuccessResponse creates a success response
 func NewSuccessResponse(data any) *CommandResponse {
 	return &CommandResponse{

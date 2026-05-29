@@ -17,26 +17,101 @@ on:
 
 jobs:
 
-  test:
+  build_linux_agents:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Install Android NDK and build tools
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+          "ndk;29.0.13113456" \
+          "build-tools;36.0.0" \
+          "platforms;android-35"
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+
+    - name: Build Android agents
+      run: make -C agents/android all
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
+
+    - name: Upload Android agent binaries
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-agents
+        path: |
+          agents/android/mobilecli.so
+          agents/android/mobilecli.dex
+        retention-days: 1
+
+  build_ios_agents:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Build iOS agents
+      run: make -C agents/ios all
+
+    - name: Upload iOS agent binaries
+      uses: actions/upload-artifact@v5
+      with:
+        name: ios-agents
+        path: |
+          agents/ios/agent-sim.dylib
+        retention-days: 1
+
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    needs: [build_linux_agents, build_ios_agents]
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
 
+    - name: Download Android agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
+
     - name: Run Unit Tests
       run: |
-        make build test
+        CGO_ENABLED=0 go build -ldflags="-s -w"
+        go test ./... -v -race
 
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -63,6 +138,8 @@ jobs:
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -80,14 +157,28 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Download Android agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Install dependencies
       run: |
@@ -120,14 +211,28 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
+
+    - name: Download Android agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Install dependencies
       run: |
@@ -161,9 +266,24 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Download Android agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: android-agents
+        path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -205,6 +325,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Download macos build
       uses: actions/download-artifact@v5
@@ -240,6 +362,8 @@ jobs:
     needs: [build_on_linux]
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Download linux build
       uses: actions/download-artifact@v5
@@ -270,6 +394,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - name: Enable KVM
       run: |
@@ -343,6 +469,8 @@ jobs:
     needs: [build_on_windows, build_on_linux, build_on_macos, server_test]
     steps:
     - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
 
     - uses: actions/setup-node@v5
       with:
@@ -425,4 +553,3 @@ jobs:
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install --ignore-scripts
         npm publish --access public --provenance
-

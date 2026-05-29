@@ -1,12 +1,16 @@
-.PHONY: all build test test-cover lint fmt clean
+.PHONY: all build agents test test-cover lint fmt clean
 
 all: build
 
-build:
+agents:
+	$(MAKE) -C agents/android all
+	$(MAKE) -C agents/ios all
+
+build: agents
 	go mod tidy
 	CGO_ENABLED=0 go build -ldflags="-s -w"
 
-build-cover:
+build-cover: agents
 	go mod tidy
 	CGO_ENABLED=0 go build -ldflags="-s -w" -cover
 
@@ -31,4 +35,6 @@ fmt:
 	$(shell go env GOPATH)/bin/goimports -w .
 
 clean:
+	$(MAKE) -C agents/android clean
+	$(MAKE) -C agents/ios clean
 	rm -f mobilecli coverage.out coverage.html
