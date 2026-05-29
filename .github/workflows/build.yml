@@ -33,7 +33,7 @@ jobs:
 
     - name: Install Android NDK and build tools
       run: |
-        sdkmanager --install \
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
           "ndk;29.0.13113456" \
           "build-tools;36.0.0" \
           "platforms;android-35"
