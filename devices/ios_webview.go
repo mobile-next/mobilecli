@@ -181,7 +181,7 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	}
 
 	if s.wdaClient == nil {
-		return 0, fmt.Errorf("webview commands require DeviceKit to be running — start it with: mobilecli agent start --device %s", s.UDID)
+		return 0, fmt.Errorf("webview commands require DeviceKit to be running — install it with: mobilecli agent install --device %s", s.UDID)
 	}
 	foreground, err := s.GetForegroundApp()
 	if err != nil {
