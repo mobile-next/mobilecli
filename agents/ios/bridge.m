@@ -99,16 +99,22 @@
 
     __block id jsResult = nil;
     __block NSError *jsError = nil;
+    __block BOOL timedOut = NO;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [(WKWebView *)webView evaluateJavaScript:wrapped completionHandler:^(id result, NSError *error) {
+            if (timedOut) return;
             jsResult = result;
             jsError = error;
             dispatch_semaphore_signal(sem);
         }];
     });
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        timedOut = YES;
+        return @{@"__error": @"evaluateJavaScript timed out"};
+    }
 
     if (jsError) {
         return @{@"__error": jsError.localizedDescription};

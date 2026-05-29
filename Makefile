@@ -36,4 +36,5 @@ fmt:
 
 clean:
 	$(MAKE) -C agents/android clean
+	$(MAKE) -C agents/ios clean
 	rm -f mobilecli coverage.out coverage.html

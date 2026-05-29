@@ -11,9 +11,11 @@ static NSURLSessionDataTask *swizzledDataTaskWithURL(id self, SEL _cmd, NSURL *u
         if (data != nil) {
             NSString *body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
                              ?: @"<non-utf8 body>";
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
-            NSString *out = [NSString stringWithFormat:@"url: %@\nstatus: %ld\nbody:\n%@\n",
-                             url.absoluteString, (long)http.statusCode, body];
+            NSString *statusStr = [resp isKindOfClass:[NSHTTPURLResponse class]]
+                ? [NSString stringWithFormat:@"%ld", (long)((NSHTTPURLResponse *)resp).statusCode]
+                : @"non-HTTP response";
+            NSString *out = [NSString stringWithFormat:@"url: %@\nstatus: %@\nbody:\n%@\n",
+                             url.absoluteString, statusStr, body];
             [out writeToFile:@"/tmp/gilm.txt"
                   atomically:YES
                     encoding:NSUTF8StringEncoding
