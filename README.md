@@ -16,7 +16,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
     <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
   </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
+    <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
 </p>
 
@@ -36,6 +36,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 - **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
@@ -221,6 +222,88 @@ Example output for `apps foreground`:
   }
 }
 ```
+
+### Filesystem 📂
+
+Access files on the device or inside an app's data container. Currently supported on **Android** and **iOS Simulator**.
+
+```bash
+# Get the data container path of an app (Android)
+mobilecli apps path <bundle-id> --device <device-id>
+
+# List files at any absolute path (defaults to device root if omitted)
+mobilecli fs ls --device <device-id>
+mobilecli fs ls --device <device-id> /sdcard
+mobilecli fs ls --device <device-id> /sdcard/Download
+
+# List files inside an app's data container
+mobilecli fs ls --device <device-id> com.example.app
+mobilecli fs ls --device <device-id> com.example.app /Documents
+
+# Pull a file from the device to local disk
+mobilecli fs pull --device <device-id> /sdcard/recording.mp4 ./recording.mp4
+
+# Pull a file from an app's private container
+mobilecli fs pull --device <device-id> /data/user/0/com.example.app/files/db.sqlite ./db.sqlite
+
+# Push a file to the device
+mobilecli fs push --device <device-id> ./config.json /sdcard/config.json
+
+# Push a file into an app's private container
+mobilecli fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
+
+# Create a directory
+mobilecli fs mkdir --device <device-id> /sdcard/myfolder
+
+# Create a directory and all parent directories
+mobilecli fs mkdir --device <device-id> -p /sdcard/a/b/c
+mobilecli fs mkdir --device <device-id> -p /data/user/0/com.example.app/files/cache/v2
+
+# Remove a file
+mobilecli fs rm --device <device-id> /sdcard/old_file.txt
+
+# Remove a directory recursively
+mobilecli fs rm --device <device-id> -r /sdcard/myfolder
+mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
+```
+
+Example output for `apps path`:
+```json
+{
+  "status": "ok",
+  "data": {
+    "path": "/data/user/0/com.example.app"
+  }
+}
+```
+
+Example output for `fs ls`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "name": "files",
+      "path": "/data/user/0/com.example.app/files",
+      "size": 4096,
+      "modTime": "2026-05-11T19:20:00Z",
+      "isDir": true
+    },
+    {
+      "name": "shared_prefs",
+      "path": "/data/user/0/com.example.app/shared_prefs",
+      "size": 4096,
+      "modTime": "2026-05-11T12:49:00Z",
+      "isDir": true
+    }
+  ]
+}
+```
+
+**Notes:**
+- Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
+- Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
+- Pulling binary files (images, databases, DEX files) is fully supported and binary-safe on all platforms.
 
 ### Agent Management 🤖
 

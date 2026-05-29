@@ -12,6 +12,7 @@ type HandlerFunc func(params json.RawMessage) (any, error)
 // This is used by both the HTTP server and embedded clients
 func GetMethodRegistry() map[string]HandlerFunc {
 	return map[string]HandlerFunc{
+<<<<<<< HEAD
 		"devices.list":                    handleDevicesList,
 		"device.screenshot":               handleScreenshot,
 		"device.screencapture":            handleScreenCaptureSession,
@@ -48,6 +49,12 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.webview.waitForLoadState": handleWebViewWaitForLoadState,
 		"server.info":                     handleServerInfo,
 		"server.shutdown":                 handleServerShutdown,
+		"device.apps.path":          handleAppsPath,
+		"device.fs.ls":              handleFsLs,
+		"device.fs.pull":            handleFsPull,
+		"device.fs.push":            handleFsPush,
+		"device.fs.mkdir":           handleFsMkdir,
+		"device.fs.rm":              handleFsRm,
 	}
 }
 

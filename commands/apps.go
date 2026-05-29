@@ -155,6 +155,31 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	})
 }
 
+type AppPathRequest struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+func AppPathCommand(req AppPathRequest) *CommandResponse {
+	if req.BundleID == "" {
+		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
+	}
+
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
+	}
+
+	path, err := device.GetAppContainerPath(req.BundleID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to get app path on device %s: %w", device.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]any{
+		"path": path,
+	})
+}
+
 type UninstallAppRequest struct {
 	DeviceID    string `json:"deviceId"`
 	PackageName string `json:"packageName"`

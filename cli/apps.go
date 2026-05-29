@@ -132,6 +132,25 @@ var appsUninstallCmd = &cobra.Command{
 	},
 }
 
+var appsPathCmd = &cobra.Command{
+	Use:   "path [bundle_id]",
+	Short: "Get the container path of an app on a device",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.AppPathRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+		}
+
+		response := commands.AppPathCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 var appsForegroundCmd = &cobra.Command{
 	Use:   "foreground",
 	Short: "Get the currently foreground app on a device",
@@ -159,6 +178,7 @@ func init() {
 	appsCmd.AddCommand(appsInstallCmd)
 	appsCmd.AddCommand(appsUninstallCmd)
 	appsCmd.AddCommand(appsForegroundCmd)
+	appsCmd.AddCommand(appsPathCmd)
 
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
@@ -170,4 +190,5 @@ func init() {
 	appsInstallCmd.Flags().StringVar(&signingIdentity, "signing-identity", "", "Signing identity name to use for re-signing")
 	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
 	appsForegroundCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get foreground app from")
+	appsPathCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device")
 }

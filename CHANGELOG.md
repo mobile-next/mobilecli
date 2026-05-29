@@ -1,3 +1,13 @@
+## [0.3.75](https://github.com/mobile-next/mobilecli/releases/tag/0.3.75) (2026-05-26)
+* General: File system support for ls, mkdir, rm, push, pull and get app path ([#228](https://github.com/mobile-next/mobilecli/pull/228))
+* General: Fix websocket timeouts after around 50-60 seconds ([#239](https://github.com/mobile-next/mobilecli/pull/239))
+
+## [0.3.74](https://github.com/mobile-next/mobilecli/releases/tag/0.3.74) (2026-05-17)
+* Android: Use devicekit instrumentation for android view tree dump ([#233](https://github.com/mobile-next/mobilecli/pull/233))
+
+## [0.3.73](https://github.com/mobile-next/mobilecli/releases/tag/0.3.73) (2026-05-12)
+* Android: Include elements with `resource-id` in UI element tree dump even when text and content-desc are empty
+
 ## [0.3.72](https://github.com/mobile-next/mobilecli/releases/tag/0.3.72) (2026-05-11)
 * Android: Fix launching apps installed with `-t` (test) flag ([#225](https://github.com/mobile-next/mobilecli/pull/225))
 
