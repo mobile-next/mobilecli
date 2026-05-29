@@ -1,6 +1,0 @@
-- to build the project here, just run "make"
-- when writing comment, use lower case
-- no need to write comments for functions that are not exported (private function)
-- when making comments, dont use the entity itself. for example, instead of "package main provides the main entry point for the mobilecli application", simply say "main entry point for the mobilecli application"
-- when asked to "update changelog release notes": find the latest git tag, check changes since last tag that were merged into main, then update CHANGELOG.md in the same format and use a link to the PR if possible (otherwise point to the commit). use same language and styling in CHANGELOG.md. always put "General" before "iOS", and "iOS" before "Android".
-- always use %w (not %v) when wrapping errors with fmt.Errorf to maintain error chains for errors.Is/errors.As
