@@ -214,9 +214,19 @@ func isAgentReady(port int) bool {
 	return true
 }
 
+// isAppDebuggable returns true when run-as can execute commands as the app user.
+func (d *AndroidDevice) isAppDebuggable(pkg string) bool {
+	_, err := d.runAdbCommand("shell", "run-as", pkg, "true")
+	return err == nil
+}
+
 // ensureAgentReady installs the kit, sets up the port forward, and attaches
 // the agent if it is not already responding. Returns the local TCP port.
 func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
+	if !d.isAppDebuggable(pkg) {
+		return 0, fmt.Errorf("webview injection requires a debug build: %s is not debuggable", pkg)
+	}
+
 	agentDir, err := d.installWebViewKit(pkg)
 	if err != nil {
 		return 0, fmt.Errorf("install webview kit: %w", err)

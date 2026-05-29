@@ -12,7 +12,6 @@ type HandlerFunc func(params json.RawMessage) (any, error)
 // This is used by both the HTTP server and embedded clients
 func GetMethodRegistry() map[string]HandlerFunc {
 	return map[string]HandlerFunc{
-<<<<<<< HEAD
 		"devices.list":                    handleDevicesList,
 		"device.screenshot":               handleScreenshot,
 		"device.screencapture":            handleScreenCaptureSession,

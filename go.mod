@@ -55,8 +55,4 @@ require (
 
 replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.49.1
 
-require (
-	github.com/kr/pretty v0.3.1 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
-	github.com/vishvananda/netns v0.0.5 // indirect
-)
+require github.com/kr/pretty v0.3.1 // indirect
