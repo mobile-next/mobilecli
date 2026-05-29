@@ -1,7 +1,9 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,19 +55,21 @@ func findSimulatorForegroundApp(udid string) (pid int, bundleID string, err erro
 		if !strings.Contains(line, pattern) {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 11 {
+		if strings.Contains(line, "UITests-Runner") || strings.Contains(line, ".xctrunner") {
 			continue
 		}
-		p, parseErr := strconv.Atoi(fields[1])
+		m := psLineRegex.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		p, parseErr := strconv.Atoi(m[1])
 		if parseErr != nil {
 			continue
 		}
-		// fields[10] is the executable path
 		candidates = append(candidates, struct {
 			pid  int
 			path string
-		}{p, fields[10]})
+		}{p, m[2]})
 	}
 
 	if len(candidates) == 0 {
@@ -130,10 +134,20 @@ func writeIOSAgentDylib() (string, error) {
 
 var portFromLLDB = regexp.MustCompile(`\$\d+\s*=\s*(\d+)`)
 
+// psLineRegex matches a ps aux line and captures PID (group 1) and the full
+// command string including spaces (group 2).
+// Columns: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND...
+var psLineRegex = regexp.MustCompile(`^\S+\s+(\d+)(?:\s+\S+){8}\s+(.+)$`)
+
+const lldbTimeout = 30 * time.Second
+
 // injectIOSAgent attaches lldb to the given PID, loads the dylib, reads the
 // bound port via mobilecli_get_port(), then detaches. Returns the port.
 func injectIOSAgent(pid int, dylibPath string) (int, error) {
-	cmd := exec.Command("lldb",
+	ctx, cancel := context.WithTimeout(context.Background(), lldbTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lldb",
 		"-p", strconv.Itoa(pid),
 		"-o", fmt.Sprintf("expr (void*)dlopen(%q, 2)", dylibPath),
 		"-o", "expr (int)mobilecli_get_port()",
@@ -142,6 +156,9 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return 0, fmt.Errorf("lldb timed out after %s", lldbTimeout)
+		}
 		return 0, fmt.Errorf("lldb: %w\noutput:\n%s", err, out)
 	}
 
