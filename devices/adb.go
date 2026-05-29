@@ -133,7 +133,7 @@ func (c *adbConn) readLengthPrefixedData() ([]byte, error) {
 		return nil, fmt.Errorf("adb response too large: %d bytes (limit %d)", length, c.maxResponseBytes)
 	}
 
-	data := make([]byte, int(length))
+	data := make([]byte, length)
 	if _, err := io.ReadFull(c.conn, data); err != nil {
 		return nil, fmt.Errorf("failed to read adb payload: %w", err)
 	}
