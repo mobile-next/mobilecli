@@ -76,7 +76,9 @@ jobs:
         path: agents/android/
 
     - name: Run Unit Tests
-      run: make build test
+      run: |
+        CGO_ENABLED=0 go build -ldflags="-s -w"
+        go test ./... -v -race
 
   lint:
     runs-on: ubuntu-latest
