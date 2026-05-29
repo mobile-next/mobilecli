@@ -9,20 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
-)
-
-type androidAgentState struct {
-	port int
-	pid  string
-}
-
-var (
-	androidAgentCacheMu sync.Mutex
-	androidAgentCache   = map[string]androidAgentState{}
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -231,28 +220,51 @@ func (d *AndroidDevice) isAppDebuggable(pkg string) bool {
 	return err == nil
 }
 
-// ensureAgentReady installs the kit, sets up the port forward, and attaches
-// the agent if it is not already responding. Returns the local TCP port.
-func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
-	cacheKey := d.id + "/" + pkg
-
-	// fast path: reuse cached port when the process is unchanged and the agent is still up
-	androidAgentCacheMu.Lock()
-	cached, hasCached := androidAgentCache[cacheKey]
-	androidAgentCacheMu.Unlock()
-
-	if hasCached {
-		currentPID, pidErr := d.getProcessPID(pkg)
-		if pidErr == nil && currentPID == cached.pid && isAgentReady(cached.port) {
-			return cached.port, nil
+// findExistingForward checks adb's active forward table for an entry pointing
+// to the agent's abstract socket and returns the host TCP port, or 0 if none.
+func (d *AndroidDevice) findExistingForward(pkg string) int {
+	out, err := d.runAdbCommand("forward", "--list")
+	if err != nil {
+		return 0
+	}
+	target := "localabstract:mobilecli." + pkg
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if !strings.Contains(line, target) {
+			continue
 		}
-		// stale entry: remove the dead forward before creating a new one
-		d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", cached.port))
-		androidAgentCacheMu.Lock()
-		delete(androidAgentCache, cacheKey)
-		androidAgentCacheMu.Unlock()
+		for _, field := range strings.Fields(line) {
+			if strings.HasPrefix(field, "tcp:") {
+				if port, err := strconv.Atoi(strings.TrimPrefix(field, "tcp:")); err == nil && port > 0 {
+					return port
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// ensureAgentReady ensures the webview agent is running and reachable.
+// It reuses an existing adb forward when possible, only creating a new one
+// on the first call or after the forward has been removed.
+func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
+	// fast path: reuse an existing forward if the agent is still up
+	if port := d.findExistingForward(pkg); port != 0 {
+		if isAgentReady(port) {
+			return port, nil
+		}
+		// forward exists but agent is gone (app restarted) — re-attach to the
+		// new process; the existing forward still maps the same socket name
+		agentDir, err := d.installWebViewKit(pkg)
+		if err != nil {
+			return 0, fmt.Errorf("install webview kit: %w", err)
+		}
+		if err := d.attachAgentAndWait(pkg, port, agentDir); err != nil {
+			return 0, err
+		}
+		return port, nil
 	}
 
+	// no existing forward: full setup
 	if !d.isAppDebuggable(pkg) {
 		return 0, fmt.Errorf("webview injection requires a debug build: %s is not debuggable", pkg)
 	}
@@ -267,29 +279,33 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 		return 0, fmt.Errorf("forward socket: %w", err)
 	}
 
-	pid, err := d.getProcessPID(pkg)
-	if err != nil {
-		return 0, err
-	}
-
 	if !isAgentReady(port) {
-		if err := d.attachJVMTIAgent(pid, agentDir+"/mobilecli.so", agentDir+"/mobilecli.dex"); err != nil {
-			return 0, fmt.Errorf("attach agent: %w", err)
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for !isAgentReady(port) {
-			if time.Now().After(deadline) {
-				return 0, fmt.Errorf("agent did not start within 5s on port %d", port)
-			}
-			time.Sleep(200 * time.Millisecond)
+		if err := d.attachAgentAndWait(pkg, port, agentDir); err != nil {
+			return 0, err
 		}
 	}
-
-	androidAgentCacheMu.Lock()
-	androidAgentCache[cacheKey] = androidAgentState{port: port, pid: pid}
-	androidAgentCacheMu.Unlock()
 
 	return port, nil
+}
+
+// attachAgentAndWait gets the current PID, attaches the JVMTI agent, and waits
+// up to 5 seconds for the agent to start accepting connections on port.
+func (d *AndroidDevice) attachAgentAndWait(pkg string, port int, agentDir string) error {
+	pid, err := d.getProcessPID(pkg)
+	if err != nil {
+		return err
+	}
+	if err := d.attachJVMTIAgent(pid, agentDir+"/mobilecli.so", agentDir+"/mobilecli.dex"); err != nil {
+		return fmt.Errorf("attach agent: %w", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !isAgentReady(port) {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("agent did not start within 5s on port %d", port)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return nil
 }
 
 // getWebViewPort resolves the foreground app and ensures the agent is ready,
