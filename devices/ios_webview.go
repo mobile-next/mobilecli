@@ -181,7 +181,9 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	}
 
 	if s.wdaClient == nil {
-		return 0, fmt.Errorf("webview commands require DeviceKit to be running — install it with: mobilecli agent install --device %s", s.UDID)
+		if err := s.StartAgent(StartAgentConfig{}); err != nil {
+			return 0, fmt.Errorf("webview commands require DeviceKit to be running — %w", err)
+		}
 	}
 	foreground, err := s.GetForegroundApp()
 	if err != nil {
@@ -190,11 +192,7 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 
 	pid, appBundlePath, err := findSimulatorPIDForBundle(s.UDID, foreground.PackageName)
 	if err != nil {
-		return 0, err
-	}
-
-	if !hasGetTaskAllow(appBundlePath) {
-		return 0, fmt.Errorf("cannot attach to %s (pid %d): app does not have get-task-allow entitlement — use a debug build", foreground.PackageName, pid)
+		return 0, fmt.Errorf("cannot attach to %s: app does not have get-task-allow entitlement — use a debug build", foreground.PackageName)
 	}
 
 	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, foreground.PackageName)

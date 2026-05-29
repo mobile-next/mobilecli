@@ -19,13 +19,5 @@ agent-dev.dylib: $(SRCS) server.h bridge.h dispatcher.h
 		-o $@ $(SRCS)
 	codesign -s - --force $@
 
-# legacy test dylib
-devicekit.dylib: devicekit.m
-	xcrun -sdk iphonesimulator clang -arch $(ARCH) \
-		-mios-simulator-version-min=$(MIN) \
-		-dynamiclib -fPIC -fobjc-arc \
-		-framework Foundation \
-		-o $@ $<
-
 clean:
-	rm -f agent-sim.dylib agent-dev.dylib devicekit.dylib
+	rm -f agent-sim.dylib agent-dev.dylib
