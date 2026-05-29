@@ -25,7 +25,7 @@ class WebViewAgent {
 			.flatMap(AndroidBridge::streamWebViews)
 			.filter(v -> Integer.toHexString(System.identityHashCode(v)).equals(id))
 			.findFirst()
-			.orElseThrow(() -> new RpcException(-32100, "webview not found: " + id));
+			.orElseThrow(() -> new RpcException(RpcException.WEBVIEW_NOT_FOUND, "webview not found: " + id));
 	}
 
 	static WebView findWebViewById(String id) throws Exception {

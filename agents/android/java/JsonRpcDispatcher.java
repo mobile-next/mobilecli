@@ -7,13 +7,28 @@ import org.json.JSONObject;
 
 class JsonRpcDispatcher {
 
+	private static final String INTERNAL_ERROR_RESPONSE = buildInternalErrorResponse();
+
+	private static String buildInternalErrorResponse() {
+		try {
+			return new JSONObject()
+				.put("jsonrpc", "2.0")
+				.put("error", new JSONObject()
+					.put("code", RpcException.INTERNAL_ERROR)
+					.put("message", "internal error"))
+				.toString();
+		} catch (Exception e) {
+			return "";
+		}
+	}
+
 	static String requireParam(JSONObject params, String key) throws RpcException {
 		if (params == null) {
-			throw new RpcException(-32602, "missing params");
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params");
 		}
 		String v = params.optString(key, null);
 		if (v == null || v.isEmpty()) {
-			throw new RpcException(-32602, "missing params." + key);
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params." + key);
 		}
 		return v;
 	}
@@ -68,12 +83,12 @@ class JsonRpcDispatcher {
 				}
 
 				default:
-					return error(id, -32601, "method not found: " + method);
+					return error(id, RpcException.METHOD_NOT_FOUND, "method not found: " + method);
 			}
 		} catch (RpcException e) {
 			return error(id, e.code, e.getMessage());
 		} catch (Exception e) {
-			return error(id, -32000, e.getMessage());
+			return error(id, RpcException.SERVER_ERROR, e.getMessage());
 		}
 	}
 
@@ -85,20 +100,24 @@ class JsonRpcDispatcher {
 				.put("result", value)
 				.toString();
 		} catch (Exception e) {
-			return "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}";
+			return INTERNAL_ERROR_RESPONSE;
 		}
 	}
 
 	private static String error(String id, int code, String message) {
 		try {
-			JSONObject err = new JSONObject().put("code", code).put("message", message);
-			JSONObject r = new JSONObject().put("jsonrpc", "2.0").put("error", err);
+			JSONObject err = new JSONObject()
+				.put("code", code)
+				.put("message", message);
+			JSONObject r = new JSONObject()
+				.put("jsonrpc", "2.0")
+				.put("error", err);
 			if (id != null) {
 				r.put("id", id);
 			}
 			return r.toString();
 		} catch (Exception e) {
-			return "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}";
+			return INTERNAL_ERROR_RESPONSE;
 		}
 	}
 }
