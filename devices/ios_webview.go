@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // agentPortCache maps device UDID → local TCP port of its injected agent.
@@ -180,6 +181,16 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
+// hasGetTaskAllow returns true if the app binary at appBundlePath has the
+// get-task-allow entitlement (required for lldb to attach on a simulator).
+func hasGetTaskAllow(appBundlePath string) bool {
+	out, err := exec.Command("codesign", "-d", "--entitlements", "-", appBundlePath).CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "get-task-allow")
+}
+
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
@@ -188,10 +199,22 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 		return port, nil
 	}
 
-	pid, _, err := findSimulatorForegroundApp(s.UDID)
+	pid, bundleID, err := findSimulatorForegroundApp(s.UDID)
 	if err != nil {
 		return 0, err
 	}
+
+	// find the .app bundle path so we can check entitlements and log context
+	appBundlePath := ""
+	if out, psErr := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output(); psErr == nil {
+		appBundlePath = appBundleFromExecPath(strings.TrimSpace(string(out)))
+	}
+
+	if appBundlePath != "" && !hasGetTaskAllow(appBundlePath) {
+		return 0, fmt.Errorf("cannot attach to %s (pid %d): app does not have get-task-allow entitlement — use a debug build", bundleID, pid)
+	}
+
+	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, bundleID)
 
 	dylibPath, err := writeIOSAgentDylib()
 	if err != nil {
