@@ -20,10 +20,10 @@ static NSData *rpc_error(id reqId, int code, NSString *message) {
     return [NSJSONSerialization dataWithJSONObject:resp options:0 error:nil];
 }
 
-static NSString *requireParam(NSDictionary *params, NSString *key, NSData * _Nullable * _Nonnull outError) {
+static NSString *requireParam(id reqId, NSDictionary *params, NSString *key, NSData * _Nullable * _Nonnull outError) {
     NSString *v = params[key];
     if (!v || [v isEqual:[NSNull null]] || ((NSString *)v).length == 0) {
-        *outError = rpc_error(nil, kRPCInvalidParams, [NSString stringWithFormat:@"missing params.%@", key]);
+        *outError = rpc_error(reqId, kRPCInvalidParams, [NSString stringWithFormat:@"missing params.%@", key]);
         return nil;
     }
     return v;
@@ -46,8 +46,8 @@ NSData *dispatch_rpc(NSData *body) {
 
     if ([method isEqualToString:@"device.webview.goto"]) {
         NSData *err = nil;
-        NSString *wvId = requireParam(params, @"id", &err);  if (!wvId) return err;
-        NSString *url  = requireParam(params, @"url", &err); if (!url)  return err;
+        NSString *wvId = requireParam(reqId, params, @"id", &err);  if (!wvId) return err;
+        NSString *url  = requireParam(reqId, params, @"url", &err); if (!url)  return err;
         UIView *wv = [IosBridge webViewWithID:wvId];
         if (!wv) return rpc_error(reqId, kRPCServerError, [NSString stringWithFormat:@"webview not found: %@", wvId]);
         [IosBridge gotoURL:url inWebView:wv];
@@ -56,8 +56,8 @@ NSData *dispatch_rpc(NSData *body) {
 
     if ([method isEqualToString:@"device.webview.evaluate"]) {
         NSData *err = nil;
-        NSString *wvId       = requireParam(params, @"id", &err);         if (!wvId)       return err;
-        NSString *expression = requireParam(params, @"expression", &err); if (!expression) return err;
+        NSString *wvId       = requireParam(reqId, params, @"id", &err);         if (!wvId)       return err;
+        NSString *expression = requireParam(reqId, params, @"expression", &err); if (!expression) return err;
         UIView *wv = [IosBridge webViewWithID:wvId];
         if (!wv) return rpc_error(reqId, kRPCServerError, [NSString stringWithFormat:@"webview not found: %@", wvId]);
         NSDictionary *eval = [IosBridge evaluateJS:expression inWebView:wv];
@@ -67,7 +67,7 @@ NSData *dispatch_rpc(NSData *body) {
 
     if ([@[@"device.webview.reload", @"device.webview.goBack", @"device.webview.goForward"] containsObject:method]) {
         NSData *err = nil;
-        NSString *wvId = requireParam(params, @"id", &err);
+        NSString *wvId = requireParam(reqId, params, @"id", &err);
         if (!wvId) return err;
         UIView *wv = [IosBridge webViewWithID:wvId];
         if (!wv) return rpc_error(reqId, kRPCServerError, [NSString stringWithFormat:@"webview not found: %@", wvId]);
@@ -79,7 +79,7 @@ NSData *dispatch_rpc(NSData *body) {
 
     if ([method isEqualToString:@"device.webview.waitForLoadState"]) {
         NSData *err = nil;
-        NSString *wvId = requireParam(params, @"id", &err);
+        NSString *wvId = requireParam(reqId, params, @"id", &err);
         if (!wvId) return err;
         UIView *wv = [IosBridge webViewWithID:wvId];
         if (!wv) return rpc_error(reqId, kRPCServerError, [NSString stringWithFormat:@"webview not found: %@", wvId]);
