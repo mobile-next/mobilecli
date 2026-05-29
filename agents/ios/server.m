@@ -3,9 +3,6 @@
 #import <netinet/in.h>
 #import <unistd.h>
 
-#define BASE_PORT 27042
-#define PORT_RANGE 10
-
 @implementation MobileServer {
     RpcHandler _handler;
     int _serverFd;
@@ -32,26 +29,34 @@
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
 
-    for (int p = BASE_PORT; p < BASE_PORT + PORT_RANGE; p++) {
-        addr.sin_port = htons((uint16_t)p);
-        if (bind(_serverFd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            _port = p;
-            return YES;
-        }
+    if (bind(_serverFd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(_serverFd);
+        _serverFd = -1;
+        return NO;
     }
-    close(_serverFd);
-    _serverFd = -1;
-    return NO;
+
+    socklen_t len = sizeof(addr);
+    if (getsockname(_serverFd, (struct sockaddr *)&addr, &len) != 0) {
+        close(_serverFd);
+        _serverFd = -1;
+        return NO;
+    }
+
+    _port = ntohs(addr.sin_port);
+    return YES;
 }
 
 - (BOOL)bind {
     if (![self bindPort]) {
-        NSLog(@"[mobilecli] failed to bind on ports %d-%d", BASE_PORT, BASE_PORT + PORT_RANGE - 1);
+        NSLog(@"[mobilecli] failed to bind");
         return NO;
     }
     if (listen(_serverFd, 8) < 0) {
         NSLog(@"[mobilecli] listen failed");
+        close(_serverFd);
+        _serverFd = -1;
         return NO;
     }
     NSLog(@"[mobilecli] bound to 127.0.0.1:%d", _port);

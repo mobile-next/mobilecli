@@ -105,14 +105,5 @@ NSData *dispatch_rpc(NSData *body) {
         }
     }
 
-    static NSArray *stubMethods;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        stubMethods = @[@"device.dump.ui"];
-    });
-    if ([stubMethods containsObject:method]) {
-        return rpc_error(reqId, kRPCServerError, [NSString stringWithFormat:@"not yet implemented: %@", method]);
-    }
-
     return rpc_error(reqId, kRPCMethodNotFound, [NSString stringWithFormat:@"method not found: %@", method]);
 }

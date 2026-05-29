@@ -71,6 +71,9 @@ class AndroidBridge {
 
 	@SuppressWarnings("unchecked")
 	static <T> T runOnMainThread(Callable<T> task) throws Exception {
+		if (Looper.myLooper() == Looper.getMainLooper()) {
+			return task.call();
+		}
 		Object[] result = {null};
 		Exception[] err = {null};
 		CountDownLatch latch = new CountDownLatch(1);

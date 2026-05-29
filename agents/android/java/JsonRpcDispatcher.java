@@ -34,10 +34,10 @@ class JsonRpcDispatcher {
 	}
 
 	static String dispatch(String json) {
-		String id = null;
+		Object id = null;
 		try {
 			JSONObject req = new JSONObject(json);
-			id = req.optString("id", null);
+			id = req.opt("id"); // preserves numeric ids and explicit null
 			String method = req.optString("method", "");
 			JSONObject params = req.optJSONObject("params");
 
@@ -92,7 +92,7 @@ class JsonRpcDispatcher {
 		}
 	}
 
-	private static String result(String id, Object value) {
+	private static String result(Object id, Object value) {
 		try {
 			return new JSONObject()
 				.put("jsonrpc", "2.0")
@@ -104,7 +104,7 @@ class JsonRpcDispatcher {
 		}
 	}
 
-	private static String error(String id, int code, String message) {
+	private static String error(Object id, int code, String message) {
 		try {
 			JSONObject err = new JSONObject()
 				.put("code", code)
