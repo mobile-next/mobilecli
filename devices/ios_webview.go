@@ -37,20 +37,16 @@ func setCachedAgentPort(udid string, port int) {
 	agentPortCache[udid] = port
 }
 
-// findSimulatorForegroundApp searches the Mac process list for an app process
-// running inside the given simulator and returns its PID and bundle ID.
-func findSimulatorForegroundApp(udid string) (pid int, bundleID string, err error) {
+// findSimulatorPIDForBundle searches the Mac process list for the running
+// process of a specific bundle ID inside the given simulator.
+// Returns the PID and the .app bundle path.
+func findSimulatorPIDForBundle(udid, bundleID string) (pid int, appBundlePath string, err error) {
 	out, err := exec.Command("ps", "aux").Output()
 	if err != nil {
 		return 0, "", fmt.Errorf("ps aux: %w", err)
 	}
 
-	// match lines for app binaries inside this simulator's Bundle directory
 	pattern := fmt.Sprintf(`CoreSimulator/Devices/%s/data/Containers/Bundle`, udid)
-	var candidates []struct {
-		pid  int
-		path string
-	}
 
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.Contains(line, pattern) {
@@ -67,33 +63,18 @@ func findSimulatorForegroundApp(udid string) (pid int, bundleID string, err erro
 		if parseErr != nil {
 			continue
 		}
-		candidates = append(candidates, struct {
-			pid  int
-			path string
-		}{p, m[2]})
+		bundle := appBundleFromExecPath(m[2])
+		if bundle == "" {
+			continue
+		}
+		bid, plistErr := bundleIDFromInfoPlist(filepath.Join(bundle, "Info.plist"))
+		if plistErr != nil || bid != bundleID {
+			continue
+		}
+		return p, bundle, nil
 	}
 
-	if len(candidates) == 0 {
-		return 0, "", fmt.Errorf("no app process found in simulator %s — is an app running?", udid)
-	}
-	if len(candidates) > 1 {
-		// pick the most recently listed (last in ps output) as a heuristic for foreground
-		// in practice most simulator sessions have a single app
-	}
-	candidate := candidates[len(candidates)-1]
-
-	// extract the .app bundle directory from the executable path
-	appBundlePath := appBundleFromExecPath(candidate.path)
-	if appBundlePath == "" {
-		return 0, "", fmt.Errorf("could not locate .app bundle from path %q", candidate.path)
-	}
-
-	bid, err := bundleIDFromInfoPlist(filepath.Join(appBundlePath, "Info.plist"))
-	if err != nil {
-		return 0, "", fmt.Errorf("read bundle ID: %w", err)
-	}
-
-	return candidate.pid, bid, nil
+	return 0, "", fmt.Errorf("no running process found for %s in simulator %s", bundleID, udid)
 }
 
 // appBundleFromExecPath returns the .app directory containing the executable.
@@ -199,22 +180,24 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 		return port, nil
 	}
 
-	pid, bundleID, err := findSimulatorForegroundApp(s.UDID)
+	if s.wdaClient == nil {
+		return 0, fmt.Errorf("webview commands require DeviceKit to be running — start it with: mobilecli agent start --device %s", s.UDID)
+	}
+	foreground, err := s.GetForegroundApp()
+	if err != nil {
+		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	}
+
+	pid, appBundlePath, err := findSimulatorPIDForBundle(s.UDID, foreground.PackageName)
 	if err != nil {
 		return 0, err
 	}
 
-	// find the .app bundle path so we can check entitlements and log context
-	appBundlePath := ""
-	if out, psErr := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output(); psErr == nil {
-		appBundlePath = appBundleFromExecPath(strings.TrimSpace(string(out)))
+	if !hasGetTaskAllow(appBundlePath) {
+		return 0, fmt.Errorf("cannot attach to %s (pid %d): app does not have get-task-allow entitlement — use a debug build", foreground.PackageName, pid)
 	}
 
-	if appBundlePath != "" && !hasGetTaskAllow(appBundlePath) {
-		return 0, fmt.Errorf("cannot attach to %s (pid %d): app does not have get-task-allow entitlement — use a debug build", bundleID, pid)
-	}
-
-	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, bundleID)
+	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, foreground.PackageName)
 
 	dylibPath, err := writeIOSAgentDylib()
 	if err != nil {
