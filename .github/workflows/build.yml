@@ -56,8 +56,8 @@ jobs:
         retention-days: 1
 
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: macos-latest
+    timeout-minutes: 15
     needs: [build_agents]
     steps:
     - uses: actions/checkout@v5
@@ -74,6 +74,9 @@ jobs:
       with:
         name: android-agents
         path: agents/android/
+
+    - name: Build iOS agent
+      run: make -C agents/ios all
 
     - name: Run Unit Tests
       run: |
