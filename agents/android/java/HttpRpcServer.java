@@ -47,7 +47,14 @@ class HttpRpcServer {
 
 				char[] body = new char[contentLength];
 				if (contentLength > 0) {
-					in.read(body, 0, contentLength);
+					int remaining = contentLength;
+					int offset = 0;
+					while (remaining > 0) {
+						int n = in.read(body, offset, remaining);
+						if (n < 0) break;
+						offset += n;
+						remaining -= n;
+					}
 				}
 				String bodyStr = new String(body).trim();
 

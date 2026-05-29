@@ -22,13 +22,11 @@ type WebViewGotoParams struct {
 	DeviceID  string `json:"deviceId"`
 	WebViewID string `json:"id"`
 	URL       string `json:"url"`
-	WaitUntil string `json:"waitUntil,omitempty"`
 }
 
 type WebViewReloadParams struct {
 	DeviceID  string `json:"deviceId"`
 	WebViewID string `json:"id"`
-	WaitUntil string `json:"waitUntil,omitempty"`
 }
 
 type WebViewEvaluateParams struct {
@@ -115,7 +113,6 @@ func handleWebViewGoto(params json.RawMessage) (any, error) {
 		DeviceID:  p.DeviceID,
 		WebViewID: p.WebViewID,
 		URL:       p.URL,
-		WaitUntil: p.WaitUntil,
 	}))
 }
 
@@ -130,7 +127,6 @@ func handleWebViewReload(params json.RawMessage) (any, error) {
 	return voidOf(commands.WebViewReloadCommand(commands.WebViewReloadRequest{
 		DeviceID:  p.DeviceID,
 		WebViewID: p.WebViewID,
-		WaitUntil: p.WaitUntil,
 	}))
 }
 
@@ -157,6 +153,20 @@ func handleWebViewGoForward(params json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return voidOf(commands.WebViewGoForwardCommand(commands.WebViewRequest{
+		DeviceID:  p.DeviceID,
+		WebViewID: p.WebViewID,
+	}))
+}
+
+func handleWebViewContent(params json.RawMessage) (any, error) {
+	p, err := unmarshal[WebViewParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireWebViewParams(p.DeviceID, p.WebViewID); err != nil {
+		return nil, err
+	}
+	return resultOf(commands.WebViewContentCommand(commands.WebViewRequest{
 		DeviceID:  p.DeviceID,
 		WebViewID: p.WebViewID,
 	}))

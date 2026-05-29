@@ -17,7 +17,7 @@ static void on_load(void) {
     }];
 
     if (![server bind]) {
-        NSLog(@"[mobilecli] failed to bind server — no port available in range");
+        NSLog(@"[mobilecli] failed to bind server");
         return;
     }
 

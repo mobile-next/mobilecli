@@ -22,13 +22,11 @@ type WebViewGotoRequest struct {
 	DeviceID  string
 	WebViewID string
 	URL       string
-	WaitUntil string
 }
 
 type WebViewReloadRequest struct {
 	DeviceID  string
 	WebViewID string
-	WaitUntil string
 }
 
 type WebViewEvaluateRequest struct {

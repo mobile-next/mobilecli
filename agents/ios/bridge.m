@@ -14,7 +14,9 @@
         block();
         dispatch_semaphore_signal(sem);
     });
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
+        NSLog(@"[mobilecli] runOnMainThread timed out");
+    }
 }
 
 + (NSArray<UIWindow *> *)allWindows {

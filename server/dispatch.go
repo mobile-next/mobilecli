@@ -40,6 +40,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.crashes.list":             handleCrashesList,
 		"device.crashes.get":              handleCrashesGet,
 		"device.webview.list":             handleWebViewList,
+		"device.webview.content":          handleWebViewContent,
 		"device.webview.goto":             handleWebViewGoto,
 		"device.webview.reload":           handleWebViewReload,
 		"device.webview.goBack":           handleWebViewGoBack,

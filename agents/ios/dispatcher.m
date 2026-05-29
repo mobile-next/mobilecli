@@ -94,6 +94,10 @@ NSData *dispatch_rpc(NSData *body) {
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutMs / 1000.0];
         while (YES) {
             NSDictionary *result = [IosBridge evaluateJS:js inWebView:wv];
+            if (result[@"__error"]) {
+                return rpc_error(reqId, kRPCServerError,
+                    [NSString stringWithFormat:@"waitForLoadState eval error: %@", result[@"__error"]]);
+            }
             if ([@"true" isEqualToString:result[@"result"]]) {
                 return rpc_result(reqId, @{@"status": @"ok"});
             }

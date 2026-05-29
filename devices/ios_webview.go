@@ -18,23 +18,31 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
-// agentPortCache maps device UDID → local TCP port of its injected agent.
+// agentPortCache maps device UDID → (port, bundleID) of its injected agent.
+type agentCacheEntry struct {
+	port     int
+	bundleID string
+}
+
 var (
-	agentPortCache   = map[string]int{}
+	agentPortCache   = map[string]agentCacheEntry{}
 	agentPortCacheMu sync.Mutex
 )
 
-func cachedAgentPort(udid string) (int, bool) {
+func cachedAgentPort(udid, bundleID string) (int, bool) {
 	agentPortCacheMu.Lock()
 	defer agentPortCacheMu.Unlock()
-	port, ok := agentPortCache[udid]
-	return port, ok
+	entry, ok := agentPortCache[udid]
+	if !ok || entry.bundleID != bundleID {
+		return 0, false
+	}
+	return entry.port, true
 }
 
-func setCachedAgentPort(udid string, port int) {
+func setCachedAgentPort(udid, bundleID string, port int) {
 	agentPortCacheMu.Lock()
 	defer agentPortCacheMu.Unlock()
-	agentPortCache[udid] = port
+	agentPortCache[udid] = agentCacheEntry{port: port, bundleID: bundleID}
 }
 
 // findSimulatorPIDForBundle searches the Mac process list for the running
@@ -166,11 +174,6 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
-	// fast path: reuse the port we injected into this simulator previously
-	if port, ok := cachedAgentPort(s.UDID); ok && isAgentReady(port) {
-		return port, nil
-	}
-
 	if s.wdaClient == nil {
 		if err := s.StartAgent(StartAgentConfig{}); err != nil {
 			return 0, fmt.Errorf("webview commands require DeviceKit to be running — %w", err)
@@ -179,6 +182,11 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	foreground, err := s.GetForegroundApp()
 	if err != nil {
 		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	}
+
+	// fast path: reuse the port if the same app is still in the foreground
+	if port, ok := cachedAgentPort(s.UDID, foreground.PackageName); ok && isAgentReady(port) {
+		return port, nil
 	}
 
 	pid, appBundlePath, err := findSimulatorPIDForBundle(s.UDID, foreground.PackageName)
@@ -207,7 +215,7 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	setCachedAgentPort(s.UDID, port)
+	setCachedAgentPort(s.UDID, foreground.PackageName, port)
 	return port, nil
 }
 
