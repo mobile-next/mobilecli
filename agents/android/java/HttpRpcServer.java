@@ -9,17 +9,19 @@ import java.io.PrintWriter;
 
 class HttpRpcServer {
 
+	private static final String TAG = "mobilecli";
+
 	static void start() {
 		String name = "mobilecli." + AndroidBridge.getPackageName();
 		new Thread(() -> {
 			try {
 				LocalServerSocket server = new LocalServerSocket(name);
-				android.util.Log.d("MobileCliAgent", "listening on localabstract:" + name);
+				android.util.Log.d(TAG, "listening on localabstract:" + name);
 				while (true) {
 					handleClient(server.accept());
 				}
 			} catch (Exception e) {
-				android.util.Log.e("MobileCliAgent", "server error: " + e.getMessage());
+				android.util.Log.e(TAG, "server error: " + e.getMessage());
 			}
 		}, "vta-server").start();
 	}
@@ -60,7 +62,7 @@ class HttpRpcServer {
 				out.print(response);
 				out.flush();
 			} catch (Exception e) {
-				android.util.Log.e("MobileCliAgent", "client error: " + e.getMessage());
+				android.util.Log.e(TAG, "client error: " + e.getMessage());
 			}
 		}, "vta-client").start();
 	}

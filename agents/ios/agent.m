@@ -16,7 +16,10 @@ static void on_load(void) {
         return dispatch_rpc(body);
     }];
 
-    if (![server bind]) return;
+    if (![server bind]) {
+        NSLog(@"[mobilecli] failed to bind server — no port available in range");
+        return;
+    }
 
     mobilecli_port = server.port;
     NSLog(@"[mobilecli] port %d (read with: expr (int)mobilecli_get_port())", mobilecli_port);

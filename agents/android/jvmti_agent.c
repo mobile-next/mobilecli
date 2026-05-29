@@ -4,7 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define TAG     "devicekit"
+#define TAG         "devicekit"
+#define AGENT_CLASS "com.mobilenext.mobilecli.MobilecliAgent"
 #define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
 /* ── load devicekit.dex into the target process ─────────────────────────── */
@@ -54,7 +55,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
         return;
     }
 
-    jstring j_cls = (*env)->NewStringUTF(env, "com.mobilenext.mobilecli.MobileCliAgent");
+    jstring j_cls = (*env)->NewStringUTF(env, AGENT_CLASS);
     jclass agentCls = (jclass)(*env)->CallObjectMethod(env, loader, load, j_cls);
     (*env)->DeleteLocalRef(env, j_cls);
     if (!agentCls || (*env)->ExceptionCheck(env)) {
@@ -75,7 +76,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
             }
         }
 
-        LOG("loadClass(MobileCliAgent) failed");
+        LOG("loadClass(MobilecliAgent) failed");
         return;
     }
 
@@ -96,7 +97,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
                 jstring msg = (jstring)(*env)->CallObjectMethod(env, exc, toStr);
                 if (msg && !(*env)->ExceptionCheck(env)) {
                     const char *s = (*env)->GetStringUTFChars(env, msg, NULL);
-                    LOG("MobileCliAgent.start() threw: %s", s ? s : "(null)");
+                    LOG("MobilecliAgent.start() threw: %s", s ? s : "(null)");
                     if (s) (*env)->ReleaseStringUTFChars(env, msg, s);
                 } else {
                     (*env)->ExceptionClear(env);
@@ -105,7 +106,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
         }
     }
 
-    LOG("MobileCliAgent started");
+    LOG("MobilecliAgent started");
 }
 
 /* ── agent entry points ──────────────────────────────────────────────────── */
@@ -125,7 +126,10 @@ static jint setup(JavaVM *vm, const char *opts) {
     const char *slash = strrchr(dex_path, '/');
     if (slash && slash != dex_path) {
         size_t len = (size_t)(slash - dex_path);
-        if (len >= sizeof(opt_dir)) { len = sizeof(opt_dir) - 1; }
+        if (len >= sizeof(opt_dir)) {
+            LOG("dex path too long (%zu bytes, max %zu): %s", len, sizeof(opt_dir) - 1, dex_path);
+            return JNI_ERR;
+        }
         memcpy(opt_dir, dex_path, len);
         opt_dir[len] = '\0';
     } else {
