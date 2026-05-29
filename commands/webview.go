@@ -146,8 +146,8 @@ func WebViewQueryCommand(req WebViewQueryRequest) *CommandResponse {
 		req.Selector,
 	)
 	return WebViewEvaluateCommand(WebViewEvaluateRequest{
-		DeviceID:  req.DeviceID,
-		WebViewID: req.WebViewID,
+		DeviceID:   req.DeviceID,
+		WebViewID:  req.WebViewID,
 		Expression: expression,
 	})
 }

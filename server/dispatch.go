@@ -50,12 +50,12 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.webview.waitForLoadState": handleWebViewWaitForLoadState,
 		"server.info":                     handleServerInfo,
 		"server.shutdown":                 handleServerShutdown,
-		"device.apps.path":          handleAppsPath,
-		"device.fs.ls":              handleFsLs,
-		"device.fs.pull":            handleFsPull,
-		"device.fs.push":            handleFsPush,
-		"device.fs.mkdir":           handleFsMkdir,
-		"device.fs.rm":              handleFsRm,
+		"device.apps.path":                handleAppsPath,
+		"device.fs.ls":                    handleFsLs,
+		"device.fs.pull":                  handleFsPull,
+		"device.fs.push":                  handleFsPush,
+		"device.fs.mkdir":                 handleFsMkdir,
+		"device.fs.rm":                    handleFsRm,
 	}
 }
 

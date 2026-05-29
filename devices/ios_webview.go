@@ -170,7 +170,6 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
-
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
