@@ -17,7 +17,7 @@ on:
 
 jobs:
 
-  build_agents:
+  build_linux_agents:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -41,12 +41,12 @@ jobs:
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
-    - name: Build agents
+    - name: Build Android agents
       run: make -C agents/android all
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
-    - name: Upload agent binaries
+    - name: Upload Android agent binaries
       uses: actions/upload-artifact@v5
       with:
         name: android-agents
@@ -55,10 +55,29 @@ jobs:
           agents/android/mobilecli.dex
         retention-days: 1
 
+  build_ios_agents:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Build iOS agents
+      run: make -C agents/ios all
+
+    - name: Upload iOS agent binaries
+      uses: actions/upload-artifact@v5
+      with:
+        name: ios-agents
+        path: |
+          agents/ios/agent-sim.dylib
+        retention-days: 1
+
   test:
     runs-on: macos-latest
     timeout-minutes: 15
-    needs: [build_agents]
+    needs: [build_linux_agents, build_ios_agents]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -69,14 +88,17 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Download agent binaries
+    - name: Download Android agent binaries
       uses: actions/download-artifact@v5
       with:
         name: android-agents
         path: agents/android/
 
-    - name: Build iOS agent
-      run: make -C agents/ios all
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Run Unit Tests
       run: |
@@ -135,7 +157,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -146,11 +168,17 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Download agent binaries
+    - name: Download Android agent binaries
       uses: actions/download-artifact@v5
       with:
         name: android-agents
         path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Install dependencies
       run: |
@@ -183,7 +211,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -194,11 +222,17 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Download agent binaries
+    - name: Download Android agent binaries
       uses: actions/download-artifact@v5
       with:
         name: android-agents
         path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Install dependencies
       run: |
@@ -232,17 +266,23 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:
         persist-credentials: false
 
-    - name: Download agent binaries
+    - name: Download Android agent binaries
       uses: actions/download-artifact@v5
       with:
         name: android-agents
         path: agents/android/
+
+    - name: Download iOS agent binaries
+      uses: actions/download-artifact@v5
+      with:
+        name: ios-agents
+        path: agents/ios/
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -513,4 +553,3 @@ jobs:
         npm version "${{ github.ref_name }}" --no-git-tag-version
         npm install --ignore-scripts
         npm publish --access public --provenance
-
