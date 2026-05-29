@@ -33,6 +33,7 @@ jobs:
 
     - name: Install Android NDK and build tools
       run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
         $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
           "ndk;29.0.13113456" \
           "build-tools;36.0.0" \
