@@ -9,9 +9,20 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
+)
+
+type androidAgentState struct {
+	port int
+	pid  string
+}
+
+var (
+	androidAgentCacheMu sync.Mutex
+	androidAgentCache   = map[string]androidAgentState{}
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -223,6 +234,25 @@ func (d *AndroidDevice) isAppDebuggable(pkg string) bool {
 // ensureAgentReady installs the kit, sets up the port forward, and attaches
 // the agent if it is not already responding. Returns the local TCP port.
 func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
+	cacheKey := d.id + "/" + pkg
+
+	// fast path: reuse cached port when the process is unchanged and the agent is still up
+	androidAgentCacheMu.Lock()
+	cached, hasCached := androidAgentCache[cacheKey]
+	androidAgentCacheMu.Unlock()
+
+	if hasCached {
+		currentPID, pidErr := d.getProcessPID(pkg)
+		if pidErr == nil && currentPID == cached.pid && isAgentReady(cached.port) {
+			return cached.port, nil
+		}
+		// stale entry: remove the dead forward before creating a new one
+		d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", cached.port))
+		androidAgentCacheMu.Lock()
+		delete(androidAgentCache, cacheKey)
+		androidAgentCacheMu.Unlock()
+	}
+
 	if !d.isAppDebuggable(pkg) {
 		return 0, fmt.Errorf("webview injection requires a debug build: %s is not debuggable", pkg)
 	}
@@ -237,11 +267,12 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 		return 0, fmt.Errorf("forward socket: %w", err)
 	}
 
+	pid, err := d.getProcessPID(pkg)
+	if err != nil {
+		return 0, err
+	}
+
 	if !isAgentReady(port) {
-		pid, err := d.getProcessPID(pkg)
-		if err != nil {
-			return 0, err
-		}
 		if err := d.attachJVMTIAgent(pid, agentDir+"/mobilecli.so", agentDir+"/mobilecli.dex"); err != nil {
 			return 0, fmt.Errorf("attach agent: %w", err)
 		}
@@ -253,6 +284,10 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
+
+	androidAgentCacheMu.Lock()
+	androidAgentCache[cacheKey] = androidAgentState{port: port, pid: pid}
+	androidAgentCacheMu.Unlock()
 
 	return port, nil
 }
