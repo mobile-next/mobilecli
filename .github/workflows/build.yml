@@ -48,8 +48,8 @@ jobs:
       with:
         name: android-agents
         path: |
-          agents/android/devicekit.so
-          agents/android/devicekit.dex
+          agents/android/mobilecli.so
+          agents/android/mobilecli.dex
         retention-days: 1
 
   test:

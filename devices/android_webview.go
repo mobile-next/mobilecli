@@ -79,7 +79,7 @@ func (d *AndroidDevice) copyToAppDir(pkg, tmpPath, destPath, mode string) error 
 	return nil
 }
 
-// installWebViewKit pushes devicekit.so and devicekit.dex to the app's data
+// installWebViewKit pushes mobilecli.so and mobilecli.dex to the app's data
 // directory and returns the agent directory path.
 func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	dataDir, err := d.getAppDataDir(pkg)
@@ -88,22 +88,22 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	}
 	agentDir := dataDir + "/" + agentSubDir
 
-	const tmpSO = "/data/local/tmp/mobilecli-devicekit.so"
-	const tmpDEX = "/data/local/tmp/mobilecli-devicekit.dex"
+	const tmpSO = "/data/local/tmp/mobilecli.so"
+	const tmpDEX = "/data/local/tmp/mobilecli.dex"
 
-	if err := d.pushTempFile(agents.AndroidDevicekitSO, tmpSO); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliSO, tmpSO); err != nil {
 		return "", fmt.Errorf("push .so: %w", err)
 	}
-	if err := d.copyToAppDir(pkg, tmpSO, agentDir+"/devicekit.so", "755"); err != nil {
+	if err := d.copyToAppDir(pkg, tmpSO, agentDir+"/mobilecli.so", "755"); err != nil {
 		return "", fmt.Errorf("install .so: %w", err)
 	}
 
-	if err := d.pushTempFile(agents.AndroidDevicekitDEX, tmpDEX); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
 		return "", fmt.Errorf("push .dex: %w", err)
 	}
 	// remove stale dex before copying (dex is immutable once loaded)
-	d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/devicekit.dex")
-	if err := d.copyToAppDir(pkg, tmpDEX, agentDir+"/devicekit.dex", "444"); err != nil {
+	d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/mobilecli.dex")
+	if err := d.copyToAppDir(pkg, tmpDEX, agentDir+"/mobilecli.dex", "444"); err != nil {
 		return "", fmt.Errorf("install .dex: %w", err)
 	}
 
@@ -242,7 +242,7 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if err := d.attachJVMTIAgent(pid, agentDir+"/devicekit.so", agentDir+"/devicekit.dex"); err != nil {
+		if err := d.attachJVMTIAgent(pid, agentDir+"/mobilecli.so", agentDir+"/mobilecli.dex"); err != nil {
 			return 0, fmt.Errorf("attach agent: %w", err)
 		}
 		deadline := time.Now().Add(5 * time.Second)

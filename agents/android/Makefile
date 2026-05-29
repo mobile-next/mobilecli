@@ -38,20 +38,20 @@ JAVA_SRCS := $(wildcard java/*.java)
 
 .PHONY: all clean
 
-all: devicekit.so devicekit.dex
+all: mobilecli.so mobilecli.dex
 
-devicekit.so: jvmti_agent.c
+mobilecli.so: jvmti_agent.c
 	$(CC_ANDROID) -shared -fPIC -O2 \
 		-I$(SYSROOT) -I$(JDK_INC) -I$(JDK_INC)/$(JDK_PLATFORM) \
 		-o $@ $< -llog
 
-devicekit.dex: $(JAVA_SRCS)
+mobilecli.dex: $(JAVA_SRCS)
 	mkdir -p .dex_build
 	$(JAVAC) --release 8 -cp $(ANDROID_JAR) -d .dex_build $(JAVA_SRCS)
 	$(D8) --min-api 26 --output .dex_build $$(find .dex_build -name "*.class")
-	mv .dex_build/classes.dex devicekit.dex
+	mv .dex_build/classes.dex mobilecli.dex
 	rm -rf .dex_build
 
 clean:
-	rm -f devicekit.so devicekit.dex
+	rm -f mobilecli.so mobilecli.dex
 	rm -rf .dex_build

@@ -8,9 +8,9 @@
 #define AGENT_CLASS "com.mobilenext.mobilecli.MobilecliAgent"
 #define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
-/* ── load devicekit.dex into the target process ─────────────────────────── */
+/* ── load mobilecli.dex into the target process ─────────────────────────── */
 
-/* dex_path  — full path to devicekit.dex on the device
+/* dex_path  — full path to mobilecli.dex on the device
    opt_dir   — directory used by DexClassLoader for optimised odex output;
                typically the same directory that contains the dex */
 static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
@@ -51,7 +51,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
                 } else (*env)->ExceptionClear(env);
             }
         }
-        LOG("DexClassLoader failed — push devicekit.dex to %s", dex_path);
+        LOG("DexClassLoader failed — push mobilecli.dex to %s", dex_path);
         return;
     }
 
@@ -115,7 +115,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
    opt_dir is derived as the directory containing the dex file. */
 static jint setup(JavaVM *vm, const char *opts) {
     if (!opts || opts[0] == '\0') {
-        LOG("no dex path provided — pass it as agent.so=/path/to/devicekit.dex");
+        LOG("no dex path provided — pass it as agent.so=/path/to/mobilecli.dex");
         return JNI_ERR;
     }
 
@@ -138,7 +138,11 @@ static jint setup(JavaVM *vm, const char *opts) {
     }
 
     JNIEnv *env = NULL;
-    (*vm)->AttachCurrentThread(vm, (void **) &env, NULL);
+    jint rc = (*vm)->AttachCurrentThread(vm, (void **) &env, NULL);
+    if (rc != JNI_OK || env == NULL) {
+        LOG("AttachCurrentThread failed (rc=%d, dex=%s)", rc, dex_path);
+        return JNI_ERR;
+    }
     bootstrap(env, dex_path, opt_dir);
     LOG("agent ready (dex=%s)", dex_path);
     return JNI_OK;

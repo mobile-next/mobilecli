@@ -2,12 +2,11 @@ package agents
 
 import _ "embed"
 
-//go:embed android/devicekit.so
-var AndroidDevicekitSO []byte
+//go:embed android/mobilecli.so
+var AndroidMobilecliSO []byte
 
-//go:embed android/devicekit.dex
-var AndroidDevicekitDEX []byte
+//go:embed android/mobilecli.dex
+var AndroidMobilecliDEX []byte
 
 //go:embed ios/agent-sim.dylib
 var IOSAgentSimDylib []byte
-
