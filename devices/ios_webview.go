@@ -162,15 +162,6 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
-// hasGetTaskAllow returns true if the app binary at appBundlePath has the
-// get-task-allow entitlement (required for lldb to attach on a simulator).
-func hasGetTaskAllow(appBundlePath string) bool {
-	out, err := exec.Command("codesign", "-d", "--entitlements", "-", appBundlePath).CombinedOutput()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "get-task-allow")
-}
 
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
