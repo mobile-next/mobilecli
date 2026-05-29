@@ -2,9 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -222,6 +224,12 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 	// deadline to expire and the connection closes with 1006
 	go func() {
 		defer func() { <-wsConn.handlerSem }()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("panic in handler %s: %v\n%s", req.Method, r, debug.Stack())
+				wsConn.sendError(req.ID, ErrCodeServerError, "Server error", fmt.Sprintf("panic: %v", r))
+			}
+		}()
 		result, err := handler(req.Params)
 		if err != nil {
 			log.Printf("Error executing method %s: %v", req.Method, err)

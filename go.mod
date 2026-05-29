@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/semver v1.5.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/danieljoos/wincred v1.2.2
-	github.com/danielpaulus/go-ios v1.0.207-0.20260326100139-5d5f0d1129b8
+	github.com/danielpaulus/go-ios v1.0.211
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572
 	github.com/godbus/dbus/v5 v5.1.0
@@ -55,4 +55,8 @@ require (
 
 replace github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.49.1
 
-require github.com/kr/pretty v0.3.1 // indirect
+require (
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/vishvananda/netlink v1.3.1 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
+)
