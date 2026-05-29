@@ -31,4 +31,8 @@ var (
 	fleetNames    []string
 	fleetWait     bool
 	fleetTimeout  int
+
+	// for webview wait command
+	webviewWaitState   string
+	webviewWaitTimeout int
 )

@@ -4,14 +4,10 @@
 	"description": "E2E tests for MobileCLI server",
 	"main": "index.ts",
 	"scripts": {
-		"test": "mocha --require ts-node/register --timeout 180000 '*.ts'",
-		"test-simulator": "mocha --require ts-node/register --timeout 180000 'simulator.ts'"
+		"test:server": "./node_modules/.bin/tsx ./node_modules/.bin/mocha --timeout 180000 'server.ts'",
+		"test:android": "./node_modules/.bin/tsx ./node_modules/.bin/mocha --timeout 180000 'emulator.ts'",
+		"test:simulator": "./node_modules/.bin/tsx ./node_modules/.bin/mocha --timeout 180000 'simulator.ts'"
 	},
-	"keywords": [
-		"mobilecli",
-		"testing",
-		"e2e"
-	],
 	"author": "",
 	"license": "ISC",
 	"type": "commonjs",
@@ -19,10 +15,10 @@
 		"@types/chai": "^4.3.0",
 		"@types/mocha": "^10.0.10",
 		"@types/node": "^24.3.0",
-		"axios": "^1.12.0",
 		"chai": "^4.3.0",
 		"mocha": "^11.7.2",
 		"ts-node": "^10.9.2",
+		"tsx": "^4.21.0",
 		"typescript": "^5.9.2"
 	},
 	"overrides": {

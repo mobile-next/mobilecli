@@ -94,6 +94,15 @@ type StartAgentConfig struct {
 type ScreenElementRect = types.ScreenElementRect
 type ScreenElement = types.ScreenElement
 
+// FileEntry represents a file or directory in an app's container
+type FileEntry struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	IsDir   bool      `json:"isDir"`
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -128,6 +137,25 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
+	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
+	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// WebViewable is implemented by devices that support webview inspection and control.
+type WebViewable interface {
+	ListWebViews() ([]WebViewInfo, error)
+	WebViewGoto(webviewID, url string) error
+	WebViewReload(webviewID string) error
+	WebViewGoBack(webviewID string) error
+	WebViewGoForward(webviewID string) error
+	WebViewContent(webviewID string) (string, error)
+	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
+	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options
