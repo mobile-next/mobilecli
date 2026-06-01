@@ -1,6 +1,16 @@
 @import Foundation;
 // UIKit/WebKit class metadata avoided — calls cast result to silence LLDB strict mode
 extern Class objc_getClass(const char *);
+// Geometry helpers: UIKit headers aren't on the include path, so to call
+// struct-returning methods (-bounds, -convertRect:toView:) we declare a
+// CGRect-compatible struct and call through cast'd objc_msgSend (CGFloat is
+// double on arm64; arm64 has no objc_msgSend_stret, so the plain symbol works).
+extern void objc_msgSend(void);
+extern SEL sel_registerName(const char *);
+typedef double __mcfloat;
+typedef struct { __mcfloat x, y; } __mcpoint;
+typedef struct { __mcfloat width, height; } __mcsize;
+typedef struct { __mcpoint origin; __mcsize size; } __mcrect;
 // inline C declarations — LLDB remote-ios doesn't have SDK headers on include path
 typedef unsigned int __socklen_t;
 typedef unsigned short __in_port_t;
@@ -114,11 +124,14 @@ if (__port > 0) {
                                     while ([stk count]) {
                                         id v = stk[0]; [stk removeObjectAtIndex:0];
                                         if (wk && [(NSObject *)v isKindOfClass:wk]) {
+                                            __mcrect (*__boundsMsg)(id, SEL) = (__mcrect (*)(id, SEL))objc_msgSend;
+                                            __mcrect (*__convMsg)(id, SEL, __mcrect, id) = (__mcrect (*)(id, SEL, __mcrect, id))objc_msgSend;
+                                            __mcrect __fr = __convMsg(v, sel_registerName("convertRect:toView:"), __boundsMsg(v, sel_registerName("bounds")), (id)0);
                                             [wvs addObject:@{
                                                 @"id": [NSString stringWithFormat:@"%p", v],
                                                 @"url": [(NSURL *)[v URL] absoluteString] ?: @"",
                                                 @"title": (NSString *)[v title] ?: @"",
-                                                @"bounds": @{@"x":@0,@"y":@0,@"width":@0,@"height":@0},
+                                                @"bounds": @{@"x":@(__fr.origin.x),@"y":@(__fr.origin.y),@"width":@(__fr.size.width),@"height":@(__fr.size.height)},
                                                 @"visible": @(!(BOOL)[v isHidden] && (id)[v window] != nil)
                                             }];
                                         }
