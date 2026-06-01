@@ -604,6 +604,34 @@ func findFreeLocalPort(start, end int) (int, error) {
 	return 0, fmt.Errorf("no free port in range %d-%d", start, end)
 }
 
+// findRunningDeviceAgent probes the device agent port range for an agent left
+// running by a previous injection (the injected server persists inside the app
+// after LLDB detaches). For each candidate device port it forwards a fresh
+// local port and checks whether the HTTP/JSON-RPC agent answers; the first that
+// does is returned so the caller can skip LLDB injection.
+//
+// Caveat: this reuses whatever agent is alive on the device in this port range.
+// If the foreground app changed since the last injection but the previous app
+// is still running, this may talk to that previous app's agent.
+func (d *IOSDevice) findRunningDeviceAgent() (int, bool) {
+	for devPort := 27042; devPort <= 27051; devPort++ {
+		localPort, err := findFreeLocalPort(27052, 27151)
+		if err != nil {
+			return 0, false
+		}
+		pf := iosutil.NewPortForwarder(d.Udid)
+		if err := pf.Forward(localPort, devPort); err != nil {
+			continue
+		}
+		if isAgentReady(localPort) {
+			utils.Verbose("reusing running agent on device port %d (local %d)", devPort, localPort)
+			return localPort, true
+		}
+		pf.Stop() //nolint:errcheck
+	}
+	return 0, false
+}
+
 func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	// fast path: reuse the forwarded port we set up for this device previously
 	if port, ok := cachedDeviceAgentPort(d.Udid); ok && isAgentReady(port) {
@@ -614,6 +642,15 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	if err := d.startTunnel(); err != nil {
 		return 0, fmt.Errorf("start tunnel: %w", err)
 	}
+
+	// fast path: an agent injected by a previous run may still be alive inside
+	// the app. Probe the device port range and reuse it, skipping the costly
+	// LLDB injection entirely.
+	if port, ok := d.findRunningDeviceAgent(); ok {
+		setCachedDeviceAgentPort(d.Udid, port)
+		return port, nil
+	}
+
 	utils.Verbose("getting enhanced device info")
 	device, err := d.getEnhancedDevice()
 	if err != nil {
