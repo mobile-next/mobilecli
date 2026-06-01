@@ -210,6 +210,9 @@ extern int close(int);
 extern __in_port_t htons(__in_port_t);
 extern __in_addr_t htonl(__in_addr_t);
 extern void *memset(void *, int, unsigned long);
+extern char *strdup(const char *);
+extern void free(void *);
+extern unsigned long strlen(const char *);
 #define __AF_INET    2
 #define __SOCK_STREAM 1
 #define __SOL_SOCKET  0xffff
@@ -230,12 +233,11 @@ if (__port > 0) {
     listen(__sfd, 8);
     int __srv = __sfd;
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        NSString *(^S)(const char *) = ^NSString *(const char *s){ return [NSString stringWithUTF8String:s]; };
         id (^__findWV)(NSString *) = ^id(NSString *wvId) {
             __block id found = nil;
             id sem = dispatch_semaphore_create(0);
             [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                Class wk = NSClassFromString(S("WKWebView"));
+                Class wk = NSClassFromString(@"WKWebView");
                 Class wsCls = (Class)objc_getClass("UIWindowScene");
                 id app = (id)[(Class)objc_getClass("UIApplication") sharedApplication];
                 for (id sc in (NSArray *)[app connectedScenes])
@@ -245,7 +247,7 @@ if (__port > 0) {
                             while ([stk count]) {
                                 id v = stk[0]; [stk removeObjectAtIndex:0];
                                 if (wk && [(NSObject *)v isKindOfClass:wk] &&
-                                    [[NSString stringWithFormat:S("%p"), v] isEqualToString:wvId])
+                                    [[NSString stringWithFormat:@"%p", v] isEqualToString:wvId])
                                 { found = v; break; }
                                 [stk addObjectsFromArray:(NSArray *)[v subviews]];
                             }
@@ -262,15 +264,15 @@ if (__port > 0) {
             dispatch_async(dispatch_get_global_queue(0, 0), ^{
                 NSMutableData *buf = [NSMutableData data];
                 char tmp[4096]; long n;
-                NSData *crlf = [S("\r\n\r\n") dataUsingEncoding:NSASCIIStringEncoding];
+                NSData *crlf = [@"\r\n\r\n" dataUsingEncoding:NSASCIIStringEncoding];
                 while ((n = recv(cfd, tmp, sizeof(tmp), 0)) > 0) {
                     [buf appendBytes:tmp length:(NSUInteger)n];
                     NSRange sep = [buf rangeOfData:crlf options:0 range:NSMakeRange(0, buf.length)];
                     if (sep.location != NSNotFound) {
                         NSString *hdr = [[NSString alloc] initWithData:[buf subdataWithRange:NSMakeRange(0, sep.location)] encoding:NSASCIIStringEncoding];
                         NSInteger cl = 0;
-                        for (NSString *__hdrLine in [hdr componentsSeparatedByString:S("\r\n")])
-                            if ([__hdrLine.lowercaseString hasPrefix:S("content-length:")])
+                        for (NSString *__hdrLine in [hdr componentsSeparatedByString:@"\r\n"])
+                            if ([__hdrLine.lowercaseString hasPrefix:@"content-length:"])
                                 cl = [[__hdrLine substringFromIndex:15] integerValue];
                         NSUInteger bs = sep.location + 4;
                         while ((NSInteger)(buf.length - bs) < cl && (n = recv(cfd, tmp, sizeof(tmp), 0)) > 0)
@@ -282,15 +284,15 @@ if (__port > 0) {
                 NSData *body = (hr.location == NSNotFound) ? [NSData data] :
                     [buf subdataWithRange:NSMakeRange(hr.location + 4, buf.length - hr.location - 4)];
                 NSDictionary *req = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
-                id rqId = req[S("id")] ?: [NSNull null];
-                NSString *method = req[S("method")] ?: S("");
-                NSDictionary *params = req[S("params")];
+                id rqId = req[@"id"] ?: [NSNull null];
+                NSString *method = req[@"method"] ?: @"";
+                NSDictionary *params = req[@"params"];
                 NSData *resp = nil;
-                if ([method isEqualToString:S("device.webview.list")]) {
+                if ([method isEqualToString:@"device.webview.list"]) {
                     __block NSMutableArray *wvs = [NSMutableArray array];
                     id sem = dispatch_semaphore_create(0);
                     [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                        Class wk = NSClassFromString(S("WKWebView"));
+                        Class wk = NSClassFromString(@"WKWebView");
                         Class wsCls = (Class)objc_getClass("UIWindowScene");
                         id app = (id)[(Class)objc_getClass("UIApplication") sharedApplication];
                         for (id sc in (NSArray *)[app connectedScenes])
@@ -301,11 +303,11 @@ if (__port > 0) {
                                         id v = stk[0]; [stk removeObjectAtIndex:0];
                                         if (wk && [(NSObject *)v isKindOfClass:wk]) {
                                             [wvs addObject:@{
-                                                S("id"): [NSString stringWithFormat:S("%p"), v],
-                                                S("url"): [(NSURL *)[v URL] absoluteString] ?: S(""),
-                                                S("title"): (NSString *)[v title] ?: S(""),
-                                                S("bounds"): @{S("x"):@0,S("y"):@0,S("width"):@0,S("height"):@0},
-                                                S("visible"): @(!(BOOL)[v isHidden] && (id)[v window] != nil)
+                                                @"id": [NSString stringWithFormat:@"%p", v],
+                                                @"url": [(NSURL *)[v URL] absoluteString] ?: @"",
+                                                @"title": (NSString *)[v title] ?: @"",
+                                                @"bounds": @{@"x":@0,@"y":@0,@"width":@0,@"height":@0},
+                                                @"visible": @(!(BOOL)[v isHidden] && (id)[v window] != nil)
                                             }];
                                         }
                                         [stk addObjectsFromArray:(NSArray *)[v subviews]];
@@ -314,83 +316,104 @@ if (__port > 0) {
                         dispatch_semaphore_signal(sem);
                     }];
                     dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
-                    resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("result"):wvs} options:0 error:nil];
-                } else if ([method isEqualToString:S("device.webview.goto")]) {
-                    NSString *wvId = params[S("id")], *url = params[S("url")];
+                    resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":wvs} options:0 error:nil];
+                } else if ([method isEqualToString:@"device.webview.goto"]) {
+                    NSString *wvId = params[@"id"], *url = params[@"url"];
                     id wv = (wvId && url) ? __findWV(wvId) : nil;
-                    if (!wvId || !url) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32602),S("message"):S("missing id or url")}} options:0 error:nil];
-                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):S("webview not found")}} options:0 error:nil];
+                    if (!wvId || !url) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id or url"}} options:0 error:nil];
+                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
                         id sem = dispatch_semaphore_create(0);
                         [[NSOperationQueue mainQueue] addOperationWithBlock:^{ (void)[wv loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]]; dispatch_semaphore_signal(sem); }];
                         dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
-                        resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("result"):@{S("status"):S("ok")}} options:0 error:nil];
+                        resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"status":@"ok"}} options:0 error:nil];
                     }
-                } else if ([@[S("device.webview.reload"),S("device.webview.goBack"),S("device.webview.goForward")] containsObject:method]) {
-                    NSString *wvId = params[S("id")];
+                } else if ([@[@"device.webview.reload",@"device.webview.goBack",@"device.webview.goForward"] containsObject:method]) {
+                    NSString *wvId = params[@"id"];
                     id wv = wvId ? __findWV(wvId) : nil;
-                    if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32602),S("message"):S("missing id")}} options:0 error:nil];
-                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):S("webview not found")}} options:0 error:nil];
+                    if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id"}} options:0 error:nil];
+                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
                         id sem = dispatch_semaphore_create(0);
                         [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                            if ([method isEqualToString:S("device.webview.reload")]) (void)[wv reload];
-                            else if ([method isEqualToString:S("device.webview.goBack")]) (void)[wv goBack];
+                            if ([method isEqualToString:@"device.webview.reload"]) (void)[wv reload];
+                            else if ([method isEqualToString:@"device.webview.goBack"]) (void)[wv goBack];
                             else (void)[wv goForward];
                             dispatch_semaphore_signal(sem);
                         }];
                         dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
-                        resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("result"):@{S("status"):S("ok")}} options:0 error:nil];
+                        resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"status":@"ok"}} options:0 error:nil];
                     }
-                } else if ([method isEqualToString:S("device.webview.evaluate")]) {
-                    NSString *wvId = params[S("id")], *expr = params[S("expression")];
+                } else if ([method isEqualToString:@"device.webview.evaluate"]) {
+                    NSString *wvId = params[@"id"], *expr = params[@"expression"];
                     id wv = (wvId && expr) ? __findWV(wvId) : nil;
-                    if (!wvId || !expr) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32602),S("message"):S("missing id or expression")}} options:0 error:nil];
-                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):S("webview not found")}} options:0 error:nil];
+                    if (!wvId || !expr) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id or expression"}} options:0 error:nil];
+                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
-                        NSString *wrapped = [NSString stringWithFormat:S("(function(){try{%@}catch(e){return{__mce:e.toString()}}})()"), expr];
-                        __block id jsResult = nil; __block NSError *jsError = nil;
+                        // A heap (non-tagged) value returned from evaluateJavaScript is
+                        // over-released when WebKit's delivery pool drains, crashing the
+                        // app — so we must never hold WebKit's result object. Instead the
+                        // JS JSON-stringifies [ok, value]; inside the handler we copy the
+                        // resulting bytes to C memory (no ObjC retain) and rebuild the
+                        // response from our own bytes. Arrays + a mutable dict avoid the
+                        // single-entry immutable dictionaries seen in the crash.
+                        NSString *wrapped = [NSString stringWithFormat:@"(function(){try{return JSON.stringify([1,(function(){%@})()])}catch(e){return JSON.stringify([0,''+e])}})()", expr];
+                        __block char *jbuf = NULL;
                         id sem = dispatch_semaphore_create(0);
                         [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                            (void)[wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsResult = r; jsError = e; dispatch_semaphore_signal(sem); }];
+                            (void)[wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) {
+                                if ([(NSObject *)r isKindOfClass:[NSString class]]) { const char *u = [(NSString *)r UTF8String]; if (u) jbuf = strdup(u); }
+                                dispatch_semaphore_signal(sem);
+                            }];
                         }];
-                        dispatch_semaphore_wait(sem, dispatch_time(0, 10000000000LL));
-                        if (jsError) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):jsError.localizedDescription}} options:0 error:nil];
-                        else if ([(NSObject *)jsResult isKindOfClass:[NSDictionary class]] && ((NSDictionary *)jsResult)[S("__mce")]) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):((NSDictionary *)jsResult)[S("__mce")]}} options:0 error:nil];
-                        else resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("result"):@{S("result"):jsResult?:[NSNull null]}} options:0 error:nil];
+                        dispatch_semaphore_wait(sem, dispatch_time(0, 30000000000LL));
+                        if (!jbuf) {
+                            resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"no result from evaluate"}} options:0 error:nil];
+                        } else {
+                            NSArray *parsed = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:jbuf length:strlen(jbuf)] options:0 error:nil];
+                            free(jbuf);
+                            BOOL ok2 = [(NSObject *)parsed isKindOfClass:[NSArray class]] && [parsed count] == 2;
+                            if (ok2 && [(NSNumber *)parsed[0] intValue] == 0) {
+                                resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":parsed[1]}} options:0 error:nil];
+                            } else {
+                                NSMutableDictionary *rd = [NSMutableDictionary dictionary];
+                                rd[@"result"] = ok2 ? parsed[1] : [NSNull null];
+                                resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":rd} options:0 error:nil];
+                            }
+                        }
                     }
-                } else if ([method isEqualToString:S("device.webview.waitForLoadState")]) {
-                    NSString *wvId = params[S("id")];
+                } else if ([method isEqualToString:@"device.webview.waitForLoadState"]) {
+                    NSString *wvId = params[@"id"];
                     id wv = wvId ? __findWV(wvId) : nil;
-                    if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32602),S("message"):S("missing id")}} options:0 error:nil];
-                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):S("webview not found")}} options:0 error:nil];
+                    if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id"}} options:0 error:nil];
+                    else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
-                        NSString *__lstate = params[S("state")] ?: S("load");
-                        NSInteger toMs = params[S("timeout")] ? [(NSNumber *)params[S("timeout")] integerValue] : 30000;
-                        NSString *checkJS = [S("domcontentloaded") isEqualToString:__lstate] ?
-                            S("return String(document.readyState==='interactive'||document.readyState==='complete')") :
-                            S("return String(document.readyState==='complete')");
+                        NSString *__lstate = params[@"state"] ?: @"load";
+                        NSInteger toMs = params[@"timeout"] ? [(NSNumber *)params[@"timeout"] integerValue] : 30000;
+                        NSString *checkJS = [@"domcontentloaded" isEqualToString:__lstate] ?
+                            @"return String(document.readyState==='interactive'||document.readyState==='complete')" :
+                            @"return String(document.readyState==='complete')";
                         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:toMs / 1000.0];
                         BOOL done = NO;
                         while (!done && [[NSDate date] compare:deadline] == NSOrderedAscending) {
                             __block id jsR = nil;
                             id sem2 = dispatch_semaphore_create(0);
-                            NSString *wrapped = [NSString stringWithFormat:S("(function(){try{%@}catch(e){return null}})()"), checkJS];
+                            NSString *wrapped = [NSString stringWithFormat:@"(function(){try{%@}catch(e){return null}})()", checkJS];
                             [[NSOperationQueue mainQueue] addOperationWithBlock:^{
                                 (void)[wv evaluateJavaScript:wrapped completionHandler:^(id r, NSError *e) { jsR = r; dispatch_semaphore_signal(sem2); }];
                             }];
                             dispatch_semaphore_wait(sem2, dispatch_time(0, 5000000000LL));
-                            if ([S("true") isEqualToString:jsR]) done = YES;
+                            if ([@"true" isEqualToString:jsR]) done = YES;
                             else [NSThread sleepForTimeInterval:0.2];
                         }
                         resp = done ?
-                            [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("result"):@{S("status"):S("ok")}} options:0 error:nil] :
-                            [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32000),S("message"):S("timed out")}} options:0 error:nil];
+                            [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"status":@"ok"}} options:0 error:nil] :
+                            [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"timed out"}} options:0 error:nil];
                     }
                 }
-                if (!resp) resp = [NSJSONSerialization dataWithJSONObject:@{S("jsonrpc"):S("2.0"),S("id"):rqId,S("error"):@{S("code"):@(-32601),S("message"):[NSString stringWithFormat:S("method not found: %@"), method]}} options:0 error:nil];
-                if (!resp) resp = [S("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}") dataUsingEncoding:NSUTF8StringEncoding];
-                NSString *hdrs = [NSString stringWithFormat:S("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n"), (unsigned long)resp.length];
+                if (!resp) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32601),@"message":[NSString stringWithFormat:@"method not found: %@", method]}} options:0 error:nil];
+                if (!resp) resp = [@"{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}" dataUsingEncoding:NSUTF8StringEncoding];
+                NSString *hdrs = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n", (unsigned long)resp.length];
                 NSData *hdrData = [hdrs dataUsingEncoding:NSASCIIStringEncoding];
                 send(cfd, hdrData.bytes, hdrData.length, 0);
                 send(cfd, resp.bytes, resp.length, 0);
