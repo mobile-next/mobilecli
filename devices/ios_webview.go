@@ -637,9 +637,9 @@ if (__port > 0) {
                     if (!wvId) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"missing id"}} options:0 error:nil];
                     else if (!wv) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"webview not found"}} options:0 error:nil];
                     else {
-                        NSString *state = params[@"state"] ?: @"load";
+                        NSString *__lstate = params[@"state"] ?: @"load";
                         NSInteger toMs = params[@"timeout"] ? [(NSNumber *)params[@"timeout"] integerValue] : 30000;
-                        NSString *checkJS = [@"domcontentloaded" isEqualToString:state] ?
+                        NSString *checkJS = [@"domcontentloaded" isEqualToString:__lstate] ?
                             @"return String(document.readyState==='interactive'||document.readyState==='complete')" :
                             @"return String(document.readyState==='complete')";
                         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:toMs / 1000.0];
