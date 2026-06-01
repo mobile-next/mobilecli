@@ -47,10 +47,8 @@ struct __sockaddr_in __sa; memset(&__sa, 0, sizeof(__sa));
 __sa.sin_family = __AF_INET;
 __sa.sin_addr.s_addr = htonl(__INADDR_LOOPBACK);
 int __port = 0;
-for (int __p = 27042; __p < 27052; __p++) {
-    __sa.sin_port = htons((unsigned short)__p);
-    if (bind(__sfd, (struct __sockaddr *)&__sa, sizeof(__sa)) == 0) { __port = __p; break; }
-}
+__sa.sin_port = htons((unsigned short)12008);
+if (bind(__sfd, (struct __sockaddr *)&__sa, sizeof(__sa)) == 0) { __port = 12008; }
 if (__port > 0) {
     listen(__sfd, 8);
     int __srv = __sfd;

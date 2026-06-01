@@ -182,6 +182,11 @@ func (d *IOSDevice) findForegroundApp(device goios.DeviceEntry, apps []userApp) 
 	return nil, fmt.Errorf("no foreground user app found — is an app open?")
 }
 
+// iosDeviceAgentPort is the fixed device-side TCP port the injected agent binds
+// (see agents/ios-real/agent.m). A fixed port lets the reuse fast-path find an
+// already-running agent without scanning or persisting state between runs.
+const iosDeviceAgentPort = 12008
+
 var deviceAgentPortRE = regexp.MustCompile(`\$\d+\s*=\s*(\d+)`)
 
 // startLLDBProxy pre-attaches to pid on the device via the debug proxy, then
@@ -314,7 +319,7 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 
 		case strings.HasPrefix(pkt, "D"):
 			devReply, _ := devGDB.Request(pkt)
-			utils.Verbose("lldb-proxy → LLDB (detach): %.300s", devReply)
+			utils.Verbose("lldb-proxy → LLDB (detach): %d bytes", len(devReply))
 			sendToLLDB(devReply)
 			return
 
@@ -328,7 +333,7 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 			reply = devReply
 		}
 
-		utils.Verbose("lldb-proxy → LLDB: %.300s", reply)
+		utils.Verbose("lldb-proxy → LLDB: %d bytes", len(reply))
 		sendToLLDB(reply)
 		if switchToNoAck {
 			noAck = true
@@ -368,7 +373,7 @@ func injectServerViaLLDB(localProxyPort int) (int, error) {
 			continue
 		}
 		port, err := strconv.Atoi(m[1])
-		if err == nil && port >= 27042 && port <= 27051 {
+		if err == nil && port == iosDeviceAgentPort {
 			return port, nil
 		}
 	}
@@ -387,31 +392,29 @@ func findFreeLocalPort(start, end int) (int, error) {
 	return 0, fmt.Errorf("no free port in range %d-%d", start, end)
 }
 
-// findRunningDeviceAgent probes the device agent port range for an agent left
-// running by a previous injection (the injected server persists inside the app
-// after LLDB detaches). For each candidate device port it forwards a fresh
-// local port and checks whether the HTTP/JSON-RPC agent answers; the first that
-// does is returned so the caller can skip LLDB injection.
+// findRunningDeviceAgent checks whether an agent from a previous injection is
+// still alive on the fixed device port (the injected server persists inside the
+// app after LLDB detaches). It forwards a local port to iosDeviceAgentPort and
+// checks whether the HTTP/JSON-RPC agent answers, letting the caller skip LLDB
+// injection.
 //
-// Caveat: this reuses whatever agent is alive on the device in this port range.
-// If the foreground app changed since the last injection but the previous app
-// is still running, this may talk to that previous app's agent.
+// Caveat: this reuses whatever agent is alive on that device port. If the
+// foreground app changed since the last injection but the previous app is still
+// running, this may talk to that previous app's agent.
 func (d *IOSDevice) findRunningDeviceAgent() (int, bool) {
-	for devPort := 27042; devPort <= 27051; devPort++ {
-		localPort, err := findFreeLocalPort(27052, 27151)
-		if err != nil {
-			return 0, false
-		}
-		pf := iosutil.NewPortForwarder(d.Udid)
-		if err := pf.Forward(localPort, devPort); err != nil {
-			continue
-		}
-		if isAgentReady(localPort) {
-			utils.Verbose("reusing running agent on device port %d (local %d)", devPort, localPort)
-			return localPort, true
-		}
-		pf.Stop() //nolint:errcheck
+	localPort, err := findFreeLocalPort(iosDeviceAgentPort, iosDeviceAgentPort+99)
+	if err != nil {
+		return 0, false
 	}
+	pf := iosutil.NewPortForwarder(d.Udid)
+	if err := pf.Forward(localPort, iosDeviceAgentPort); err != nil {
+		return 0, false
+	}
+	if isAgentReady(localPort) {
+		utils.Verbose("reusing running agent on device port %d (local %d)", iosDeviceAgentPort, localPort)
+		return localPort, true
+	}
+	pf.Stop() //nolint:errcheck
 	return 0, false
 }
 
@@ -475,7 +478,7 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	}
 	utils.Verbose("agent started on device port %d", devicePort)
 
-	localPort, err := findFreeLocalPort(27042, 27051)
+	localPort, err := findFreeLocalPort(iosDeviceAgentPort, iosDeviceAgentPort+99)
 	if err != nil {
 		return 0, err
 	}
