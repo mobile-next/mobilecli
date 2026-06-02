@@ -1,404 +1,18 @@
 package devices
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
-
-	goios "github.com/danielpaulus/go-ios/ios"
-	"github.com/mobile-next/mobilecli/agents"
-	iosutil "github.com/mobile-next/mobilecli/devices/ios"
-	"github.com/mobile-next/mobilecli/devices/ios/debugserver"
-	"github.com/mobile-next/mobilecli/utils"
 )
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Real iOS device WebView support.
-//
-// Unlike the simulator path (ios_webview.go), a real device cannot have a dylib
-// injected directly. Instead we ask WDA for the foreground app (bundleID + pid),
-// attach to it via the CoreDevice debug proxy (go-ios) and, through LLDB,
-// evaluate an ObjC expression that binds a TCP socket inside the app and runs a
-// tiny HTTP/JSON-RPC server. We then forward a local port to that server and
-// speak the same agent protocol used by the simulator and Android paths
-// (agentRequest / WebViewInfo, defined in android_webview.go).
-//
-// Everything device-specific lives in this file so it never conflicts with the
-// shared simulator/Android webview code.
-// ──────────────────────────────────────────────────────────────────────────────
-
-// deviceAgentPortCache maps device UDID → local TCP port of its injected agent.
-// This is intentionally separate from the simulator's (udid, bundleID) cache in
-// ios_webview.go: a real device runs a single injected agent per device.
-var (
-	deviceAgentPortCache   = map[string]int{}
-	deviceAgentPortCacheMu sync.Mutex
-)
-
-func cachedDeviceAgentPort(udid string) (int, bool) {
-	deviceAgentPortCacheMu.Lock()
-	defer deviceAgentPortCacheMu.Unlock()
-	port, ok := deviceAgentPortCache[udid]
-	return port, ok
-}
-
-func setCachedDeviceAgentPort(udid string, port int) {
-	deviceAgentPortCacheMu.Lock()
-	defer deviceAgentPortCacheMu.Unlock()
-	deviceAgentPortCache[udid] = port
-}
-
-func iosDeviceDebugProxyPort(device goios.DeviceEntry) (int, error) {
-	if !device.SupportsRsd() {
-		return 0, fmt.Errorf("device does not support RSD — enable developer mode")
-	}
-	p := device.Rsd.GetPort("com.apple.internal.dt.remote.debugproxy")
-	if p == 0 {
-		return 0, fmt.Errorf("com.apple.internal.dt.remote.debugproxy not in RSD")
-	}
-	return p, nil
-}
-
-// iosDeviceAgentPort is the fixed device-side TCP port the injected agent binds
-// (see agents/ios-real/agent.m). A fixed port lets the reuse fast-path find an
-// already-running agent without scanning or persisting state between runs.
-const iosDeviceAgentPort = 12008
-
-var deviceAgentPortRE = regexp.MustCompile(`\$\d+\s*=\s*(\d+)`)
-
-// startLLDBProxy pre-attaches to pid on the device via the debug proxy, then
-// starts a local TCP listener for LLDB. Pre-attaching before listening ensures
-// the proxy can respond to LLDB's handshake immediately upon connection.
-// Returns the local port and a stop function.
-func startLLDBProxy(device goios.DeviceEntry, proxyPort, pid int) (int, func(), error) {
-	utils.Verbose("lldb-proxy: connecting to device debug proxy port %d", proxyPort)
-	devConn, err := goios.ConnectTUNDevice(device.Address, proxyPort, device)
-	if err != nil {
-		return 0, nil, fmt.Errorf("lldb-proxy: connect to device: %w", err)
-	}
-
-	devGDB := debugserver.NewGDBServer(devConn)
-	utils.Verbose("lldb-proxy: pre-attaching to pid %d", pid)
-	stopReply, err := devGDB.Request(fmt.Sprintf("vAttach;%x", pid))
-	if err != nil || !strings.HasPrefix(stopReply, "T") {
-		devConn.Close()
-		return 0, nil, fmt.Errorf("lldb-proxy: vAttach pid %d: err=%v resp=%q", pid, err, stopReply)
-	}
-	utils.Verbose("lldb-proxy: pre-attached, stop=%q", stopReply)
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		devConn.Close()
-		return 0, nil, fmt.Errorf("listen for lldb proxy: %w", err)
-	}
-	localPort := ln.Addr().(*net.TCPAddr).Port
-	go func() {
-		defer ln.Close()
-		defer devConn.Close()
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		lldbProxyConn(conn, devGDB, pid)
-	}()
-	return localPort, func() { ln.Close() }, nil
-}
-
-// lldbProxyConn is a GDB RSP bridge between LLDB and an already-attached
-// device debugserver. Handles negotiation packets locally, forwards all others
-// packet-by-packet with ack-mode translation (LLDB: no-ack; device: ack).
-func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
-	defer c.Close()
-
-	// debugserver sends '+' immediately upon accepting a connection;
-	// LLDB waits for this before sending the first packet.
-	c.Write([]byte("+")) //nolint:errcheck
-
-	noAck := false
-
-	gdbChecksum := func(pkt string) byte {
-		var sum byte
-		for i := 0; i < len(pkt); i++ {
-			sum += pkt[i]
-		}
-		return sum
-	}
-
-	sendToLLDB := func(pkt string) {
-		ck := gdbChecksum(pkt)
-		var s string
-		if !noAck {
-			s = "+"
-		}
-		s += fmt.Sprintf("$%s#%02x", pkt, ck)
-		c.Write([]byte(s)) //nolint:errcheck
-	}
-
-	recvFromLLDB := func() (string, error) {
-		buf := make([]byte, 1)
-		for {
-			if _, err := io.ReadFull(c, buf); err != nil {
-				return "", err
-			}
-			if buf[0] == '$' {
-				break
-			}
-		}
-		var pkt strings.Builder
-		for {
-			if _, err := io.ReadFull(c, buf); err != nil {
-				return "", err
-			}
-			if buf[0] == '#' {
-				break
-			}
-			pkt.WriteByte(buf[0])
-		}
-		cksumBuf := make([]byte, 2)
-		if _, err := io.ReadFull(c, cksumBuf); err != nil {
-			return "", err
-		}
-		return pkt.String(), nil
-	}
-
-	for {
-		pkt, err := recvFromLLDB()
-		if err != nil {
-			return
-		}
-		utils.Verbose("lldb-proxy ← LLDB: %.300s", pkt)
-
-		// switchToNoAck is set by QStartNoAckMode and applied AFTER sendToLLDB
-		// so the OK response goes out in ack mode (with '+') as LLDB expects.
-		switchToNoAck := false
-		var reply string
-		switch {
-		case pkt == "QStartNoAckMode":
-			reply = "OK"
-			switchToNoAck = true
-
-		case strings.HasPrefix(pkt, "qSupported"):
-			reply = "PacketSize=65536;vContSupported+"
-
-		case pkt == "QThreadSuffixSupported",
-			pkt == "QListThreadsInStopReply",
-			pkt == "qVAttachOrWaitSupported",
-			pkt == "QEnableErrorStrings":
-			reply = "OK"
-
-		case strings.HasPrefix(pkt, "vCont?"):
-			reply = "vCont;c;C;s;S"
-
-		case pkt == "k":
-			// LLDB wants to kill — detach instead so the app keeps running
-			devGDB.Request(fmt.Sprintf("D;%x", pid)) //nolint:errcheck
-			return
-
-		case strings.HasPrefix(pkt, "D"):
-			devReply, _ := devGDB.Request(pkt)
-			utils.Verbose("lldb-proxy → LLDB (detach): %d bytes", len(devReply))
-			sendToLLDB(devReply)
-			return
-
-		default:
-			// forward to device (devGDB uses ack mode: sends "+$pkt#XX")
-			devReply, err := devGDB.Request(pkt)
-			if err != nil {
-				utils.Verbose("lldb-proxy: device error for %q: %v", pkt[:min(len(pkt), 40)], err)
-				return
-			}
-			reply = devReply
-		}
-
-		utils.Verbose("lldb-proxy → LLDB: %d bytes", len(reply))
-		sendToLLDB(reply)
-		if switchToNoAck {
-			noAck = true
-		}
-	}
-}
-
-// injectServerViaLLDB connects LLDB to the proxy (which has already attached to
-// the target process), evaluates iosDeviceAgentExpr to start a persistent HTTP
-// server inside the app, and returns the device-side TCP port.
-func injectServerViaLLDB(localProxyPort int) (int, error) {
-	const lldbTimeout = 120 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), lldbTimeout)
-	defer cancel()
-
-	utils.Verbose("running LLDB (timeout %s)", lldbTimeout)
-	cmd := exec.CommandContext(ctx, "lldb",
-		"-o", "settings set target.process.memory-cache-line-size 16384",
-		"-o", "platform select remote-ios",
-		"-o", fmt.Sprintf("process connect connect://localhost:%d", localProxyPort),
-		// The leading newline after "--" is required: it puts LLDB into multi-line
-		// expression mode so the whole agent source is treated as one expression
-		// (without it, LLDB runs only the first line and parses the rest as commands).
-		"-o", "expr -l objc -- \n"+agents.IOSRealDeviceWebViewAgent,
-		"-o", "detach",
-		"-o", "quit",
-	)
-	out, err := cmd.CombinedOutput()
-	utils.Verbose("LLDB finished (err=%v), output:\n%s", err, out)
-	if err != nil {
-		return 0, fmt.Errorf("lldb: %w\noutput:\n%s", err, out)
-	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		m := deviceAgentPortRE.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		port, err := strconv.Atoi(m[1])
-		if err == nil && port == iosDeviceAgentPort {
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
-}
-
-// freeLocalPort asks the kernel for an unused local TCP port (bind :0, read it
-// back, release it). Only the device-side agent port is fixed
-// (iosDeviceAgentPort, for cross-run reuse discovery); the local end of the
-// forward is ephemeral and lives only for this process, so we let the OS pick
-// it. (go-ios's forward.Forward rejects a literal port 0, so we grab one here.)
-func freeLocalPort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
-}
-
-// findRunningDeviceAgent checks whether an agent from a previous injection is
-// still alive on the fixed device port (the injected server persists inside the
-// app after LLDB detaches). It forwards a local port to iosDeviceAgentPort and
-// checks whether the HTTP/JSON-RPC agent answers, letting the caller skip LLDB
-// injection.
-//
-// Caveat: this reuses whatever agent is alive on that device port. If the
-// foreground app changed since the last injection but the previous app is still
-// running, this may talk to that previous app's agent.
-func (d *IOSDevice) findRunningDeviceAgent() (int, bool) {
-	localPort, err := freeLocalPort()
-	if err != nil {
-		return 0, false
-	}
-	pf := iosutil.NewPortForwarder(d.Udid)
-	if err := pf.Forward(localPort, iosDeviceAgentPort); err != nil {
-		return 0, false
-	}
-	if isAgentReady(localPort) {
-		utils.Verbose("reusing running agent on device port %d (local %d)", iosDeviceAgentPort, localPort)
-		return localPort, true
-	}
-	pf.Stop() //nolint:errcheck
-	return 0, false
-}
-
-func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
-	// fast path: reuse the forwarded port we set up for this device previously
-	if port, ok := cachedDeviceAgentPort(d.Udid); ok && isAgentReady(port) {
-		utils.Verbose("reusing cached agent port %d", port)
-		return port, nil
-	}
-
-	if err := d.startTunnel(); err != nil {
-		return 0, fmt.Errorf("start tunnel: %w", err)
-	}
-
-	// fast path: an agent injected by a previous run may still be alive inside
-	// the app. Probe the device port range and reuse it, skipping the costly
-	// LLDB injection entirely.
-	if port, ok := d.findRunningDeviceAgent(); ok {
-		setCachedDeviceAgentPort(d.Udid, port)
-		return port, nil
-	}
-
-	utils.Verbose("getting enhanced device info")
-	device, err := d.getEnhancedDevice()
-	if err != nil {
-		return 0, fmt.Errorf("get enhanced device: %w", err)
-	}
-	proxyPort, err := iosDeviceDebugProxyPort(device)
-	if err != nil {
-		return 0, err
-	}
-	utils.Verbose("debug proxy port from RSD: %d", proxyPort)
-
-	// ensure the devicekit/WDA agent is up (tunnel + :8100 forward + launch);
-	// idempotent, and required for the foreground-app lookup below.
-	if err := d.StartAgent(StartAgentConfig{}); err != nil {
-		return 0, fmt.Errorf("start device agent (WDA): %w", err)
-	}
-
-	utils.Verbose("getting foreground app via WDA")
-	activeApp, err := d.wdaClient.GetActiveAppInfo()
-	if err != nil {
-		return 0, fmt.Errorf("get foreground app: %w", err)
-	}
-	if activeApp.ProcessID == 0 {
-		return 0, fmt.Errorf("no foreground app (pid 0) — open an app first")
-	}
-
-	utils.Verbose("injecting agent into %s (pid %d) via LLDB", activeApp.BundleID, activeApp.ProcessID)
-	// start a local TCP proxy so LLDB can reach the device debug proxy
-	lldbProxyPort, cancelProxy, err := startLLDBProxy(device, proxyPort, activeApp.ProcessID)
-	if err != nil {
-		return 0, fmt.Errorf("start lldb proxy: %w", err)
-	}
-	defer cancelProxy()
-	utils.Verbose("LLDB proxy listening on localhost:%d", lldbProxyPort)
-
-	devicePort, err := injectServerViaLLDB(lldbProxyPort)
-	if err != nil {
-		return 0, fmt.Errorf("inject server via lldb: %w", err)
-	}
-	utils.Verbose("agent started on device port %d", devicePort)
-
-	localPort, err := freeLocalPort()
-	if err != nil {
-		return 0, err
-	}
-
-	utils.Verbose("forwarding localhost:%d -> device:%d", localPort, devicePort)
-	pf := iosutil.NewPortForwarder(d.Udid)
-	if err := pf.Forward(localPort, devicePort); err != nil {
-		return 0, fmt.Errorf("port forward %d->%d: %w", localPort, devicePort, err)
-	}
-
-	utils.Verbose("waiting for agent to respond on port %d", localPort)
-	deadline := time.Now().Add(3 * time.Second)
-	for !isAgentReady(localPort) {
-		if time.Now().After(deadline) {
-			return 0, fmt.Errorf("iOS device agent did not respond within 3s")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	utils.Verbose("agent ready on port %d", localPort)
-	setCachedDeviceAgentPort(d.Udid, localPort)
-	return localPort, nil
-}
-
-// ── Public WebViewable implementation for real iOS devices ────────────────────
+// WebView feature for real iOS devices. These methods are thin JSON-RPC calls
+// over the injected agent (see ios_device_agent.go for how the agent is
+// injected and reached). They implement the WebViewable interface.
 
 func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error) {
-	port, err := d.ensureIOSDeviceAgentReady()
+	result, err := d.agentCall("device.webview.list", nil)
 	if err != nil {
-		return nil, err
-	}
-	result, err := agentRequest(port, "device.webview.list", nil)
-	if err != nil {
-		setCachedDeviceAgentPort(d.Udid, 0)
 		return nil, err
 	}
 	var raw []struct {
@@ -419,38 +33,22 @@ func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error) {
 }
 
 func (d *IOSDevice) WebViewGoto(webviewID, url string) error {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goto", map[string]any{"id": webviewID, "url": url})
+	_, err := d.agentCall("device.webview.goto", map[string]any{"id": webviewID, "url": url})
 	return err
 }
 
 func (d *IOSDevice) WebViewReload(webviewID string) error {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.reload", map[string]any{"id": webviewID})
+	_, err := d.agentCall("device.webview.reload", map[string]any{"id": webviewID})
 	return err
 }
 
 func (d *IOSDevice) WebViewGoBack(webviewID string) error {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goBack", map[string]any{"id": webviewID})
+	_, err := d.agentCall("device.webview.goBack", map[string]any{"id": webviewID})
 	return err
 }
 
 func (d *IOSDevice) WebViewGoForward(webviewID string) error {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goForward", map[string]any{"id": webviewID})
+	_, err := d.agentCall("device.webview.goForward", map[string]any{"id": webviewID})
 	return err
 }
 
@@ -467,10 +65,6 @@ func (d *IOSDevice) WebViewContent(webviewID string) (string, error) {
 }
 
 func (d *IOSDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return nil, err
-	}
 	params := map[string]any{
 		"id":         webviewID,
 		"expression": ensureReturnExpression(expression),
@@ -478,7 +72,7 @@ func (d *IOSDevice) WebViewEvaluate(webviewID, expression string, args []any) (a
 	if len(args) > 0 {
 		params["args"] = args
 	}
-	raw, err := agentRequest(port, "device.webview.evaluate", params)
+	raw, err := d.agentCall("device.webview.evaluate", params)
 	if err != nil {
 		return nil, err
 	}
@@ -492,14 +86,10 @@ func (d *IOSDevice) WebViewEvaluate(webviewID, expression string, args []any) (a
 }
 
 func (d *IOSDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
-	port, err := d.ensureIOSDeviceAgentReady()
-	if err != nil {
-		return err
-	}
 	if timeoutMs <= 0 {
 		timeoutMs = 30_000
 	}
-	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", map[string]any{
+	_, err := d.agentCallWithTimeout("device.webview.waitForLoadState", map[string]any{
 		"id":      webviewID,
 		"state":   state,
 		"timeout": timeoutMs,
