@@ -1,3 +1,8 @@
+## [0.3.76](https://github.com/mobile-next/mobilecli/releases/tag/0.3.76) (2026-06-02)
+* Feat: Webview support for real iOS devices ([#246](https://github.com/mobile-next/mobilecli/pull/246))
+* Feat: Webview support for iOS simulators and Android real devices and emulators ([#244](https://github.com/mobile-next/mobilecli/pull/244))
+* Fix: Recover from panics in websocket handlers to prevent server crash ([#240](https://github.com/mobile-next/mobilecli/pull/240))
+
 ## [0.3.75](https://github.com/mobile-next/mobilecli/releases/tag/0.3.75) (2026-05-26)
 * General: File system support for ls, mkdir, rm, push, pull and get app path ([#228](https://github.com/mobile-next/mobilecli/pull/228))
 * General: Fix websocket timeouts after around 50-60 seconds ([#239](https://github.com/mobile-next/mobilecli/pull/239))
