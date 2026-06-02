@@ -1,5 +1,5 @@
 import {test, expect} from '@playwright/test';
-import {execFileSync} from 'child_process';
+import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -11,6 +11,11 @@ import {
 import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
 import type {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
+
+type Dimensions = {
+	width: number;
+	height: number;
+};
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 
@@ -51,6 +56,30 @@ test.describe('iOS Simulator Tests', () => {
 				test.skip(!simulatorId, 'simulator not found');
 
 				openUrl(simulatorId, 'https://example.com');
+			});
+
+			test.describe('screenrecord', () => {
+				test('should record with --time-limit 5 and produce a playable mp4', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
+					recordScreenWithTimeLimit(simulatorId, videoPath, 5);
+
+					verifyVideoIsPlayable(videoPath);
+					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+					fs.unlinkSync(videoPath);
+				});
+
+				test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
+					await recordScreenThenInterruptWithCtrlC(simulatorId, videoPath, 5);
+
+					verifyVideoIsPlayable(videoPath);
+					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+					fs.unlinkSync(videoPath);
+				});
 			});
 
 			test('should list all devices', async () => {
@@ -618,4 +647,88 @@ function writeTempFile(content: string): string {
 	const tmpPath = path.join(os.tmpdir(), `mobilecli-push-${Date.now()}.txt`);
 	fs.writeFileSync(tmpPath, content, 'utf8');
 	return tmpPath;
+}
+
+// screenrecord emits progress on stderr (not JSON on stdout), so it can't use
+// the JSON-parsing mobilecli() helper. these runners drive the binary directly
+// while keeping the GOCOVERDIR env so coverage data is still collected.
+function recordScreenWithTimeLimit(simulatorId: string, videoPath: string, timeLimitSeconds: number): void {
+	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+	const coverdata = createCoverageDirectory();
+	execFileSync(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--time-limit', String(timeLimitSeconds), '--output', videoPath], {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {...process.env, GOCOVERDIR: coverdata},
+	});
+}
+
+// records with no time limit, lets it run for recordSeconds, then sends SIGINT
+// (Ctrl-C). mobilecli is expected to catch the signal, finalize the mp4, and
+// exit cleanly. resolves once the process has fully exited.
+function recordScreenThenInterruptWithCtrlC(simulatorId: string, videoPath: string, recordSeconds: number): Promise<void> {
+	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+	const coverdata = createCoverageDirectory();
+	return new Promise((resolve, reject) => {
+		const child = spawn(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--output', videoPath], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: {...process.env, GOCOVERDIR: coverdata},
+		});
+
+		child.on('error', reject);
+		child.on('close', () => resolve());
+
+		setTimeout(() => child.kill('SIGINT'), recordSeconds * 1000);
+	});
+}
+
+// verifies the recording is a non-empty, well-formed mp4 that ffprobe can
+// decode and report real video dimensions for (a corrupt file makes ffprobe
+// exit non-zero, which throws and fails the test).
+function verifyVideoIsPlayable(videoPath: string): void {
+	expect(fs.existsSync(videoPath)).toBe(true);
+	expect(fs.statSync(videoPath).size).toBeGreaterThan(0);
+
+	const {width, height} = probeVideoDimensions(videoPath);
+	expect(width).toBeGreaterThan(0);
+	expect(height).toBeGreaterThan(0);
+}
+
+// the simulator records at native resolution, so the recording dimensions
+// should match what a screenshot reports.
+function verifyVideoMatchesScreenshotDimensions(videoPath: string, simulatorId: string): void {
+	const video = probeVideoDimensions(videoPath);
+	const screenshot = getScreenshotDimensions(simulatorId);
+	expect(video).toEqual(screenshot);
+}
+
+function probeVideoDimensions(videoPath: string): Dimensions {
+	const output = execFileSync('ffprobe', [
+		'-v', 'error',
+		'-select_streams', 'v:0',
+		'-show_entries', 'stream=width,height',
+		'-of', 'csv=s=x:p=0',
+		videoPath,
+	], {encoding: 'utf8'}).trim();
+
+	const [width, height] = output.split('x').map(Number);
+	return {width, height};
+}
+
+function getScreenshotDimensions(simulatorId: string): Dimensions {
+	const screenshotPath = path.join(os.tmpdir(), `mobilecli-screenshot-${Date.now()}.png`);
+	takeScreenshot(simulatorId, screenshotPath);
+	const dimensions = readPngDimensions(screenshotPath);
+	fs.unlinkSync(screenshotPath);
+	return dimensions;
+}
+
+// reads width/height straight from the PNG IHDR chunk (big-endian uint32 at
+// byte offsets 16 and 20) to avoid pulling in an image-decoding dependency.
+function readPngDimensions(pngPath: string): Dimensions {
+	const buffer = fs.readFileSync(pngPath);
+	return {
+		width: buffer.readUInt32BE(16),
+		height: buffer.readUInt32BE(20),
+	};
 }
