@@ -1060,8 +1060,9 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
 	cmd := exec.Command(getAdbPath(), args...)
 
-	// handle Ctrl+C: adb child gets SIGINT from process group automatically,
-	// which causes screenrecord to finalize the MP4 and exit.
+	// handle Ctrl+C / stop: signal the on-device screenrecord process so it
+	// finalizes the MP4. signaling the local adb client does not propagate to
+	// the remote process, which would leave the pulled file without a moov atom.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -1075,15 +1076,10 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 
 	select {
 	case <-sigChan:
-		// send SIGINT to child explicitly so it finalizes the MP4
-		if cmd.Process != nil {
-			_ = cmd.Process.Signal(syscall.SIGINT)
-		}
+		d.signalRemoteScreenRecord(remotePath)
 		<-done
 	case <-stopChan:
-		if cmd.Process != nil {
-			_ = cmd.Process.Signal(syscall.SIGINT)
-		}
+		d.signalRemoteScreenRecord(remotePath)
 		<-done
 	case <-done:
 	}
@@ -1102,6 +1098,28 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 	_, _ = d.runAdbCommand("shell", "rm", remotePath)
 
 	return nil
+}
+
+// signalRemoteScreenRecord sends SIGINT to the on-device screenrecord process
+// recording remotePath so it finalizes the MP4 (writes the moov atom) before
+// exiting. signaling the local adb client does not propagate to the remote
+// process, which would leave the pulled file corrupt.
+func (d *AndroidDevice) signalRemoteScreenRecord(remotePath string) {
+	out, err := d.runAdbCommand("shell", "pgrep", "-f", remotePath)
+	if err != nil {
+		utils.Verbose("failed to find remote screenrecord process: %v", err)
+		return
+	}
+
+	pids := strings.Fields(string(out))
+	if len(pids) == 0 {
+		utils.Verbose("no remote screenrecord process found for %s", remotePath)
+		return
+	}
+
+	if _, err := d.runAdbCommand(append([]string{"shell", "kill", "-INT"}, pids...)...); err != nil {
+		utils.Verbose("failed to signal remote screenrecord: %v", err)
+	}
 }
 
 func (d *AndroidDevice) installPackage(apkPath string) error {
