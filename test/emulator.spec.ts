@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import {test, expect} from '@playwright/test';
 import {execFileSync} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -25,166 +25,140 @@ function getFirstAndroidDevice(): Device | null {
 	}
 }
 
-describe('Android Emulator Tests', () => {
+test.describe('Android Emulator Tests', () => {
 	let device: Device | null;
 
-	before(function () {
+	test.beforeAll(() => {
 		device = getFirstAndroidDevice();
 		if (!device) {
 			console.log('No Android device found. See test/README.md for setup instructions.');
 		}
 	});
 
-	it('should take screenshot', function () {
-		if (!device) {
-			this.skip();
-			return;
-		}
-
-		this.timeout(30000);
+	test('should take screenshot', () => {
+		test.skip(!device, 'No Android device found');
 
 		const screenshotPath = `/tmp/screenshot-android-${Date.now()}.png`;
-		mobilecli(['screenshot', '--device', device.id, '--format', 'png', '--output', screenshotPath]);
+		mobilecli(['screenshot', '--device', device!.id, '--format', 'png', '--output', screenshotPath]);
 
 		const fileExists = fs.existsSync(screenshotPath);
-		expect(fileExists).to.be.true;
+		expect(fileExists).toBe(true);
 
 		const stats = fs.statSync(screenshotPath);
-		expect(stats.size).to.be.greaterThan(64 * 1024);
+		expect(stats.size).toBeGreaterThan(64 * 1024);
 	});
 
-	it('should open URL https://example.com', function () {
-		if (!device) {
-			this.skip();
-			return;
-		}
+	test('should open URL https://example.com', () => {
+		test.skip(!device, 'No Android device found');
 
-		this.timeout(30000);
-
-		mobilecli(['url', 'https://example.com', '--device', device.id]);
+		mobilecli(['url', 'https://example.com', '--device', device!.id]);
 	});
 
-	it('should get device info', function () {
-		if (!device) {
-			this.skip();
-			return;
-		}
+	test('should get device info', () => {
+		test.skip(!device, 'No Android device found');
 
-		this.timeout(30000);
-
-		mobilecli(['device', 'info', '--device', device.id]);
+		mobilecli(['device', 'info', '--device', device!.id]);
 	});
 
-	describe('fs operations on /sdcard/Download', () => {
+	test.describe('fs operations on /sdcard/Download', () => {
 		const remoteDir = '/sdcard/Download/mobilecli-test';
 		const remoteFile = `${remoteDir}/hello.txt`;
 
-		it('should create a nested directory with mkdir -p', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should create a nested directory with mkdir -p', () => {
+			test.skip(!device, 'No Android device found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
-		it('should push a file into /sdcard/Download', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should push a file into /sdcard/Download', () => {
+			test.skip(!device, 'No Android device found');
 			const localFile = writeTempFile('hello from mobilecli');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
-		it('should list the pushed file in /sdcard/Download', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should list the pushed file in /sdcard/Download', () => {
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
-			expect(names).to.include('hello.txt');
+			expect(names).toContain('hello.txt');
 		});
 
-		it('should pull the file back and verify contents match', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should pull the file back and verify contents match', () => {
+			test.skip(!device, 'No Android device found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
-			expect(contents.trim()).to.equal('hello from mobilecli');
+			expect(contents.trim()).toBe('hello from mobilecli');
 			fs.unlinkSync(localDest);
 		});
 
-		it('should remove the test directory recursively', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should remove the test directory recursively', () => {
+			test.skip(!device, 'No Android device found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, '/sdcard/Download');
 			const names = entries.map((e: any) => e.name);
-			expect(names).to.not.include('mobilecli-test');
+			expect(names).not.toContain('mobilecli-test');
 		});
 	});
 
-	describe('fs operations on app container (com.mobilenext.playground)', () => {
+	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
 		const packageName = 'com.mobilenext.playground';
 		let containerPath: string;
 		let remoteDir: string;
 		let remoteFile: string;
 
-		before(function () {
+		test.beforeAll(() => {
 			if (!device) return;
-			containerPath = getAppContainerPath(device!.id, packageName);
+			containerPath = getAppContainerPath(device.id, packageName);
 			remoteDir = `${containerPath}/files/mobilecli-test`;
 			remoteFile = `${remoteDir}/data.txt`;
 		});
 
-		it('should return a valid container path for com.mobilenext.playground', function () {
-			if (!device) { this.skip(); return; }
-			expect(containerPath).to.match(/^\/data\/user\/\d+\/com\.mobilenext\.playground/);
+		test('should return a valid container path for com.mobilenext.playground', () => {
+			test.skip(!device, 'No Android device found');
+			expect(containerPath).toMatch(/^\/data\/user\/\d+\/com\.mobilenext\.playground/);
 		});
 
-		it('should list the app container root', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should list the app container root', () => {
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, containerPath);
-			expect(entries).to.be.an('array');
+			expect(Array.isArray(entries)).toBe(true);
 		});
 
-		it('should create a directory inside the app container', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should create a directory inside the app container', () => {
+			test.skip(!device, 'No Android device found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
-		it('should push a file into the app container', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should push a file into the app container', () => {
+			test.skip(!device, 'No Android device found');
 			const localFile = writeTempFile('app container test');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
-		it('should list the file inside the app container', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should list the file inside the app container', () => {
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
-			expect(names).to.include('data.txt');
+			expect(names).toContain('data.txt');
 		});
 
-		it('should pull the file from the app container and verify contents', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should pull the file from the app container and verify contents', () => {
+			test.skip(!device, 'No Android device found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
-			expect(contents.trim()).to.equal('app container test');
+			expect(contents.trim()).toBe('app container test');
 			fs.unlinkSync(localDest);
 		});
 
-		it('should remove the test directory from the app container', function () {
-			if (!device) { this.skip(); return; }
-			this.timeout(30000);
+		test('should remove the test directory from the app container', () => {
+			test.skip(!device, 'No Android device found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, `${containerPath}/files`);
 			const names = entries.map((e: any) => e.name);
-			expect(names).to.not.include('mobilecli-test');
+			expect(names).not.toContain('mobilecli-test');
 		});
 	});
 });
@@ -216,13 +190,13 @@ function mobilecliJson(args: string[]): any {
 
 function getAppContainerPath(deviceId: string, packageName: string): string {
 	const response = mobilecliJson(['apps', 'path', packageName, '--device', deviceId]);
-	expect(response.status).to.equal('ok');
+	expect(response.status).toBe('ok');
 	return response.data.path;
 }
 
 function fsList(deviceId: string, remotePath: string): any[] {
 	const response = mobilecliJson(['fs', 'ls', '--device', deviceId, remotePath]);
-	expect(response.status).to.equal('ok');
+	expect(response.status).toBe('ok');
 	return response.data;
 }
 
