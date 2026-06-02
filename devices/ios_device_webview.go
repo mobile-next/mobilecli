@@ -14,11 +14,8 @@ import (
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
-	"github.com/danielpaulus/go-ios/ios/installationproxy"
-	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/mobile-next/mobilecli/agents"
 	iosutil "github.com/mobile-next/mobilecli/devices/ios"
-	"github.com/mobile-next/mobilecli/devices/ios/debuggertools"
 	"github.com/mobile-next/mobilecli/devices/ios/debugserver"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -27,12 +24,12 @@ import (
 // Real iOS device WebView support.
 //
 // Unlike the simulator path (ios_webview.go), a real device cannot have a dylib
-// injected directly. Instead we attach to the foreground app via the CoreDevice
-// debug proxy (go-ios) and, through LLDB, evaluate an ObjC expression that binds
-// a TCP socket inside the app and runs a tiny HTTP/JSON-RPC server. We then
-// forward a local port to that server and speak the same agent protocol used by
-// the simulator and Android paths (agentRequest / WebViewInfo, defined in
-// android_webview.go).
+// injected directly. Instead we ask WDA for the foreground app (bundleID + pid),
+// attach to it via the CoreDevice debug proxy (go-ios) and, through LLDB,
+// evaluate an ObjC expression that binds a TCP socket inside the app and runs a
+// tiny HTTP/JSON-RPC server. We then forward a local port to that server and
+// speak the same agent protocol used by the simulator and Android paths
+// (agentRequest / WebViewInfo, defined in android_webview.go).
 //
 // Everything device-specific lives in this file so it never conflicts with the
 // shared simulator/Android webview code.
@@ -68,118 +65,6 @@ func iosDeviceDebugProxyPort(device goios.DeviceEntry) (int, error) {
 		return 0, fmt.Errorf("com.apple.internal.dt.remote.debugproxy not in RSD")
 	}
 	return p, nil
-}
-
-type userApp struct {
-	pid      int
-	bundleID string
-	teamID   string
-}
-
-// userApps returns all currently running user-installed apps (PID + bundle ID),
-// using installationproxy + instruments, with no WDA dependency.
-func (d *IOSDevice) userApps(device goios.DeviceEntry) ([]userApp, error) {
-	utils.Verbose("connecting to installationproxy")
-	svc, err := installationproxy.New(device)
-	if err != nil {
-		return nil, fmt.Errorf("installationproxy: %w", err)
-	}
-	defer svc.Close()
-
-	utils.Verbose("browsing user apps")
-	apps, err := svc.BrowseUserApps()
-	if err != nil {
-		return nil, fmt.Errorf("browse user apps: %w", err)
-	}
-	utils.Verbose("found %d installed user apps", len(apps))
-	execToBundleID := map[string]string{}
-	for _, app := range apps {
-		execToBundleID[app.CFBundleExecutable()] = app.CFBundleIdentifier()
-	}
-
-	utils.Verbose("connecting to instruments device info service")
-	infoSvc, err := instruments.NewDeviceInfoService(device)
-	if err != nil {
-		return nil, fmt.Errorf("device info service: %w", err)
-	}
-	defer infoSvc.Close()
-
-	utils.Verbose("fetching process list")
-	processes, err := infoSvc.ProcessList()
-	if err != nil {
-		return nil, fmt.Errorf("process list: %w", err)
-	}
-	utils.Verbose("got %d processes", len(processes))
-
-	// also build a map from bundleID to teamIdentifier
-	bundleToTeam := map[string]string{}
-	for _, app := range apps {
-		if tid, ok := app["TeamIdentifier"].(string); ok {
-			bundleToTeam[app.CFBundleIdentifier()] = tid
-		}
-	}
-
-	var result []userApp
-	for _, p := range processes {
-		if bid, ok := execToBundleID[p.Name]; ok {
-			result = append(result, userApp{pid: int(p.Pid), bundleID: bid, teamID: bundleToTeam[bid]})
-		}
-	}
-	utils.Verbose("found %d running user apps", len(result))
-	return result, nil
-}
-
-// findForegroundApp finds the foreground user app by attaching to each candidate
-// via the CoreDevice debug proxy and checking UIApplicationState via ObjC runtime.
-func (d *IOSDevice) findForegroundApp(device goios.DeviceEntry, apps []userApp) (*userApp, error) {
-	if !device.SupportsRsd() {
-		return nil, fmt.Errorf("device does not support RSD")
-	}
-	proxyPort := device.Rsd.GetPort("com.apple.internal.dt.remote.debugproxy")
-	if proxyPort == 0 {
-		return nil, fmt.Errorf("com.apple.internal.dt.remote.debugproxy not in RSD")
-	}
-	utils.Verbose("debug proxy port: %d", proxyPort)
-
-	for i := range apps {
-		app := &apps[i]
-		utils.Verbose("checking app %s (pid %d)", app.bundleID, app.pid)
-		conn, err := goios.ConnectTUNDevice(device.Address, proxyPort, device)
-		if err != nil {
-			utils.Verbose("connect to debug proxy for %s: %v", app.bundleID, err)
-			continue
-		}
-		gdb := debugserver.NewGDBServer(conn)
-		utils.Verbose("attaching to pid %d", app.pid)
-		resp, err := gdb.Request(fmt.Sprintf("vAttach;%x", app.pid))
-		if err != nil || !strings.HasPrefix(resp, "T") {
-			utils.Verbose("attach to pid %d failed: err=%v resp=%q", app.pid, err, resp)
-			conn.Close()
-			continue
-		}
-		utils.Verbose("attached to pid %d, checking UIApplicationState", app.pid)
-		rt, err := debuggertools.NewObjCRuntime(gdb)
-		if err != nil {
-			utils.Verbose("ObjCRuntime for pid %d: %v", app.pid, err)
-			gdb.Request(fmt.Sprintf("D;%x", app.pid)) //nolint:errcheck
-			conn.Close()
-			continue
-		}
-		appInst, err := rt.ClassCall("UIApplication", "sharedApplication")
-		var state uint64
-		if err == nil {
-			state, _ = rt.Call(appInst, "applicationState")
-		}
-		rt.Cleanup()
-		gdb.Request(fmt.Sprintf("D;%x", app.pid)) //nolint:errcheck
-		conn.Close()
-		utils.Verbose("pid %d (%s) applicationState=%d", app.pid, app.bundleID, state)
-		if err == nil && state == 0 {
-			utils.Verbose("foreground app: %s (pid %d)", app.bundleID, app.pid)
-			return app, nil
-		}
-	}
-	return nil, fmt.Errorf("no foreground user app found — is an app open?")
 }
 
 // iosDeviceAgentPort is the fixed device-side TCP port the injected agent binds
@@ -450,24 +335,24 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	}
 	utils.Verbose("debug proxy port from RSD: %d", proxyPort)
 
-	utils.Verbose("listing running user apps")
-	apps, err := d.userApps(device)
-	if err != nil {
-		return 0, err
-	}
-	if len(apps) == 0 {
-		return 0, fmt.Errorf("no user app running — open an app first")
+	// ensure the devicekit/WDA agent is up (tunnel + :8100 forward + launch);
+	// idempotent, and required for the foreground-app lookup below.
+	if err := d.StartAgent(StartAgentConfig{}); err != nil {
+		return 0, fmt.Errorf("start device agent (WDA): %w", err)
 	}
 
-	utils.Verbose("finding foreground app among %d candidates", len(apps))
-	foreground, err := d.findForegroundApp(device, apps)
+	utils.Verbose("getting foreground app via WDA")
+	activeApp, err := d.wdaClient.GetActiveAppInfo()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("get foreground app: %w", err)
+	}
+	if activeApp.ProcessID == 0 {
+		return 0, fmt.Errorf("no foreground app (pid 0) — open an app first")
 	}
 
-	utils.Verbose("injecting agent into %s (pid %d) via LLDB", foreground.bundleID, foreground.pid)
+	utils.Verbose("injecting agent into %s (pid %d) via LLDB", activeApp.BundleID, activeApp.ProcessID)
 	// start a local TCP proxy so LLDB can reach the device debug proxy
-	lldbProxyPort, cancelProxy, err := startLLDBProxy(device, proxyPort, foreground.pid)
+	lldbProxyPort, cancelProxy, err := startLLDBProxy(device, proxyPort, activeApp.ProcessID)
 	if err != nil {
 		return 0, fmt.Errorf("start lldb proxy: %w", err)
 	}
