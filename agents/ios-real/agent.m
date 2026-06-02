@@ -29,6 +29,7 @@ extern int accept(int, struct __sockaddr *, __socklen_t *);
 extern long recv(int, void *, unsigned long, int);
 extern long send(int, const void *, unsigned long, int);
 extern int close(int);
+extern int *__error(void); // Darwin errno is (*__error())
 extern __in_port_t htons(__in_port_t);
 extern __in_addr_t htonl(__in_addr_t);
 extern void *memset(void *, int, unsigned long);
@@ -238,8 +239,20 @@ if (__port > 0) {
                 if (!resp) resp = [@"{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}" dataUsingEncoding:NSUTF8StringEncoding];
                 NSString *hdrs = [NSString stringWithFormat:@"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\nConnection: close\r\n\r\n", (unsigned long)resp.length];
                 NSData *hdrData = [hdrs dataUsingEncoding:NSASCIIStringEncoding];
-                send(cfd, hdrData.bytes, hdrData.length, 0);
-                send(cfd, resp.bytes, resp.length, 0);
+                // send() can short-write (notably on EINTR); loop until the full
+                // header + body is written, advancing via unsigned char* arithmetic.
+                BOOL (^__sendAll)(const void *, unsigned long) = ^BOOL(const void *b, unsigned long n) {
+                    const unsigned char *p = (const unsigned char *)b;
+                    unsigned long left = n;
+                    while (left > 0) {
+                        long w = send(cfd, p, left, 0);
+                        if (w > 0) { p += w; left -= (unsigned long)w; }
+                        else if (w < 0 && (*__error()) == 4 /* EINTR */) { continue; }
+                        else { return NO; }
+                    }
+                    return YES;
+                };
+                if (__sendAll(hdrData.bytes, hdrData.length)) __sendAll(resp.bytes, resp.length);
                 close(cfd);
             });
         }
