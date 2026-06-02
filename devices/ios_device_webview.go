@@ -380,16 +380,18 @@ func injectServerViaLLDB(localProxyPort int) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
-// findFreeLocalPort returns the first available local TCP port in the given range.
-func findFreeLocalPort(start, end int) (int, error) {
-	for p := start; p <= end; p++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
-		if err == nil {
-			ln.Close()
-			return p, nil
-		}
+// freeLocalPort asks the kernel for an unused local TCP port (bind :0, read it
+// back, release it). Only the device-side agent port is fixed
+// (iosDeviceAgentPort, for cross-run reuse discovery); the local end of the
+// forward is ephemeral and lives only for this process, so we let the OS pick
+// it. (go-ios's forward.Forward rejects a literal port 0, so we grab one here.)
+func freeLocalPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
 	}
-	return 0, fmt.Errorf("no free port in range %d-%d", start, end)
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
 // findRunningDeviceAgent checks whether an agent from a previous injection is
@@ -402,7 +404,7 @@ func findFreeLocalPort(start, end int) (int, error) {
 // foreground app changed since the last injection but the previous app is still
 // running, this may talk to that previous app's agent.
 func (d *IOSDevice) findRunningDeviceAgent() (int, bool) {
-	localPort, err := findFreeLocalPort(iosDeviceAgentPort, iosDeviceAgentPort+99)
+	localPort, err := freeLocalPort()
 	if err != nil {
 		return 0, false
 	}
@@ -478,7 +480,7 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	}
 	utils.Verbose("agent started on device port %d", devicePort)
 
-	localPort, err := findFreeLocalPort(iosDeviceAgentPort, iosDeviceAgentPort+99)
+	localPort, err := freeLocalPort()
 	if err != nil {
 		return 0, err
 	}
