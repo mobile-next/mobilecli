@@ -1,5 +1,5 @@
 import {test, expect} from '@playwright/test';
-import {execFileSync} from 'child_process';
+import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -13,6 +13,11 @@ type Device = {
 	type: string;
 	version: string;
 	state: string;
+};
+
+type Dimensions = {
+	width: number;
+	height: number;
 };
 
 function getFirstAndroidDevice(): Device | null {
@@ -46,6 +51,28 @@ test.describe('Android Emulator Tests', () => {
 
 		const stats = fs.statSync(screenshotPath);
 		expect(stats.size).toBeGreaterThan(64 * 1024);
+	});
+
+	test.describe('screenrecord', () => {
+		test('should record with --time-limit 5 and produce a playable mp4', () => {
+			test.skip(!device, 'No Android device found');
+
+			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
+			mobilecli(['screenrecord', '--device', device!.id, '--time-limit', '5', '--output', videoPath]);
+
+			assertVideoIsPlayable(videoPath);
+			fs.unlinkSync(videoPath);
+		});
+
+		test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
+			test.skip(!device, 'No Android device found');
+
+			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
+			await recordThenInterruptWithCtrlC(device!.id, videoPath, 5);
+
+			assertVideoIsPlayable(videoPath);
+			fs.unlinkSync(videoPath);
+		});
 	});
 
 	test('should open URL https://example.com', () => {
@@ -214,6 +241,47 @@ function fsMkdir(deviceId: string, remotePath: string, parents: boolean): void {
 
 function fsRm(deviceId: string, remotePath: string, recursive: boolean): void {
 	mobilecli(['fs', 'rm', '--device', deviceId, ...(recursive ? ['-r'] : []), remotePath]);
+}
+
+// records the screen with no time limit, lets it run for recordSeconds, then
+// sends SIGINT (Ctrl-C). mobilecli is expected to catch the signal, finalize
+// the mp4, and exit cleanly. resolves once the process has fully exited.
+function recordThenInterruptWithCtrlC(deviceId: string, outputPath: string, recordSeconds: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const child = spawn(mobilecliBinary, ['screenrecord', '--device', deviceId, '--output', outputPath], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+		});
+
+		child.on('error', reject);
+		child.on('close', () => resolve());
+
+		setTimeout(() => child.kill('SIGINT'), recordSeconds * 1000);
+	});
+}
+
+// verifies the recording is a non-empty, well-formed mp4 that ffprobe can
+// decode and report real video dimensions for (a corrupt file makes ffprobe
+// exit non-zero, which throws and fails the test).
+function assertVideoIsPlayable(videoPath: string): void {
+	expect(fs.existsSync(videoPath)).toBe(true);
+	expect(fs.statSync(videoPath).size).toBeGreaterThan(0);
+
+	const {width, height} = probeVideoDimensions(videoPath);
+	expect(width).toBeGreaterThan(0);
+	expect(height).toBeGreaterThan(0);
+}
+
+function probeVideoDimensions(videoPath: string): Dimensions {
+	const output = execFileSync('ffprobe', [
+		'-v', 'error',
+		'-select_streams', 'v:0',
+		'-show_entries', 'stream=width,height',
+		'-of', 'csv=s=x:p=0',
+		videoPath,
+	], {encoding: 'utf8'}).trim();
+
+	const [width, height] = output.split('x').map(Number);
+	return {width, height};
 }
 
 function writeTempFile(content: string): string {
