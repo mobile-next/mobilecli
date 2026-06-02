@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import {test, expect} from '@playwright/test';
 import {spawn} from 'child_process';
 import type {ChildProcess} from 'child_process';
 import * as path from 'path';
@@ -24,53 +24,51 @@ const createCoverageDirectory = (): string => {
 	return dir;
 }
 
-describe('server jsonrpc', () => {
+test.describe('server jsonrpc', () => {
 	// Start server before all tests
-	before(async function () {
-		this.timeout(SERVER_TIMEOUT + 2000);
-
+	test.beforeAll(async () => {
 		await startTestServer();
 		await waitForServer(TEST_SERVER_URL, SERVER_TIMEOUT);
 	});
 
 	// Stop server after all tests
-	after(() => {
+	test.afterAll(() => {
 		stopTestServer();
 	});
 
-	it('should return status "ok" for root endpoint', async () => {
+	test('should return status "ok" for root endpoint', async () => {
 		const response = await fetch(TEST_SERVER_URL);
 
-		expect(response.status).to.equal(200);
-		expect(await response.json()).to.have.property('status', 'ok');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toHaveProperty('status', 'ok');
 	});
 
-	it('GET should return 405 Method Not Allowed for /rpc endpoint', async () => {
+	test('GET should return 405 Method Not Allowed for /rpc endpoint', async () => {
 		const response = await fetch(`${TEST_SERVER_URL}/rpc`);
-		expect(response.status).to.equal(405);
+		expect(response.status).toBe(405);
 	});
 
-	it('Empty POST body should return parse error', async () => {
+	test('Empty POST body should return parse error', async () => {
 		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: ''
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.jsonrpc).to.equal('2.0');
-		expect(jsonResp.error).to.not.be.null;
-		expect(jsonResp.error).to.not.be.undefined;
+		expect(jsonResp.jsonrpc).toBe('2.0');
+		expect(jsonResp.error).toBeDefined();
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeParseError);
-			expect(jsonResp.error.data).to.equal('expecting jsonrpc payload');
+			expect(jsonResp.error.code).toBe(ErrCodeParseError);
+			expect(jsonResp.error.data).toBe('expecting jsonrpc payload');
 		}
 	});
 
-	it('Invalid jsonrpc version should return error', async () => {
+	test('Invalid jsonrpc version should return error', async () => {
 		const payload = {
 			jsonrpc: '0.1',
 			method: 'devices',
@@ -84,15 +82,15 @@ describe('server jsonrpc', () => {
 		});
 		const data: JSONRPCResponse = await response.json();
 
-		expect(response.status).to.equal(200);
-		expect(data.jsonrpc).to.equal('2.0');
-		expect(data.error).to.not.be.null;
-		expect(data.error).to.not.be.undefined;
-		expect(data.error!.code).to.equal(ErrCodeInvalidRequest);
-		expect(data.error!.data).to.equal("'jsonrpc' must be '2.0'");
+		expect(response.status).toBe(200);
+		expect(data.jsonrpc).toBe('2.0');
+		expect(data.error).toBeDefined();
+		expect(data.error).not.toBeNull();
+		expect(data.error!.code).toBe(ErrCodeInvalidRequest);
+		expect(data.error!.data).toBe("'jsonrpc' must be '2.0'");
 	});
 
-	it('Missing id field should return error', async () => {
+	test('Missing id field should return error', async () => {
 		const payload = {
 			jsonrpc: '2.0',
 			method: 'devices',
@@ -105,20 +103,20 @@ describe('server jsonrpc', () => {
 			body: JSON.stringify(payload)
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.jsonrpc).to.equal('2.0');
-		expect(jsonResp.error).to.not.be.null;
-		expect(jsonResp.error).to.not.be.undefined;
+		expect(jsonResp.jsonrpc).toBe('2.0');
+		expect(jsonResp.error).toBeDefined();
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeInvalidRequest);
-			expect(jsonResp.error.data).to.equal("'id' field is required");
+			expect(jsonResp.error.code).toBe(ErrCodeInvalidRequest);
+			expect(jsonResp.error.data).toBe("'id' field is required");
 		}
 	});
 
-	it('should require params for device_info method', async () => {
+	test('should require params for device_info method', async () => {
 		const payload: JSONRPCRequest = {
 			jsonrpc: '2.0',
 			method: 'device.info',
@@ -131,20 +129,20 @@ describe('server jsonrpc', () => {
 			body: JSON.stringify(payload)
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.jsonrpc).to.equal('2.0');
-		expect(jsonResp.id).to.equal(1);
-		expect(jsonResp.error).to.not.be.null;
+		expect(jsonResp.jsonrpc).toBe('2.0');
+		expect(jsonResp.id).toBe(1);
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeServerError);
-			expect(jsonResp.error.data).to.equal("'params' is required with fields: deviceId");
+			expect(jsonResp.error.code).toBe(ErrCodeServerError);
+			expect(jsonResp.error.data).toBe("'params' is required with fields: deviceId");
 		}
 	});
 
-	it('should return method not found error for unknown methods', async () => {
+	test('should return method not found error for unknown methods', async () => {
 		const payload: JSONRPCRequest = {
 			jsonrpc: '2.0',
 			method: 'unknown_method',
@@ -157,17 +155,17 @@ describe('server jsonrpc', () => {
 			body: JSON.stringify(payload)
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.error).to.not.be.null;
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeMethodNotFound);
+			expect(jsonResp.error.code).toBe(ErrCodeMethodNotFound);
 		}
 	});
 
-	it('should return error when method field is missing', async () => {
+	test('should return error when method field is missing', async () => {
 		const payload = {
 			jsonrpc: '2.0',
 			id: 1
@@ -180,15 +178,15 @@ describe('server jsonrpc', () => {
 		});
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.error).to.not.be.null;
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeServerError);
-			expect(jsonResp.error.data).to.equal("'method' is required");
+			expect(jsonResp.error.code).toBe(ErrCodeServerError);
+			expect(jsonResp.error.data).toBe("'method' is required");
 		}
 	});
 
-	it('should handle invalid JSON gracefully', async () => {
+	test('should handle invalid JSON gracefully', async () => {
 		const invalidJson = '{invalid json}';
 
 		const response = await fetch(`${TEST_SERVER_URL}/rpc`, {
@@ -197,17 +195,17 @@ describe('server jsonrpc', () => {
 			body: invalidJson
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.error).to.not.be.null;
+		expect(jsonResp.error).not.toBeNull();
 
 		if (jsonResp.error) {
-			expect(jsonResp.error.code).to.equal(ErrCodeParseError);
+			expect(jsonResp.error.code).toBe(ErrCodeParseError);
 		}
 	});
 
-	it('should return error for empty method string', async () => {
+	test('should return error for empty method string', async () => {
 		const payload: JSONRPCRequest = {
 			jsonrpc: '2.0',
 			method: '',
@@ -220,10 +218,10 @@ describe('server jsonrpc', () => {
 			body: JSON.stringify(payload)
 		});
 
-		expect(response.status).to.equal(200);
+		expect(response.status).toBe(200);
 
 		const jsonResp: JSONRPCResponse = await response.json();
-		expect(jsonResp.error).to.not.be.null;
+		expect(jsonResp.error).not.toBeNull();
 	});
 });
 
