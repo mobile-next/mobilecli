@@ -682,8 +682,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }
@@ -707,8 +707,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }
@@ -784,8 +784,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }
@@ -814,8 +814,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }
@@ -844,8 +844,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -874,8 +874,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -917,8 +917,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -948,8 +948,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -978,8 +978,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -1014,8 +1014,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": { "type": "string" }
         },
         {
@@ -1050,8 +1050,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }
@@ -1094,8 +1094,8 @@
       "params": [
         {
           "name": "deviceId",
-          "description": "ID of the target device (optional - will auto-select if not provided)",
-          "required": false,
+          "description": "ID of the target device",
+          "required": true,
           "schema": {
             "type": "string"
           }

@@ -66,7 +66,7 @@ Clears all data (cache, preferences, databases) for an application without unins
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` | ✓ | Bundle identifier (iOS) or package name (Android) of the application to clear |
 
 #### Response
@@ -100,7 +100,7 @@ Returns the currently foreground (active) application on the specified device
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 
 #### Response
 
@@ -210,7 +210,7 @@ Returns a list of installed applications on the specified device
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 
 #### Response
 
@@ -242,7 +242,7 @@ Returns the on-device path to an app's data container. Currently supported on An
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` | ✓ | Bundle identifier (iOS) or package name (Android) of the application |
 
 #### Response
@@ -310,7 +310,7 @@ Uninstalls an application from the specified device by its bundle/package ID
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` | ✓ | Bundle identifier (iOS) or package name (Android) of the application to uninstall |
 
 #### Response
@@ -376,7 +376,7 @@ Returns the full content of a specific crash report by ID. The ID is obtained fr
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `id` | `string` | ✓ | Crash report ID (from device.crashes.list) |
 
 #### Response
@@ -410,7 +410,7 @@ Returns a list of crash reports from the specified device. Supports iOS real dev
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 
 #### Response
 
@@ -476,7 +476,7 @@ Lists files and directories at a given path on the device, or in an app's contai
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` |  | Bundle identifier to list files inside an app's container |
 | `remotePath` | `string` |  | Absolute path on the device to list. Defaults to device root if omitted. |
 
@@ -512,7 +512,7 @@ Creates a directory at the specified path on the device or in an app's container
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` |  | Bundle identifier to create directory inside an app's container |
 | `remotePath` | `string` | ✓ | Absolute path of the directory to create |
 | `parents` | `boolean` |  | Create parent directories as needed (like mkdir -p) |
@@ -550,7 +550,7 @@ Downloads a file from the device and returns its contents as base64. Maximum fil
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `remotePath` | `string` | ✓ | Absolute path of the file on the device |
 
 #### Response
@@ -584,7 +584,7 @@ Uploads a file to the device from base64-encoded content. Maximum file size is 1
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `remotePath` | `string` | ✓ | Absolute destination path on the device |
 | `content` | `string` | ✓ | Base64-encoded file contents to write. Maximum decoded size is 1 MB. |
 
@@ -620,7 +620,7 @@ Removes a file or directory at the specified path on the device or in an app's c
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `deviceId` | `string` |  | ID of the target device (optional - will auto-select if not provided) |
+| `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` |  | Bundle identifier to remove files inside an app's container |
 | `remotePath` | `string` | ✓ | Absolute path of the file or directory to remove |
 | `recursive` | `boolean` |  | Remove directories and their contents recursively (like rm -rf) |
