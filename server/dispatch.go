@@ -45,6 +45,8 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.webview.reload":           handleWebViewReload,
 		"device.webview.goBack":           handleWebViewGoBack,
 		"device.webview.goForward":        handleWebViewGoForward,
+		"device.webview.url":              handleWebViewURL,
+		"device.webview.title":            handleWebViewTitle,
 		"device.webview.query":            handleWebViewQuery,
 		"device.webview.evaluate":         handleWebViewEvaluate,
 		"device.webview.waitForLoadState": handleWebViewWaitForLoadState,

@@ -172,6 +172,31 @@ func handleWebViewContent(params json.RawMessage) (any, error) {
 	}))
 }
 
+// evaluateFixedExpression runs a constant JS expression against a webview,
+// used by handlers that are convenience wrappers around evaluate (url, title).
+func evaluateFixedExpression(params json.RawMessage, expression string) (any, error) {
+	p, err := unmarshal[WebViewParams](params)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireWebViewParams(p.DeviceID, p.WebViewID); err != nil {
+		return nil, err
+	}
+	return resultOf(commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
+		DeviceID:   p.DeviceID,
+		WebViewID:  p.WebViewID,
+		Expression: expression,
+	}))
+}
+
+func handleWebViewURL(params json.RawMessage) (any, error) {
+	return evaluateFixedExpression(params, "return location.href")
+}
+
+func handleWebViewTitle(params json.RawMessage) (any, error) {
+	return evaluateFixedExpression(params, "return document.title")
+}
+
 func handleWebViewQuery(params json.RawMessage) (any, error) {
 	p, err := unmarshal[WebViewQueryParams](params)
 	if err != nil {
