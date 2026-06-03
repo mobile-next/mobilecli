@@ -1,3 +1,7 @@
+## [0.3.77](https://github.com/mobile-next/mobilecli/releases/tag/0.3.77) (2026-06-03)
+* Feat: Add device.webview.url and device.webview.title JSON-RPC methods ([#251](https://github.com/mobile-next/mobilecli/pull/251))
+* Fix: Finalize android screenrecord mp4 on ctrl-c by signaling on-device process ([#249](https://github.com/mobile-next/mobilecli/pull/249))
+
 ## [0.3.76](https://github.com/mobile-next/mobilecli/releases/tag/0.3.76) (2026-06-02)
 * Feat: Webview support for real iOS devices ([#246](https://github.com/mobile-next/mobilecli/pull/246))
 * Feat: Webview support for iOS simulators and Android real devices and emulators ([#244](https://github.com/mobile-next/mobilecli/pull/244))
