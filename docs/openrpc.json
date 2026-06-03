@@ -1,0 +1,1855 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "Mobile CLI Server API",
+    "description": "JSON-RPC API for mobile device automation and control",
+    "version": "0.0.1"
+  },
+  "methods": [
+    {
+      "name": "devices.list",
+      "summary": "List all connected devices",
+      "description": "Returns a list of all connected mobile devices (iOS and Android)",
+      "params": [
+        {
+          "name": "includeOffline",
+          "description": "Include offline devices in the list",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "platform",
+          "description": "Filter devices by platform (ios or android)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ]
+          }
+        },
+        {
+          "name": "type",
+          "description": "Filter devices by type (device or simulator)",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "devices",
+        "description": "List of connected devices",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Device"
+          }
+        }
+      }
+    },
+    {
+      "name": "device.screenshot",
+      "summary": "Take a screenshot of a device",
+      "description": "Captures a screenshot from the specified device and returns it as base64 data",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "format",
+          "description": "Image format (png or jpeg)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg"
+            ],
+            "default": "png"
+          }
+        },
+        {
+          "name": "quality",
+          "description": "Image quality (1-100, only used for JPEG)",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "clip",
+          "description": "Optional rectangle to crop the screenshot to, in screen coordinates",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/Rect"
+          }
+        }
+      ],
+      "result": {
+        "name": "screenshot",
+        "description": "Screenshot data",
+        "schema": {
+          "$ref": "#/components/schemas/ScreenshotResult"
+        }
+      }
+    },
+    {
+      "name": "device.screencapture",
+      "summary": "Start screen capture streaming",
+      "description": "Starts screen capture streaming for the specified device. Supports MJPEG (iOS and Android) and AVC/H.264 (Android only) formats.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "format",
+          "description": "Video format - 'mjpeg' for MJPEG stream (iOS and Android) or 'avc' for H.264 stream (Android only)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "mjpeg",
+              "avc"
+            ],
+            "default": "mjpeg"
+          }
+        },
+        {
+          "name": "quality",
+          "description": "Video quality (only used for MJPEG format)",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "scale",
+          "description": "Video scale factor",
+          "required": false,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "name": "stream",
+        "description": "Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "device.io.tap",
+      "summary": "Perform tap gesture",
+      "description": "Performs a tap gesture at the specified coordinates on the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate for the tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate for the tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.longpress",
+      "summary": "Perform long press gesture",
+      "description": "Performs a long press gesture at the specified coordinates on the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate for the long press",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate for the long press",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the long press in milliseconds",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 500
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.text",
+      "summary": "Input text",
+      "description": "Inputs the specified text on the device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to input",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.button",
+      "summary": "Press device button",
+      "description": "Presses a physical or virtual button on the device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "button",
+          "description": "Button to press",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.gesture",
+      "summary": "Perform custom gesture",
+      "description": "Performs a custom gesture with multiple actions on the device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "actions",
+          "description": "List of gesture actions to perform",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.url",
+      "summary": "Open URL",
+      "description": "Opens the specified URL on the device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "url",
+          "description": "URL to open",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.swipe",
+      "summary": "Perform swipe gesture",
+      "description": "Performs a swipe gesture from one coordinate to another on the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "x1",
+          "description": "Starting X coordinate",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y1",
+          "description": "Starting Y coordinate",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "x2",
+          "description": "Ending X coordinate",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y2",
+          "description": "Ending Y coordinate",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.info",
+      "summary": "Get device information",
+      "description": "Returns detailed information about the specified device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "deviceInfo",
+        "description": "Device information",
+        "schema": {
+          "$ref": "#/components/schemas/DeviceInfo"
+        }
+      }
+    },
+    {
+      "name": "device.io.orientation.get",
+      "summary": "Get device orientation",
+      "description": "Returns the current orientation of the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "orientation",
+        "description": "Current device orientation",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.io.orientation.set",
+      "summary": "Set device orientation",
+      "description": "Sets the orientation of the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "orientation",
+          "description": "Desired orientation",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.boot",
+      "summary": "Boot a device",
+      "description": "Boots the specified device (simulators/emulators only)",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "bootResult",
+        "description": "Boot operation result",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.shutdown",
+      "summary": "Shutdown a device",
+      "description": "Shuts down the specified device (simulators/emulators only)",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "shutdownResult",
+        "description": "Shutdown operation result",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.reboot",
+      "summary": "Reboot a device",
+      "description": "Reboots the specified device (simulators/emulators only)",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "rebootResult",
+        "description": "Reboot operation result",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.dump.ui",
+      "summary": "Dump UI hierarchy",
+      "description": "Dumps the UI hierarchy of the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "format",
+          "description": "Output format (json or raw)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "json",
+              "raw"
+            ],
+            "default": "json"
+          }
+        }
+      ],
+      "result": {
+        "name": "uiHierarchy",
+        "description": "UI hierarchy data",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.apps.launch",
+      "summary": "Launch an application",
+      "description": "Launches an application by bundle ID on the specified device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle ID of the application to launch",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "locales",
+          "description": "BCP 47 locale tags to set for the app (e.g. [\"fr-FR\", \"en-GB\"]). On iOS this is a per-launch argument. On Android 13+ this is persistent.",
+          "required": false,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$"
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "launchResult",
+        "description": "Launch operation result",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.apps.terminate",
+      "summary": "Terminate an application",
+      "description": "Terminates a running application by bundle ID on the specified device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle ID of the application to terminate",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "terminateResult",
+        "description": "Terminate operation result",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "terminated": {
+              "type": "boolean",
+              "description": "True if the app was running and got terminated, false if it was not running"
+            }
+          },
+          "required": [
+            "terminated"
+          ]
+        }
+      }
+    },
+    {
+      "name": "device.apps.list",
+      "summary": "List installed applications",
+      "description": "Returns a list of installed applications on the specified device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "apps",
+        "description": "List of installed applications",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "name": "device.apps.foreground",
+      "summary": "Get foreground application",
+      "description": "Returns the currently foreground (active) application on the specified device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "foregroundApp",
+        "description": "Foreground application information",
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "name": "device.apps.install",
+      "summary": "Install an application",
+      "description": "Installs an application on the specified device from a local file path. Supports optional IPA re-signing for real iOS devices.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "path",
+          "description": "Local file path to the application package (.apk, .ipa, or .app)",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "forceResign",
+          "description": "Re-sign the IPA with a local provisioning profile before installing (only for .ipa files on real iOS devices)",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "name": "provisioningProfile",
+          "description": "Path to a .mobileprovision file to use for re-signing. If not provided, a matching profile is auto-detected.",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "signingIdentity",
+          "description": "Signing identity name or SHA-1 hash to use for re-signing. If not provided, a matching identity is auto-detected.",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.apps.uninstall",
+      "summary": "Uninstall an application",
+      "description": "Uninstalls an application from the specified device by its bundle/package ID",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier (iOS) or package name (Android) of the application to uninstall",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.apps.clear",
+      "summary": "Clear application data",
+      "description": "Clears all data (cache, preferences, databases) for an application without uninstalling it. Supported on Android and iOS Simulator. Not supported on real iOS devices.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier (iOS) or package name (Android) of the application to clear",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.apps.path",
+      "summary": "Get app data container path",
+      "description": "Returns the on-device path to an app's data container. Currently supported on Android and iOS real devices.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier (iOS) or package name (Android) of the application",
+          "required": true,
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": {
+        "name": "containerPath",
+        "description": "Data container path",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "Absolute path to the app's data container on the device" }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "name": "device.fs.ls",
+      "summary": "List files on device",
+      "description": "Lists files and directories at a given path on the device, or in an app's container. Defaults to the device root if no path is given. Supported on Android and iOS Simulator.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier to list files inside an app's container",
+          "required": false,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "remotePath",
+          "description": "Absolute path on the device to list. Defaults to device root if omitted.",
+          "required": false,
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": {
+        "name": "entries",
+        "description": "List of file entries",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "File or directory name" },
+              "path": { "type": "string", "description": "Full path on the device" },
+              "size": { "type": "integer", "description": "File size in bytes (0 for directories)" },
+              "modTime": { "type": "string", "format": "date-time", "description": "Last modification time" },
+              "isDir": { "type": "boolean", "description": "True if this entry is a directory" }
+            },
+            "required": ["name", "path", "size", "isDir"]
+          }
+        }
+      }
+    },
+    {
+      "name": "device.fs.pull",
+      "summary": "Pull a file from the device",
+      "description": "Downloads a file from the device and returns its contents as base64. Maximum file size is 1 MB. Supports arbitrary paths on Android and iOS Simulator.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "remotePath",
+          "description": "Absolute path of the file on the device",
+          "required": true,
+          "schema": { "type": "string" }
+        }
+      ],
+      "result": {
+        "name": "fileContent",
+        "description": "File contents",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "content": { "type": "string", "description": "Base64-encoded file contents" },
+            "size": { "type": "integer", "description": "File size in bytes" }
+          },
+          "required": ["content", "size"]
+        }
+      }
+    },
+    {
+      "name": "device.fs.push",
+      "summary": "Push a file to the device",
+      "description": "Uploads a file to the device from base64-encoded content. Maximum file size is 1 MB. For /data/user/ paths on Android, the file is staged via /data/local/tmp and copied with run-as.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "remotePath",
+          "description": "Absolute destination path on the device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "content",
+          "description": "Base64-encoded file contents to write. Maximum decoded size is 1 MB.",
+          "required": true,
+          "schema": { "type": "string", "format": "byte" }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": { "$ref": "#/components/schemas/SuccessResult" }
+      }
+    },
+    {
+      "name": "device.fs.mkdir",
+      "summary": "Create a directory on the device",
+      "description": "Creates a directory at the specified path on the device or in an app's container.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier to create directory inside an app's container",
+          "required": false,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "remotePath",
+          "description": "Absolute path of the directory to create",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "parents",
+          "description": "Create parent directories as needed (like mkdir -p)",
+          "required": false,
+          "schema": { "type": "boolean", "default": false }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": { "$ref": "#/components/schemas/SuccessResult" }
+      }
+    },
+    {
+      "name": "device.fs.rm",
+      "summary": "Remove a file or directory on the device",
+      "description": "Removes a file or directory at the specified path on the device or in an app's container.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "bundleId",
+          "description": "Bundle identifier to remove files inside an app's container",
+          "required": false,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "remotePath",
+          "description": "Absolute path of the file or directory to remove",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "recursive",
+          "description": "Remove directories and their contents recursively (like rm -rf)",
+          "required": false,
+          "schema": { "type": "boolean", "default": false }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": { "$ref": "#/components/schemas/SuccessResult" }
+      }
+    },
+    {
+      "name": "device.crashes.list",
+      "summary": "List crash reports",
+      "description": "Returns a list of crash reports from the specified device. Supports iOS real devices (via crashreport service), iOS simulators (reads from DiagnosticReports), and Android devices (parses adb logcat crash buffer).",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "crashes",
+        "description": "List of crash reports",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "processName": {
+                "type": "string",
+                "description": "Name of the process that crashed"
+              },
+              "timestamp": {
+                "type": "string",
+                "description": "Timestamp of the crash"
+              },
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the crash report, used with device.crashes.get"
+              }
+            },
+            "required": [
+              "processName",
+              "timestamp",
+              "id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "device.crashes.get",
+      "summary": "Get a crash report",
+      "description": "Returns the full content of a specific crash report by ID. The ID is obtained from device.crashes.list.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "Crash report ID (from device.crashes.list)",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "crashReport",
+        "description": "Crash report content",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Crash report ID"
+            },
+            "content": {
+              "type": "string",
+              "description": "Full crash report text"
+            }
+          },
+          "required": [
+            "id",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "name": "device.webview.list",
+      "summary": "List webviews",
+      "description": "Returns all embedded webviews currently visible in the foreground app on the device. Browser apps (Safari, Chrome) are not included.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "webviews",
+        "description": "List of embedded webviews",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/WebView"
+          }
+        }
+      }
+    },
+    {
+      "name": "device.webview.content",
+      "summary": "Get webview HTML content",
+      "description": "Returns the full outer HTML of the page currently loaded in the attached webview.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "content",
+        "description": "Full outer HTML of the page",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "device.webview.goto",
+      "summary": "Navigate webview to URL",
+      "description": "Navigates the attached webview to the given URL and optionally waits for a load state.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "url",
+          "description": "URL to navigate to",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "waitUntil",
+          "description": "Load state to wait for after navigation",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "load",
+              "domcontentloaded"
+            ],
+            "default": "load"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.webview.reload",
+      "summary": "Reload webview",
+      "description": "Reloads the current page in the attached webview.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "waitUntil",
+          "description": "Load state to wait for after reload",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "load",
+              "domcontentloaded"
+            ],
+            "default": "load"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.webview.goBack",
+      "summary": "Navigate back in webview history",
+      "description": "Navigates one step back in the attached webview's session history.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.webview.goForward",
+      "summary": "Navigate forward in webview history",
+      "description": "Navigates one step forward in the attached webview's session history.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.webview.url",
+      "summary": "Get webview URL",
+      "description": "Returns the current top-level URL (location.href) of the attached webview.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "url",
+        "description": "Current top-level URL",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "device.webview.title",
+      "summary": "Get webview title",
+      "description": "Returns the document title (document.title) of the page currently loaded in the attached webview.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "title",
+        "description": "Document title",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "device.webview.query",
+      "summary": "Query DOM elements in webview",
+      "description": "Finds elements matching a CSS selector and returns their tag, text, id, class, value, and href.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "selector",
+          "description": "CSS selector to match elements against",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "elements",
+        "description": "Matched DOM elements",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "type": "string",
+                "description": "Lowercase tag name"
+              },
+              "text": {
+                "type": "string",
+                "description": "Trimmed text content, truncated to 200 characters"
+              },
+              "id": {
+                "type": "string",
+                "description": "Element id attribute, or null"
+              },
+              "class": {
+                "type": "string",
+                "description": "Element class attribute, or null"
+              },
+              "value": {
+                "type": "string",
+                "description": "Element value, or null"
+              },
+              "href": {
+                "type": "string",
+                "description": "Element href, or null"
+              }
+            },
+            "required": [
+              "tag",
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "device.webview.evaluate",
+      "summary": "Evaluate JavaScript in webview",
+      "description": "Evaluates a JavaScript expression in the attached webview and returns the JSON-serialized result. Throws WebViewEvaluateError if the script throws.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "expression",
+          "description": "JavaScript expression to evaluate. May be a function body invoked with args.",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "args",
+          "description": "Arguments passed to the expression when it is a function body",
+          "required": false,
+          "schema": {
+            "type": "array"
+          }
+        }
+      ],
+      "result": {
+        "name": "evaluateResult",
+        "description": "Serialized return value",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "result": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "device.webview.waitForLoadState",
+      "summary": "Wait for webview load state",
+      "description": "Polls the attached webview server-side until the requested load state is reached or the timeout elapses.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "id",
+          "description": "WebView ID from device.webview.list",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "state",
+          "description": "Load state to wait for",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "load",
+              "domcontentloaded"
+            ],
+            "default": "load"
+          }
+        },
+        {
+          "name": "timeout",
+          "description": "Timeout in milliseconds",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 30000
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "server.info",
+      "summary": "Get server information",
+      "description": "Returns the server name and version",
+      "params": [],
+      "result": {
+        "name": "serverInfo",
+        "description": "Server information",
+        "schema": {
+          "$ref": "#/components/schemas/ServerInfo"
+        }
+      }
+    },
+    {
+      "name": "server.shutdown",
+      "summary": "Shutdown the server",
+      "description": "Initiates a graceful server shutdown",
+      "params": [],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    }
+  ],
+  "components": {
+    "errors": {
+      "ParseError": {
+        "code": -32700,
+        "message": "Parse error",
+        "data": "Invalid JSON was received by the server"
+      },
+      "InvalidRequest": {
+        "code": -32600,
+        "message": "Invalid Request",
+        "data": "The JSON sent is not a valid Request object"
+      },
+      "MethodNotFound": {
+        "code": -32601,
+        "message": "Method not found",
+        "data": "The method does not exist or is not available"
+      },
+      "InvalidParams": {
+        "code": -32602,
+        "message": "Invalid params",
+        "data": "Invalid method parameters"
+      },
+      "InternalError": {
+        "code": -32603,
+        "message": "Internal error",
+        "data": "Internal JSON-RPC error"
+      },
+      "ServerError": {
+        "code": -32000,
+        "message": "Server error",
+        "data": "Unexpected internal server error"
+      },
+      "DeviceNotFound": {
+        "code": -32010,
+        "message": "Device not found",
+        "data": "The specified device does not exist"
+      },
+      "DeviceTimeout": {
+        "code": -32050,
+        "message": "Device timeout",
+        "data": "The device did not respond in time"
+      },
+      "WebViewNotFound": {
+        "code": -32100,
+        "message": "Webview not found",
+        "data": "The supplied webview id does not match any currently-attached webview"
+      },
+      "WebViewSessionExpired": {
+        "code": -32101,
+        "message": "Webview session expired",
+        "data": "The session is no longer valid; the client must re-attach to the webview"
+      },
+      "WebViewNodeNotFound": {
+        "code": -32102,
+        "message": "Webview node not found",
+        "data": "The supplied node id is stale because the DOM has mutated; the client must re-query"
+      },
+      "WebViewNavigationFailed": {
+        "code": -32103,
+        "message": "Webview navigation failed",
+        "data": "The webview did not reach the requested load state in time"
+      },
+      "WebViewEvaluateError": {
+        "code": -32104,
+        "message": "Webview evaluate error",
+        "data": "The script passed to device.webview.evaluate threw an exception"
+      }
+    },
+    "schemas": {
+      "Device": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique device identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device name"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "description": "Device platform"
+          },
+          "status": {
+            "type": "string",
+            "description": "Device connection status"
+          },
+          "model": {
+            "type": "string",
+            "description": "Device model"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/DeviceProvider",
+            "description": "Provider information for this device"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "platform",
+          "status",
+          "model"
+        ]
+      },
+      "DeviceProvider": {
+        "type": "object",
+        "description": "Describes where the device is provided from",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Provider type (e.g. 'mobilefleet', 'local')"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session identifier for this device allocation"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ScreenshotResult": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg"
+            ],
+            "description": "Image format"
+          },
+          "data": {
+            "type": "string",
+            "description": "Base64 encoded image data with data URI prefix"
+          }
+        },
+        "required": [
+          "format",
+          "data"
+        ]
+      },
+      "SuccessResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ],
+            "description": "Operation status"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "DeviceInfo": {
+        "type": "object",
+        "description": "Detailed device information",
+        "additionalProperties": true
+      },
+      "ServerInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Server name"
+          },
+          "version": {
+            "type": "string",
+            "description": "Server version"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ]
+      },
+      "Rect": {
+        "type": "object",
+        "description": "Rectangle in pixels",
+        "properties": {
+          "x": {
+            "type": "integer"
+          },
+          "y": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ]
+      },
+      "WebView": {
+        "type": "object",
+        "description": "An embedded webview attached to the foreground app",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable handle for this webview within the device session"
+          },
+          "url": {
+            "type": "string",
+            "description": "Current top-level URL"
+          },
+          "title": {
+            "type": "string",
+            "description": "document.title"
+          },
+          "bundleId": {
+            "type": "string",
+            "description": "Bundle ID (iOS) or package name (Android) of the host app"
+          },
+          "processName": {
+            "type": "string",
+            "description": "Host process name or identifier"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/Rect",
+            "description": "Webview position on screen, in screen coordinates"
+          },
+          "isVisible": {
+            "type": "boolean",
+            "description": "True when the webview has non-zero on-screen bounds"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "title",
+          "bundleId",
+          "bounds",
+          "isVisible"
+        ]
+      }
+    }
+  }
+}
