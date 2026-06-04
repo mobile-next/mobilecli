@@ -382,17 +382,17 @@ func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
 	return content, nil
 }
 
-// ensureReturnExpression prepends "return" to bare expressions so the agent's
-// eval wrapper can capture their value. Expressions that already start with
-// "return", contain a statement separator, or look like a block are left as-is.
+// ensureReturnExpression turns a value expression into a statement body that
+// returns that value, so the agent's eval wrapper can capture it. A bare
+// expression — even an IIFE that internally uses ';', '{' or newlines — must be
+// wrapped; only skip wrapping when the caller already supplied a top-level
+// "return". A trailing ';' is stripped so the wrapped form stays valid.
 func ensureReturnExpression(expression string) string {
 	trimmed := strings.TrimSpace(expression)
-	if strings.HasPrefix(trimmed, "return ") ||
-		strings.Contains(trimmed, ";") ||
-		strings.Contains(trimmed, "\n") ||
-		strings.HasPrefix(trimmed, "{") {
+	if strings.HasPrefix(trimmed, "return ") || strings.HasPrefix(trimmed, "return(") {
 		return expression
 	}
+	trimmed = strings.TrimRight(trimmed, " \t\r\n;")
 	return "return (" + trimmed + ")"
 }
 
