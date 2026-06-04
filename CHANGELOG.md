@@ -1,3 +1,6 @@
+## [0.3.78](https://github.com/mobile-next/mobilecli/releases/tag/0.3.78) (2026-06-04)
+* Android: Wrongly wrap IIFE expressions around webview evals ([#254](https://github.com/mobile-next/mobilecli/pull/254))
+
 ## [0.3.77](https://github.com/mobile-next/mobilecli/releases/tag/0.3.77) (2026-06-03)
 * Feat: Add device.webview.url and device.webview.title JSON-RPC methods ([#251](https://github.com/mobile-next/mobilecli/pull/251))
 * Fix: Finalize android screenrecord mp4 on ctrl-c by signaling on-device process ([#249](https://github.com/mobile-next/mobilecli/pull/249))
