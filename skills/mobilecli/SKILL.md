@@ -1,6 +1,7 @@
 ---
 name: mobilecli
 description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, or get crash reports, even if they don't explicitly name "mobilecli".
+allowed-tools: Bash(mobilecli:*) Bash(npx:*)
 ---
 
 # Mobile CLI
@@ -10,15 +11,46 @@ A universal automation and management skill for iOS and Android devices, simulat
 ---
 
 ## 📖 Table of Contents
-1. [Prerequisites & Server Setup](#prerequisites-server-setup)
-2. [AI Automation Workflows](#ai-automation-workflows)
-3. [Command Reference (CLI)](#command-reference-cli)
-4. [JSON-RPC Server & WebSocket API](#json-rpc-server-websocket-api)
+1. [Quick Start (TL;DR)](#quick-start)
+2. [Prerequisites & Server Setup](#prerequisites-server-setup)
+3. [AI Automation Workflows](#ai-automation-workflows)
+4. [Quick Interaction Reference](#quick-interaction-reference)
+5. [Command Reference (CLI)](#command-reference-cli)
+6. [JSON-RPC Server & WebSocket API](#json-rpc-server-websocket-api)
    - [Core JSON-RPC API Examples](#core-json-rpc-api-examples)
    - [Custom Gestures (JSON-RPC only)](#custom-gestures-json-rpc-only)
    - [Filesystem Limits in JSON-RPC](#filesystem-limits-in-json-rpc)
-5. [Platform-Specific Notes & Troubleshooting](#platform-specific-notes-troubleshooting)
-6. [Best Practices for AI Agents](#best-practices-for-ai-agents)
+7. [Platform-Specific Notes & Troubleshooting](#platform-specific-notes-troubleshooting)
+8. [Best Practices for AI Agents](#best-practices-for-ai-agents)
+
+---
+
+## <a id="quick-start"></a>🚀 Quick Start (TL;DR)
+
+A typical command sequence for testing an application on a simulator or emulator:
+
+```bash
+# 1. Start the server daemon (speeds up subsequent runs)
+mobilecli server start --daemon
+
+# 2. Boot the target device (if offline)
+mobilecli device boot --device "iPhone 15"
+
+# 3. Launch your app
+mobilecli apps launch "com.example.myapp" --device "iPhone 15"
+
+# 4. Inspect the UI tree to find coordinates
+mobilecli dump ui --device "iPhone 15"
+
+# 5. Tap the center of the target element
+mobilecli io tap --device "iPhone 15" 180,320
+
+# 6. Verify result with a screenshot
+mobilecli screenshot --device "iPhone 15" --output screenshot.png
+
+# 7. Clean up by stopping the server daemon
+mobilecli server kill
+```
 
 ---
 
@@ -76,6 +108,20 @@ graph TD
    - Take a screenshot: `mobilecli screenshot` to visually confirm what is displayed.
 4. **Interact**: Locate your target element in the UI dump, calculate its center coordinates, and trigger inputs (e.g. `mobilecli io tap`, `mobilecli io text`).
 5. **Repeat or Debug**: Verify the changes in a new UI dump or screenshot, handle popups, and check crash reports if the app terminates.
+
+---
+
+## <a id="quick-interaction-reference"></a>⚡ Quick Interaction Reference
+
+Here is a quick reference table mapping standard user actions to their `mobilecli` CLI commands and corresponding JSON-RPC methods:
+
+| User Action | CLI Command | JSON-RPC Method | Description |
+| :--- | :--- | :--- | :--- |
+| **Tap** | `mobilecli io tap <x,y>` | `device.io.tap` | Single touch at coordinates |
+| **Long Press** | `mobilecli io longpress <x,y> --duration <ms>` | `device.io.longpress` | Press and hold for a duration |
+| **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | `device.io.swipe` | Drag from start to end coordinates |
+| **Type Text** | `mobilecli io text "<text>"` | `device.io.text` | Send raw text to the focused field |
+| **Key Press** | `mobilecli io button <BUTTON_NAME>` | `device.io.button` | Press hardware buttons (e.g. HOME, POWER) |
 
 ---
 
