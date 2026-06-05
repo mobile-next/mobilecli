@@ -10,19 +10,19 @@ A universal automation and management skill for iOS and Android devices, simulat
 ---
 
 ## 📖 Table of Contents
-1. [Prerequisites & Server Setup](#prerequisites--server-setup)
+1. [Prerequisites & Server Setup](#prerequisites-server-setup)
 2. [AI Automation Workflows](#ai-automation-workflows)
 3. [Command Reference (CLI)](#command-reference-cli)
-4. [JSON-RPC Server & WebSocket API](#json-rpc-server--websocket-api)
+4. [JSON-RPC Server & WebSocket API](#json-rpc-server-websocket-api)
    - [Core JSON-RPC API Examples](#core-json-rpc-api-examples)
    - [Custom Gestures (JSON-RPC only)](#custom-gestures-json-rpc-only)
    - [Filesystem Limits in JSON-RPC](#filesystem-limits-in-json-rpc)
-5. [Platform-Specific Notes & Troubleshooting](#platform-specific-notes--troubleshooting)
+5. [Platform-Specific Notes & Troubleshooting](#platform-specific-notes-troubleshooting)
 6. [Best Practices for AI Agents](#best-practices-for-ai-agents)
 
 ---
 
-## 🛠 Prerequisites & Server Setup
+## <a id="prerequisites-server-setup"></a>🛠 Prerequisites & Server Setup
 
 Before using this skill, ensure the environment has the necessary prerequisites installed and configured:
 
@@ -52,7 +52,7 @@ mobilecli server kill --listen localhost:12000
 
 ---
 
-## 🔄 AI Automation Workflows
+## <a id="ai-automation-workflows"></a>🔄 AI Automation Workflows
 
 When executing mobile automation or app testing, follow this structured loop:
 
@@ -79,7 +79,7 @@ graph TD
 
 ---
 
-## 💻 Command Reference (CLI)
+## <a id="command-reference-cli"></a>💻 Command Reference (CLI)
 
 All commands support the global `--device <id>` flag to specify the target device, and `-v` / `--verbose` for logging.
 
@@ -257,12 +257,12 @@ Access files on-device or inside debuggable app private directories (Android and
 
 ---
 
-## 🔌 JSON-RPC Server & WebSocket API
+## <a id="json-rpc-server-websocket-api"></a>🔌 JSON-RPC Server & WebSocket API
 
 For scripts and long-running automation, make HTTP POST requests to the server's endpoint (`http://localhost:12000/rpc`). The JSON-RPC payload format is:
 `{"jsonrpc": "2.0", "method": "<method_name>", "params": { ... }, "id": 1}`
 
-### Core JSON-RPC API Examples
+### <a id="core-json-rpc-api-examples"></a>Core JSON-RPC API Examples
 
 * **List Devices**:
   ```bash
@@ -280,7 +280,7 @@ For scripts and long-running automation, make HTTP POST requests to the server's
     -d '{"jsonrpc":"2.0", "id": 3, "method": "server.shutdown", "params": {}}'
   ```
 
-### Custom Gestures (JSON-RPC only)
+### <a id="custom-gestures-json-rpc-only"></a>Custom Gestures (JSON-RPC only)
 For complex multi-action interactions (e.g. dragging, pinching, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events.
 
 Supported actions:
@@ -309,7 +309,7 @@ Supported actions:
 }
 ```
 
-### Filesystem Limits in JSON-RPC
+### <a id="filesystem-limits-in-json-rpc"></a>Filesystem Limits in JSON-RPC
 > [!WARNING]
 > **1MB RPC payload limit**: The JSON-RPC calls `device.fs.push` and `device.fs.pull` encode file data using Base64. To maintain server performance, the maximum file size supported by these RPC endpoints is **1 MB**.
 > 
@@ -325,7 +325,7 @@ wscat -c ws://localhost:12000/ws
 
 ---
 
-## 🍎 Platform-Specific Notes & Troubleshooting
+## <a id="platform-specific-notes-troubleshooting"></a>🍎 Platform-Specific Notes & Troubleshooting
 
 ### iOS Real Devices
 - **Agent Dependency**: Input gestures, screenshots, and UI dumps require the agent. Install it via:
@@ -343,7 +343,7 @@ wscat -c ws://localhost:12000/ws
 
 ---
 
-## 💡 Best Practices for AI Agents
+## <a id="best-practices-for-ai-agents"></a>💡 Best Practices for AI Agents
 
 > [!TIP]
 > **Use the JSON-RPC server whenever possible**: Invoking `mobilecli` via subprocess CLI commands incurs Go binary startup latency each time. Starting the server and querying it over HTTP/WebSocket speeds up interactions from seconds to milliseconds.
