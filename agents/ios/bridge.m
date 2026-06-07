@@ -95,8 +95,17 @@
 
 // returns {"result": <value>} on success, {"__error": <message>} on failure
 + (NSDictionary *)evaluateJS:(NSString *)expression inWebView:(UIView *)webView {
-    NSString *wrapped = [NSString stringWithFormat:
-        @"(function(){try{%@}catch(e){return {__mce:e.toString()}}})()",
+    // Run the expression as the body of an async function via callAsyncJavaScript:
+    // it lets us `return` a value AND awaits a returned promise, so callers can
+    // evaluate either a plain expression or an async one (e.g. an injected
+    // testing engine whose methods return promises). evaluateJavaScript cannot
+    // await promises and reports them as an unsupported result type.
+    // The caller already provides a function-body form (e.g. "return (expr)").
+    // callAsyncJavaScript runs the string as an async function body: a top-level
+    // `return` yields the value and a returned promise is awaited (the injected
+    // engine's methods are async). Plain values pass through unchanged.
+    NSString *body = [NSString stringWithFormat:
+        @"try { %@ } catch (e) { return { __mce: (e && e.toString ? e.toString() : String(e)) }; }",
         expression];
 
     __block id jsResult = nil;
@@ -105,7 +114,11 @@
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        [(WKWebView *)webView evaluateJavaScript:wrapped completionHandler:^(id result, NSError *error) {
+        [(WKWebView *)webView callAsyncJavaScript:body
+                                        arguments:@{}
+                                          inFrame:nil
+                                   inContentWorld:WKContentWorld.pageWorld
+                                completionHandler:^(id result, NSError *error) {
             if (timedOut) return;
             jsResult = result;
             jsError = error;
@@ -119,7 +132,10 @@
     }
 
     if (jsError) {
-        return @{@"__error": jsError.localizedDescription};
+        NSString *msg = jsError.userInfo[@"WKJavaScriptExceptionMessage"] ?: jsError.localizedDescription;
+        NSString *bodyPrefix = body.length > 120 ? [body substringToIndex:120] : body;
+        NSString *detail = [NSString stringWithFormat:@"%@ || body[0:120]=%@", msg, bodyPrefix];
+        return @{@"__error": detail};
     }
     if ([jsResult isKindOfClass:[NSDictionary class]] && jsResult[@"__mce"]) {
         return @{@"__error": jsResult[@"__mce"] ?: @"unknown JS error"};
