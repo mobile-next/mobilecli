@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -171,6 +172,11 @@ func agentRequestWithTimeout(port int, method string, params map[string]any, tim
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	start := time.Now()
+	defer func() {
+		utils.Verbose("agentRequest method=%s payloadBytes=%d elapsed=%s", method, len(payload), time.Since(start))
+	}()
+
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Post(
 		fmt.Sprintf("http://localhost:%d/", port),
@@ -311,9 +317,21 @@ func (d *AndroidDevice) attachAgentAndWait(pkg string, port int, agentDir string
 // getWebViewPort resolves the foreground app and ensures the agent is ready,
 // returning the local TCP port to use for RPC calls.
 func (d *AndroidDevice) getWebViewPort() (int, error) {
-	foreground, err := d.GetForegroundApp()
-	if err != nil {
-		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	// Foreground detection can momentarily fail right after a launch or in-app
+	// navigation — mCurrentFocus is briefly null during the window transition —
+	// so retry for a short while instead of failing on the first miss.
+	var foreground *ForegroundAppInfo
+	var err error
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		foreground, err = d.GetForegroundApp()
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("could not determine foreground app: %w", err)
+		}
+		time.Sleep(150 * time.Millisecond)
 	}
 	return d.ensureAgentReady(foreground.PackageName)
 }
