@@ -73,17 +73,35 @@ class WebViewAgent {
 
 	/* ── device.webview.evaluate ─────────────────────────────────────────── */
 
+	private static long sEvalCounter = 0;
+
 	static JSONObject evaluateExpression(WebView wv, String expression, JSONArray args) throws Exception {
 		String argsJson = (args != null && args.length() > 0) ? args.toString() : "[]";
-		String raw = AndroidBridge.evalJs(wv, buildEvalScript(expression, argsJson));
-		if (raw == null || "null".equals(raw)) {
-			throw new Exception("script execution failed — check for syntax errors or missing DOM elements");
+		// WebView.evaluateJavascript does not await promises — it would serialize a
+		// returned Promise to "{}". So kick off the (possibly async) expression,
+		// stash its awaited result on a window slot keyed by a token, then poll for
+		// it. This makes async expressions (e.g. Playwright's injected expect())
+		// resolve correctly instead of yielding an empty object.
+		String token = "mw" + (sEvalCounter++);
+		AndroidBridge.evalJs(wv, buildEvalScript(expression, argsJson, token));
+
+		String outcomeJson = null;
+		long deadline = System.currentTimeMillis() + 10_000;
+		while (System.currentTimeMillis() < deadline) {
+			String raw = AndroidBridge.evalJs(wv, buildPollScript(token));
+			if (raw != null && !"null".equals(raw)) {
+				Object tokenized = new JSONTokener(raw).nextValue();
+				if (tokenized instanceof String) {
+					outcomeJson = (String) tokenized;
+					break;
+				}
+			}
+			Thread.sleep(20);
 		}
-		Object tokenized = new JSONTokener(raw).nextValue();
-		if (!(tokenized instanceof String)) {
-			throw new Exception("unexpected script result: " + raw);
+		if (outcomeJson == null) {
+			throw new Exception("script execution timed out waiting for result");
 		}
-		JSONObject outcome = new JSONObject((String) tokenized);
+		JSONObject outcome = new JSONObject(outcomeJson);
 		if (!outcome.optBoolean("ok", false)) {
 			throw new Exception(outcome.optString("error", "script error"));
 		}
@@ -91,7 +109,7 @@ class WebViewAgent {
 		return new JSONObject().put("result", value);
 	}
 
-	private static String buildEvalScript(String expression, String argsJson) {
+	private static String buildEvalScript(String expression, String argsJson, String token) {
 		// Wrap bare expressions (no return / no statement separator / no block) so
 		// callers can pass "document.title" instead of "return document.title".
 		String trimmed = expression.trim();
@@ -100,11 +118,34 @@ class WebViewAgent {
 			|| trimmed.contains("\n")
 			|| trimmed.startsWith("{");
 		String body = looksLikeStatement ? trimmed : "return (" + trimmed + ")";
-		return "(function() { try {" +
+		// Promise.resolve() handles both sync values and thenables uniformly, so a
+		// returned promise is awaited before the result is serialized.
+		return "(function() {" +
+			"  window.__mwEval = window.__mwEval || {};" +
 			"  var __args = " + argsJson + ";" +
-			"  var __r = (function() { " + body + " }).apply(null, __args);" +
-			"  return JSON.stringify({ ok: true, value: __r });" +
-			"} catch(e) { return JSON.stringify({ ok: false, error: e.message || String(e) }); } })()";
+			"  try {" +
+			"    var __r = (function() { " + body + " }).apply(null, __args);" +
+			"    Promise.resolve(__r).then(function(v) {" +
+			"      window.__mwEval['" + token + "'] = JSON.stringify({ ok: true, value: (v === undefined ? null : v) });" +
+			"    }, function(e) {" +
+			"      window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) });" +
+			"    });" +
+			"  } catch(e) {" +
+			"    window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) });" +
+			"  }" +
+			"})()";
+	}
+
+	// Read and clear the stored result for a token; returns null until it's ready.
+	private static String buildPollScript(String token) {
+		return "(function() {" +
+			"  var m = window.__mwEval;" +
+			"  if (!m) { return null; }" +
+			"  var r = m['" + token + "'];" +
+			"  if (r === undefined) { return null; }" +
+			"  delete m['" + token + "'];" +
+			"  return r;" +
+			"})()";
 	}
 
 	/* ── device.dump.ui ──────────────────────────────────────────────────── */
