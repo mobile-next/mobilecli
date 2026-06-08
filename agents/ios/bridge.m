@@ -95,8 +95,18 @@
 
 // returns {"result": <value>} on success, {"__error": <message>} on failure
 + (NSDictionary *)evaluateJS:(NSString *)expression inWebView:(UIView *)webView {
+    // Use callAsyncJavaScript (not evaluateJavaScript) so a returned Promise is
+    // awaited before serialization — mobilewright's injected expect() is async,
+    // and evaluateJavaScript would reject a Promise as "unsupported type". The
+    // string is treated as an async function body, so the caller's `return ...`
+    // (including `return await ...`) resolves to the result. Run in pageWorld so
+    // window.__mwInjected set by earlier calls stays visible.
+    // Await inside the try so a rejected promise (not just a synchronous throw)
+    // is caught and reported with its message — otherwise callAsyncJavaScript
+    // surfaces a generic "A JavaScript exception occurred" and the message
+    // (which drivers use, e.g. to detect a dropped engine) is lost.
     NSString *wrapped = [NSString stringWithFormat:
-        @"(function(){try{%@}catch(e){return {__mce:e.toString()}}})()",
+        @"try{return await (async()=>{%@})()}catch(e){return {__mce:e.toString()}}",
         expression];
 
     __block id jsResult = nil;
@@ -105,7 +115,11 @@
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        [(WKWebView *)webView evaluateJavaScript:wrapped completionHandler:^(id result, NSError *error) {
+        [(WKWebView *)webView callAsyncJavaScript:wrapped
+                                        arguments:@{}
+                                          inFrame:nil
+                                   inContentWorld:WKContentWorld.pageWorld
+                                completionHandler:^(id result, NSError *error) {
             if (timedOut) return;
             jsResult = result;
             jsError = error;
