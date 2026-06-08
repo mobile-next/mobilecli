@@ -27,7 +27,7 @@ type validationError struct {
 }
 
 const (
-	wsMaxMessageSize        = 64 * 1024
+	wsMaxMessageSize        = 8 * 1024 * 1024
 	wsWriteWait             = 10 * time.Second
 	wsPongWait              = 60 * time.Second
 	wsPingPeriod            = (wsPongWait * 9) / 10
@@ -198,7 +198,11 @@ func handleWSMessage(wsConn *wsConnection, message []byte) {
 		return
 	}
 
-	utils.Info("WebSocket Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, string(req.Params))
+	paramsLog := string(req.Params)
+	if len(paramsLog) > 256 {
+		paramsLog = paramsLog[:256] + fmt.Sprintf("…(%d bytes total)", len(req.Params))
+	}
+	utils.Info("WebSocket Request ID: %v, Method: %s, Params: %s", req.ID, req.Method, paramsLog)
 
 	handleWSMethodCall(wsConn, req)
 }
