@@ -93,8 +93,10 @@ class WebViewAgent {
 				Object tokenized = new JSONTokener(raw).nextValue();
 				if (tokenized instanceof String) {
 					outcomeJson = (String) tokenized;
-					break;
+				} else {
+					outcomeJson = tokenized.toString();
 				}
+				break;
 			}
 			Thread.sleep(20);
 		}
@@ -118,20 +120,31 @@ class WebViewAgent {
 			|| trimmed.contains("\n")
 			|| trimmed.startsWith("{");
 		String body = looksLikeStatement ? trimmed : "return (" + trimmed + ")";
+		// Embed body as a JSON string literal so new Function() compiles it at
+		// runtime — this defers SyntaxErrors into the try block instead of
+		// preventing the outer IIFE from parsing at all.
+		String bodyJson = JSONObject.quote(body);
 		// Promise.resolve() handles both sync values and thenables uniformly, so a
 		// returned promise is awaited before the result is serialized.
+		// .then().catch() chains so exceptions thrown inside the success handler are
+		// forwarded to the rejection handler. Each JSON.stringify is also wrapped in
+		// its own try/catch so serialization failures never leave the slot unwritten.
 		return "(function() {" +
 			"  window.__mwEval = window.__mwEval || {};" +
 			"  var __args = " + argsJson + ";" +
 			"  try {" +
-			"    var __r = (function() { " + body + " }).apply(null, __args);" +
+			"    var __f = new Function(" + bodyJson + ");" +
+			"    var __r = __f.apply(null, __args);" +
 			"    Promise.resolve(__r).then(function(v) {" +
-			"      window.__mwEval['" + token + "'] = JSON.stringify({ ok: true, value: (v === undefined ? null : v) });" +
-			"    }, function(e) {" +
-			"      window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) });" +
+			"      try { window.__mwEval['" + token + "'] = JSON.stringify({ ok: true, value: (v === undefined ? null : v) }); }" +
+			"      catch(e) { window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) }); }" +
+			"    }).catch(function(e) {" +
+			"      try { window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) }); }" +
+			"      catch(e2) { window.__mwEval['" + token + "'] = '{\"ok\":false,\"error\":\"serialization error\"}'; }" +
 			"    });" +
 			"  } catch(e) {" +
-			"    window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) });" +
+			"    try { window.__mwEval['" + token + "'] = JSON.stringify({ ok: false, error: (e && e.message) || String(e) }); }" +
+			"    catch(e2) { window.__mwEval['" + token + "'] = '{\"ok\":false,\"error\":\"serialization error\"}'; }" +
 			"  }" +
 			"})()";
 	}
