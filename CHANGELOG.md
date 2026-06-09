@@ -1,3 +1,9 @@
+## [0.3.79](https://github.com/mobile-next/mobilecli/releases/tag/0.3.79) (2026-06-09)
+* Fix: Await promises in WebView JS eval via token-based poll loop ([#261](https://github.com/mobile-next/mobilecli/pull/261))
+* Fix: Use callAsyncJavaScript instead of evaluateJavaScript for webview evals ([#258](https://github.com/mobile-next/mobilecli/pull/258))
+* Fix: Webview race condition getting port if app not yet in foreground ([#260](https://github.com/mobile-next/mobilecli/pull/260))
+* Fix: Increase websocket message size to 8MB ([#257](https://github.com/mobile-next/mobilecli/pull/257))
+
 ## [0.3.78](https://github.com/mobile-next/mobilecli/releases/tag/0.3.78) (2026-06-04)
 * Android: Wrongly wrap IIFE expressions around webview evals ([#254](https://github.com/mobile-next/mobilecli/pull/254))
 
