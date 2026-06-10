@@ -27,6 +27,8 @@ const (
 
 var authHTTPClient = &http.Client{Timeout: authHTTPTimeout}
 
+var authProvider string
+
 type deviceCodeRequest struct {
 	ClientID string `json:"client_id"`
 }
@@ -63,6 +65,10 @@ var authLoginCmd = &cobra.Command{
 	Short: "Log in to your account",
 	Long:  `Authenticates using a device code flow. Displays a URL and code to enter in your browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if authProvider != "mobilenext" {
+			return fmt.Errorf("unsupported provider %q, supported values: \"mobilenext\"", authProvider)
+		}
+
 		return runAuthLogin()
 	},
 }
@@ -210,4 +216,5 @@ var authTokenCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(authCmd)
 	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd)
+	authLoginCmd.Flags().StringVar(&authProvider, "provider", "mobilenext", "authentication provider (supported values: \"mobilenext\")")
 }
