@@ -1715,7 +1715,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Provider type (e.g. 'mobilefleet', 'local')"
+            "description": "Provider type (e.g. 'mobilenext', 'local')"
           },
           "sessionId": {
             "type": "string",

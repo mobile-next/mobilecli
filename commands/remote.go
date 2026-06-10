@@ -71,7 +71,7 @@ func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	}
 
 	for i := range result.Devices {
-		result.Devices[i].SetProvider("mobilefleet")
+		result.Devices[i].SetProvider("mobilenext")
 	}
 
 	return result.Devices, nil
