@@ -15,11 +15,11 @@ import (
 
 const (
 	keyringService = "mobilecli"
-	keyringUser    = "mobilenexthq.com"
+	keyringUser    = "mobilenext.ai"
 
 	deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
-	deviceCodeURL      = "https://app.mobilenexthq.com/login/device/code"
-	deviceTokenURL     = "https://app.mobilenexthq.com/login/device/token"
+	deviceCodeURL      = "https://app.mobilenext.ai/login/device/code"
+	deviceTokenURL     = "https://app.mobilenext.ai/login/device/token"
 	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 
 	authHTTPTimeout = 30 * time.Second
@@ -169,7 +169,7 @@ func runAuthLogin() error {
 		return err
 	}
 
-	if err := keyring.Set(keyringService, keyringUser, token); err != nil {
+	if err := storeToken(token); err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
 
@@ -182,7 +182,7 @@ var authLogoutCmd = &cobra.Command{
 	Short: "Log out of your account",
 	Long:  `Logs out of your current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := keyring.Delete(keyringService, keyringUser); err != nil {
+		if err := deleteToken(); err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				fmt.Println("mobilecli is not logged in")
 				return nil
@@ -200,12 +200,12 @@ var authTokenCmd = &cobra.Command{
 	Short: "Display the current auth token",
 	Long:  `Displays the authentication token for the current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := keyring.Get(keyringService, keyringUser)
+		token, err := loadToken()
 		if err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				return fmt.Errorf("no auth token found for mobilecli")
 			}
-			return fmt.Errorf("failed to get auth token from keyring: %w", err)
+			return fmt.Errorf("failed to get auth token: %w", err)
 		}
 
 		fmt.Println(token)

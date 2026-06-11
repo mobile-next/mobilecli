@@ -39,7 +39,7 @@ type Response struct {
 	ID      any       `json:"id"`
 }
 
-const defaultFleetServerURL = "wss://api.mobilenexthq.com/ws"
+const defaultFleetServerURL = "wss://api.mobilenext.ai/ws"
 
 func GetFleetServerURL() string {
 	if url := os.Getenv("MOBILECLI_FLEET_URL"); url != "" {

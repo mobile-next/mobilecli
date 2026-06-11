@@ -206,6 +206,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&deviceId, "device", "", "Device ID (get from 'mobilecli devices' command)")
+	rootCmd.PersistentFlags().BoolVar(&insecureStorage, "insecure-storage", false, "store the auth token in a plaintext file instead of the OS keyring (for headless hosts with no keyring)")
 }
 
 // Execute runs the root command
