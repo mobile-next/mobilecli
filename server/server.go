@@ -560,6 +560,34 @@ func handleIoText(params json.RawMessage) (any, error) {
 	return okResponse, nil
 }
 
+type IoKeysParams struct {
+	DeviceID string   `json:"deviceId"`
+	Keys     []string `json:"keys"`
+}
+
+func handleIoKeys(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, keys")
+	}
+
+	var ioKeysParams IoKeysParams
+	if err := json.Unmarshal(params, &ioKeysParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, keys", err)
+	}
+
+	req := commands.KeysRequest{
+		DeviceID: ioKeysParams.DeviceID,
+		Keys:     ioKeysParams.Keys,
+	}
+
+	response := commands.KeysCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
 type IoButtonParams struct {
 	DeviceID string `json:"deviceId"`
 	Button   string `json:"button"`

@@ -488,6 +488,10 @@ func (s SimulatorDevice) SendKeys(text string) error {
 	return s.wdaClient.SendKeys(text)
 }
 
+func (s SimulatorDevice) PressKeys(combos []wda.KeyCombo) error {
+	return s.wdaClient.PressKeys(combos)
+}
+
 func (s SimulatorDevice) Tap(x, y int) error {
 	return s.wdaClient.Tap(x, y)
 }

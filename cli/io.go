@@ -134,6 +134,26 @@ var ioTextCmd = &cobra.Command{
 	},
 }
 
+var ioKeysCmd = &cobra.Command{
+	Use:   "keys [key-combo...]",
+	Short: "Press keyboard keys with optional modifiers on a device",
+	Long:  `Presses one or more key combinations on the specified device, in order. A combo is a key with optional modifiers, e.g. "cmd+a", "ctrl+shift+z", "backspace".`,
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.KeysRequest{
+			DeviceID: deviceId,
+			Keys:     args,
+		}
+
+		response := commands.KeysCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 var ioSwipeCmd = &cobra.Command{
 	Use:   "swipe [x1,y1,x2,y2]",
 	Short: "Swipe on a device screen from one point to another",
@@ -184,6 +204,7 @@ func init() {
 	ioCmd.AddCommand(ioLongPressCmd)
 	ioCmd.AddCommand(ioButtonCmd)
 	ioCmd.AddCommand(ioTextCmd)
+	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
 
 	// io command flags
@@ -192,5 +213,6 @@ func init() {
 	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
+	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 }
