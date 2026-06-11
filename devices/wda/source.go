@@ -65,7 +65,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		return childElements
 	}
 
-	return []types.ScreenElement{{
+	element := types.ScreenElement{
 		Type:        elementType,
 		Label:       source.Label,
 		Name:        source.Name,
@@ -79,7 +79,19 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 			Height: int(source.Rect.Height),
 		},
 		Children: childElements,
-	}}
+	}
+
+	// WKWebView reports as several nested same-rect WebView wrappers; collapse
+	// them so a single element represents a single webview. Children are
+	// already collapsed bottom-up, so one merge per level unwinds the chain.
+	if element.Type == "WebView" && len(element.Children) == 1 {
+		child := element.Children[0]
+		if child.Type == "WebView" && child.Rect == element.Rect {
+			element.Children = child.Children
+		}
+	}
+
+	return []types.ScreenElement{element}
 }
 
 func (c *WdaClient) GetSourceRaw() (any, error) {

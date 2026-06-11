@@ -127,9 +127,9 @@ func TestFilterSourceElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.
 	}
 }
 
-func TestFilterSourceElementsKeepsNestedWebViewsNested(t *testing.T) {
+func TestFilterSourceElementsCollapsesNestedSameRectWebViews(t *testing.T) {
 	// WKWebView reports as three nested WebView nodes with identical rects;
-	// they should nest rather than appear as three flat siblings.
+	// they represent a single webview and must collapse into one element.
 	tree := sourceTreeElement{
 		Type: "XCUIElementTypeWebView",
 		Rect: visibleRect(0, 116, 402, 758),
@@ -139,9 +139,65 @@ func TestFilterSourceElementsKeepsNestedWebViewsNested(t *testing.T) {
 				Rect: visibleRect(0, 116, 402, 758),
 				Children: []sourceTreeElement{
 					{
+						Type: "XCUIElementTypeWebView",
+						Rect: visibleRect(0, 116, 402, 758),
+						Children: []sourceTreeElement{
+							{
+								Type:  "XCUIElementTypeStaticText",
+								Label: strPtr("Sample Login"),
+								Rect:  visibleRect(24, 366, 171, 34),
+							},
+							{
+								Type:  "XCUIElementTypeButton",
+								Label: strPtr("Submit"),
+								Rect:  visibleRect(24, 538, 354, 52),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level WebView, got %d: %+v", len(output), output)
+	}
+
+	webview := output[0]
+	if webview.Type != "WebView" {
+		t.Fatalf("expected a WebView, got %+v", webview)
+	}
+
+	if len(webview.Children) != 2 {
+		t.Fatalf("expected collapsed WebView to hold the content directly (Sample Login, Submit), got %d children: %+v", len(webview.Children), webview.Children)
+	}
+
+	if elementLabel(webview.Children[0]) != "Sample Login" || elementLabel(webview.Children[1]) != "Submit" {
+		t.Errorf("expected children 'Sample Login' and 'Submit', got %+v", webview.Children)
+	}
+
+	if webview.Children[0].Type == "WebView" || webview.Children[1].Type == "WebView" {
+		t.Errorf("expected no WebView children after collapsing, got %+v", webview.Children)
+	}
+}
+
+func TestFilterSourceElementsKeepsNestedWebViewsWithDifferentRects(t *testing.T) {
+	// A webview genuinely embedded within another webview has its own
+	// geometry and must stay nested rather than be collapsed away.
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeWebView",
+		Rect: visibleRect(0, 116, 402, 758),
+		Children: []sourceTreeElement{
+			{
+				Type: "XCUIElementTypeWebView",
+				Rect: visibleRect(50, 200, 300, 400),
+				Children: []sourceTreeElement{
+					{
 						Type:  "XCUIElementTypeStaticText",
-						Label: strPtr("Sample Login"),
-						Rect:  visibleRect(24, 366, 171, 34),
+						Label: strPtr("Embedded"),
+						Rect:  visibleRect(60, 220, 100, 30),
 					},
 				},
 			},
@@ -156,12 +212,12 @@ func TestFilterSourceElementsKeepsNestedWebViewsNested(t *testing.T) {
 
 	outer := output[0]
 	if len(outer.Children) != 1 || outer.Children[0].Type != "WebView" {
-		t.Fatalf("expected outer WebView to contain the inner WebView, got %+v", outer.Children)
+		t.Fatalf("expected outer WebView to keep the inner WebView nested, got %+v", outer.Children)
 	}
 
 	inner := outer.Children[0]
-	if len(inner.Children) != 1 || elementLabel(inner.Children[0]) != "Sample Login" {
-		t.Errorf("expected inner WebView to contain StaticText 'Sample Login', got %+v", inner.Children)
+	if len(inner.Children) != 1 || elementLabel(inner.Children[0]) != "Embedded" {
+		t.Errorf("expected inner WebView to contain StaticText 'Embedded', got %+v", inner.Children)
 	}
 }
 
