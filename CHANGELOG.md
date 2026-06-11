@@ -1,3 +1,9 @@
+## [0.3.80](https://github.com/mobile-next/mobilecli/releases/tag/0.3.80) (2026-06-11)
+* Feat: Support --insecure-storage if keychain/gnome-keyring doesn't exist ([#266](https://github.com/mobile-next/mobilecli/pull/266))
+* Fix: Add missing webview element ([#265](https://github.com/mobile-next/mobilecli/pull/265))
+* Feat: Add "io keys" command for pressing keys with modifiers ([#264](https://github.com/mobile-next/mobilecli/pull/264))
+* Feat: Add --provider to mobilecli auth login ([#263](https://github.com/mobile-next/mobilecli/pull/263))
+
 ## [0.3.79](https://github.com/mobile-next/mobilecli/releases/tag/0.3.79) (2026-06-09)
 * Fix: Await promises in WebView JS eval via token-based poll loop ([#261](https://github.com/mobile-next/mobilecli/pull/261))
 * Fix: Use callAsyncJavaScript instead of evaluateJavaScript for webview evals ([#258](https://github.com/mobile-next/mobilecli/pull/258))
