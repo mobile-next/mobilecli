@@ -35,7 +35,7 @@ func isVisible(rect sourceTreeElementRect) bool {
 func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	var output []types.ScreenElement
 
-	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField"}
+	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
 
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
@@ -51,7 +51,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	if typeAccepted {
 		if isVisible(source.Rect) {
 			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-			alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField"
+			alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
 			if hasIdentifier || alwaysInclude {
 				output = append(output, types.ScreenElement{
 					Type:        elementType,
