@@ -272,6 +272,39 @@
       }
     },
     {
+      "name": "device.io.keys",
+      "summary": "Press keyboard keys",
+      "description": "Presses one or more key combinations on the device, in order. Each combo is a key with optional modifiers joined by '+', e.g. \"cmd+a\", \"ctrl+shift+z\", \"backspace\". Modifiers: cmd/command/meta, ctrl/control, alt/opt/option, shift, fn. Keys are case-insensitive.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "keys",
+          "description": "Key combinations to press, in order (e.g. [\"cmd+a\", \"backspace\"])",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.io.button",
       "summary": "Press device button",
       "description": "Presses a physical or virtual button on the device",
