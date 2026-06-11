@@ -32,8 +32,15 @@ func isVisible(rect sourceTreeElementRect) bool {
 	return rect.X >= 0 && rect.Y >= 0 && rect.Width > 0 && rect.Height > 0
 }
 
+// filterSourceElements converts a WDA source tree into ScreenElements,
+// preserving hierarchy: filtered descendants of an accepted element become its
+// Children, while descendants of rejected elements are hoisted to the nearest
+// accepted ancestor.
 func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
-	var output []types.ScreenElement
+	var childElements []types.ScreenElement
+	for _, child := range source.Children {
+		childElements = append(childElements, filterSourceElements(child)...)
+	}
 
 	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
 
@@ -48,35 +55,31 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		}
 	}
 
-	if typeAccepted {
-		if isVisible(source.Rect) {
-			hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-			alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
-			if hasIdentifier || alwaysInclude {
-				output = append(output, types.ScreenElement{
-					Type:        elementType,
-					Label:       source.Label,
-					Name:        source.Name,
-					Value:       source.Value,
-					Placeholder: source.PlaceholderValue,
-					Identifier:  source.RawIdentifier,
-					Rect: types.ScreenElementRect{
-						X:      int(source.Rect.X),
-						Y:      int(source.Rect.Y),
-						Width:  int(source.Rect.Width),
-						Height: int(source.Rect.Height),
-					},
-				})
-			}
-		}
+	if !typeAccepted || !isVisible(source.Rect) {
+		return childElements
 	}
 
-	for _, child := range source.Children {
-		childElements := filterSourceElements(child)
-		output = append(output, childElements...)
+	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
+	alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	if !hasIdentifier && !alwaysInclude {
+		return childElements
 	}
 
-	return output
+	return []types.ScreenElement{{
+		Type:        elementType,
+		Label:       source.Label,
+		Name:        source.Name,
+		Value:       source.Value,
+		Placeholder: source.PlaceholderValue,
+		Identifier:  source.RawIdentifier,
+		Rect: types.ScreenElementRect{
+			X:      int(source.Rect.X),
+			Y:      int(source.Rect.Y),
+			Width:  int(source.Rect.Width),
+			Height: int(source.Rect.Height),
+		},
+		Children: childElements,
+	}}
 }
 
 func (c *WdaClient) GetSourceRaw() (any, error) {

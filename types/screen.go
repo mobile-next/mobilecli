@@ -17,4 +17,5 @@ type ScreenElement struct {
 	Identifier  *string           `json:"identifier,omitempty"`
 	Rect        ScreenElementRect `json:"rect"`
 	Focused     *bool             `json:"focused,omitempty"` // currently only on android tv
+	Children    []ScreenElement   `json:"children,omitempty"`
 }
