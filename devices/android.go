@@ -693,6 +693,104 @@ func (d *AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
+// androidModifierKeycodes maps canonical modifier names to Android keycodes
+var androidModifierKeycodes = map[string]string{
+	"command": "KEYCODE_META_LEFT",
+	"control": "KEYCODE_CTRL_LEFT",
+	"option":  "KEYCODE_ALT_LEFT",
+	"shift":   "KEYCODE_SHIFT_LEFT",
+	"fn":      "KEYCODE_FUNCTION",
+}
+
+// androidNamedKeycodes maps named keys to Android keycodes
+var androidNamedKeycodes = map[string]string{
+	"enter":         "KEYCODE_ENTER",
+	"return":        "KEYCODE_ENTER",
+	"backspace":     "KEYCODE_DEL",
+	"delete":        "KEYCODE_DEL",
+	"forwarddelete": "KEYCODE_FORWARD_DEL",
+	"tab":           "KEYCODE_TAB",
+	"space":         "KEYCODE_SPACE",
+	"escape":        "KEYCODE_ESCAPE",
+	"up":            "KEYCODE_DPAD_UP",
+	"down":          "KEYCODE_DPAD_DOWN",
+	"left":          "KEYCODE_DPAD_LEFT",
+	"right":         "KEYCODE_DPAD_RIGHT",
+	"home":          "KEYCODE_MOVE_HOME",
+	"end":           "KEYCODE_MOVE_END",
+	"pageup":        "KEYCODE_PAGE_UP",
+	"pagedown":      "KEYCODE_PAGE_DOWN",
+	"f1":            "KEYCODE_F1",
+	"f2":            "KEYCODE_F2",
+	"f3":            "KEYCODE_F3",
+	"f4":            "KEYCODE_F4",
+	"f5":            "KEYCODE_F5",
+	"f6":            "KEYCODE_F6",
+	"f7":            "KEYCODE_F7",
+	"f8":            "KEYCODE_F8",
+	"f9":            "KEYCODE_F9",
+	"f10":           "KEYCODE_F10",
+	"f11":           "KEYCODE_F11",
+	"f12":           "KEYCODE_F12",
+}
+
+func androidKeycodeForKey(key string) (string, error) {
+	if keycode, ok := androidNamedKeycodes[key]; ok {
+		return keycode, nil
+	}
+
+	if len(key) == 1 {
+		c := key[0]
+		switch {
+		case c >= 'a' && c <= 'z':
+			return "KEYCODE_" + strings.ToUpper(key), nil
+		case c >= '0' && c <= '9':
+			return "KEYCODE_" + key, nil
+		}
+	}
+
+	return "", fmt.Errorf("AndroidDevice: unsupported key: %s", key)
+}
+
+func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
+	// resolve all combos into adb args upfront, so an invalid combo fails
+	// before any key is pressed
+	adbArgs := make([][]string, len(combos))
+	for i, combo := range combos {
+		keycode, err := androidKeycodeForKey(combo.Key)
+		if err != nil {
+			return err
+		}
+
+		if len(combo.Modifiers) == 0 {
+			adbArgs[i] = []string{"shell", "input", "keyevent", keycode}
+			continue
+		}
+
+		args := []string{"shell", "input", "keycombination"}
+		for _, modifier := range combo.Modifiers {
+			modifierKeycode, ok := androidModifierKeycodes[modifier]
+			if !ok {
+				return fmt.Errorf("AndroidDevice: unsupported modifier: %s", modifier)
+			}
+			args = append(args, modifierKeycode)
+		}
+		adbArgs[i] = append(args, keycode)
+	}
+
+	for i, args := range adbArgs {
+		output, err := d.runAdbCommand(args...)
+		if err != nil {
+			if strings.Contains(string(output), "Unknown command") {
+				return fmt.Errorf("AndroidDevice: key combinations require Android 12 or newer")
+			}
+			return fmt.Errorf("AndroidDevice: failed to press key '%s': %v\nOutput: %s", combos[i].Key, err, string(output))
+		}
+	}
+
+	return nil
+}
+
 // isDeviceKitInstalled checks if DeviceKit is installed on the device
 func (d *AndroidDevice) isDeviceKitInstalled() bool {
 	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
