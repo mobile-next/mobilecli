@@ -838,8 +838,8 @@ func (d IOSDevice) SendKeys(text string) error {
 	return d.wdaClient.SendKeys(text)
 }
 
-func (d IOSDevice) PressKeys(combos []wda.KeyCombo) error {
-	return d.wdaClient.PressKeys(combos)
+func (d IOSDevice) PressKeys(combos []KeyCombo) error {
+	return d.wdaClient.PressKeys(toWdaKeyCombos(combos))
 }
 
 func (d IOSDevice) OpenURL(url string) error {

@@ -135,7 +135,7 @@ func (r *RemoteDevice) SendKeys(text string) error {
 	return r.fireRPC("device.io.text", params{"text": text})
 }
 
-func (r *RemoteDevice) PressKeys(combos []wda.KeyCombo) error {
+func (r *RemoteDevice) PressKeys(combos []KeyCombo) error {
 	keys := make([]string, len(combos))
 	for i, combo := range combos {
 		keys[i] = strings.Join(append(append([]string{}, combo.Modifiers...), combo.Key), "+")

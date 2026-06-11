@@ -137,8 +137,10 @@ var ioTextCmd = &cobra.Command{
 var ioKeysCmd = &cobra.Command{
 	Use:   "keys [key-combo...]",
 	Short: "Press keyboard keys with optional modifiers on a device",
-	Long:  `Presses one or more key combinations on the specified device, in order. A combo is a key with optional modifiers, e.g. "cmd+a", "ctrl+shift+z", "backspace".`,
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Presses one or more key combinations on the specified device, in order. A combo is a key with optional modifiers, e.g. "cmd+a", "ctrl+shift+z", "backspace".
+
+Keys name physical keys and are case-insensitive: "cmd+A" is the same as "cmd+a" (the A key, i.e. select-all), not Shift+A. Use "shift+a" to hold shift.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.KeysRequest{
 			DeviceID: deviceId,

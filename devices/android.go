@@ -752,7 +752,7 @@ func androidKeycodeForKey(key string) (string, error) {
 	return "", fmt.Errorf("AndroidDevice: unsupported key: %s", key)
 }
 
-func (d *AndroidDevice) PressKeys(combos []wda.KeyCombo) error {
+func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
 	// resolve all combos into adb args upfront, so an invalid combo fails
 	// before any key is pressed
 	adbArgs := make([][]string, len(combos))

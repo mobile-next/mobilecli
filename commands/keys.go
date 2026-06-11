@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/devices/wda"
 )
 
 // KeysRequest represents the parameters for a keys command
@@ -30,9 +29,9 @@ var modifierAliases = map[string]string{
 
 // ParseKeyCombo parses a key combo string like "cmd+a", "ctrl+shift+z" or
 // "backspace" into a key and its canonical modifiers.
-func ParseKeyCombo(combo string) (wda.KeyCombo, error) {
+func ParseKeyCombo(combo string) (devices.KeyCombo, error) {
 	if combo == "" {
-		return wda.KeyCombo{}, fmt.Errorf("key combo cannot be empty")
+		return devices.KeyCombo{}, fmt.Errorf("key combo cannot be empty")
 	}
 
 	parts := strings.Split(combo, "+")
@@ -52,12 +51,17 @@ func ParseKeyCombo(combo string) (wda.KeyCombo, error) {
 	for _, part := range modifierParts {
 		modifier, ok := modifierAliases[strings.ToLower(part)]
 		if !ok {
-			return wda.KeyCombo{}, fmt.Errorf("unsupported modifier '%s' in key combo '%s'", part, combo)
+			return devices.KeyCombo{}, fmt.Errorf("unsupported modifier '%s' in key combo '%s'", part, combo)
 		}
 		modifiers = append(modifiers, modifier)
 	}
 
-	return wda.KeyCombo{
+	// The key names a physical key, not a literal character to type, so case is
+	// not significant: "A" and "a" both mean the A key (which types 'a' unless
+	// shift is held), matching shortcut notation like "cmd+A" == ⌘A. Use
+	// "shift+a" for a capital letter. Lowercasing also makes named-key and
+	// modifier lookups in the device adapters case-insensitive.
+	return devices.KeyCombo{
 		Key:       strings.ToLower(key),
 		Modifiers: modifiers,
 	}, nil
@@ -70,7 +74,7 @@ func KeysCommand(req KeysRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("at least one key combo is required"))
 	}
 
-	combos := make([]wda.KeyCombo, len(req.Keys))
+	combos := make([]devices.KeyCombo, len(req.Keys))
 	for i, comboStr := range req.Keys {
 		combo, err := ParseKeyCombo(comboStr)
 		if err != nil {

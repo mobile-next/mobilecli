@@ -121,7 +121,7 @@ type ControllableDevice interface {
 	Gesture(actions []wda.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
-	PressKeys(combos []wda.KeyCombo) error
+	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
 	LaunchApp(bundleID string, locales []string) error
 	TerminateApp(bundleID string) error

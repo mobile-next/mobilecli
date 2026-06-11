@@ -4,24 +4,25 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 func TestParseKeyCombo(t *testing.T) {
 	tests := []struct {
 		combo    string
-		expected wda.KeyCombo
+		expected devices.KeyCombo
 	}{
-		{"cmd+a", wda.KeyCombo{Key: "a", Modifiers: []string{"command"}}},
-		{"ctrl+a", wda.KeyCombo{Key: "a", Modifiers: []string{"control"}}},
-		{"ctrl+shift+z", wda.KeyCombo{Key: "z", Modifiers: []string{"control", "shift"}}},
-		{"CMD+A", wda.KeyCombo{Key: "a", Modifiers: []string{"command"}}},
-		{"alt+tab", wda.KeyCombo{Key: "tab", Modifiers: []string{"option"}}},
-		{"meta+c", wda.KeyCombo{Key: "c", Modifiers: []string{"command"}}},
-		{"backspace", wda.KeyCombo{Key: "backspace", Modifiers: []string{}}},
-		{"delete", wda.KeyCombo{Key: "delete", Modifiers: []string{}}},
-		{"shift++", wda.KeyCombo{Key: "+", Modifiers: []string{"shift"}}},
-		{"+", wda.KeyCombo{Key: "+", Modifiers: []string{}}},
+		{"cmd+a", devices.KeyCombo{Key: "a", Modifiers: []string{"command"}}},
+		{"ctrl+a", devices.KeyCombo{Key: "a", Modifiers: []string{"control"}}},
+		{"ctrl+shift+z", devices.KeyCombo{Key: "z", Modifiers: []string{"control", "shift"}}},
+		// uppercase is the unshifted key, matching shortcut notation: CMD+A == ⌘a
+		{"CMD+A", devices.KeyCombo{Key: "a", Modifiers: []string{"command"}}},
+		{"alt+tab", devices.KeyCombo{Key: "tab", Modifiers: []string{"option"}}},
+		{"meta+c", devices.KeyCombo{Key: "c", Modifiers: []string{"command"}}},
+		{"backspace", devices.KeyCombo{Key: "backspace", Modifiers: []string{}}},
+		{"delete", devices.KeyCombo{Key: "delete", Modifiers: []string{}}},
+		{"shift++", devices.KeyCombo{Key: "+", Modifiers: []string{"shift"}}},
+		{"+", devices.KeyCombo{Key: "+", Modifiers: []string{}}},
 	}
 
 	for _, test := range tests {
