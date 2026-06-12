@@ -1,0 +1,198 @@
+package devices
+
+import (
+	"testing"
+
+	"github.com/mobile-next/mobilecli/types"
+)
+
+func screenElementText(e types.ScreenElement) string {
+	if e.Text == nil {
+		return ""
+	}
+	return *e.Text
+}
+
+// A realistic uiautomator subtree: the webview content (text views, buttons)
+// is nested inside the android.webkit.WebView node, separated by layout
+// wrapper nodes that carry no text, content-desc, hint or resource-id and are
+// therefore filtered out.
+func sampleLoginScreenXmlTree() uiAutomatorXmlNode {
+	return uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:  "android.widget.Button",
+				Text:   "Back",
+				Bounds: "[40,150][150,260]",
+			},
+			{
+				Class:      "android.webkit.WebView",
+				ResourceID: "com.mobilenext.playground:id/webview",
+				Bounds:     "[0,290][1080,2300]",
+				Nodes: []uiAutomatorXmlNode{
+					{
+						Class:  "android.view.View",
+						Bounds: "[0,290][1080,2300]",
+						Nodes: []uiAutomatorXmlNode{
+							{
+								Class:  "android.widget.TextView",
+								Text:   "Sample Login",
+								Bounds: "[60,900][490,990]",
+							},
+							{
+								Class:  "android.widget.Button",
+								Text:   "Submit",
+								Bounds: "[60,1340][940,1470]",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestCollectElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	d := &AndroidDevice{}
+	output := d.collectElements(sampleLoginScreenXmlTree())
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements (Back button, WebView), got %d: %+v", len(output), output)
+	}
+
+	backButton := output[0]
+	if backButton.Type != "android.widget.Button" || screenElementText(backButton) != "Back" {
+		t.Errorf("expected first top-level element to be the Back button, got %+v", backButton)
+	}
+
+	webview := output[1]
+	if webview.Type != "android.webkit.WebView" {
+		t.Fatalf("expected second top-level element to be the WebView, got %+v", webview)
+	}
+
+	if len(webview.Children) != 2 {
+		t.Fatalf("expected WebView to have 2 children (Sample Login, Submit), got %d: %+v", len(webview.Children), webview.Children)
+	}
+
+	if screenElementText(webview.Children[0]) != "Sample Login" {
+		t.Errorf("expected first WebView child to be 'Sample Login', got %+v", webview.Children[0])
+	}
+
+	if screenElementText(webview.Children[1]) != "Submit" {
+		t.Errorf("expected second WebView child to be 'Submit', got %+v", webview.Children[1])
+	}
+}
+
+func TestCollectElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	d := &AndroidDevice{}
+
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:  "android.widget.LinearLayout",
+				Bounds: "[0,0][1080,1200]",
+				Nodes: []uiAutomatorXmlNode{
+					{
+						Class:  "android.widget.Button",
+						Text:   "First",
+						Bounds: "[0,0][200,100]",
+					},
+				},
+			},
+			{
+				Class:  "android.widget.Button",
+				Text:   "Second",
+				Bounds: "[0,1300][200,1400]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
+	}
+
+	if screenElementText(output[0]) != "First" || screenElementText(output[1]) != "Second" {
+		t.Errorf("expected buttons 'First' and 'Second' at top level, got %+v", output)
+	}
+}
+
+func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class: "android.widget.FrameLayout",
+			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 2400},
+			Children: []deviceKitNode{
+				{
+					Class:      "android.webkit.WebView",
+					ResourceID: "com.mobilenext.playground:id/webview",
+					Rect:       deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+					Children: []deviceKitNode{
+						{
+							Class: "android.view.View",
+							Rect:  deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+							Children: []deviceKitNode{
+								{
+									Class: "android.widget.TextView",
+									Text:  "Sample Login",
+									Rect:  deviceKitRect{X: 60, Y: 900, Width: 430, Height: 90},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element (WebView), got %d: %+v", len(output), output)
+	}
+
+	webview := output[0]
+	if webview.Type != "android.webkit.WebView" {
+		t.Fatalf("expected top-level element to be the WebView, got %+v", webview)
+	}
+
+	if len(webview.Children) != 1 || screenElementText(webview.Children[0]) != "Sample Login" {
+		t.Errorf("expected WebView child 'Sample Login', got %+v", webview.Children)
+	}
+}
+
+func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class: "android.widget.LinearLayout",
+			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 1200},
+			Children: []deviceKitNode{
+				{
+					Class: "android.widget.Button",
+					Text:  "First",
+					Rect:  deviceKitRect{X: 0, Y: 0, Width: 200, Height: 100},
+				},
+			},
+		},
+		{
+			Class: "android.widget.Button",
+			Text:  "Second",
+			Rect:  deviceKitRect{X: 0, Y: 1300, Width: 200, Height: 100},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
+	}
+
+	if screenElementText(output[0]) != "First" || screenElementText(output[1]) != "Second" {
+		t.Errorf("expected buttons 'First' and 'Second' at top level, got %+v", output)
+	}
+}

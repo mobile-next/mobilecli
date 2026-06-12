@@ -1349,67 +1349,74 @@ func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementR
 	}
 }
 
+// collectElements converts a uiautomator node tree into ScreenElements,
+// preserving hierarchy: collected descendants of an accepted element become
+// its Children, while descendants of rejected elements are hoisted to the
+// nearest accepted ancestor.
 func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenElement {
-	var elements []types.ScreenElement
-
-	// recursively process child nodes
+	var childElements []types.ScreenElement
 	for _, childNode := range node.Nodes {
-		childElements := d.collectElements(childNode)
-		elements = append(elements, childElements...)
+		childElements = append(childElements, d.collectElements(childNode)...)
 	}
 
-	// process current node if it has text, content-desc, or hint
-	if node.Text != "" || node.ContentDesc != "" || node.Hint != "" || node.ResourceID != "" {
-		rect := d.getScreenElementRect(node.Bounds)
-
-		// only include elements with positive width and height
-		if rect.Width > 0 && rect.Height > 0 {
-			element := types.ScreenElement{
-				Type: node.Class,
-				Text: &node.Text,
-				Rect: rect,
-			}
-
-			// set label from content-desc or hint
-			if node.ContentDesc != "" {
-				element.Label = &node.ContentDesc
-			} else if node.Hint != "" {
-				element.Label = &node.Hint
-			}
-
-			// set focused if true
-			if node.Focused == "true" {
-				focused := true
-				element.Focused = &focused
-			}
-
-			// set identifier from resource-id
-			if node.ResourceID != "" {
-				element.Identifier = &node.ResourceID
-			}
-
-			// default type if class is empty
-			if element.Type == "" {
-				element.Type = "text"
-			}
-
-			elements = append(elements, element)
-		}
+	// only include the current node if it has text, content-desc, or hint
+	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
+		return childElements
 	}
 
-	return elements
+	// only include elements with positive width and height
+	rect := d.getScreenElementRect(node.Bounds)
+	if rect.Width <= 0 || rect.Height <= 0 {
+		return childElements
+	}
+
+	element := types.ScreenElement{
+		Type:     node.Class,
+		Text:     &node.Text,
+		Rect:     rect,
+		Children: childElements,
+	}
+
+	// set label from content-desc or hint
+	if node.ContentDesc != "" {
+		element.Label = &node.ContentDesc
+	} else if node.Hint != "" {
+		element.Label = &node.Hint
+	}
+
+	// set focused if true
+	if node.Focused == "true" {
+		focused := true
+		element.Focused = &focused
+	}
+
+	// set identifier from resource-id
+	if node.ResourceID != "" {
+		element.Identifier = &node.ResourceID
+	}
+
+	// default type if class is empty
+	if element.Type == "" {
+		element.Type = "text"
+	}
+
+	return []types.ScreenElement{element}
 }
 
+// collectDeviceKitElements converts a devicekit node tree into ScreenElements,
+// preserving hierarchy the same way collectElements does.
 func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	var elements []types.ScreenElement
 
 	for _, node := range nodes {
-		elements = append(elements, collectDeviceKitElements(node.Children)...)
+		childElements := collectDeviceKitElements(node.Children)
 
 		if node.Text == "" && node.ContentDesc == "" && node.ResourceID == "" {
+			elements = append(elements, childElements...)
 			continue
 		}
 		if node.Rect.Width <= 0 || node.Rect.Height <= 0 {
+			elements = append(elements, childElements...)
 			continue
 		}
 
@@ -1421,9 +1428,10 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 		}
 
 		element := types.ScreenElement{
-			Type: node.Class,
-			Text: &node.Text,
-			Rect: rect,
+			Type:     node.Class,
+			Text:     &node.Text,
+			Rect:     rect,
+			Children: childElements,
 		}
 
 		if node.ContentDesc != "" {
