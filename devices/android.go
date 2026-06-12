@@ -1107,6 +1107,11 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
+
+	// bitrate only applies to AvcServer
+	if config.Format == "avc" && config.Bitrate > 0 {
+		cmdArgs = append(cmdArgs, "--bitrate", fmt.Sprintf("%d", config.Bitrate))
+	}
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 
