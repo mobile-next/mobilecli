@@ -74,7 +74,7 @@ var screencaptureCmd = &cobra.Command{
 		}
 
 		// Validate bitrate (0 means use default; ignored for anything but AVC)
-		if screencaptureBitrate != 0 && (screencaptureBitrate < minScreencaptureBitrate || screencaptureBitrate > maxScreencaptureBitrate) {
+		if screencaptureFormat == "avc" && screencaptureBitrate != 0 && (screencaptureBitrate < minScreencaptureBitrate || screencaptureBitrate > maxScreencaptureBitrate) {
 			response := commands.NewErrorResponse(fmt.Errorf("bitrate must be between %d and %d", minScreencaptureBitrate, maxScreencaptureBitrate))
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
