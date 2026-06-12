@@ -1,3 +1,9 @@
+## [0.3.81](https://github.com/mobile-next/mobilecli/releases/tag/0.3.81) (2026-06-12)
+* Fix: Wait a bit for android foreground app, it might be null if there's a transition animation ([#271](https://github.com/mobile-next/mobilecli/pull/271))
+* Fix: Nest elements in 'dump ui' command, it was flat ([#267](https://github.com/mobile-next/mobilecli/pull/267))
+* Feat: Add --bitrate to screencapture command ([#269](https://github.com/mobile-next/mobilecli/pull/269))
+* Feat: Add --activity for apps launch on android ([#272](https://github.com/mobile-next/mobilecli/pull/272))
+
 ## [0.3.80](https://github.com/mobile-next/mobilecli/releases/tag/0.3.80) (2026-06-11)
 * Feat: Support --insecure-storage if keychain/gnome-keyring doesn't exist ([#266](https://github.com/mobile-next/mobilecli/pull/266))
 * Fix: Add missing webview element ([#265](https://github.com/mobile-next/mobilecli/pull/265))
