@@ -276,6 +276,24 @@ var validLocaleTag = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])
 // resolvedActivityPattern matches a "package/activity" component name.
 var resolvedActivityPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]*/[a-zA-Z0-9_.$]+$`)
 
+// validActivity matches an Android activity reference: an optional "package/"
+// prefix followed by a class name. Class names may be relative (".Foo"),
+// fully-qualified ("com.x.Foo"), or contain inner classes ("Foo$Bar").
+var validActivity = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_.]*/)?[a-zA-Z0-9_.$]+$`)
+
+// buildLaunchComponent builds the "package/activity" component for `am start -n`.
+// If activity already contains a "/", it is treated as a full component and
+// used as-is; otherwise it is prefixed with bundleID.
+func buildLaunchComponent(bundleID, activity string) (string, error) {
+	if !validActivity.MatchString(activity) {
+		return "", fmt.Errorf("invalid activity name: %q", activity)
+	}
+	if strings.Contains(activity, "/") {
+		return activity, nil
+	}
+	return bundleID + "/" + activity, nil
+}
+
 // parseResolveActivityOutput extracts the "pkg/activity" component from the
 // output of `cmd package resolve-activity --brief <pkg>`. Returns "" if no
 // launcher activity is present (e.g. unknown package, or output is "{}").

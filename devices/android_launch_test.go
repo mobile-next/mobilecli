@@ -59,3 +59,68 @@ com.example/.Outer$Inner`,
 		})
 	}
 }
+
+func Test_buildLaunchComponent(t *testing.T) {
+	tests := []struct {
+		name     string
+		bundleID string
+		activity string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "relative activity gets package prefix",
+			bundleID: "com.example.app",
+			activity: ".DebugActivity",
+			want:     "com.example.app/.DebugActivity",
+		},
+		{
+			name:     "fully qualified class gets package prefix",
+			bundleID: "com.example.app",
+			activity: "com.example.app.DebugActivity",
+			want:     "com.example.app/com.example.app.DebugActivity",
+		},
+		{
+			name:     "full component is used as-is",
+			bundleID: "com.example.app",
+			activity: "com.other/.DebugActivity",
+			want:     "com.other/.DebugActivity",
+		},
+		{
+			name:     "inner class is allowed",
+			bundleID: "com.example.app",
+			activity: ".Outer$Inner",
+			want:     "com.example.app/.Outer$Inner",
+		},
+		{
+			name:     "activity with space is rejected",
+			bundleID: "com.example.app",
+			activity: ".Debug Activity",
+			wantErr:  true,
+		},
+		{
+			name:     "activity with shell metacharacter is rejected",
+			bundleID: "com.example.app",
+			activity: ".Debug;rm",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildLaunchComponent(tt.bundleID, tt.activity)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("buildLaunchComponent() expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("buildLaunchComponent() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("buildLaunchComponent() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
