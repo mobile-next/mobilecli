@@ -727,6 +727,10 @@ func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
 
+	if launchOpts.Activity != "" {
+		return fmt.Errorf("--activity is not supported on iOS")
+	}
+
 	log.SetLevel(log.WarnLevel)
 
 	// ensure tunnel is running for iOS 17+

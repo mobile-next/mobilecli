@@ -216,6 +216,9 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 }
 
 func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	if opts.Activity != "" {
+		return fmt.Errorf("--activity is not supported on iOS")
+	}
 	args := []string{"launch", s.UDID, bundleID}
 	if len(opts.Locales) > 0 {
 		args = append(args, "-AppleLanguages", "("+strings.Join(opts.Locales, ", ")+")")
