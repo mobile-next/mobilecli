@@ -34,6 +34,7 @@ var appsLaunchCmd = &cobra.Command{
 			DeviceID: deviceId,
 			BundleID: args[0],
 			Locales:  locales,
+			Activity: activity,
 		}
 
 		response := commands.LaunchAppCommand(req)
@@ -182,6 +183,7 @@ func init() {
 
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
+	appsLaunchCmd.Flags().StringVar(&activity, "activity", "", "Android activity to launch (e.g. .DebugActivity or com.example/.DebugActivity)")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
 	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")
