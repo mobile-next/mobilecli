@@ -333,7 +333,13 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 		}
 	}
 
-	component, err := d.resolveLauncherActivity(bundleID)
+	var component string
+	var err error
+	if opts.Activity != "" {
+		component, err = buildLaunchComponent(bundleID, opts.Activity)
+	} else {
+		component, err = d.resolveLauncherActivity(bundleID)
+	}
 	if err != nil {
 		return err
 	}
