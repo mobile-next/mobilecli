@@ -156,6 +156,9 @@ func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if len(opts.Locales) > 0 {
 		p["locales"] = opts.Locales
 	}
+	if opts.Activity != "" {
+		p["activity"] = opts.Activity
+	}
 	return r.fireRPC("device.apps.launch", p)
 }
 
