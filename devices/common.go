@@ -79,6 +79,7 @@ type ScreenCaptureConfig struct {
 	Quality    int
 	Scale      float64
 	FPS        int
+	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
 	OnData     func([]byte) bool    // data callback - return false to stop
 }

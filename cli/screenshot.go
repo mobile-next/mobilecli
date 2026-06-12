@@ -12,8 +12,14 @@ import (
 )
 
 var (
-	screencaptureScale float64
-	screencaptureFPS   int
+	screencaptureScale   float64
+	screencaptureFPS     int
+	screencaptureBitrate int
+)
+
+const (
+	minScreencaptureBitrate = 100_000
+	maxScreencaptureBitrate = 10_000_000
 )
 
 var screenshotCmd = &cobra.Command{
@@ -67,6 +73,13 @@ var screencaptureCmd = &cobra.Command{
 			return fmt.Errorf("%s", response.Error)
 		}
 
+		// Validate bitrate (0 means use default; ignored for anything but AVC)
+		if screencaptureBitrate != 0 && (screencaptureBitrate < minScreencaptureBitrate || screencaptureBitrate > maxScreencaptureBitrate) {
+			response := commands.NewErrorResponse(fmt.Errorf("bitrate must be between %d and %d", minScreencaptureBitrate, maxScreencaptureBitrate))
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
 		// Find the target device
 		targetDevice, err := commands.FindDeviceOrAutoSelect(deviceId)
 		if err != nil {
@@ -105,6 +118,7 @@ var screencaptureCmd = &cobra.Command{
 			Quality: devices.DefaultQuality,
 			Scale:   scale,
 			FPS:     fps,
+			Bitrate: screencaptureBitrate,
 			OnProgress: func(message string) {
 				utils.Verbose(message)
 			},
@@ -143,4 +157,5 @@ func init() {
 	screencaptureCmd.Flags().StringVarP(&screencaptureFormat, "format", "f", "mjpeg", "Output format for screen capture")
 	screencaptureCmd.Flags().Float64Var(&screencaptureScale, "scale", 0, "Scale factor for screen capture (0 for default)")
 	screencaptureCmd.Flags().IntVar(&screencaptureFPS, "fps", 0, "Frames per second for screen capture (0 for default)")
+	screencaptureCmd.Flags().IntVar(&screencaptureBitrate, "bitrate", 0, "Bitrate in bits per second for AVC capture (100000-10000000, 0 for default)")
 }
