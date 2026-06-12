@@ -1,4 +1,4 @@
-.PHONY: all build agents test test-cover lint fmt clean
+.PHONY: all build agents test test-cover lint fmt clean docs
 
 all: build
 
@@ -30,6 +30,9 @@ test-e2e: build-cover
 lint:
 	$(shell go env GOPATH)/bin/golangci-lint run
 
+docs:
+	npx https://github.com/gmegidish/jagger -f markdown -o docs/openrpc.md docs/openrpc.json
+
 fmt:
 	go fmt ./...
 	$(shell go env GOPATH)/bin/goimports -w .
@@ -38,3 +41,4 @@ clean:
 	$(MAKE) -C agents/android clean
 	$(MAKE) -C agents/ios clean
 	rm -f mobilecli coverage.out coverage.html
+
