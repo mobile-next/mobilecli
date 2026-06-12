@@ -27,7 +27,7 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.LaunchApp(req.BundleID, req.Locales)
+	err = targetDevice.LaunchApp(req.BundleID, devices.LaunchOptions{Locales: req.Locales})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
 	}

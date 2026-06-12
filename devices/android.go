@@ -301,14 +301,14 @@ func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error)
 	return component, nil
 }
 
-func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
-	if len(locales) > 0 {
-		for _, l := range locales {
+func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	if len(opts.Locales) > 0 {
+		for _, l := range opts.Locales {
 			if !validLocaleTag.MatchString(l) {
 				return fmt.Errorf("invalid locale tag: %q", l)
 			}
 		}
-		localeArg := strings.Join(locales, ",")
+		localeArg := strings.Join(opts.Locales, ",")
 		output, err := d.runAdbCommand("shell", "cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
 		if err != nil {
 			return fmt.Errorf("failed to set app locales for %s: %w\nOutput: %s", bundleID, err, string(output))
