@@ -42,7 +42,10 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
     - name: Build Android agents
-      run: make -C agents/android all
+      run: |
+        make -C agents/android all
+        ls -l agents/android
+        shasum -a 256 agents/android/mobilecli.*
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
@@ -64,7 +67,10 @@ jobs:
         persist-credentials: false
 
     - name: Build iOS agents
-      run: make -C agents/ios all
+      run: |
+        make -C agents/ios all
+        ls -l agents/ios
+        shasum -a 256 agents/ios/agent-sim.dylib
 
     - name: Upload iOS agent binaries
       uses: actions/upload-artifact@v5
