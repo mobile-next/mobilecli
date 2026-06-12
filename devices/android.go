@@ -1010,9 +1010,22 @@ func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
 }
 
 func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	packageName, err := d.getForegroundPackageName()
-	if err != nil {
-		return nil, err
+	// dumpsys returns a null focus while animations are running, so retry for
+	// up to 5 seconds (every 250ms) before giving up.
+	var packageName string
+	var err error
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		packageName, err = d.getForegroundPackageName()
+		if err == nil {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	version, err := d.GetAppVersion(packageName)
