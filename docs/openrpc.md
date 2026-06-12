@@ -26,6 +26,7 @@ JSON-RPC API for mobile device automation and control
 - [device.info](#deviceinfo)
 - [device.io.button](#deviceiobutton)
 - [device.io.gesture](#deviceiogesture)
+- [device.io.keys](#deviceiokeys)
 - [device.io.longpress](#deviceiolongpress)
 - [device.io.orientation.get](#deviceioorientationget)
 - [device.io.orientation.set](#deviceioorientationset)
@@ -175,6 +176,7 @@ Launches an application by bundle ID on the specified device
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `bundleId` | `string` | ✓ | Bundle ID of the application to launch |
 | `locales` | Array<`string`> |  | BCP 47 locale tags to set for the app (e.g. ["fr-FR", "en-GB"]). On iOS this is a per-launch argument. On Android 13+ this is persistent. |
+| `activity` | `string` |  | Android only: the activity to launch instead of the auto-resolved launcher activity. Accepts a relative class (".DebugActivity"), a fully-qualified class ("com.example.app.DebugActivity"), or a full component ("com.example.app/.DebugActivity"). Passing this for an iOS device is an error. |
 
 #### Response
 
@@ -193,7 +195,8 @@ Launch operation result
     "bundleId": "string",
     "locales": [
       "string"
-    ]
+    ],
+    "activity": "string"
   },
   "id": 1
 }
@@ -743,6 +746,42 @@ Operation result
     "deviceId": "string",
     "actions": [
       {}
+    ]
+  },
+  "id": 1
+}
+```
+
+
+### device.io.keys
+
+**Press keyboard keys**
+
+Presses one or more key combinations on the device, in order. Each combo is a key with optional modifiers joined by '+', e.g. "cmd+a", "ctrl+shift+z", "backspace". Modifiers: cmd/command/meta, ctrl/control, alt/opt/option, shift, fn. Keys are case-insensitive.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `keys` | Array<`string`> | ✓ | Key combinations to press, in order (e.g. ["cmd+a", "backspace"]) |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.keys",
+  "params": {
+    "deviceId": "string",
+    "keys": [
+      "string"
     ]
   },
   "id": 1

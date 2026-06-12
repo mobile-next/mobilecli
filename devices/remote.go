@@ -151,10 +151,13 @@ func (r *RemoteDevice) OpenURL(url string) error {
 	return r.fireRPC("device.url", params{"url": url})
 }
 
-func (r *RemoteDevice) LaunchApp(bundleID string, locales []string) error {
+func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	p := params{"bundleId": bundleID}
-	if len(locales) > 0 {
-		p["locales"] = locales
+	if len(opts.Locales) > 0 {
+		p["locales"] = opts.Locales
+	}
+	if opts.Activity != "" {
+		p["activity"] = opts.Activity
 	}
 	return r.fireRPC("device.apps.launch", p)
 }

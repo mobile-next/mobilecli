@@ -104,6 +104,13 @@ type FileEntry struct {
 	IsDir   bool      `json:"isDir"`
 }
 
+// LaunchOptions carries optional parameters for launching an app.
+// Activity is Android-only; passing it to an iOS device is an error.
+type LaunchOptions struct {
+	Locales  []string
+	Activity string
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -124,7 +131,7 @@ type ControllableDevice interface {
 	SendKeys(text string) error
 	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
-	LaunchApp(bundleID string, locales []string) error
+	LaunchApp(bundleID string, opts LaunchOptions) error
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
 	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)

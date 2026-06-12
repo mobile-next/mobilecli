@@ -276,6 +276,24 @@ var validLocaleTag = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])
 // resolvedActivityPattern matches a "package/activity" component name.
 var resolvedActivityPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]*/[a-zA-Z0-9_.$]+$`)
 
+// validActivity matches an Android activity reference: an optional "package/"
+// prefix followed by a class name. Class names may be relative (".Foo"),
+// fully-qualified ("com.x.Foo"), or contain inner classes ("Foo$Bar").
+var validActivity = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_.]*/)?[a-zA-Z0-9_.$]+$`)
+
+// buildLaunchComponent builds the "package/activity" component for `am start -n`.
+// If activity already contains a "/", it is treated as a full component and
+// used as-is; otherwise it is prefixed with bundleID.
+func buildLaunchComponent(bundleID, activity string) (string, error) {
+	if !validActivity.MatchString(activity) {
+		return "", fmt.Errorf("invalid activity name: %q", activity)
+	}
+	if strings.Contains(activity, "/") {
+		return activity, nil
+	}
+	return bundleID + "/" + activity, nil
+}
+
 // parseResolveActivityOutput extracts the "pkg/activity" component from the
 // output of `cmd package resolve-activity --brief <pkg>`. Returns "" if no
 // launcher activity is present (e.g. unknown package, or output is "{}").
@@ -301,21 +319,27 @@ func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error)
 	return component, nil
 }
 
-func (d *AndroidDevice) LaunchApp(bundleID string, locales []string) error {
-	if len(locales) > 0 {
-		for _, l := range locales {
+func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	if len(opts.Locales) > 0 {
+		for _, l := range opts.Locales {
 			if !validLocaleTag.MatchString(l) {
 				return fmt.Errorf("invalid locale tag: %q", l)
 			}
 		}
-		localeArg := strings.Join(locales, ",")
+		localeArg := strings.Join(opts.Locales, ",")
 		output, err := d.runAdbCommand("shell", "cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
 		if err != nil {
 			return fmt.Errorf("failed to set app locales for %s: %w\nOutput: %s", bundleID, err, string(output))
 		}
 	}
 
-	component, err := d.resolveLauncherActivity(bundleID)
+	var component string
+	var err error
+	if opts.Activity != "" {
+		component, err = buildLaunchComponent(bundleID, opts.Activity)
+	} else {
+		component, err = d.resolveLauncherActivity(bundleID)
+	}
 	if err != nil {
 		return err
 	}

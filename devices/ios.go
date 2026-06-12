@@ -722,9 +722,13 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	return device, nil
 }
 
-func (d IOSDevice) LaunchApp(bundleID string, locales []string) error {
+func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	if launchOpts.Activity != "" {
+		return fmt.Errorf("--activity is not supported on iOS")
 	}
 
 	log.SetLevel(log.WarnLevel)
@@ -750,8 +754,8 @@ func (d IOSDevice) LaunchApp(bundleID string, locales []string) error {
 	args := []any{}
 	envs := map[string]any{}
 
-	if len(locales) > 0 {
-		args = append(args, "-AppleLanguages", "("+strings.Join(locales, ", ")+")")
+	if len(launchOpts.Locales) > 0 {
+		args = append(args, "-AppleLanguages", "("+strings.Join(launchOpts.Locales, ", ")+")")
 	}
 
 	pid, err := pControl.LaunchAppWithArgs(bundleID, args, envs, opts)
@@ -1488,7 +1492,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// Launch the main DeviceKit app
 	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	startTime := time.Now()
-	err = d.LaunchApp(devicekitMainAppBundleId, nil)
+	err = d.LaunchApp(devicekitMainAppBundleId, LaunchOptions{})
 	if err != nil {
 		// clean up port forwarders on failure
 		_ = d.portForwarderDeviceKit.Stop()
