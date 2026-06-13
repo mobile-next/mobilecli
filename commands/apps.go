@@ -115,6 +115,13 @@ type InstallAppRequest struct {
 	SigningIdentity     string `json:"signingIdentity"`
 }
 
+// InstallAppResult is returned on a successful install, including the app
+// metadata parsed from the installed file when available.
+type InstallAppResult struct {
+	Message string             `json:"message"`
+	App     *utils.AppMetadata `json:"app,omitempty"`
+}
+
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	if req.Path == "" {
 		return NewErrorResponse(fmt.Errorf("path is required"))
@@ -151,9 +158,19 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %w", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(MessageResult{
+	result := InstallAppResult{
 		Message: fmt.Sprintf("Installed app from '%s' on device %s", req.Path, targetDevice.ID()),
-	})
+	}
+
+	// metadata extraction is best-effort: a parse failure must not turn a
+	// successful install into an error.
+	if meta, err := utils.ParseAppMetadata(req.Path); err != nil {
+		utils.Verbose("failed to parse app metadata from %s: %v", req.Path, err)
+	} else {
+		result.App = meta
+	}
+
+	return NewSuccessResponse(result)
 }
 
 type AppPathRequest struct {
