@@ -14,6 +14,7 @@ type AppRequest struct {
 	DeviceID string   `json:"deviceId"`
 	BundleID string   `json:"bundleId"`
 	Locales  []string `json:"locales,omitempty"`
+	Activity string   `json:"activity,omitempty"`
 }
 
 // LaunchAppCommand launches an app on the specified device
@@ -27,13 +28,13 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.LaunchApp(req.BundleID, req.Locales)
+	err = targetDevice.LaunchApp(req.BundleID, devices.LaunchOptions{Locales: req.Locales, Activity: req.Activity})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Launched app '%s' on device %s", req.BundleID, targetDevice.ID()),
+	return NewSuccessResponse(MessageResult{
+		Message: fmt.Sprintf("Launched app '%s' on device %s", req.BundleID, targetDevice.ID()),
 	})
 }
 
@@ -53,8 +54,8 @@ func TerminateAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to terminate app on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Terminated app '%s' on device %s", req.BundleID, targetDevice.ID()),
+	return NewSuccessResponse(MessageResult{
+		Message: fmt.Sprintf("Terminated app '%s' on device %s", req.BundleID, targetDevice.ID()),
 	})
 }
 
@@ -70,7 +71,7 @@ func ListAppsCommand(req ListAppsRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	apps, err := targetDevice.ListApps()
+	apps, err := targetDevice.ListApps(true)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to list apps on device %s: %v", targetDevice.ID(), err))
 	}
@@ -114,6 +115,13 @@ type InstallAppRequest struct {
 	SigningIdentity     string `json:"signingIdentity"`
 }
 
+// InstallAppResult is returned on a successful install, including the app
+// metadata parsed from the installed file when available.
+type InstallAppResult struct {
+	Message string             `json:"message"`
+	App     *utils.AppMetadata `json:"app,omitempty"`
+}
+
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	if req.Path == "" {
 		return NewErrorResponse(fmt.Errorf("path is required"))
@@ -150,8 +158,43 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %w", targetDevice.ID(), err))
 	}
 
+	result := InstallAppResult{
+		Message: fmt.Sprintf("Installed app from '%s' on device %s", req.Path, targetDevice.ID()),
+	}
+
+	// metadata extraction is best-effort: a parse failure must not turn a
+	// successful install into an error.
+	if meta, err := utils.ParseAppMetadata(req.Path); err != nil {
+		utils.Verbose("failed to parse app metadata from %s: %v", req.Path, err)
+	} else {
+		result.App = meta
+	}
+
+	return NewSuccessResponse(result)
+}
+
+type AppPathRequest struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+func AppPathCommand(req AppPathRequest) *CommandResponse {
+	if req.BundleID == "" {
+		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
+	}
+
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
+	}
+
+	path, err := device.GetAppContainerPath(req.BundleID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to get app path on device %s: %w", device.ID(), err))
+	}
+
 	return NewSuccessResponse(map[string]any{
-		"message": fmt.Sprintf("Installed app from '%s' on device %s", req.Path, targetDevice.ID()),
+		"path": path,
 	})
 }
 

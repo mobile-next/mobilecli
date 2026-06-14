@@ -1,18 +1,10 @@
 package wda
 
-import "fmt"
-
 func (c *WdaClient) SendKeys(text string) error {
-
-	sessionId, err := c.GetOrCreateSession()
-	if err != nil {
-		return err
+	params := map[string]string{
+		"text": text,
 	}
 
-	url := fmt.Sprintf("session/%s/wda/keys", sessionId)
-	_, err = c.PostEndpoint(url, map[string]any{
-		"value": []string{text},
-	})
-
+	_, err := c.CallRPC("device.io.text", params)
 	return err
 }

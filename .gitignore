@@ -5,3 +5,9 @@ screenshot.png
 **/coverage*.out
 **/coverage*.html
 test/coverage
+test/test-results
+test/playwright-report
+agents/android/mobilecli.so
+agents/android/mobilecli.dex
+agents/ios/agent-sim.dylib
+agents/ios/agent-dev.dylib

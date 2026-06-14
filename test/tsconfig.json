@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "types": ["mocha", "chai", "node"]
+    "types": ["node"]
   },
   "include": [
     "**/*.ts"

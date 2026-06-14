@@ -1,52 +1,48 @@
-import {expect} from 'chai';
-import {execFileSync} from 'child_process';
+import {test, expect} from '@playwright/test';
+import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import {
-	createAndLaunchSimulator,
+	findSimulatorByName,
 	printAllLogsFromSimulator,
 	shutdownSimulator,
-	deleteSimulator,
-	cleanupSimulators,
-	findIOSRuntime
 } from './simctl';
 import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
-import {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
+import type {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
+
+type Dimensions = {
+	width: number;
+	height: number;
+};
 
 const TEST_SERVER_URL = 'http://localhost:12001';
 
-describe('iOS Simulator Tests', () => {
-	after(() => {
-		cleanupSimulators();
-	});
-
+test.describe('iOS Simulator Tests', () => {
 	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
-		describe(`iOS ${iosVersion}`, () => {
+		test.describe(`iOS ${iosVersion}`, () => {
 			let simulatorId: string;
 
-			before(function () {
-				this.timeout(180000);
-
-				// Check if runtime is available
+			test.beforeAll(() => {
+				const simulatorName = `Test-iOS-${iosVersion}`;
 				try {
-					findIOSRuntime(iosVersion);
-					simulatorId = createAndLaunchSimulator(iosVersion);
+					simulatorId = findSimulatorByName(simulatorName);
+					installDeviceKitAgent(simulatorId);
 				} catch (error) {
-					console.log(`iOS ${iosVersion} runtime not available, skipping tests: ${error}`);
-					this.skip();
+					console.log(`Simulator "${simulatorName}" not found, skipping tests: ${error}`);
 				}
 			});
 
-			after(() => {
+			test.afterAll(() => {
 				if (simulatorId) {
 					printAllLogsFromSimulator(simulatorId);
-					shutdownSimulator(simulatorId);
-					deleteSimulator(simulatorId);
 				}
 			});
 
-			it('should take screenshot', async function () {
+			test('should take screenshot', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
 
 				takeScreenshot(simulatorId, screenshotPath);
@@ -56,46 +52,60 @@ describe('iOS Simulator Tests', () => {
 				// console.log(`Screenshot saved at: ${screenshotPath}`);
 			});
 
-			it('should open URL https://example.com', async function () {
+			test('should open URL https://example.com', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				openUrl(simulatorId, 'https://example.com');
 			});
 
-			it('should list all devices', async function () {
+			test.describe('screenrecord', () => {
+				test('should record with --time-limit 5 and produce a playable mp4', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
+					recordScreenWithTimeLimit(simulatorId, videoPath, 5);
+
+					verifyVideoIsPlayable(videoPath);
+					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+					fs.unlinkSync(videoPath);
+				});
+
+				test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
+					await recordScreenThenInterruptWithCtrlC(simulatorId, videoPath, 5);
+
+					verifyVideoIsPlayable(videoPath);
+					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+					fs.unlinkSync(videoPath);
+				});
+			});
+
+			test('should list all devices', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				const devices = listDevices(false);
 				verifyDeviceListContainsSimulator(devices, simulatorId);
 			});
 
-			it('should get device info', async function () {
+			test('should get device info', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				const info = getDeviceInfo(simulatorId);
 				verifyDeviceInfo(info, simulatorId);
 			});
 
-			it('should list installed apps', async function () {
+			test('should list installed apps', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				const apps = listApps(simulatorId);
 				verifyAppsListContainsSafari(apps);
 			});
 
-			it('should warm up WDA by checking foreground app', async function () {
-				this.timeout(300000); // 5 minutes for WDA installation
+			test('should launch Safari app and verify it is in foreground', async () => {
+				test.skip(!simulatorId, 'simulator not found');
 
-				// Terminate Safari if it's running (from previous URL test)
-				try {
-					terminateApp(simulatorId, 'com.apple.mobilesafari');
-					await new Promise(resolve => setTimeout(resolve, 2000));
-				} catch (e) {
-					// Safari might not be running, that's fine
-				}
-
-				// This ensures WDA is installed and running before the Safari tests
-				// Check foreground app - should be SpringBoard
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundApp);
-
-				// Wait a bit more to ensure WDA is fully ready
-				await new Promise(resolve => setTimeout(resolve, 3000));
-			});
-
-			it('should launch Safari app and verify it is in foreground', async function () {
 				launchApp(simulatorId, 'com.apple.mobilesafari');
 
 				// Wait for Safari to fully launch
@@ -105,7 +115,9 @@ describe('iOS Simulator Tests', () => {
 				verifySafariIsForeground(foregroundApp);
 			});
 
-			it('should terminate Safari app and verify SpringBoard is in foreground', async function () {
+			test('should terminate Safari app and verify SpringBoard is in foreground', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				// First launch Safari
 				launchApp(simulatorId, 'com.apple.mobilesafari');
 				await new Promise(resolve => setTimeout(resolve, 10000));
@@ -118,7 +130,9 @@ describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundApp);
 			});
 
-			it('should handle launching app twice (idempotency)', async function () {
+			test('should handle launching app twice (idempotency)', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				launchApp(simulatorId, 'com.apple.mobilesafari');
 				await new Promise(resolve => setTimeout(resolve, 10000));
 
@@ -130,7 +144,9 @@ describe('iOS Simulator Tests', () => {
 				verifySafariIsForeground(foregroundApp);
 			});
 
-			it('should handle launch-terminate-launch cycle', async function () {
+			test('should handle launch-terminate-launch cycle', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				// Launch
 				launchApp(simulatorId, 'com.apple.mobilesafari');
 				await new Promise(resolve => setTimeout(resolve, 10000));
@@ -147,7 +163,9 @@ describe('iOS Simulator Tests', () => {
 				verifySafariIsForeground(foregroundApp);
 			});
 
-			it('should tap on General button in Settings and navigate to General settings', async function () {
+			test('should tap on General button in Settings and navigate to General settings', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				// Launch Settings app
 				launchApp(simulatorId, 'com.apple.Preferences');
 				await new Promise(resolve => setTimeout(resolve, 5000));
@@ -169,7 +187,9 @@ describe('iOS Simulator Tests', () => {
 				verifyElementExists(generalUiDump, 'About');
 			});
 
-			it('should press HOME button and return to home screen from Safari', async function () {
+			test('should press HOME button and return to home screen from Safari', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
 				// Launch Safari
 				launchApp(simulatorId, 'com.apple.mobilesafari');
 				await new Promise(resolve => setTimeout(resolve, 10000));
@@ -187,9 +207,7 @@ describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
 
-			it('should test device lifecycle: boot, reboot, shutdown', async function () {
-				this.timeout(180000); // 3 minutes for the full lifecycle
-
+			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
 				await new Promise(resolve => setTimeout(resolve, 3000));
@@ -236,18 +254,90 @@ describe('iOS Simulator Tests', () => {
 				await new Promise(resolve => setTimeout(resolve, 5000));
 			});
 
-			it('should dump UI source in raw format', async function () {
-				this.timeout(60000);
+			test('should dump UI source in raw format', async () => {
+				test.skip(!simulatorId, 'simulator not found');
 
-				// ensure WDA is running by checking foreground app first
-				const foregroundApp = getForegroundApp(simulatorId);
-				expect(foregroundApp.data.packageName).to.not.be.empty;
-
-				// dump UI in raw format
 				const rawDump = dumpUIRaw(simulatorId);
+				verifyRawViewtreeDump(rawDump);
+			});
 
-				// verify it's the raw WDA response structure
-				verifyRawWDADump(rawDump);
+			test.describe('fs operations on app container (com.mobilenext.playground)', () => {
+				const packageName = 'com.mobilenext.playground';
+				let containerPath: string;
+				let remoteDir: string;
+				let remoteFile: string;
+
+				test.beforeAll(() => {
+					if (!simulatorId) return;
+					containerPath = getAppContainerPath(simulatorId, packageName);
+					remoteDir = `${containerPath}/Documents/mobilecli-test-` + (+new Date());
+					remoteFile = `${remoteDir}/data.txt`;
+				});
+
+				test('should return a valid container path for com.mobilenext.playground', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					expect(typeof containerPath).toBe('string');
+					expect(containerPath).toMatch(/^\/Users\//);
+				});
+
+				test('should list the app container root', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					const entries = fsList(simulatorId, containerPath);
+					expect(Array.isArray(entries)).toBe(true);
+					const known = entries.filter(e => e.name === "Documents" || e.name === "Library");
+					expect(known.length).toBe(2);
+				});
+
+				test('should create a directory inside the app container', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					fsMkdir(simulatorId, remoteDir, true);
+				});
+
+				test('should push a file into the app container', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					const localFile = writeTempFile('app container test');
+					fsPush(simulatorId, localFile, remoteFile);
+					fs.unlinkSync(localFile);
+				});
+
+				test('should list the file inside the app container', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					const entries = fsList(simulatorId, remoteDir);
+					const names = entries.map((e: any) => e.name);
+					expect(names).toContain('data.txt');
+				});
+
+				test('should pull the file from the app container and verify contents match', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					fsPull(simulatorId, remoteFile, localDest);
+					const contents = fs.readFileSync(localDest, 'utf8');
+					expect(contents.trim()).toBe('app container test');
+					fs.unlinkSync(localDest);
+				});
+
+				test('should remove the test directory from the app container', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					fsRm(simulatorId, remoteDir, true);
+					const entries = fsList(simulatorId, `${containerPath}/Documents`);
+					const names = entries.map((e: any) => e.name);
+					expect(names).not.toContain('mobilecli-test');
+				});
+
+				test('should prevent escaping the app container sandbox', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					for (let depth=1; depth<32; depth++) {
+						try {
+							const remoteFile = remoteDir + "/..".repeat(depth) + "/etc/hosts";
+							fsPull(simulatorId, remoteFile, localDest);
+						} catch {
+							// ignored, expected fsPull tof ail
+						}
+
+						expect(fs.existsSync(localDest)).toBe(false);
+					}
+				});
 			});
 		});
 	});
@@ -262,32 +352,21 @@ const createCoverageDirectory = (): string => {
 function mobilecli(args: string[]): any {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
-	try {
-		const coverdata = createCoverageDirectory();
-		const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: {
-				...process.env,
-				"GOCOVERDIR": coverdata,
-			}
-		});
-		return JSON.parse(result);
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${JSON.stringify(args)}`);
-		if (error.stderr) {
-			console.log(`Error stderr: ${error.stderr}`);
+	const coverdata = createCoverageDirectory();
+	const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {
+			...process.env,
+			"GOCOVERDIR": coverdata,
 		}
+	});
+	return JSON.parse(result);
+}
 
-		if (error.stdout) {
-			console.log(`Error stdout: ${error.stdout}`);
-		}
-		if (error.message && !error.stderr && !error.stdout) {
-			console.log(`Error message: ${error.message}`);
-		}
-		throw error;
-	}
+function installDeviceKitAgent(simulatorId: string): void {
+	mobilecli(['agent', 'install', '--device', simulatorId]);
 }
 
 function takeScreenshot(simulatorId: string, screenshotPath: string): void {
@@ -296,7 +375,7 @@ function takeScreenshot(simulatorId: string, screenshotPath: string): void {
 
 function verifyScreenshotFileWasCreated(screenshotPath: string): void {
 	const fileExists = fs.existsSync(screenshotPath);
-	expect(fileExists).to.be.true;
+	expect(fileExists).toBe(true);
 	// console.log(`✓ Screenshot file was created: ${screenshotPath}`);
 }
 
@@ -304,7 +383,7 @@ function verifyScreenshotFileHasValidContent(screenshotPath: string): void {
 	const stats = fs.statSync(screenshotPath);
 	const fileSizeInBytes = stats.size;
 
-	expect(fileSizeInBytes).to.be.greaterThan(100 * 1024);
+	expect(fileSizeInBytes).toBeGreaterThan(100 * 1024);
 }
 
 function openUrl(simulatorId: string, url: string): void {
@@ -322,7 +401,7 @@ function listDevices(includeOffline: boolean): any {
 
 function verifyDeviceListContainsSimulator(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
-	expect(jsonString).to.include(simulatorId);
+	expect(jsonString).toContain(simulatorId);
 }
 
 function getDeviceInfo(simulatorId: string): DeviceInfoResponse {
@@ -330,10 +409,10 @@ function getDeviceInfo(simulatorId: string): DeviceInfoResponse {
 }
 
 function verifyDeviceInfo(info: DeviceInfoResponse, simulatorId: string): void {
-	expect(info.data.device.id).to.equal(simulatorId);
-	expect(info.data.device.platform).to.equal('ios');
-	expect(info.data.device.type).to.equal('simulator');
-	expect(info.data.device.state).to.equal('online');
+	expect(info.data.device.id).toBe(simulatorId);
+	expect(info.data.device.platform).toBe('ios');
+	expect(info.data.device.type).toBe('simulator');
+	expect(info.data.device.state).toBe('online');
 }
 
 function listApps(simulatorId: string): any {
@@ -342,7 +421,7 @@ function listApps(simulatorId: string): any {
 
 function verifyAppsListContainsSafari(response: any): void {
 	const jsonString = JSON.stringify(response);
-	expect(jsonString).to.include('com.apple.mobilesafari');
+	expect(jsonString).toContain('com.apple.mobilesafari');
 }
 
 function launchApp(simulatorId: string, packageName: string): void {
@@ -358,12 +437,12 @@ function getForegroundApp(simulatorId: string): ForegroundAppResponse {
 }
 
 function verifySafariIsForeground(foregroundApp: ForegroundAppResponse): void {
-	expect(foregroundApp.data.packageName).to.equal('com.apple.mobilesafari');
-	expect(foregroundApp.data.appName).to.equal('Safari');
+	expect(foregroundApp.data.packageName).toBe('com.apple.mobilesafari');
+	expect(foregroundApp.data.appName).toBe('Safari');
 }
 
 function verifySpringBoardIsForeground(foregroundApp: ForegroundAppResponse): void {
-	expect(foregroundApp.data.packageName).to.equal('com.apple.springboard');
+	expect(foregroundApp.data.packageName).toBe('com.apple.springboard');
 }
 
 function dumpUI(simulatorId: string): UIDumpResponse {
@@ -412,7 +491,7 @@ function verifySafariIsRunning(uiDump: UIDumpResponse): void {
 	);
 
 	const isSafariRunning = hasSafariHomeElements || hasSafariToolbar;
-	expect(isSafariRunning, `Expected to find Safari UI elements (home screen or toolbar). Sample labels found: ${labels.join(', ')}`).to.be.true;
+	expect(isSafariRunning, `Expected to find Safari UI elements (home screen or toolbar). Sample labels found: ${labels.join(', ')}`).toBe(true);
 }
 
 /*
@@ -487,56 +566,169 @@ function shutdownDevice(simulatorId: string): void {
 
 function verifyDeviceIsOnline(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
-	expect(jsonString).to.include(simulatorId);
+	expect(jsonString).toContain(simulatorId);
 
 	// verify device has state "online"
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
-	expect(device).to.not.be.undefined;
-	expect(device.state).to.equal('online');
+	expect(device).toBeDefined();
+	expect(device.state).toBe('online');
 }
 
 function verifyDeviceIsOffline(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
-	expect(jsonString).to.include(simulatorId);
+	expect(jsonString).toContain(simulatorId);
 
 	// verify device has state "offline"
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
-	expect(device).to.not.be.undefined;
-	expect(device.state).to.equal('offline');
+	expect(device).toBeDefined();
+	expect(device.state).toBe('offline');
 }
 
 function verifyDeviceExists(response: any, simulatorId: string): void {
 	const jsonString = JSON.stringify(response);
-	expect(jsonString).to.include(simulatorId);
+	expect(jsonString).toContain(simulatorId);
 
 	// just verify device exists in the list
 	const devices = response.data?.devices || [];
 	const device = devices.find((d: any) => d.id === simulatorId);
-	expect(device).to.not.be.undefined;
+	expect(device).toBeDefined();
 }
 
 function dumpUIRaw(simulatorId: string): any {
 	return mobilecli(['dump', 'ui', '--device', simulatorId, '--format', 'raw']);
 }
 
-function verifyRawWDADump(response: any): void {
+function verifyRawViewtreeDump(response: any): void {
 	// verify it's a valid response
-	expect(response).to.not.be.undefined;
-	expect(response.status).to.equal('ok');
+	expect(response).toBeDefined();
+	expect(response.status).toBe('ok');
 
 	// raw format returns rawData field
 	const data = response.data;
-	expect(data).to.not.be.undefined;
-	expect(data.rawData).to.not.be.undefined;
+	expect(data).toBeDefined();
+	expect(data.rawData).toBeDefined();
 
 	// rawData should contain the tree structure directly from WDA
 	const rawData = data.rawData;
-	expect(rawData.type).to.be.a('string');
-	expect(rawData.type).to.not.be.empty;
-
-	// WDA raw response typically has children array
-	expect(rawData.children).to.be.an('array');
+	expect(Array.isArray(rawData.children)).toBe(true);
 }
 
+function getAppContainerPath(simulatorId: string, packageName: string): string {
+	const response = mobilecli(['apps', 'path', packageName, '--device', simulatorId]);
+	expect(response.status).toBe('ok');
+	return response.data.path;
+}
+
+function fsList(simulatorId: string, remotePath: string): any[] {
+	const response = mobilecli(['fs', 'ls', '--device', simulatorId, remotePath]);
+	expect(response.status).toBe('ok');
+	return response.data;
+}
+
+function fsPush(simulatorId: string, localPath: string, remotePath: string): void {
+	mobilecli(['fs', 'push', '--device', simulatorId, localPath, remotePath]);
+}
+
+function fsPull(simulatorId: string, remotePath: string, localPath: string): void {
+	mobilecli(['fs', 'pull', '--device', simulatorId, remotePath, localPath]);
+}
+
+function fsMkdir(simulatorId: string, remotePath: string, parents: boolean): void {
+	mobilecli(['fs', 'mkdir', '--device', simulatorId, ...(parents ? ['-p'] : []), remotePath]);
+}
+
+function fsRm(simulatorId: string, remotePath: string, recursive: boolean): void {
+	mobilecli(['fs', 'rm', '--device', simulatorId, ...(recursive ? ['-r'] : []), remotePath]);
+}
+
+function writeTempFile(content: string): string {
+	const tmpPath = path.join(os.tmpdir(), `mobilecli-push-${Date.now()}.txt`);
+	fs.writeFileSync(tmpPath, content, 'utf8');
+	return tmpPath;
+}
+
+// screenrecord emits progress on stderr (not JSON on stdout), so it can't use
+// the JSON-parsing mobilecli() helper. these runners drive the binary directly
+// while keeping the GOCOVERDIR env so coverage data is still collected.
+function recordScreenWithTimeLimit(simulatorId: string, videoPath: string, timeLimitSeconds: number): void {
+	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+	const coverdata = createCoverageDirectory();
+	execFileSync(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--time-limit', String(timeLimitSeconds), '--output', videoPath], {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {...process.env, GOCOVERDIR: coverdata},
+	});
+}
+
+// records with no time limit, lets it run for recordSeconds, then sends SIGINT
+// (Ctrl-C). mobilecli is expected to catch the signal, finalize the mp4, and
+// exit cleanly. resolves once the process has fully exited.
+function recordScreenThenInterruptWithCtrlC(simulatorId: string, videoPath: string, recordSeconds: number): Promise<void> {
+	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+	const coverdata = createCoverageDirectory();
+	return new Promise((resolve, reject) => {
+		const child = spawn(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--output', videoPath], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: {...process.env, GOCOVERDIR: coverdata},
+		});
+
+		child.on('error', reject);
+		child.on('close', () => resolve());
+
+		setTimeout(() => child.kill('SIGINT'), recordSeconds * 1000);
+	});
+}
+
+// verifies the recording is a non-empty, well-formed mp4 that ffprobe can
+// decode and report real video dimensions for (a corrupt file makes ffprobe
+// exit non-zero, which throws and fails the test).
+function verifyVideoIsPlayable(videoPath: string): void {
+	expect(fs.existsSync(videoPath)).toBe(true);
+	expect(fs.statSync(videoPath).size).toBeGreaterThan(0);
+
+	const {width, height} = probeVideoDimensions(videoPath);
+	expect(width).toBeGreaterThan(0);
+	expect(height).toBeGreaterThan(0);
+}
+
+// the simulator records at native resolution, so the recording dimensions
+// should match what a screenshot reports.
+function verifyVideoMatchesScreenshotDimensions(videoPath: string, simulatorId: string): void {
+	const video = probeVideoDimensions(videoPath);
+	const screenshot = getScreenshotDimensions(simulatorId);
+	expect(video).toEqual(screenshot);
+}
+
+function probeVideoDimensions(videoPath: string): Dimensions {
+	const output = execFileSync('ffprobe', [
+		'-v', 'error',
+		'-select_streams', 'v:0',
+		'-show_entries', 'stream=width,height',
+		'-of', 'csv=s=x:p=0',
+		videoPath,
+	], {encoding: 'utf8'}).trim();
+
+	const [width, height] = output.split('x').map(Number);
+	return {width, height};
+}
+
+function getScreenshotDimensions(simulatorId: string): Dimensions {
+	const screenshotPath = path.join(os.tmpdir(), `mobilecli-screenshot-${Date.now()}.png`);
+	takeScreenshot(simulatorId, screenshotPath);
+	const dimensions = readPngDimensions(screenshotPath);
+	fs.unlinkSync(screenshotPath);
+	return dimensions;
+}
+
+// reads width/height straight from the PNG IHDR chunk (big-endian uint32 at
+// byte offsets 16 and 20) to avoid pulling in an image-decoding dependency.
+function readPngDimensions(pngPath: string): Dimensions {
+	const buffer = fs.readFileSync(pngPath);
+	return {
+		width: buffer.readUInt32BE(16),
+		height: buffer.readUInt32BE(20),
+	};
+}

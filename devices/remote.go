@@ -19,6 +19,8 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+const artifactsHost = "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com"
+
 type params map[string]any
 
 type RemoteDevice struct {
@@ -133,6 +135,14 @@ func (r *RemoteDevice) SendKeys(text string) error {
 	return r.fireRPC("device.io.text", params{"text": text})
 }
 
+func (r *RemoteDevice) PressKeys(combos []KeyCombo) error {
+	keys := make([]string, len(combos))
+	for i, combo := range combos {
+		keys[i] = strings.Join(append(append([]string{}, combo.Modifiers...), combo.Key), "+")
+	}
+	return r.fireRPC("device.io.keys", params{"keys": keys})
+}
+
 func (r *RemoteDevice) PressButton(key string) error {
 	return r.fireRPC("device.io.button", params{"button": key})
 }
@@ -141,10 +151,13 @@ func (r *RemoteDevice) OpenURL(url string) error {
 	return r.fireRPC("device.url", params{"url": url})
 }
 
-func (r *RemoteDevice) LaunchApp(bundleID string, locales []string) error {
+func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	p := params{"bundleId": bundleID}
-	if len(locales) > 0 {
-		p["locales"] = locales
+	if len(opts.Locales) > 0 {
+		p["locales"] = opts.Locales
+	}
+	if opts.Activity != "" {
+		p["activity"] = opts.Activity
 	}
 	return r.fireRPC("device.apps.launch", p)
 }
@@ -183,7 +196,7 @@ func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }
 
-func (r *RemoteDevice) ListApps() ([]InstalledAppInfo, error) {
+func (r *RemoteDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	return rpcCall[[]InstalledAppInfo](r, "device.apps.list", params{})
 }
 
@@ -229,8 +242,8 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("invalid upload URL: %w", err)
 	}
-	if u.Scheme != "https" || u.Host != "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com" {
-		return fmt.Errorf("upload URL must be https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/..., got: %s", uploadURL)
+	if u.Scheme != "https" || u.Hostname() != artifactsHost {
+		return fmt.Errorf("upload URL must be https://%s/..., got: %s", artifactsHost, uploadURL)
 	}
 
 	f, err := os.Open(filePath)
@@ -278,11 +291,13 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("invalid download URL: %w", err)
 	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("download URL must use HTTPS scheme, got %q", parsed.Scheme)
+
+	if parsed.Scheme != "https" || parsed.Hostname() != artifactsHost {
+		return fmt.Errorf("download URL must be https://%s/..., got: %s", artifactsHost, downloadURL)
 	}
 
-	resp, err := http.Get(parsed.String()) //nolint:gosec // URL is validated above
+	utils.Verbose("downloading from %v", parsed)
+	resp, err := http.Get(parsed.String())
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}

@@ -13,11 +13,11 @@ import (
 )
 
 type provisioningProfile struct {
-	Name              string        `plist:"Name"`
-	TeamIdentifier    []string      `plist:"TeamIdentifier"`
+	Name               string       `plist:"Name"`
+	TeamIdentifier     []string     `plist:"TeamIdentifier"`
 	ProvisionedDevices []string     `plist:"ProvisionedDevices"`
-	Entitlements      entitlements  `plist:"Entitlements"`
-	ExpirationDate    time.Time     `plist:"ExpirationDate"`
+	Entitlements       entitlements `plist:"Entitlements"`
+	ExpirationDate     time.Time    `plist:"ExpirationDate"`
 }
 
 type entitlements struct {
@@ -101,16 +101,16 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		}
 	}
 
-	// re-sign app extensions
+	// re-sign app extensions and xctest bundles
 	pluginsDir := filepath.Join(appPath, "PlugIns")
 	if entries, err := os.ReadDir(pluginsDir); err == nil {
 		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".appex") {
-				appexPath := filepath.Join(pluginsDir, entry.Name())
-				Verbose("Signing app extension: %s", entry.Name())
-				err = codesign(appexPath, identity, entitlementsPath)
+			if strings.HasSuffix(entry.Name(), ".appex") || strings.HasSuffix(entry.Name(), ".xctest") {
+				pluginPath := filepath.Join(pluginsDir, entry.Name())
+				Verbose("Signing plugin: %s", entry.Name())
+				err = codesign(pluginPath, identity, entitlementsPath)
 				if err != nil {
-					return "", fmt.Errorf("failed to sign app extension %s: %w", entry.Name(), err)
+					return "", fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
 				}
 			}
 		}

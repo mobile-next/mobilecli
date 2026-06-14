@@ -4,25 +4,21 @@
 	"description": "E2E tests for MobileCLI server",
 	"main": "index.ts",
 	"scripts": {
-		"test": "mocha --require ts-node/register --timeout 180000 '*.ts'",
-		"test-simulator": "mocha --require ts-node/register --timeout 180000 'simulator.ts'"
+		"test": "playwright test",
+		"test:server": "playwright test --project=server",
+		"test:ios": "playwright test --project=simulator",
+		"test:simulator": "playwright test --project=simulator",
+		"test:android": "playwright test --project=emulator"
 	},
-	"keywords": [
-		"mobilecli",
-		"testing",
-		"e2e"
-	],
 	"author": "",
 	"license": "ISC",
 	"type": "commonjs",
 	"devDependencies": {
-		"@types/chai": "^4.3.0",
-		"@types/mocha": "^10.0.10",
+		"@playwright/test": "^1.49.0",
 		"@types/node": "^24.3.0",
-		"axios": "^1.12.0",
-		"chai": "^4.3.0",
-		"mocha": "^11.7.2",
-		"ts-node": "^10.9.2",
 		"typescript": "^5.9.2"
+	},
+	"overrides": {
+		"serialize-javascript": "^7.0.3"
 	}
 }

@@ -8,8 +8,9 @@ import (
 )
 
 var crashesCmd = &cobra.Command{
-	Use:   "crashes",
-	Short: "Manage crash reports from devices",
+	Use:        "crashes",
+	Short:      "Manage crash reports from devices",
+	Deprecated: "use 'device crashes' instead",
 }
 
 var crashesListCmd = &cobra.Command{

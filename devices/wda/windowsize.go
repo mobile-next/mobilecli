@@ -1,6 +1,7 @@
 package wda
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -15,26 +16,15 @@ type WindowSize struct {
 }
 
 func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
-	sessionId, err := c.GetOrCreateSession()
+	result, err := c.CallRPC("device.info", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get device info: %w", err)
 	}
 
-	response, err := c.GetEndpoint(fmt.Sprintf("session/%s/wda/screen", sessionId))
-	if err != nil {
-		return nil, err
+	var ws WindowSize
+	if err := json.Unmarshal(result, &ws); err != nil {
+		return nil, fmt.Errorf("failed to parse device info: %w", err)
 	}
 
-	// log.Printf("response: %v", response["value"])
-
-	windowSize := response["value"].(map[string]any)
-	screenSize := windowSize["screenSize"].(map[string]any)
-
-	return &WindowSize{
-		Scale: int(windowSize["scale"].(float64)),
-		ScreenSize: Size{
-			Width:  int(screenSize["width"].(float64)),
-			Height: int(screenSize["height"].(float64)),
-		},
-	}, nil
+	return &ws, nil
 }

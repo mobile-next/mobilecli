@@ -19,7 +19,12 @@ var (
 	deviceType string
 
 	// for apps launch command
-	locale string
+	locale   string
+	activity string
+
+	// for agent install command
+	agentForce               bool
+	agentProvisioningProfile string
 
 	// for fleet allocate command
 	fleetType     string
@@ -27,4 +32,8 @@ var (
 	fleetNames    []string
 	fleetWait     bool
 	fleetTimeout  int
+
+	// for webview wait command
+	webviewWaitState   string
+	webviewWaitTimeout int
 )

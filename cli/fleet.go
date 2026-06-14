@@ -3,7 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -13,25 +12,22 @@ import (
 )
 
 func getFleetToken() (string, error) {
-	if token := os.Getenv("MOBILECLI_TOKEN"); token != "" {
-		return token, nil
-	}
-
-	token, err := keyring.Get(keyringService, keyringUser)
+	token, err := loadToken()
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
 			return "", fmt.Errorf("not logged in, run 'mobilecli auth login' first")
 		}
-		return "", fmt.Errorf("failed to get token from keyring: %w", err)
+		return "", err
 	}
 
 	return token, nil
 }
 
 var fleetCmd = &cobra.Command{
-	Use:   "fleet",
-	Short: "Device fleet management commands",
-	Long:  `Commands for managing device fleet including allocating, listing, and releasing devices.`,
+	Use:        "fleet",
+	Short:      "Device fleet management commands",
+	Long:       `Commands for managing device fleet including allocating, listing, and releasing devices.`,
+	Deprecated: "use 'mobilecli remote' instead",
 }
 
 var fleetAllocateCmd = &cobra.Command{

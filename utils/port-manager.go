@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"strings"
 )
@@ -22,7 +23,10 @@ func IsPortAvailable(host string, port int) bool {
 }
 
 func FindAvailablePortInRange(startPort, endPort int) (int, error) {
-	for port := startPort; port <= endPort; port++ {
+	rangeSize := endPort - startPort + 1
+	offset := rand.Intn(rangeSize)
+	for i := 0; i < rangeSize; i++ {
+		port := startPort + (offset+i)%rangeSize
 		if IsPortAvailable("localhost", port) {
 			return port, nil
 		}

@@ -88,12 +88,27 @@ const (
 	DefaultFramerate = 30
 )
 
+func buildMjpegURL(port, fps int, scale float64) string {
+	url := fmt.Sprintf("http://localhost:%d/mjpeg", port)
+	sep := "?"
+	if fps > 0 {
+		url += fmt.Sprintf("%sfps=%d", sep, fps)
+		sep = "&"
+	}
+	scalePercent := int(scale * 100)
+	if scalePercent > 0 && scalePercent != 100 {
+		url += fmt.Sprintf("%sscale=%d", sep, scalePercent)
+	}
+	return url
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
 	Quality    int
 	Scale      float64
 	FPS        int
+	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
@@ -101,13 +116,29 @@ type ScreenCaptureConfig struct {
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {
 	OnProgress func(message string) // optional progress callback
-	Hook       *ShutdownHook         // optional shutdown hook for cleanup tracking
+	Hook       *ShutdownHook        // optional shutdown hook for cleanup tracking
 }
 
 // ScreenElementRect represents the rectangle coordinates and dimensions
 // Re-export types for backward compatibility
 type ScreenElementRect = types.ScreenElementRect
 type ScreenElement = types.ScreenElement
+
+// FileEntry represents a file or directory in an app's container
+type FileEntry struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	IsDir   bool      `json:"isDir"`
+}
+
+// LaunchOptions carries optional parameters for launching an app.
+// Activity is Android-only; passing it to an iOS device is an error.
+type LaunchOptions struct {
+	Locales  []string
+	Activity string
+}
 
 type ControllableDevice interface {
 	ID() string
@@ -127,11 +158,12 @@ type ControllableDevice interface {
 	Gesture(actions []wda.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
+	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
-	LaunchApp(bundleID string, locales []string) error
+	LaunchApp(bundleID string, opts LaunchOptions) error
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
-	ListApps() ([]InstalledAppInfo, error)
+	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
 	GetForegroundApp() (*ForegroundAppInfo, error)
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
@@ -144,6 +176,25 @@ type ControllableDevice interface {
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
 	StreamLogs(onLog func(LogEntry) bool) error
+
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
+	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
+	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// WebViewable is implemented by devices that support webview inspection and control.
+type WebViewable interface {
+	ListWebViews() ([]WebViewInfo, error)
+	WebViewGoto(webviewID, url string) error
+	WebViewReload(webviewID string) error
+	WebViewGoBack(webviewID string) error
+	WebViewGoForward(webviewID string) error
+	WebViewContent(webviewID string) (string, error)
+	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
+	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options

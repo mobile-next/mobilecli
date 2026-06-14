@@ -1,16 +1,13 @@
 package wda
 
-import (
-	"fmt"
-
-	"github.com/mobile-next/mobilecli/utils"
-)
+import "fmt"
 
 func (c *WdaClient) PressButton(key string) error {
 	buttonMap := map[string]string{
-		"VOLUME_UP":   "volumeup",
-		"VOLUME_DOWN": "volumedown",
+		"VOLUME_UP":   "volumeUp",
+		"VOLUME_DOWN": "volumeDown",
 		"HOME":        "home",
+		"LOCK":        "lock",
 	}
 
 	if key == "ENTER" {
@@ -22,20 +19,10 @@ func (c *WdaClient) PressButton(key string) error {
 		return fmt.Errorf("unsupported button: %s", key)
 	}
 
-	sessionId, err := c.GetOrCreateSession()
-	if err != nil {
-		return fmt.Errorf("failed to create session: %v", err)
+	params := map[string]string{
+		"button": translatedKey,
 	}
 
-	data := map[string]any{
-		"name": translatedKey,
-	}
-
-	_, err = c.PostEndpoint(fmt.Sprintf("session/%s/wda/pressButton", sessionId), data)
-	if err != nil {
-		return fmt.Errorf("failed to press button: %v", err)
-	}
-
-	utils.Verbose("press button response: %v", data)
-	return nil
+	_, err := c.CallRPC("device.io.button", params)
+	return err
 }
