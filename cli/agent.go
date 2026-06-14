@@ -15,7 +15,7 @@ import (
 
 const (
 	agentVersionIOS     = "0.0.19"
-	agentVersionAndroid = "1.2.0"
+	agentVersionAndroid = "1.2.2"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
@@ -25,7 +25,7 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "125ad3fd09284842f9ee038297e4da5e798a53caaa726f77ce4eef2864922041",
 	"devicekit-ios-Sim-x86_64.zip": "9c23379d96808f4ecf7c99009c66c047e5108e709bb572d3a4418e0ab21b12e2",
 	"devicekit-ios-runner.ipa":     "8057833c136911d9edcd559ad65578f595d3b8f48a399adc3389cdc8c2201bc0",
-	"mobilenext-devicekit.apk":     "2d47d820413e9cdfcdd81d44cc0a30ce09d81723d10f2929da8d08b079f5f6d1",
+	"mobilenext-devicekit.apk":     "c58484b40db6ab84c7445ccaa346ee0804e155e37507a42f1ac37b92a52bdd4f",
 }
 
 type agentMessageResponse struct {
@@ -95,15 +95,23 @@ var agentInstallCmd = &cobra.Command{
 
 		if !agentForce {
 			if agent := findInstalledAgent(device); agent != nil {
-				utils.Verbose("agent already installed")
-				printJson(commands.NewSuccessResponse(agentStatusResponse{
-					Message: "Agent is already installed",
-					Agent: agentInfo{
-						Version:  agent.Version,
-						BundleID: agent.PackageName,
-					},
-				}))
-				return nil
+				expectedVersion := agentVersionForPlatform(device.Platform())
+				if agent.Version == expectedVersion {
+					utils.Verbose("agent already installed with version %s", agent.Version)
+					printJson(commands.NewSuccessResponse(agentStatusResponse{
+						Message: "Agent is already installed",
+						Agent: agentInfo{
+							Version:  agent.Version,
+							BundleID: agent.PackageName,
+						},
+					}))
+					return nil
+				}
+
+				utils.Verbose("installed agent version %s differs from expected %s, uninstalling before reinstall", agent.Version, expectedVersion)
+				if _, err := device.UninstallApp(agent.PackageName); err != nil {
+					return fmt.Errorf("failed to uninstall existing agent: %w", err)
+				}
 			}
 		}
 
@@ -186,6 +194,17 @@ func agentPackageForPlatform(platform string) string {
 		return androidPackageName
 	case "ios":
 		return iosRunnerBundleID
+	default:
+		return ""
+	}
+}
+
+func agentVersionForPlatform(platform string) string {
+	switch platform {
+	case "android":
+		return agentVersionAndroid
+	case "ios":
+		return agentVersionIOS
 	default:
 		return ""
 	}
