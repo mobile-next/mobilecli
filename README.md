@@ -21,7 +21,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 </p>
 
 <p align="center">
-  <a href="http://mobilenexthq.com/join-slack">
+  <a href="http://mobilenext.ai/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -494,7 +494,7 @@ make test
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
-Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today 💜
+Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
 
-To learn more about <a href="https://mobilenexthq.com/">Mobile Next</a> and what we're building, <a href="https://mobilenexthq.com/#newsletter">subscribe to our newsletter</a>.
+To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
 
