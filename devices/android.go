@@ -1353,6 +1353,7 @@ type deviceKitRect struct {
 type deviceKitNode struct {
 	Class       string          `json:"class"`
 	Text        string          `json:"text"`
+	Hint        string          `json:"hint"`
 	ContentDesc string          `json:"content-desc"`
 	ResourceID  string          `json:"resource-id"`
 	Focused     bool            `json:"focused"`
@@ -1386,6 +1387,14 @@ func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementR
 	}
 }
 
+// setPlaceholderFromHint sets the element placeholder from a hint, leaving the
+// text reported by the source untouched.
+func setPlaceholderFromHint(element *types.ScreenElement, hint string) {
+	if hint != "" {
+		element.Placeholder = &hint
+	}
+}
+
 // collectElements converts a uiautomator node tree into ScreenElements,
 // preserving hierarchy: collected descendants of an accepted element become
 // its Children, while descendants of rejected elements are hoisted to the
@@ -1414,11 +1423,12 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		Children: childElements,
 	}
 
-	// set label from content-desc or hint
+	// set placeholder from hint; text is left as the source reported it
+	setPlaceholderFromHint(&element, node.Hint)
+
+	// set label from content-desc
 	if node.ContentDesc != "" {
 		element.Label = &node.ContentDesc
-	} else if node.Hint != "" {
-		element.Label = &node.Hint
 	}
 
 	// set focused if true
@@ -1448,7 +1458,7 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	for _, node := range nodes {
 		childElements := collectDeviceKitElements(node.Children)
 
-		if node.Text == "" && node.ContentDesc == "" && node.ResourceID == "" {
+		if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
 			elements = append(elements, childElements...)
 			continue
 		}
@@ -1471,6 +1481,7 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 			Children: childElements,
 		}
 
+		setPlaceholderFromHint(&element, node.Hint)
 		if node.ContentDesc != "" {
 			element.Label = &node.ContentDesc
 		}
