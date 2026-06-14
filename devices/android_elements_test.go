@@ -13,6 +13,13 @@ func screenElementText(e types.ScreenElement) string {
 	return *e.Text
 }
 
+func screenElementPlaceholder(e types.ScreenElement) string {
+	if e.Placeholder == nil {
+		return ""
+	}
+	return *e.Placeholder
+}
+
 // A realistic uiautomator subtree: the webview content (text views, buttons)
 // is nested inside the android.webkit.WebView node, separated by layout
 // wrapper nodes that carry no text, content-desc, hint or resource-id and are
@@ -194,5 +201,81 @@ func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *test
 
 	if screenElementText(output[0]) != "First" || screenElementText(output[1]) != "Second" {
 		t.Errorf("expected buttons 'First' and 'Second' at top level, got %+v", output)
+	}
+}
+
+// uiautomator reports the hint as the text for empty fields. The hint becomes
+// the placeholder and the duplicated text is emptied.
+func TestCollectElementsEmptyFieldHintBecomesPlaceholder(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.EditText",
+		Text:        "Password",
+		Hint:        "Password",
+		ContentDesc: "password_field",
+		Bounds:      "[48,607][1232,756]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Password" {
+		t.Errorf("expected placeholder 'Password', got %q", got)
+	}
+	if got := screenElementText(output[0]); got != "" {
+		t.Errorf("expected empty text, got %q", got)
+	}
+}
+
+// A filled field keeps its real text alongside the hint placeholder.
+func TestCollectElementsFilledFieldKeepsTextAndPlaceholder(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.EditText",
+		Text:        "hello",
+		Hint:        "Text Field",
+		ContentDesc: "text_field",
+		Bounds:      "[48,455][1232,604]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementText(output[0]); got != "hello" {
+		t.Errorf("expected text 'hello', got %q", got)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Text Field" {
+		t.Errorf("expected placeholder 'Text Field', got %q", got)
+	}
+}
+
+// devicekit sends a separate hint field; it becomes the placeholder, and the
+// masked password text is preserved.
+func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.widget.EditText",
+			Text:        "•",
+			Hint:        "Password",
+			ContentDesc: "password_field",
+			ResourceID:  "com.mobilenext.playground:id/password_field",
+			Rect:        deviceKitRect{X: 48, Y: 607, Width: 1184, Height: 149},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Password" {
+		t.Errorf("expected placeholder 'Password', got %q", got)
+	}
+	if got := screenElementText(output[0]); got != "•" {
+		t.Errorf("expected text '•', got %q", got)
 	}
 }

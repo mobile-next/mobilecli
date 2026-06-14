@@ -1353,6 +1353,7 @@ type deviceKitRect struct {
 type deviceKitNode struct {
 	Class       string          `json:"class"`
 	Text        string          `json:"text"`
+	Hint        string          `json:"hint"`
 	ContentDesc string          `json:"content-desc"`
 	ResourceID  string          `json:"resource-id"`
 	Focused     bool            `json:"focused"`
@@ -1456,7 +1457,7 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	for _, node := range nodes {
 		childElements := collectDeviceKitElements(node.Children)
 
-		if node.Text == "" && node.ContentDesc == "" && node.ResourceID == "" {
+		if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
 			elements = append(elements, childElements...)
 			continue
 		}
@@ -1479,6 +1480,13 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 			Children: childElements,
 		}
 
+		if node.Hint != "" {
+			element.Placeholder = &node.Hint
+			if node.Text == node.Hint {
+				empty := ""
+				element.Text = &empty
+			}
+		}
 		if node.ContentDesc != "" {
 			element.Label = &node.ContentDesc
 		}
