@@ -204,9 +204,9 @@ func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *test
 	}
 }
 
-// uiautomator reports the hint as the text for empty fields. The hint becomes
-// the placeholder and the duplicated text is emptied.
-func TestCollectElementsEmptyFieldHintBecomesPlaceholder(t *testing.T) {
+// The hint becomes the placeholder; the text is left exactly as the source
+// reported it, even when it happens to equal the hint.
+func TestCollectElementsHintBecomesPlaceholderAndKeepsText(t *testing.T) {
 	d := &AndroidDevice{}
 	tree := uiAutomatorXmlNode{
 		Class:       "android.widget.EditText",
@@ -224,8 +224,8 @@ func TestCollectElementsEmptyFieldHintBecomesPlaceholder(t *testing.T) {
 	if got := screenElementPlaceholder(output[0]); got != "Password" {
 		t.Errorf("expected placeholder 'Password', got %q", got)
 	}
-	if got := screenElementText(output[0]); got != "" {
-		t.Errorf("expected empty text, got %q", got)
+	if got := screenElementText(output[0]); got != "Password" {
+		t.Errorf("expected text left as source reported ('Password'), got %q", got)
 	}
 }
 

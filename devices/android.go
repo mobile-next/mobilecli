@@ -1387,6 +1387,14 @@ func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementR
 	}
 }
 
+// setPlaceholderFromHint sets the element placeholder from a hint, leaving the
+// text reported by the source untouched.
+func setPlaceholderFromHint(element *types.ScreenElement, hint string) {
+	if hint != "" {
+		element.Placeholder = &hint
+	}
+}
+
 // collectElements converts a uiautomator node tree into ScreenElements,
 // preserving hierarchy: collected descendants of an accepted element become
 // its Children, while descendants of rejected elements are hoisted to the
@@ -1415,15 +1423,8 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		Children: childElements,
 	}
 
-	// set placeholder from hint; uiautomator reports the hint as the text for
-	// empty fields, so drop the duplicated text in that case
-	if node.Hint != "" {
-		element.Placeholder = &node.Hint
-		if node.Text == node.Hint {
-			empty := ""
-			element.Text = &empty
-		}
-	}
+	// set placeholder from hint; text is left as the source reported it
+	setPlaceholderFromHint(&element, node.Hint)
 
 	// set label from content-desc
 	if node.ContentDesc != "" {
@@ -1480,13 +1481,7 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 			Children: childElements,
 		}
 
-		if node.Hint != "" {
-			element.Placeholder = &node.Hint
-			if node.Text == node.Hint {
-				empty := ""
-				element.Text = &empty
-			}
-		}
+		setPlaceholderFromHint(&element, node.Hint)
 		if node.ContentDesc != "" {
 			element.Label = &node.ContentDesc
 		}
