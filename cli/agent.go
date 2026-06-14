@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.18"
+	agentVersionIOS     = "0.0.19"
 	agentVersionAndroid = "1.2.0"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
@@ -22,9 +22,9 @@ const (
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "445c8e7f5ea95b84e4350ae1930df26f4edfa01a0ceebb1ac3b8b94a26714920",
-	"devicekit-ios-Sim-x86_64.zip": "5e007d70bd6bb94ac71debaea011775ba7d381f616803f1ed66d6eb6b9d49ea4",
-	"devicekit-ios-runner.ipa":     "45457d3f11de2b5370b14ba45e6c8502328e28825ee8222e8517245898a4c57f",
+	"devicekit-ios-Sim-arm64.zip":  "125ad3fd09284842f9ee038297e4da5e798a53caaa726f77ce4eef2864922041",
+	"devicekit-ios-Sim-x86_64.zip": "9c23379d96808f4ecf7c99009c66c047e5108e709bb572d3a4418e0ab21b12e2",
+	"devicekit-ios-runner.ipa":     "8057833c136911d9edcd559ad65578f595d3b8f48a399adc3389cdc8c2201bc0",
 	"mobilenext-devicekit.apk":     "2d47d820413e9cdfcdd81d44cc0a30ce09d81723d10f2929da8d08b079f5f6d1",
 }
 
@@ -142,6 +142,39 @@ var agentInstallCmd = &cobra.Command{
 				Version:  agent.Version,
 				BundleID: agent.PackageName,
 			},
+		}))
+		return nil
+	},
+}
+
+var agentUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstall the agent from a device",
+	Long:  `Removes the on-device agent from the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		device, err := commands.FindDeviceOrAutoSelect(deviceId)
+		if err != nil {
+			return err
+		}
+
+		agent := findInstalledAgent(device)
+		if agent == nil {
+			printJson(&commands.CommandResponse{
+				Status: "fail",
+				Data: agentMessageResponse{
+					Message: "Agent is not installed on the device",
+				},
+			})
+			return nil
+		}
+
+		utils.Verbose("uninstalling agent %s from device %s", agent.PackageName, device.ID())
+		if _, err := device.UninstallApp(agent.PackageName); err != nil {
+			return fmt.Errorf("failed to uninstall agent: %w", err)
+		}
+
+		printJson(commands.NewSuccessResponse(agentMessageResponse{
+			Message: "Agent uninstalled successfully",
 		}))
 		return nil
 	},
@@ -298,9 +331,11 @@ func init() {
 
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentStatusCmd)
+	agentCmd.AddCommand(agentUninstallCmd)
 
 	agentInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install the agent on")
 	agentStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check")
+	agentUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall the agent from")
 	agentInstallCmd.Flags().BoolVar(&agentForce, "force", false, "force install even if agent is already installed")
 	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS devices)")
 }
