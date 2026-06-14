@@ -1414,11 +1414,19 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		Children: childElements,
 	}
 
-	// set label from content-desc or hint
+	// set placeholder from hint; uiautomator reports the hint as the text for
+	// empty fields, so drop the duplicated text in that case
+	if node.Hint != "" {
+		element.Placeholder = &node.Hint
+		if node.Text == node.Hint {
+			empty := ""
+			element.Text = &empty
+		}
+	}
+
+	// set label from content-desc
 	if node.ContentDesc != "" {
 		element.Label = &node.ContentDesc
-	} else if node.Hint != "" {
-		element.Label = &node.Hint
 	}
 
 	// set focused if true
