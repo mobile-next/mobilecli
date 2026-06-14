@@ -1,3 +1,10 @@
+## [0.3.82](https://github.com/mobile-next/mobilecli/releases/tag/0.3.82) (2026-06-14)
+* Feat: Update agent automatically on install command when the installed version differs ([#278](https://github.com/mobile-next/mobilecli/pull/278))
+* Feat: Add agent uninstall command ([#277](https://github.com/mobile-next/mobilecli/pull/277))
+* Feat: Add placeholder field to android's dump ui ([#276](https://github.com/mobile-next/mobilecli/pull/276))
+* Feat: Android now returns the version and versionCode of apps in list apps (requires devicekit-android installed)
+* Feat: Return installed app metadata from apps install ([#274](https://github.com/mobile-next/mobilecli/pull/274))
+
 ## [0.3.81](https://github.com/mobile-next/mobilecli/releases/tag/0.3.81) (2026-06-12)
 * Fix: Wait a bit for android foreground app, it might be null if there's a transition animation ([#271](https://github.com/mobile-next/mobilecli/pull/271))
 * Fix: Nest elements in 'dump ui' command, it was flat ([#267](https://github.com/mobile-next/mobilecli/pull/267))
