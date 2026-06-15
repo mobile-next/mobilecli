@@ -395,36 +395,46 @@ public final class Agent {
         return sb.toString();
     }
 
+    // recycle() is deprecated and a no-op on API 33+, but this agent is built
+    // with min-api 24 and runs long-lived with frequent dumps; recycling each
+    // node post-traversal returns it to the pool on API 24-32 to avoid
+    // allocation churn there. Harmless elsewhere.
+    @SuppressWarnings("deprecation")
     private void serializeNode(AccessibilityNodeInfo node, StringBuilder sb, boolean first) {
         if (node == null) return;
         if (!first) sb.append(',');
 
-        android.graphics.Rect r = new android.graphics.Rect();
-        node.getBoundsInScreen(r);
+        try {
+            android.graphics.Rect r = new android.graphics.Rect();
+            node.getBoundsInScreen(r);
 
-        sb.append('{');
-        sb.append("\"type\":").append(jstr(text(node.getClassName())));
-        sb.append(",\"text\":").append(jstr(text(node.getText())));
-        sb.append(",\"label\":").append(jstr(text(node.getContentDescription())));
-        sb.append(",\"identifier\":").append(jstr(text(node.getViewIdResourceName())));
-        sb.append(",\"enabled\":").append(node.isEnabled());
-        sb.append(",\"visible\":").append(node.isVisibleToUser());
-        sb.append(",\"rect\":{\"x\":").append(r.left)
-          .append(",\"y\":").append(r.top)
-          .append(",\"width\":").append(r.width())
-          .append(",\"height\":").append(r.height()).append('}');
+            sb.append('{');
+            sb.append("\"type\":").append(jstr(text(node.getClassName())));
+            sb.append(",\"text\":").append(jstr(text(node.getText())));
+            sb.append(",\"label\":").append(jstr(text(node.getContentDescription())));
+            sb.append(",\"identifier\":").append(jstr(text(node.getViewIdResourceName())));
+            sb.append(",\"enabled\":").append(node.isEnabled());
+            sb.append(",\"visible\":").append(node.isVisibleToUser());
+            sb.append(",\"rect\":{\"x\":").append(r.left)
+              .append(",\"y\":").append(r.top)
+              .append(",\"width\":").append(r.width())
+              .append(",\"height\":").append(r.height()).append('}');
 
-        int n = node.getChildCount();
-        sb.append(",\"children\":[");
-        boolean childFirst = true;
-        for (int i = 0; i < n; i++) {
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                serializeNode(child, sb, childFirst);
-                childFirst = false;
+            int n = node.getChildCount();
+            sb.append(",\"children\":[");
+            boolean childFirst = true;
+            for (int i = 0; i < n; i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    serializeNode(child, sb, childFirst);
+                    childFirst = false;
+                }
             }
+            sb.append("]}");
+        } finally {
+            // post-order: node is fully consumed and not touched after this
+            node.recycle();
         }
-        sb.append("]}");
     }
 
     // ─── Screenshot ────────────────────────────────────────────────────
