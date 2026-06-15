@@ -46,7 +46,11 @@ public final class Agent {
 
     public static void main(String[] args) {
         try {
-            new Agent().run();
+            // The socket name may be passed as the first arg (the host derives a
+            // build-specific name so a new agent build supersedes an old one);
+            // fall back to the default when launched without it.
+            String socketName = (args.length > 0 && !args[0].isEmpty()) ? args[0] : SOCKET_NAME;
+            new Agent().run(socketName);
         } catch (Throwable t) {
             System.err.println("agent fatal: " + t);
             t.printStackTrace();
@@ -54,12 +58,12 @@ public final class Agent {
         }
     }
 
-    private void run() throws Exception {
+    private void run(String socketName) throws Exception {
         connectUiAutomation();
         connectInputManager();
 
-        LocalServerSocket server = new LocalServerSocket(SOCKET_NAME);
-        System.out.println("mobilewright-agent listening on @" + SOCKET_NAME);
+        LocalServerSocket server = new LocalServerSocket(socketName);
+        System.out.println("mobilewright-agent listening on @" + socketName);
         System.out.flush();
 
         // single-threaded request loop: one client (mobilecli) at a time.
