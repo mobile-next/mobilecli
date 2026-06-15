@@ -1326,6 +1326,9 @@ func (d *AndroidDevice) EnsureDeviceKitInstalled() error {
 	return nil
 }
 
+// attrTrue is the string value uiautomator uses for boolean node attributes.
+const attrTrue = "true"
+
 type uiAutomatorXmlNode struct {
 	XMLName     xml.Name             `xml:"node"`
 	Class       string               `xml:"class,attr"`
@@ -1335,6 +1338,8 @@ type uiAutomatorXmlNode struct {
 	Focused     string               `xml:"focused,attr"`
 	ContentDesc string               `xml:"content-desc,attr"`
 	ResourceID  string               `xml:"resource-id,attr"`
+	Clickable   string               `xml:"clickable,attr"`
+	Checkable   string               `xml:"checkable,attr"`
 	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
@@ -1405,8 +1410,9 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		childElements = append(childElements, d.collectElements(childNode)...)
 	}
 
-	// only include the current node if it has text, content-desc, or hint
-	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
+	// only include the current node if it has text, content-desc, hint,
+	// resource-id, or is interactable (clickable or checkable)
+	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" && node.Clickable != attrTrue && node.Checkable != attrTrue {
 		return childElements
 	}
 
@@ -1432,7 +1438,7 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	}
 
 	// set focused if true
-	if node.Focused == "true" {
+	if node.Focused == attrTrue {
 		focused := true
 		element.Focused = &focused
 	}
