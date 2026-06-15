@@ -18,8 +18,8 @@ import (
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/crashreport"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
-	"github.com/danielpaulus/go-ios/ios/syslog"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
+	"github.com/danielpaulus/go-ios/ios/ostrace"
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
@@ -1637,54 +1637,82 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	return content, nil
 }
 
-func (d *IOSDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (d *IOSDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
 	device, err := d.getEnhancedDevice()
 	if err != nil {
 		return fmt.Errorf("failed to get device: %w", err)
 	}
 
-	conn, err := syslog.New(device)
+	spec := ostrace.DefaultLevelFilter()
+	conn, err := ostrace.New(device, -1, spec.MessageFilter, spec.StreamFlags)
 	if err != nil {
-		return fmt.Errorf("failed to connect to syslog: %w", err)
+		return fmt.Errorf("failed to connect to os_trace_relay: %w", err)
 	}
-	defer conn.Close()
 
-	parse := syslog.Parser()
+	type readResult struct {
+		entry LogEntry
+		err   error
+	}
+
+	ch := make(chan readResult, 1)
+	done := make(chan struct{})
+	var closeOnce sync.Once
+	stopStreaming := func() {
+		closeOnce.Do(func() {
+			close(done)
+			_ = conn.Close()
+		})
+	}
+	defer stopStreaming()
+
+	go func() {
+		for {
+			raw, err := conn.ReadEntry()
+			result := readResult{err: err}
+			if err == nil {
+				result.entry = LogEntry{
+					Timestamp: raw.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
+					Message:   raw.Message,
+					Level:     raw.LevelName,
+					PID:       int(raw.PID),
+					Process:   processNameFromPath(raw.Filename),
+				}
+				if raw.Label != nil {
+					result.entry.Subsystem = raw.Label.Subsystem
+					result.entry.Category = raw.Label.Category
+				}
+			}
+			select {
+			case <-done:
+				return
+			case ch <- result:
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
 
 	for {
-		msg, err := conn.ReadLogMessage()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("syslog read error: %w", err)
-		}
-
-		msg = strings.TrimSuffix(msg, "\x00")
-		msg = strings.TrimSuffix(msg, "\x0A")
-		if msg == "" {
-			continue
-		}
-
-		entry, err := parse(msg)
-		if err != nil {
-			// unparseable line — emit raw message
-			if !onLog(LogEntry{
-				Message: msg,
-			}) {
-				return nil
-			}
-			continue
-		}
-
-		if !onLog(LogEntry{
-			Timestamp: entry.Timestamp,
-			Message:   entry.Message,
-			Level:     entry.Level,
-			Process:   entry.Process,
-			PID:       atoiOrZero(entry.PID),
-		}) {
+		select {
+		case <-ctx.Done():
 			return nil
+		case r := <-ch:
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("os_trace read error: %w", r.err)
+			}
+			if !onLog(r.entry) {
+				return nil
+			}
 		}
 	}
 }

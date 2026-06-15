@@ -1,11 +1,11 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +24,6 @@ type LogEntry struct {
 	PID       int    `json:"pid"`
 	Process   string `json:"process,omitempty"`
 	Tag       string `json:"tag,omitempty"`
-	EventType string `json:"eventType"`
 }
 
 // processNameFromPath extracts the binary name from a full image path
@@ -33,12 +32,6 @@ func processNameFromPath(path string) string {
 		return path[idx+1:]
 	}
 	return path
-}
-
-// atoiOrZero converts a string to int, returning 0 on failure
-func atoiOrZero(s string) int {
-	n, _ := strconv.Atoi(s)
-	return n
 }
 
 type CrashReport struct {
@@ -175,7 +168,7 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
-	StreamLogs(onLog func(LogEntry) bool) error
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
 
 	PushFile(localPath, remotePath string) error
 	PullFile(remotePath, localPath string) error

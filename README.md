@@ -450,7 +450,7 @@ Supported filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`
 
 Each log entry is printed as a JSON line:
 ```json
-{"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard","eventType":"logEvent"}
+{"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
 ```
 
 ### Remote Devices ☁️

@@ -2,6 +2,7 @@ package devices
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -1724,26 +1726,32 @@ func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
 	return []byte(content), nil
 }
 
-// getPidToProcessMap runs "adb shell ps" and returns a map of PID→process name
-func (d *AndroidDevice) getPidToProcessMap() map[int]string {
-	output, err := d.runAdbCommand("shell", "ps", "-e", "-o", "PID,NAME")
-	if err != nil {
-		return nil
+type androidPidCache struct {
+	mu    sync.Mutex
+	names map[int]string
+}
+
+func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) string {
+	c.mu.Lock()
+	name, ok := c.names[pid]
+	c.mu.Unlock()
+	if ok {
+		return name
 	}
 
-	m := make(map[int]string)
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[0])
-		if err != nil {
-			continue
-		}
-		m[pid] = fields[1]
+	fmt.Fprintf(os.Stderr, "resolving pid %d\n", pid)
+	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || len(out) == 0 {
+		return ""
 	}
-	return m
+	// cmdline is null-delimited; first entry is the executable path
+	first, _, _ := bytes.Cut(out, []byte{0})
+	name = processNameFromPath(string(first))
+
+	c.mu.Lock()
+	c.names[pid] = name
+	c.mu.Unlock()
+	return name
 }
 
 var logcatLevelMap = map[string]string{
@@ -1756,13 +1764,12 @@ var logcatLevelMap = map[string]string{
 	"A": "Assert",
 }
 
-func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
-	// build PID→process name map for --process filtering
-	pidMap := d.getPidToProcessMap()
+func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	pidCache := &androidPidCache{names: make(map[int]string)}
 
 	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
-	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1774,6 +1781,8 @@ func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	stoppedByCaller := false
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -1794,19 +1803,22 @@ func (d *AndroidDevice) StreamLogs(onLog func(LogEntry) bool) error {
 			Level:     level,
 			Tag:       parsed.Tag,
 			Message:   parsed.Message,
-		}
-
-		// resolve process name from ps map (for --process filtering)
-		if pidMap != nil {
-			entry.Process = pidMap[pid]
+			Process:   pidCache.resolveProcessNameByPid(d, pid),
 		}
 
 		if !onLog(entry) {
 			_ = cmd.Process.Kill()
+			stoppedByCaller = true
 			break
 		}
 	}
 
 	_ = cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("logcat read error: %w", err)
+	}
 	return nil
 }

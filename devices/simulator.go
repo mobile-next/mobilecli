@@ -1,8 +1,11 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -901,14 +904,13 @@ type simctlLogEntry struct {
 	Category         string `json:"category"`
 	ProcessImagePath string `json:"processImagePath"`
 	ProcessID        int    `json:"processID"`
-	EventType        string `json:"eventType"`
 }
 
-func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
+func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	args := []string{"simctl", "spawn", s.UDID, "log", "stream", "--level", "info", "--style", "json"}
 	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
 
-	cmd := exec.Command("xcrun", args...)
+	cmd := exec.CommandContext(ctx, "xcrun", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -924,19 +926,26 @@ func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
 	token, err := decoder.Token()
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return fmt.Errorf("failed to read opening token: %w", err)
+		waitErr := cmd.Wait()
+		return fmt.Errorf("failed to read opening token: %w (process exit: %v)", err, waitErr)
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '[' {
 		_ = cmd.Process.Kill()
-		return fmt.Errorf("expected '[', got %v", token)
+		waitErr := cmd.Wait()
+		return fmt.Errorf("expected '[', got %v (process exit: %v)", token, waitErr)
 	}
 
 	// decode entries one at a time until the stream ends
+	stoppedByCaller := false
 	for decoder.More() {
 		var raw simctlLogEntry
 		if err := decoder.Decode(&raw); err != nil {
-			// stream ended (process killed) — not an error
-			break
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			_ = cmd.Process.Kill()
+			waitErr := cmd.Wait()
+			return fmt.Errorf("failed to decode log entry: %w (process exit: %v)", err, waitErr)
 		}
 
 		processName := processNameFromPath(raw.ProcessImagePath)
@@ -949,14 +958,19 @@ func (s *SimulatorDevice) StreamLogs(onLog func(LogEntry) bool) error {
 			Category:  raw.Category,
 			PID:       raw.ProcessID,
 			Process:   processName,
-			EventType: raw.EventType,
 		}) {
 			_ = cmd.Process.Kill()
+			stoppedByCaller = true
 			break
 		}
 	}
 
-	// we killed it ourselves, or stream ended naturally
-	_ = cmd.Wait()
+	waitErr := cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if waitErr != nil {
+		return fmt.Errorf("log stream ended with error: %w", waitErr)
+	}
 	return nil
 }
