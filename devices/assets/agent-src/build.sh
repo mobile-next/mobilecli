@@ -23,8 +23,13 @@ javac -source 11 -target 11 -cp "$PLATFORM" -d "$HERE/out/classes" \
   "$HERE/src/dev/mobilewright/agent/Agent.java"
 
 echo "==> d8"
+# collect class files into an array so paths with spaces aren't word-split (SC2046).
+# A read loop (not `mapfile`) keeps this working on bash 3.2 (macOS default).
+class_files=()
+while IFS= read -r -d '' f; do class_files+=("$f"); done \
+  < <(find "$HERE/out/classes" -name '*.class' -print0)
 "$BUILD_TOOLS/d8" --min-api 24 --output "$HERE/out" --lib "$PLATFORM" \
-  $(find "$HERE/out/classes" -name '*.class')
+  "${class_files[@]}"
 
 cp "$HERE/out/classes.dex" "$HERE/../mw-agent.dex"
 echo "==> wrote devices/assets/mw-agent.dex"

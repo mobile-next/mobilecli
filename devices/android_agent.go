@@ -27,14 +27,17 @@ import (
 //go:embed assets/mw-agent.dex
 var mwAgentDex []byte
 
-const (
-	agentSocketName = "mobilewright-agent"
-	agentMainClass  = "dev.mobilewright.agent.Agent"
-)
+const agentMainClass = "dev.mobilewright.agent.Agent"
 
 // agentRemotePath is the on-device dex path, content-addressed so a new agent
 // build is pushed automatically without a manual version bump.
 var agentRemotePath = fmt.Sprintf("/data/local/tmp/mw-agent-%s.dex", agentDexHash())
+
+// agentSocketName is the localabstract socket name, suffixed with the dex hash.
+// Tying the socket identity to the build means a new agent build advertises a
+// new socket, so a stale agent from a previous build is never silently reused
+// (an unsuffixed name would let ensureRunning short-circuit on the old socket).
+var agentSocketName = fmt.Sprintf("mobilewright-agent-%s", agentDexHash())
 
 func agentDexHash() string {
 	sum := sha256.Sum256(mwAgentDex)
@@ -121,14 +124,19 @@ func (a *androidAgent) ensureDexPushed() error {
 }
 
 func (a *androidAgent) ensureRunning() error {
-	// already serving?
+	// already serving the current build? (socket name is hash-suffixed)
 	if a.socketPresent() {
 		return nil
 	}
 
+	// No current-build agent. Stop any agent from a previous build first — it
+	// still holds the single UiAutomation registration, which would make this
+	// agent's connect() fail with "UiAutomationService already registered".
+	_, _ = a.device.runAdbCommand("shell", "pkill", "-f", agentMainClass)
+
 	launch := fmt.Sprintf(
-		"CLASSPATH=%s nohup app_process /system/bin %s > /data/local/tmp/mw-agent.log 2>&1 &",
-		agentRemotePath, agentMainClass,
+		"CLASSPATH=%s nohup app_process /system/bin %s %s > /data/local/tmp/mw-agent.log 2>&1 &",
+		agentRemotePath, agentMainClass, agentSocketName,
 	)
 	if out, err := a.device.runAdbCommand("shell", launch); err != nil {
 		return fmt.Errorf("failed to launch agent: %w\n%s", err, string(out))
@@ -155,6 +163,13 @@ func (a *androidAgent) socketPresent() bool {
 }
 
 func (a *androidAgent) ensureForwarded() error {
+	// Drop the previous forward (e.g. from a reconnect) so repeated reconnects
+	// don't accumulate stale tcp:<port> -> localabstract mappings.
+	if a.port != 0 {
+		_, _ = a.device.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", a.port))
+		a.port = 0
+	}
+
 	port, err := freeLocalPort()
 	if err != nil {
 		return err
