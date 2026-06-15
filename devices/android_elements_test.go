@@ -253,6 +253,65 @@ func TestCollectElementsFilledFieldKeepsTextAndPlaceholder(t *testing.T) {
 	}
 }
 
+// An unlabeled but interactable node (e.g. an empty EditText) carries no text,
+// content-desc, hint or resource-id, but should still be returned because the
+// user can interact with it.
+func TestCollectElementsKeepsUnlabeledClickableAndCheckableNodes(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:     "android.widget.EditText",
+				Clickable: "true",
+				Bounds:    "[84,2155][996,2302]",
+			},
+			{
+				Class:     "android.widget.CheckBox",
+				Checkable: "true",
+				Bounds:    "[84,2344][996,2400]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 elements (clickable EditText, checkable CheckBox), got %d: %+v", len(output), output)
+	}
+	if output[0].Type != "android.widget.EditText" {
+		t.Errorf("expected clickable EditText to be kept, got %+v", output[0])
+	}
+	if output[1].Type != "android.widget.CheckBox" {
+		t.Errorf("expected checkable CheckBox to be kept, got %+v", output[1])
+	}
+}
+
+// A node with no text, content-desc, hint, resource-id, and no interactable
+// flags carries no useful signal and should be filtered out.
+func TestCollectElementsDropsUnlabeledNonInteractableNodes(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:     "android.view.View",
+				Clickable: "false",
+				Checkable: "false",
+				Bounds:    "[0,0][1080,200]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 0 {
+		t.Fatalf("expected unlabeled non-interactable node to be dropped, got %d: %+v", len(output), output)
+	}
+}
+
 // devicekit sends a separate hint field; it becomes the placeholder, and the
 // masked password text is preserved.
 func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
