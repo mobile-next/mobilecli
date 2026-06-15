@@ -1,3 +1,6 @@
+## [0.3.84](https://github.com/mobile-next/mobilecli/releases/tag/0.3.84) (2026-06-15)
+* Fix: Include clickable and checkable elements in android view tree dump ([#284](https://github.com/mobile-next/mobilecli/pull/284))
+
 ## [0.3.83](https://github.com/mobile-next/mobilecli/releases/tag/0.3.83) (2026-06-15)
 * Fix: Scale press-keys RPC timeout by key count ([#281](https://github.com/mobile-next/mobilecli/pull/281))
 * Fix: Match agent bundle id by suffix to support re-signed runner ([#280](https://github.com/mobile-next/mobilecli/pull/280))
