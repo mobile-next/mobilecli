@@ -31,7 +31,13 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
+const defaultRPCTimeout = 10 * time.Second
+
 func (c *WdaClient) CallRPC(method string, params any) (json.RawMessage, error) {
+	return c.CallRPCWithTimeout(method, params, defaultRPCTimeout)
+}
+
+func (c *WdaClient) CallRPCWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	rpcReq := jsonRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -46,7 +52,7 @@ func (c *WdaClient) CallRPC(method string, params any) (json.RawMessage, error) 
 
 	url := fmt.Sprintf("%s/rpc", c.baseURL)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
