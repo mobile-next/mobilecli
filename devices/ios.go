@@ -485,10 +485,11 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return fmt.Errorf("failed to list apps: %w", err)
 		}
 
-		// check if agent is installed
+		// check if agent is installed. the runner bundle id can carry a signing/team
+		// prefix when re-signed, so match on suffix rather than exact equality.
 		agentBundleId := ""
 		for _, app := range apps {
-			if app.PackageName == agentRunnerBundleID {
+			if strings.HasSuffix(app.PackageName, agentRunnerBundleID) {
 				utils.Verbose("agent is installed, launching it")
 				agentBundleId = app.PackageName
 				break
