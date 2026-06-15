@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -311,7 +312,7 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 		return nil
 	}
 	for _, app := range apps {
-		if app.PackageName == agentPackage {
+		if agentMatchesApp(device.Platform(), app.PackageName, agentPackage) {
 			if app.Version == "" {
 				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
 					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
@@ -323,6 +324,16 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 		}
 	}
 	return nil
+}
+
+// agentMatchesApp reports whether an installed app's bundle id identifies the agent.
+// On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
+// suffix match is used; other platforms require an exact match.
+func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
+	if platform == "ios" {
+		return strings.HasSuffix(installedPackage, agentPackage)
+	}
+	return installedPackage == agentPackage
 }
 
 func isAgentInstalled(device devices.ControllableDevice) bool {

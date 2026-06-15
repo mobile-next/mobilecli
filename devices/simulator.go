@@ -290,14 +290,21 @@ func (s SimulatorDevice) WaitUntilAppExists(bundleID string) error {
 	}
 }
 
-func (s SimulatorDevice) IsAgentInstalled() (bool, error) {
+// findInstalledAgentBundleID returns the bundle id of the installed agent, or an
+// empty string if it is not installed. The runner bundle id can carry a
+// signing/team prefix, so it is matched on suffix rather than exact equality.
+func (s SimulatorDevice) findInstalledAgentBundleID() (string, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
-	_, ok := installedApps[agentRunnerBundleID]
-	return ok, nil
+	for bundleID := range installedApps {
+		if strings.HasSuffix(bundleID, agentRunnerBundleID) {
+			return bundleID, nil
+		}
+	}
+	return "", nil
 }
 
 func (s *SimulatorDevice) getState() (string, error) {
@@ -437,12 +444,12 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("Failed to get existing WDA port: %v", err)
 	}
 
-	installed, err := s.IsAgentInstalled()
+	agentBundleID, err := s.findInstalledAgentBundleID()
 	if err != nil {
 		return err
 	}
 
-	if !installed {
+	if agentBundleID == "" {
 		return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s' to install it", s.UDID)
 	}
 
@@ -462,7 +469,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		"DEVICEKIT_LISTEN_PORT": strconv.Itoa(usePort),
 	}
 
-	err = s.LaunchAppWithEnv(agentRunnerBundleID, env)
+	err = s.LaunchAppWithEnv(agentBundleID, env)
 	if err != nil {
 		return err
 	}
@@ -476,7 +483,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 
 	err = s.wdaClient.WaitForAgent()
 	if err != nil {
-		_ = s.TerminateApp(agentRunnerBundleID)
+		_ = s.TerminateApp(agentBundleID)
 		return err
 	}
 
