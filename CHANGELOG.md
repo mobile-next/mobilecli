@@ -1,3 +1,8 @@
+## [0.3.83](https://github.com/mobile-next/mobilecli/releases/tag/0.3.83) (2026-06-15)
+* Fix: Scale press-keys RPC timeout by key count ([#281](https://github.com/mobile-next/mobilecli/pull/281))
+* Fix: Match agent bundle id by suffix to support re-signed runner ([#280](https://github.com/mobile-next/mobilecli/pull/280))
+* Chore: Update devicekit-ios agent to 0.0.20 ([#282](https://github.com/mobile-next/mobilecli/pull/282))
+
 ## [0.3.82](https://github.com/mobile-next/mobilecli/releases/tag/0.3.82) (2026-06-14)
 * Feat: Update agent automatically on install command when the installed version differs ([#278](https://github.com/mobile-next/mobilecli/pull/278))
 * Feat: Add agent uninstall command ([#277](https://github.com/mobile-next/mobilecli/pull/277))
