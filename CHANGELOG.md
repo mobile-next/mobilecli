@@ -1,3 +1,6 @@
+## [0.3.85](https://github.com/mobile-next/mobilecli/releases/tag/0.3.85) (2026-06-17)
+* Feat: Device.settings.apply with animations toggle ([#287](https://github.com/mobile-next/mobilecli/pull/287))
+
 ## [0.3.84](https://github.com/mobile-next/mobilecli/releases/tag/0.3.84) (2026-06-15)
 * Fix: Include clickable and checkable elements in android view tree dump ([#284](https://github.com/mobile-next/mobilecli/pull/284))
 
