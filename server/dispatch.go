@@ -29,6 +29,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.boot":                     handleDeviceBoot,
 		"device.shutdown":                 handleDeviceShutdown,
 		"device.reboot":                   handleDeviceReboot,
+		"device.settings.apply":           handleSettingsApply,
 		"device.dump.ui":                  handleDumpUI,
 		"device.apps.launch":              handleAppsLaunch,
 		"device.apps.terminate":           handleAppsTerminate,

@@ -616,6 +616,11 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+type DeviceSettingsApplyParams struct {
+	DeviceID   string  `json:"deviceId"`
+	Animations *string `json:"animations,omitempty"` // "on" or "off"
+}
+
 type DeviceBootParams struct {
 	DeviceID string `json:"deviceId"`
 }
@@ -808,6 +813,29 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.OrientationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleSettingsApply(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var settingsParams DeviceSettingsApplyParams
+	if err := json.Unmarshal(params, &settingsParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, animations", err)
+	}
+
+	req := commands.ApplySettingsRequest{
+		DeviceID:   settingsParams.DeviceID,
+		Animations: settingsParams.Animations,
+	}
+
+	response := commands.ApplySettingsCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

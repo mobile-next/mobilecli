@@ -155,6 +155,12 @@ type ControllableDevice interface {
 	GetAppContainerPath(bundleID string) (string, error)
 }
 
+// AnimationConfigurable is implemented by devices that can toggle system
+// animations. Devices that don't implement it are treated as a no-op by callers.
+type AnimationConfigurable interface {
+	SetAnimationsEnabled(enabled bool) error
+}
+
 // WebViewable is implemented by devices that support webview inspection and control.
 type WebViewable interface {
 	ListWebViews() ([]WebViewInfo, error)

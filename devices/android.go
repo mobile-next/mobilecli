@@ -1701,6 +1701,30 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	return nil
 }
 
+// SetAnimationsEnabled toggles the three global animation scales. Setting them
+// to 0 disables animations for stable screenshots; 1 restores the defaults.
+func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {
+	scale := "0"
+	if enabled {
+		scale = "1"
+	}
+
+	scaleSettings := []string{
+		"window_animation_scale",
+		"transition_animation_scale",
+		"animator_duration_scale",
+	}
+
+	for _, setting := range scaleSettings {
+		_, err := d.runAdbCommand("shell", "settings", "put", "global", setting, scale)
+		if err != nil {
+			return fmt.Errorf("failed to set %s: %v", setting, err)
+		}
+	}
+
+	return nil
+}
+
 func (d *AndroidDevice) getCrashLog() (string, error) {
 	output, err := d.runAdbCommand("logcat", "-b", "crash", "-d", "-v", "year")
 	if err != nil {
