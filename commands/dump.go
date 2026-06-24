@@ -11,10 +11,17 @@ type DumpUIRequest struct {
 	Format   string `json:"format"`
 }
 
-// DumpUIResponse represents the response for a dump UI command
+// DumpUIResponse represents the response for a raw-format dump UI command.
 type DumpUIResponse struct {
-	Elements []devices.ScreenElement `json:"elements,omitempty"`
-	RawData  any                     `json:"rawData,omitempty"`
+	RawData any `json:"rawData,omitempty"`
+}
+
+// DumpUIElementsResponse is the response for a (default) json-format dump.
+// `elements` is intentionally not omitempty and is always populated (with an
+// empty array when the screen has no labelled elements) so clients can rely on
+// the field existing instead of breaking on a missing key.
+type DumpUIElementsResponse struct {
+	Elements []devices.ScreenElement `json:"elements"`
 }
 
 // DumpUICommand starts an agent and dumps the UI tree from the specified device
@@ -33,8 +40,6 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err))
 	}
 
-	var response DumpUIResponse
-
 	// Check if raw format is requested
 	if req.Format == "raw" {
 		rawData, err := targetDevice.DumpSourceRaw()
@@ -42,20 +47,21 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("failed to dump raw UI from device %s: %w", targetDevice.ID(), err))
 		}
 
-		response = DumpUIResponse{
-			RawData: rawData,
-		}
-	} else {
-		// Dump UI tree from the device
-		elements, err := targetDevice.DumpSource()
-		if err != nil {
-			return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
-		}
-
-		response = DumpUIResponse{
-			Elements: elements,
-		}
+		return NewSuccessResponse(DumpUIResponse{RawData: rawData})
 	}
 
-	return NewSuccessResponse(response)
+	// Dump UI tree from the device
+	elements, err := targetDevice.DumpSource()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
+	}
+
+	// Always return a well-formed `elements` array, even when empty: a screen
+	// with no labelled elements (or a mid-transition dump) otherwise produced a
+	// response with the field omitted, breaking clients that read `elements`.
+	if elements == nil {
+		elements = []devices.ScreenElement{}
+	}
+
+	return NewSuccessResponse(DumpUIElementsResponse{Elements: elements})
 }
