@@ -78,27 +78,27 @@ Name supports wildcard prefix matching:
 			}
 
 			if result.IsAllocating() {
-				utils.Verbose("waiting for device allocation, session %s (0 seconds elapsed)", result.SessionID)
+				utils.Verbose("waiting for device allocation, session %s (0 seconds elapsed)", result.AllocationID)
 				start := time.Now()
 				deadline := start.Add(time.Duration(fleetTimeout) * time.Second)
 				for {
 					if time.Now().After(deadline) {
-						err := fmt.Errorf("timed out waiting for device allocation after %d seconds (session %s)", fleetTimeout, result.SessionID)
+						err := fmt.Errorf("timed out waiting for device allocation after %d seconds (session %s)", fleetTimeout, result.AllocationID)
 						printJson(commands.NewErrorResponse(err))
 						return err
 					}
 					time.Sleep(5 * time.Second)
 					elapsed := int(time.Since(start).Seconds())
-					utils.Verbose("waiting for device allocation, session %s (%d seconds elapsed)", result.SessionID, elapsed)
-					device, err := commands.FleetGetDeviceBySession(token, result.SessionID)
+					utils.Verbose("waiting for device allocation, session %s (%d seconds elapsed)", result.AllocationID, elapsed)
+					device, err := commands.FleetGetDeviceBySession(token, result.AllocationID)
 					if err != nil {
-						err = fmt.Errorf("failed to check device status (session %s): %w", result.SessionID, err)
+						err = fmt.Errorf("failed to check device status (session %s): %w", result.AllocationID, err)
 						printJson(commands.NewErrorResponse(err))
 						return err
 					}
 					if device.State != "allocating" {
 						response = commands.NewSuccessResponse(commands.FleetAllocateResponse{
-							SessionID:   result.SessionID,
+							AllocationID: result.AllocationID,
 							ProvisionID: result.ProvisionID,
 							State:       device.State,
 							Device: commands.FleetAllocateDevice{
