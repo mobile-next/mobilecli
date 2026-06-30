@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -1157,8 +1158,27 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("failed to create stdout pipe: %v", err)
 	}
 
+	// For AVC, keep stdin open as a live control channel: AvcServer reads
+	// newline-delimited "bitrate <bps>" commands so the host can adapt the
+	// encoder to the viewer's measured downlink without restarting the stream.
+	var stdin io.WriteCloser
+	if config.Format == "avc" {
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			return fmt.Errorf("failed to create stdin pipe: %v", err)
+		}
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start %s: %v", serverClass, err)
+	}
+
+	if config.Format == "avc" {
+		registerAvcControl(d.ID(), stdin)
+		defer func() {
+			unregisterAvcControl(d.ID())
+			_ = stdin.Close()
+		}()
 	}
 
 	// Read bytes from the command output and send to callback

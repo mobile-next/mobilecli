@@ -1330,6 +1330,37 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	return result, nil
 }
 
+// screenCaptureSetConfigRequest is the parameter shape for the
+// device.screencapture.setConfiguration RPC.
+type screenCaptureSetConfigRequest struct {
+	DeviceID string `json:"deviceId"`
+	Bitrate  int    `json:"bitrate"`
+}
+
+// handleScreenCaptureSetConfiguration applies live encoder settings to an
+// in-flight AVC capture (currently only bitrate) without restarting the stream.
+func handleScreenCaptureSetConfiguration(params json.RawMessage) (any, error) {
+	var req screenCaptureSetConfigRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if req.Bitrate <= 0 {
+		return nil, fmt.Errorf("bitrate must be positive")
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	if err := devices.SetAvcBitrate(targetDevice.ID(), req.Bitrate); err != nil {
+		return nil, err
+	}
+
+	return map[string]any{"deviceId": targetDevice.ID(), "bitrate": req.Bitrate}, nil
+}
+
 // handleStream handles the /stream endpoint for screen capture streaming
 func handleStream(w http.ResponseWriter, r *http.Request) {
 	// extract session ID from query parameter
