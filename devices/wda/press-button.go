@@ -8,6 +8,14 @@ func (c *WdaClient) PressButton(key string) error {
 		"VOLUME_DOWN": "volumeDown",
 		"HOME":        "home",
 		"LOCK":        "lock",
+		// tvOS Siri Remote buttons (handled by the tvOS device.io.button handler).
+		"UP":         "up",
+		"DOWN":       "down",
+		"LEFT":       "left",
+		"RIGHT":      "right",
+		"SELECT":     "select",
+		"MENU":       "menu",
+		"PLAY_PAUSE": "playPause",
 	}
 
 	if key == "ENTER" {
