@@ -347,7 +347,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 
 		// get model for devices
 		model := ""
-		if d.Platform() == "ios" {
+		if d.Platform() == "ios" || d.Platform() == "tvos" {
 			if d.DeviceType() == "real" {
 				if iosDevice, ok := d.(*IOSDevice); ok {
 					model = iosDevice.ProductType
