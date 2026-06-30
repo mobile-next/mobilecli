@@ -30,10 +30,10 @@ type FleetAllocateDevice struct {
 }
 
 type FleetAllocateResponse struct {
-	AllocationID string              `json:"allocationId"`
-	Device       FleetAllocateDevice `json:"device"`
-	ProvisionID  string              `json:"provisionId,omitempty"`
-	State        string              `json:"state,omitempty"`
+	SessionID   string              `json:"sessionId"`
+	Device      FleetAllocateDevice `json:"device"`
+	ProvisionID string              `json:"provisionId,omitempty"`
+	State       string              `json:"state,omitempty"`
 }
 
 func (r FleetAllocateResponse) IsAllocating() bool {
@@ -93,7 +93,7 @@ func FleetGetDeviceBySession(token, sessionID string) (*devices.DeviceInfo, erro
 
 	for _, d := range result.Devices {
 		var p devices.DeviceProvider
-		if json.Unmarshal(d.Provider, &p) == nil && p.AllocationID == sessionID {
+		if json.Unmarshal(d.Provider, &p) == nil && p.SessionID == sessionID {
 			return &d, nil
 		}
 	}

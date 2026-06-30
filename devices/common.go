@@ -271,7 +271,7 @@ type DeviceListOptions struct {
 
 type DeviceProvider struct {
 	Type      string `json:"type"`
-	AllocationID string `json:"allocationId,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
 }
 
 type DeviceInfo struct {
