@@ -999,7 +999,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			// start DeviceKit
 			// Note: passing nil registry since this is internal call from StartScreenCapture
 			// ScreenCapture callers should have already registered the device via StartAgent
-			deviceKitInfo, err = d.StartDeviceKit(nil)
+			deviceKitInfo, err = d.StartDeviceKit264(nil)
 			if err != nil {
 				return fmt.Errorf("failed to start DeviceKit: %w", err)
 			}
@@ -1417,10 +1417,10 @@ func (d *IOSDevice) isDeviceKitRunning() bool {
 	return true
 }
 
-// StartDeviceKit starts the devicekit-ios XCUITest which provides:
+// StartDeviceKit264 starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
-func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
+func (d *IOSDevice) StartDeviceKit264(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// register cleanup hook for this device
 	if hook != nil {
 		hookName := fmt.Sprintf("ios-devicekit-%s", d.Udid)
@@ -1444,8 +1444,12 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 
 	var devicekitMainAppBundleId string
 	for _, app := range apps {
-		// look for the main app, not the test runner
-		if strings.HasPrefix(app.PackageName, "com.") && strings.Contains(app.PackageName, "devicekit-ios") && !strings.Contains(app.PackageName, "UITests") {
+		// look for the main app, not the test runner. the bundle id can carry a
+		// signing/team prefix when re-signed (e.g. com.megidish1.devicekit-ios), so
+		// match on suffix rather than substring. the runner ends with
+		// "...devicekit-iosUITests.xctrunner" and is excluded by this suffix.
+		fmt.Println("-> %s", app.PackageName)
+		if strings.HasSuffix(app.PackageName, "devicekit-h264") {
 			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
 			devicekitMainAppBundleId = app.PackageName
 			break
