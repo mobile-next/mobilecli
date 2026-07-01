@@ -42,7 +42,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		childElements = append(childElements, filterSourceElements(child)...)
 	}
 
-	acceptedTypes := []string{"TextField", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
+	acceptedTypes := []string{"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
 
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
@@ -60,7 +60,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	}
 
 	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-	alwaysInclude := elementType == "TextField" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
 	if !hasIdentifier && !alwaysInclude {
 		return childElements
 	}
