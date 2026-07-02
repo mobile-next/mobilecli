@@ -96,7 +96,14 @@ func (d IOSDevice) Version() string {
 	return d.OSVersion
 }
 
+// Platform reports the OS family of the connected device. Real Apple TV units are
+// discovered over the same usbmuxd/go-ios path as iPhones and iPads, so they are
+// distinguished by their product type (e.g. "AppleTV14,1") rather than a separate
+// device class.
 func (d IOSDevice) Platform() string {
+	if strings.HasPrefix(d.ProductType, "AppleTV") {
+		return "tvos"
+	}
 	return "ios"
 }
 

@@ -31,7 +31,11 @@ var agentChecksums = map[string]string{
 	// tvOS simulator runner is published from the same devicekit-ios release.
 	// Update this checksum whenever the tvOS runner artifact is rebuilt/republished.
 	"devicekit-tvos-Sim-arm64.zip": "49061f17046055c7e89dbf27067a59ab0bffd9d7d14d63031d5411c5963ccb81",
-	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
+	// Real Apple TV runner IPA, re-signed at install time with a provisioning profile.
+	// Placeholder until the tvOS runner IPA is published from a devicekit-ios release;
+	// replace with the released artifact's SHA-256 when available.
+	"devicekit-tvos-runner.ipa": "0000000000000000000000000000000000000000000000000000000000000000",
+	"devicekit.apk":             "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
 }
 
 type agentMessageResponse struct {
@@ -139,8 +143,13 @@ var agentInstallCmd = &cobra.Command{
 			switch device.DeviceType() {
 			case "simulator":
 				installErr = installAgentOnSimulator(device)
+			case "real":
+				if agentProvisioningProfile == "" {
+					return fmt.Errorf("--provisioning-profile is required for real Apple TV devices")
+				}
+				installErr = installAgentOnRealTVOS(device)
 			default:
-				return fmt.Errorf("unsupported tvOS device type: %s (only the tvOS Simulator is supported)", device.DeviceType())
+				return fmt.Errorf("unsupported tvOS device type: %s", device.DeviceType())
 			}
 		case "android":
 			installErr = installAgentOnAndroid(device)
@@ -300,9 +309,11 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
-func installAgentOnRealIOS(device devices.ControllableDevice) error {
-	filename := "devicekit-ios-runner.ipa"
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
+// installResignedRunner downloads a real-device runner IPA, re-signs it with the
+// configured provisioning profile, and installs it. It backs both the iOS and the
+// tvOS real-device flows, which differ only in the artifact filename and version.
+func installResignedRunner(device devices.ControllableDevice, filename, version string) error {
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", version, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
 	if err != nil {
@@ -318,6 +329,14 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 		}
 		return resignedPath, nil
 	})
+}
+
+func installAgentOnRealIOS(device devices.ControllableDevice) error {
+	return installResignedRunner(device, "devicekit-ios-runner.ipa", agentVersionIOS)
+}
+
+func installAgentOnRealTVOS(device devices.ControllableDevice) error {
+	return installResignedRunner(device, "devicekit-tvos-runner.ipa", agentVersionTVOS)
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
@@ -356,10 +375,10 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 }
 
 // agentMatchesApp reports whether an installed app's bundle id identifies the agent.
-// On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
-// suffix match is used; other platforms require an exact match.
+// On iOS and tvOS the runner bundle id can carry a signing/team prefix when re-signed
+// for a real device, so a suffix match is used; other platforms require an exact match.
 func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
-	if platform == "ios" {
+	if platform == "ios" || platform == "tvos" {
 		return strings.HasSuffix(installedPackage, agentPackage)
 	}
 	return installedPackage == agentPackage
@@ -396,5 +415,5 @@ func init() {
 	agentStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check")
 	agentUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall the agent from")
 	agentInstallCmd.Flags().BoolVar(&agentForce, "force", false, "force install even if agent is already installed")
-	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS devices)")
+	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS and tvOS devices)")
 }
