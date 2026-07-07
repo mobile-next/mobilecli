@@ -67,6 +67,25 @@ func getDeviceInfoCache() *lru.Cache[string, deviceInfoCacheEntry] {
 	return deviceInfoCache
 }
 
+func newIOSDevice(udid, deviceName, osVersion, productType string) (IOSDevice, error) {
+	device := IOSDevice{
+		Udid:        udid,
+		DeviceName:  deviceName,
+		OSVersion:   osVersion,
+		ProductType: productType,
+	}
+
+	tunnelManager, err := ios.NewTunnelManager(udid)
+	if err != nil {
+		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
+	}
+
+	device.tunnelManager = tunnelManager
+	device.wdaClient = wda.NewWdaClient("localhost:8100")
+
+	return device, nil
+}
+
 type IOSDevice struct {
 	Udid        string `json:"UniqueDeviceID"`
 	DeviceName  string `json:"DeviceName"`
@@ -146,45 +165,74 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 		})
 	}
 
-	device := IOSDevice{
-		Udid:        udid,
-		DeviceName:  deviceName,
-		OSVersion:   osVersion,
-		ProductType: productType,
-	}
-
-	tunnelManager, err := ios.NewTunnelManager(udid)
-	if err != nil {
-		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
-	}
-
-	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
-
-	return device, nil
+	return newIOSDevice(udid, deviceName, osVersion, productType)
 }
 
 func ListIOSDevices() ([]IOSDevice, error) {
 	log.SetLevel(log.WarnLevel)
 
+	var (
+		devices    []IOSDevice
+		seen       = make(map[string]bool)
+		goIOSErr   error
+		coreDevErr error
+	)
+
 	deviceList, err := goios.ListDevices()
 	if err != nil {
-		return []IOSDevice{}, fmt.Errorf("failed getting device list: %w", err)
-	}
-
-	devices := make([]IOSDevice, len(deviceList.DeviceList))
-	for i, deviceEntry := range deviceList.DeviceList {
-		device, err := getDeviceInfo(deviceEntry)
-		if err != nil {
-			return []IOSDevice{}, fmt.Errorf("failed to get device info: %w", err)
+		goIOSErr = fmt.Errorf("failed getting device list via go-ios: %w", err)
+	} else {
+		devices = make([]IOSDevice, 0, len(deviceList.DeviceList))
+		for _, deviceEntry := range deviceList.DeviceList {
+			device, err := getDeviceInfo(deviceEntry)
+			if err != nil {
+				return []IOSDevice{}, fmt.Errorf("failed to get device info: %w", err)
+			}
+			devices = append(devices, device)
+			seen[device.Udid] = true
 		}
-		devices[i] = device
 	}
 
-	return devices, nil
+	coreDevices, err := listCoreDevicePhysicalDevices()
+	if err != nil {
+		coreDevErr = err
+	} else {
+		for _, device := range coreDevices {
+			if seen[device.Udid] {
+				continue
+			}
+			devices = append(devices, device)
+			seen[device.Udid] = true
+		}
+	}
+
+	if len(devices) > 0 {
+		if goIOSErr != nil {
+			utils.Verbose("Warning: %v", goIOSErr)
+		}
+		if coreDevErr != nil {
+			utils.Verbose("Warning: %v", coreDevErr)
+		}
+		return devices, nil
+	}
+
+	if goIOSErr != nil {
+		if coreDevErr != nil {
+			return []IOSDevice{}, fmt.Errorf("%v; %v", goIOSErr, coreDevErr)
+		}
+		return []IOSDevice{}, goIOSErr
+	}
+	if coreDevErr != nil {
+		return []IOSDevice{}, coreDevErr
+	}
+
+	return []IOSDevice{}, nil
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
+	if isLocalNetworkCoreDevice(d.Udid) {
+		return captureCoreDeviceScreenshot(d.Udid)
+	}
 	return d.wdaClient.TakeScreenshot()
 }
 
@@ -441,6 +489,11 @@ func (d *IOSDevice) waitForTunnelReady() error {
 
 func (d *IOSDevice) startTunnel() error {
 	if !d.requiresTunnel() {
+		return nil
+	}
+
+	if hasConnectedCoreDeviceTunnel(d.Udid) {
+		utils.Verbose("Using existing CoreDevice tunnel for device %s", d.Udid)
 		return nil
 	}
 
@@ -740,6 +793,13 @@ func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 		return fmt.Errorf("--activity is not supported on iOS")
 	}
 
+	if isLocalNetworkCoreDevice(d.Udid) {
+		if len(launchOpts.Locales) > 0 {
+			utils.Verbose("Ignoring iOS locales for CoreDevice fallback launch of %s", bundleID)
+		}
+		return launchCoreDeviceApp(d.Udid, bundleID)
+	}
+
 	log.SetLevel(log.WarnLevel)
 
 	// ensure tunnel is running for iOS 17+
@@ -779,6 +839,10 @@ func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 func (d IOSDevice) TerminateApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
+	}
+
+	if isLocalNetworkCoreDevice(d.Udid) {
+		return fmt.Errorf("terminate app is not yet supported for wireless CoreDevice fallback")
 	}
 
 	log.SetLevel(log.WarnLevel)
@@ -862,6 +926,10 @@ func (d IOSDevice) OpenURL(url string) error {
 func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
+	if isLocalNetworkCoreDevice(d.Udid) {
+		return listCoreDeviceApps(d.Udid)
+	}
+
 	// Lock to prevent concurrent access to usbmuxd (race condition on ReadPair)
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -933,6 +1001,26 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
+	if isLocalNetworkCoreDevice(d.Udid) {
+		screenSize, err := getCoreDeviceDisplayInfo(d.Udid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get display info from CoreDevice: %w", err)
+		}
+
+		return &FullDeviceInfo{
+			DeviceInfo: DeviceInfo{
+				ID:       d.ID(),
+				Name:     d.Name(),
+				Platform: d.Platform(),
+				Type:     d.DeviceType(),
+				Version:  d.Version(),
+				State:    d.State(),
+				Model:    d.ProductType,
+			},
+			ScreenSize: screenSize,
+		}, nil
+	}
+
 	wdaSize, err := d.wdaClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
