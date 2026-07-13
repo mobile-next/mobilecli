@@ -1,3 +1,6 @@
+## [0.3.86](https://github.com/mobile-next/mobilecli/releases/tag/0.3.86) (2026-07-13)
+* Feat: Live bitrate + keyframe control via device socket (Android only) ([#295](https://github.com/mobile-next/mobilecli/pull/295))
+
 ## [0.3.85](https://github.com/mobile-next/mobilecli/releases/tag/0.3.85) (2026-06-17)
 * Feat: Device.settings.apply with animations toggle ([#287](https://github.com/mobile-next/mobilecli/pull/287))
 
