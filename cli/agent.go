@@ -16,7 +16,7 @@ import (
 
 const (
 	agentVersionIOS     = "0.0.20"
-	agentVersionAndroid = "1.2.2"
+	agentVersionAndroid = "1.2.4"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
@@ -26,7 +26,7 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "8040f4918892f63d79713b5824184ac5f296c5ec9b23266c25af34777550f28c",
 	"devicekit-ios-Sim-x86_64.zip": "78a8f2d208a22523efbaa5cb2a735557e807f877bb8ec1a1c31c886f2e425684",
 	"devicekit-ios-runner.ipa":     "f5fe88d4169c39001ed012101651c5ac00e8ab54aefb72c74455e7037c2e8205",
-	"mobilenext-devicekit.apk":     "c58484b40db6ab84c7445ccaa346ee0804e155e37507a42f1ac37b92a52bdd4f",
+	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
 }
 
 type agentMessageResponse struct {
@@ -292,7 +292,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
-	filename := "mobilenext-devicekit.apk"
+	filename := "devicekit.apk"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
