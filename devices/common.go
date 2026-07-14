@@ -161,6 +161,13 @@ type AnimationConfigurable interface {
 	SetAnimationsEnabled(enabled bool) error
 }
 
+// KeyboardControllable is implemented by devices that can report and hide the
+// on-screen keyboard. Devices that don't implement it return an error to callers.
+type KeyboardControllable interface {
+	KeyboardStatus() (string, error) // "visible" or "hidden"
+	HideKeyboard() error
+}
+
 // WebViewable is implemented by devices that support webview inspection and control.
 type WebViewable interface {
 	ListWebViews() ([]WebViewInfo, error)

@@ -198,6 +198,39 @@ var ioSwipeCmd = &cobra.Command{
 	},
 }
 
+var ioKeyboardCmd = &cobra.Command{
+	Use:   "keyboard",
+	Short: "Query and control the on-screen keyboard",
+}
+
+var ioKeyboardStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Report whether the on-screen keyboard is visible",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response := commands.KeyboardStatusCommand(commands.KeyboardRequest{DeviceID: deviceId})
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var ioKeyboardHideCmd = &cobra.Command{
+	Use:   "hide",
+	Short: "Hide the on-screen keyboard if it is visible",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response := commands.KeyboardHideCommand(commands.KeyboardRequest{DeviceID: deviceId})
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -208,6 +241,9 @@ func init() {
 	ioCmd.AddCommand(ioTextCmd)
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioKeyboardCmd)
+	ioKeyboardCmd.AddCommand(ioKeyboardStatusCmd)
+	ioKeyboardCmd.AddCommand(ioKeyboardHideCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -217,4 +253,6 @@ func init() {
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
+	ioKeyboardStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to query keyboard status on")
+	ioKeyboardHideCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to hide keyboard on")
 }
