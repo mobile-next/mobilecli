@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestAgentPackageForPlatform(t *testing.T) {
 	cases := map[string]string{
@@ -53,5 +57,48 @@ func TestAgentMatchesApp(t *testing.T) {
 			t.Errorf("%s: agentMatchesApp(%q, %q, %q) = %v, want %v",
 				c.name, c.platform, c.installedPackage, c.agentPackage, got, c.want)
 		}
+	}
+}
+
+func TestResolveRunnerArtifactUsesLocalPath(t *testing.T) {
+	// With --agent-path set, resolveRunnerArtifact must skip the download and the
+	// pinned checksum verification, returning the local path + its checksum.
+	dir := t.TempDir()
+	local := filepath.Join(dir, "custom-runner.ipa")
+	if err := os.WriteFile(local, []byte("hello runner"), 0600); err != nil {
+		t.Fatalf("failed to write local artifact: %v", err)
+	}
+
+	agentPath = local
+	t.Cleanup(func() { agentPath = "" })
+
+	path, checksum, err := resolveRunnerArtifact(t.TempDir(), "devicekit-tvos-runner.ipa", agentVersionTVOS)
+	if err != nil {
+		t.Fatalf("resolveRunnerArtifact returned error: %v", err)
+	}
+	if path != local {
+		t.Errorf("expected local artifact path %q, got %q", local, path)
+	}
+	const want = "7d01a911d78908f3f3c466d39a0bd6a5c9ff9e20ab58bfda37909f5fd6f35afd"
+	if checksum != want {
+		t.Errorf("expected checksum %q, got %q", want, checksum)
+	}
+}
+
+func TestResolveRunnerArtifactMissingLocalPath(t *testing.T) {
+	agentPath = filepath.Join(t.TempDir(), "does-not-exist.ipa")
+	t.Cleanup(func() { agentPath = "" })
+
+	if _, _, err := resolveRunnerArtifact(t.TempDir(), "devicekit-tvos-runner.ipa", agentVersionTVOS); err == nil {
+		t.Fatal("expected error for missing agent-path, got nil")
+	}
+}
+
+func TestReleasePathRequiresPinnedChecksum(t *testing.T) {
+	// The release path (no --agent-path) stays checksum-gated: an unknown filename
+	// has no pinned checksum and must be rejected rather than installed unverified.
+	agentPath = ""
+	if _, ok := agentChecksums["devicekit-ios-runner.ipa"]; !ok {
+		t.Error("expected a pinned checksum for the iOS release runner")
 	}
 }

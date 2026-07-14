@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/mobile-next/mobilecli/utils"
@@ -46,6 +47,7 @@ type coreDevicePhysicalInfo struct {
 	OSVersion   string
 	ProductType string
 	Transport   string
+	BootState   string
 	TunnelState string
 	TunnelIP    string
 }
@@ -106,6 +108,7 @@ func parseCoreDevicePhysicalInfos(data []byte) ([]coreDevicePhysicalInfo, error)
 			OSVersion:   strings.TrimSpace(entry.DeviceProperties.OSVersionNumber),
 			ProductType: strings.TrimSpace(entry.HardwareProperties.ProductType),
 			Transport:   strings.TrimSpace(entry.ConnectionProperties.TransportType),
+			BootState:   strings.TrimSpace(entry.DeviceProperties.BootState),
 			TunnelState: strings.TrimSpace(entry.ConnectionProperties.TunnelState),
 			TunnelIP:    strings.TrimSpace(entry.ConnectionProperties.TunnelIPAddress),
 		})
@@ -180,6 +183,19 @@ func isLocalNetworkCoreDevice(udid string) bool {
 	return strings.EqualFold(details.TransportType, "localNetwork")
 }
 
+// isLocalNetworkCoreDevice reports whether this device is reachable over a
+// CoreDevice localNetwork tunnel. For CoreDevice-discovered devices it consults
+// the isWireless value cached at discovery, avoiding a `devicectl device info
+// details` shell on every op (M1.7). Devices not discovered via CoreDevice (no
+// CoreDeviceIdentifier) fall back to the devicectl query so their behavior is
+// unchanged.
+func (d *IOSDevice) isLocalNetworkCoreDevice() bool {
+	if d.CoreDeviceIdentifier != "" {
+		return d.isWireless
+	}
+	return isLocalNetworkCoreDevice(d.Udid)
+}
+
 func hasConnectedCoreDeviceTunnel(udid string) bool {
 	details, err := getCoreDeviceDetails(udid)
 	if err != nil {
@@ -221,6 +237,14 @@ func listCoreDeviceApps(udid string) ([]InstalledAppInfo, error) {
 func launchCoreDeviceApp(udid, bundleID string) error {
 	_, err := runDevicectlJSON("device", "process", "launch", "--device", udid, bundleID)
 	return err
+}
+
+func openCoreDeviceURL(deviceID, url string) error {
+	_, err := runDevicectlJSON("device", "process", "openURL", "--device", deviceID, url)
+	if err != nil {
+		return fmt.Errorf("failed to open url %q on CoreDevice %s: %w", url, deviceID, err)
+	}
+	return nil
 }
 
 func captureCoreDeviceScreenshot(udid string) ([]byte, error) {
@@ -321,8 +345,161 @@ func listCoreDevicePhysicalDevices() ([]IOSDevice, error) {
 			utils.Verbose("Warning: Failed to create iOS device from devicectl entry %s: %v", info.UDID, err)
 			continue
 		}
+		// Retain both identifiers: ID()/Udid keeps returning the public hardware
+		// UDID, while the CoreDevice identifier + tunnel IP are internal and used
+		// for devicectl/tunnel operations.
+		device.CoreDeviceIdentifier = info.Identifier
+		device.TunnelIP = info.TunnelIP
+		device.coreDeviceState = deriveCoreDeviceState(info.BootState, info.TunnelState)
+		device.isWireless = strings.EqualFold(info.Transport, "localNetwork")
 		devices = append(devices, device)
 	}
 
 	return devices, nil
+}
+
+// deriveCoreDeviceState maps CoreDevice boot/tunnel state onto the public device
+// state vocabulary. A disconnected Apple TV must not be reported as online.
+func deriveCoreDeviceState(bootState, tunnelState string) string {
+	if strings.EqualFold(strings.TrimSpace(bootState), "booted") {
+		return "online"
+	}
+	if strings.EqualFold(strings.TrimSpace(tunnelState), "connected") {
+		return "online"
+	}
+	return "offline"
+}
+
+// installCoreDeviceApp installs an app bundle on a CoreDevice-discovered device
+// using devicectl, avoiding any go-ios device lookup.
+func installCoreDeviceApp(deviceID, path string) error {
+	_, err := runDevicectlJSON("device", "install", "app", "--device", deviceID, path)
+	return err
+}
+
+// uninstallCoreDeviceApp removes an app by bundle id on a CoreDevice-discovered
+// device using devicectl.
+func uninstallCoreDeviceApp(deviceID, bundleID string) error {
+	_, err := runDevicectlJSON("device", "uninstall", "app", "--device", deviceID, bundleID)
+	return err
+}
+
+type coreDeviceAppsRawOutput struct {
+	Result struct {
+		Apps []struct {
+			BundleIdentifier string `json:"bundleIdentifier"`
+			URL              string `json:"url"`
+			Path             string `json:"path"`
+		} `json:"apps"`
+	} `json:"result"`
+}
+
+type coreDeviceProcessesOutput struct {
+	Result struct {
+		RunningProcesses []struct {
+			ProcessIdentifier int    `json:"processIdentifier"`
+			Executable        string `json:"executable"`
+		} `json:"runningProcesses"`
+	} `json:"result"`
+}
+
+// normalizeDevicectlPath strips a leading file:// scheme and any trailing slash
+// so app bundle URLs and process executable paths can be prefix-compared.
+func normalizeDevicectlPath(p string) string {
+	p = strings.TrimSpace(p)
+	p = strings.TrimPrefix(p, "file://")
+	return strings.TrimRight(p, "/")
+}
+
+// coreDeviceAppBundlePath resolves the on-device .app bundle path for a bundle id.
+func coreDeviceAppBundlePath(deviceID, bundleID string) (string, error) {
+	output, err := runDevicectlJSON("device", "info", "apps", "--device", deviceID)
+	if err != nil {
+		return "", err
+	}
+	return parseCoreDeviceAppBundlePath(output, deviceID, bundleID)
+}
+
+// parseCoreDeviceAppBundlePath extracts the on-device .app bundle path for a
+// bundle id from `devicectl device info apps` JSON, preferring url over path and
+// tolerating missing fields.
+func parseCoreDeviceAppBundlePath(data []byte, deviceID, bundleID string) (string, error) {
+	var result coreDeviceAppsRawOutput
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("parse devicectl apps json: %w", err)
+	}
+
+	for _, app := range result.Result.Apps {
+		if strings.TrimSpace(app.BundleIdentifier) != bundleID {
+			continue
+		}
+		if p := normalizeDevicectlPath(app.URL); p != "" {
+			return p, nil
+		}
+		if p := normalizeDevicectlPath(app.Path); p != "" {
+			return p, nil
+		}
+	}
+
+	return "", fmt.Errorf("bundle %s not installed on device %s", bundleID, deviceID)
+}
+
+// matchesBundlePath reports whether an executable path belongs to the given app
+// bundle. It matches on a "<bundlePath>/" boundary so a sibling bundle sharing a
+// path prefix (e.g. .../Foo.app vs .../FooBar.app) is not treated as a match.
+func matchesBundlePath(exe, bundlePath string) bool {
+	if exe == "" || bundlePath == "" {
+		return false
+	}
+	if exe == bundlePath {
+		return true
+	}
+	return strings.HasPrefix(exe, strings.TrimRight(bundlePath, "/")+"/")
+}
+
+// resolveCoreDevicePID finds the running process id backing a bundle id by
+// matching the app bundle path against the running-process executable paths.
+func resolveCoreDevicePID(deviceID, bundleID string) (int, error) {
+	bundlePath, err := coreDeviceAppBundlePath(deviceID, bundleID)
+	if err != nil {
+		return 0, err
+	}
+
+	output, err := runDevicectlJSON("device", "info", "processes", "--device", deviceID)
+	if err != nil {
+		return 0, err
+	}
+
+	return parseCoreDevicePID(output, deviceID, bundleID, bundlePath)
+}
+
+// parseCoreDevicePID selects the running process id whose executable path lives
+// inside bundlePath from `devicectl device info processes` JSON.
+func parseCoreDevicePID(data []byte, deviceID, bundleID, bundlePath string) (int, error) {
+	var result coreDeviceProcessesOutput
+	if err := json.Unmarshal(data, &result); err != nil {
+		return 0, fmt.Errorf("parse devicectl processes json: %w", err)
+	}
+
+	for _, proc := range result.Result.RunningProcesses {
+		exe := normalizeDevicectlPath(proc.Executable)
+		if matchesBundlePath(exe, bundlePath) {
+			return proc.ProcessIdentifier, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no running process found for %s on device %s", bundleID, deviceID)
+}
+
+// terminateCoreDeviceApp terminates a running app by bundle id on a
+// CoreDevice-discovered device: resolve the pid, then ask devicectl to
+// terminate it.
+func terminateCoreDeviceApp(deviceID, bundleID string) error {
+	pid, err := resolveCoreDevicePID(deviceID, bundleID)
+	if err != nil {
+		return err
+	}
+
+	_, err = runDevicectlJSON("device", "process", "terminate", "--device", deviceID, "--pid", strconv.Itoa(pid))
+	return err
 }

@@ -92,6 +92,18 @@ type IOSDevice struct {
 	OSVersion   string `json:"Version"`
 	ProductType string `json:"ProductType"`
 
+	// CoreDeviceIdentifier is the identifier used by devicectl/Xcode for a
+	// CoreDevice-discovered device. It is internal; ID()/Udid keep returning the
+	// public hardware UDID. Empty for go-ios-discovered devices.
+	CoreDeviceIdentifier string `json:"-"`
+	// TunnelIP is the CoreDevice tunnel IP address (may be IPv6) used to reach the
+	// on-device DeviceKit server directly over the paired developer tunnel.
+	TunnelIP string `json:"-"`
+	// coreDeviceState caches the state derived from CoreDevice boot/tunnel state.
+	coreDeviceState string
+	// isWireless marks a CoreDevice-discovered device reachable over localNetwork.
+	isWireless bool
+
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
 	wdaClient              *wda.WdaClient
@@ -101,9 +113,20 @@ type IOSDevice struct {
 	portForwarderMjpeg     *ios.PortForwarder
 	portForwarderDeviceKit *ios.PortForwarder // devicekit http forwarder
 	portForwarderAvc       *ios.PortForwarder // devicekit h264 stream forwarder
+	tvosRunnerCancel       context.CancelFunc // cancels an owned xcodebuild runner process
 }
 
 func (d IOSDevice) ID() string {
+	return d.Udid
+}
+
+// coreDeviceID resolves the identifier to pass to devicectl --device. It prefers
+// the CoreDevice identifier when known, falling back to the public hardware UDID
+// (which devicectl also accepts).
+func (d IOSDevice) coreDeviceID() string {
+	if d.CoreDeviceIdentifier != "" {
+		return d.CoreDeviceIdentifier
+	}
 	return d.Udid
 }
 
@@ -131,6 +154,9 @@ func (d IOSDevice) DeviceType() string {
 }
 
 func (d IOSDevice) State() string {
+	if d.coreDeviceState != "" {
+		return d.coreDeviceState
+	}
 	return "online"
 }
 
@@ -230,8 +256,8 @@ func ListIOSDevices() ([]IOSDevice, error) {
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
-	if isLocalNetworkCoreDevice(d.Udid) {
-		return captureCoreDeviceScreenshot(d.Udid)
+	if d.isLocalNetworkCoreDevice() {
+		return captureCoreDeviceScreenshot(d.coreDeviceID())
 	}
 	return d.wdaClient.TakeScreenshot()
 }
@@ -345,6 +371,10 @@ func (d *IOSDevice) Cleanup() error {
 		errs = append(errs, err)
 	}
 
+	if err := d.cleanupTVOSRunner(); err != nil {
+		errs = append(errs, err)
+	}
+
 	if err := d.cleanupPortForwarders(); err != nil {
 		errs = append(errs, err)
 	}
@@ -366,13 +396,14 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	defer d.mu.Unlock()
 
 	hasWda := d.wdaCancel != nil
+	hasTvosRunner := d.tvosRunnerCancel != nil
 	hasWdaPort := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
 	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
 	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
 	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
 	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
 
-	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
+	return hasWda || hasTvosRunner || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
 }
 
 // cleanupWDA cancels the WebDriverAgent context
@@ -515,6 +546,13 @@ func (d *IOSDevice) startTunnel() error {
 }
 
 func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
+	// Real Apple TV discovered over CoreDevice uses a dedicated tunnel transport:
+	// no go-ios lookup, no usbmuxd port-forward. Launch the runner via xcodebuild
+	// and talk to the DeviceKit server directly over the CoreDevice tunnel IP.
+	if d.Platform() == "tvos" && d.isLocalNetworkCoreDevice() {
+		return d.startTVOSAgent(config)
+	}
+
 	// register cleanup hook for this device
 	if config.Hook != nil {
 		hookName := fmt.Sprintf("ios-device-%s", d.Udid)
@@ -546,11 +584,18 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			return fmt.Errorf("failed to list apps: %w", err)
 		}
 
+		expectedAgentRunnerBundleID := agentRunnerBundleID
+		xctestConfig := "devicekit-iosUITests.xctest"
+		if d.Platform() == "tvos" {
+			expectedAgentRunnerBundleID = agentRunnerBundleIDTVOS
+			xctestConfig = "devicekit-tvosUITests.xctest"
+		}
+
 		// check if agent is installed. the runner bundle id can carry a signing/team
 		// prefix when re-signed, so match on suffix rather than exact equality.
 		agentBundleId := ""
 		for _, app := range apps {
-			if strings.HasSuffix(app.PackageName, agentRunnerBundleID) {
+			if strings.HasSuffix(app.PackageName, expectedAgentRunnerBundleID) {
 				utils.Verbose("agent is installed, launching it")
 				agentBundleId = app.PackageName
 				break
@@ -622,7 +667,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			// launch agent using testmanagerd
-			err = d.LaunchTestRunner(agentBundleId, agentBundleId, "devicekit-iosUITests.xctest")
+			err = d.LaunchTestRunner(agentBundleId, agentBundleId, xctestConfig)
 			if err != nil {
 				return fmt.Errorf("failed to launch agent: %w", err)
 			}
@@ -714,6 +759,9 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 }
 
 func (d *IOSDevice) PressButton(key string) error {
+	if err := wda.ValidateButtonForPlatform(d.Platform(), key); err != nil {
+		return err
+	}
 	return d.wdaClient.PressButton(key)
 }
 
@@ -793,11 +841,11 @@ func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 		return fmt.Errorf("--activity is not supported on iOS")
 	}
 
-	if isLocalNetworkCoreDevice(d.Udid) {
+	if d.isLocalNetworkCoreDevice() {
 		if len(launchOpts.Locales) > 0 {
 			utils.Verbose("Ignoring iOS locales for CoreDevice fallback launch of %s", bundleID)
 		}
-		return launchCoreDeviceApp(d.Udid, bundleID)
+		return launchCoreDeviceApp(d.coreDeviceID(), bundleID)
 	}
 
 	log.SetLevel(log.WarnLevel)
@@ -841,8 +889,8 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
 
-	if isLocalNetworkCoreDevice(d.Udid) {
-		return fmt.Errorf("terminate app is not yet supported for wireless CoreDevice fallback")
+	if d.isLocalNetworkCoreDevice() {
+		return terminateCoreDeviceApp(d.coreDeviceID(), bundleID)
 	}
 
 	log.SetLevel(log.WarnLevel)
@@ -920,14 +968,19 @@ func (d IOSDevice) PressKeys(combos []KeyCombo) error {
 }
 
 func (d IOSDevice) OpenURL(url string) error {
+	// Best-effort deep-link on real Apple TV over CoreDevice; surface the
+	// underlying actionable error rather than a silent no-op or "device not found".
+	if d.isLocalNetworkCoreDevice() {
+		return openCoreDeviceURL(d.coreDeviceID(), url)
+	}
 	return d.wdaClient.OpenURL(url)
 }
 
 func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
-	if isLocalNetworkCoreDevice(d.Udid) {
-		return listCoreDeviceApps(d.Udid)
+	if d.isLocalNetworkCoreDevice() {
+		return listCoreDeviceApps(d.coreDeviceID())
 	}
 
 	// Lock to prevent concurrent access to usbmuxd (race condition on ReadPair)
@@ -1001,8 +1054,8 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
-	if isLocalNetworkCoreDevice(d.Udid) {
-		screenSize, err := getCoreDeviceDisplayInfo(d.Udid)
+	if d.isLocalNetworkCoreDevice() {
+		screenSize, err := getCoreDeviceDisplayInfo(d.coreDeviceID())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get display info from CoreDevice: %w", err)
 		}
@@ -1180,6 +1233,10 @@ func (d IOSDevice) DumpSourceRaw() (any, error) {
 func (d IOSDevice) InstallApp(path string) error {
 	log.SetLevel(log.WarnLevel)
 
+	if d.isLocalNetworkCoreDevice() {
+		return installCoreDeviceApp(d.coreDeviceID(), path)
+	}
+
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
 	if err != nil {
@@ -1207,6 +1264,13 @@ func (d IOSDevice) InstallApp(path string) error {
 
 func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
+
+	if d.isLocalNetworkCoreDevice() {
+		if err := uninstallCoreDeviceApp(d.coreDeviceID(), packageName); err != nil {
+			return nil, err
+		}
+		return &InstalledAppInfo{PackageName: packageName}, nil
+	}
 
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()

@@ -593,6 +593,12 @@ type IoButtonParams struct {
 	Button   string `json:"button"`
 }
 
+type IoFocusParams struct {
+	DeviceID   string `json:"deviceId"`
+	Identifier string `json:"identifier"`
+	Label      string `json:"label"`
+}
+
 type IoGestureParams struct {
 	DeviceID string `json:"deviceId"`
 	Actions  []any  `json:"actions"`
@@ -697,6 +703,30 @@ func handleIoButton(params json.RawMessage) (any, error) {
 	}
 
 	return okResponse, nil
+}
+
+func handleIoFocus(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, identifier and/or label")
+	}
+
+	var ioFocusParams IoFocusParams
+	if err := json.Unmarshal(params, &ioFocusParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, identifier and/or label", err)
+	}
+
+	req := commands.FocusRequest{
+		DeviceID:   ioFocusParams.DeviceID,
+		Identifier: ioFocusParams.Identifier,
+		Label:      ioFocusParams.Label,
+	}
+
+	response := commands.FocusCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
 }
 
 func handleIoGesture(params json.RawMessage) (any, error) {

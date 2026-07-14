@@ -14,6 +14,7 @@ import (
 
 type provisioningProfile struct {
 	Name               string       `plist:"Name"`
+	UUID               string       `plist:"UUID"`
 	TeamIdentifier     []string     `plist:"TeamIdentifier"`
 	ProvisionedDevices []string     `plist:"ProvisionedDevices"`
 	Entitlements       entitlements `plist:"Entitlements"`
@@ -210,6 +211,19 @@ func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error)
 	}
 
 	return &profile, nil
+}
+
+// ProvisioningProfileUUID returns the UUID of a .mobileprovision file. It is used
+// to key the runner cache without logging any profile contents.
+func ProvisioningProfileUUID(profilePath string) (string, error) {
+	profile, err := decodeProvisioningProfile(profilePath)
+	if err != nil {
+		return "", err
+	}
+	if profile.UUID == "" {
+		return "", fmt.Errorf("provisioning profile %s has no UUID", profilePath)
+	}
+	return profile.UUID, nil
 }
 
 type profileMatch int

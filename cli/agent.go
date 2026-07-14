@@ -48,8 +48,9 @@ type agentInfo struct {
 }
 
 type agentStatusResponse struct {
-	Message string    `json:"message"`
-	Agent   agentInfo `json:"agent"`
+	Message   string    `json:"message"`
+	Agent     agentInfo `json:"agent"`
+	Reachable *bool     `json:"reachable,omitempty"`
 }
 
 var agentCmd = &cobra.Command{
@@ -84,9 +85,25 @@ var agentStatusCmd = &cobra.Command{
 				Version:  agent.Version,
 				BundleID: agent.PackageName,
 			},
+			Reachable: tvosAgentReachable(device),
 		}))
 		return nil
 	},
+}
+
+// tvosAgentReachable returns a pointer to the runner-session reachability for real
+// tvOS devices (installed + reachable over the tunnel), or nil for other devices
+// so the field is omitted and existing response shapes are preserved.
+func tvosAgentReachable(device devices.ControllableDevice) *bool {
+	if device.Platform() != "tvos" || device.DeviceType() != "real" {
+		return nil
+	}
+	pinger, ok := device.(interface{ TVOSAgentReachable() bool })
+	if !ok {
+		return nil
+	}
+	reachable := pinger.TVOSAgentReachable()
+	return &reachable
 }
 
 var agentInstallCmd = &cobra.Command{
@@ -309,26 +326,94 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
-// installResignedRunner downloads a real-device runner IPA, re-signs it with the
-// configured provisioning profile, and installs it. It backs both the iOS and the
-// tvOS real-device flows, which differ only in the artifact filename and version.
+// installResignedRunner installs a real-device runner IPA and re-signs it with the
+// configured provisioning profile. It supports two sources:
+//   - a locally built artifact via --agent-path (download + checksum skipped), and
+//   - the published release artifact (downloaded and checksum-verified).
+//
+// For tvOS it also caches the signed runner app + a generated .xctestrun so a later
+// StartAgent can launch the XCTest session without re-signing.
 func installResignedRunner(device devices.ControllableDevice, filename, version string) error {
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", version, filename)
-
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
-		utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
-		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), agentProvisioningProfile, "")
-		if err != nil {
-			return "", fmt.Errorf("failed to re-sign agent: %w", err)
+	localIPA, artifactChecksum, err := resolveRunnerArtifact(tmpDir, filename, version)
+	if err != nil {
+		return err
+	}
+
+	utils.Verbose("re-signing agent with provisioning profile %s", agentProvisioningProfile)
+	resignedPath, err := utils.ResignIPA(localIPA, device.ID(), agentProvisioningProfile, "")
+	if err != nil {
+		return fmt.Errorf("failed to re-sign agent: %w", err)
+	}
+	defer func() { _ = os.Remove(resignedPath) }()
+
+	utils.Verbose("installing agent on device %s", device.ID())
+	if err := device.InstallApp(resignedPath); err != nil {
+		return fmt.Errorf("failed to install agent: %w", err)
+	}
+
+	if device.Platform() == "tvos" {
+		cacheResignedTVOSRunner(device, resignedPath, artifactChecksum)
+	}
+
+	return waitForAgentInstalled(device)
+}
+
+// resolveRunnerArtifact returns a local path to the runner IPA and the checksum
+// used as a cache key. With --agent-path it uses the local file and skips both the
+// download and the pinned checksum verification; otherwise it downloads the
+// release artifact and verifies it against the pinned checksum.
+func resolveRunnerArtifact(tmpDir, filename, version string) (string, string, error) {
+	if agentPath != "" {
+		if _, err := os.Stat(agentPath); err != nil {
+			return "", "", fmt.Errorf("agent path not found: %s: %w", agentPath, err)
 		}
-		return resignedPath, nil
-	})
+		utils.Verbose("using local runner artifact %s (download and checksum verification skipped)", agentPath)
+		checksum, err := utils.SHA256File(agentPath)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to compute artifact checksum: %w", err)
+		}
+		return agentPath, checksum, nil
+	}
+
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", version, filename)
+	localIPA := filepath.Join(tmpDir, filename)
+	utils.Verbose("downloading agent from %s", agentURL)
+	if err := utils.DownloadFile(agentURL, localIPA); err != nil {
+		return "", "", fmt.Errorf("failed to download agent: %w", err)
+	}
+
+	expectedHash, ok := agentChecksums[filename]
+	if !ok {
+		return "", "", fmt.Errorf("no pinned checksum for %s", filename)
+	}
+	actualHash, err := utils.SHA256File(localIPA)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to compute checksum: %w", err)
+	}
+	if actualHash != expectedHash {
+		return "", "", fmt.Errorf("checksum mismatch for %s: expected %s, got %s", filename, expectedHash, actualHash)
+	}
+	utils.Verbose("checksum verified for %s", filename)
+	return localIPA, actualHash, nil
+}
+
+// cacheResignedTVOSRunner persists the signed runner app + a generated .xctestrun
+// under the mobilecli cache. Cache failures are non-fatal to the install.
+func cacheResignedTVOSRunner(device devices.ControllableDevice, resignedPath, artifactChecksum string) {
+	profileUUID, err := utils.ProvisioningProfileUUID(agentProvisioningProfile)
+	if err != nil {
+		utils.Verbose("warning: could not read provisioning profile UUID for cache key: %v", err)
+		return
+	}
+	if _, err := devices.CacheTVOSRunner(device.ID(), resignedPath, artifactChecksum, profileUUID); err != nil {
+		utils.Verbose("warning: failed to cache tvOS runner: %v", err)
+	}
 }
 
 func installAgentOnRealIOS(device devices.ControllableDevice) error {
@@ -416,4 +501,5 @@ func init() {
 	agentUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall the agent from")
 	agentInstallCmd.Flags().BoolVar(&agentForce, "force", false, "force install even if agent is already installed")
 	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS and tvOS devices)")
+	agentInstallCmd.Flags().StringVar(&agentPath, "agent-path", "", "path to a locally built runner IPA to install instead of downloading the published release artifact")
 }
