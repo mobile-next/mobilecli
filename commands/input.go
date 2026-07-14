@@ -48,7 +48,7 @@ type KeyboardRequest struct {
 
 // KeyboardStatusResult is returned by keyboard status/hide commands
 type KeyboardStatusResult struct {
-	Status string `json:"status"` // "visible" or "hidden"
+	Visible bool `json:"visible"`
 }
 
 // SwipeRequest represents the parameters for a swipe command
@@ -227,12 +227,12 @@ func KeyboardStatusCommand(req KeyboardRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("keyboard control is not supported on device %s", targetDevice.ID()))
 	}
 
-	status, err := kb.KeyboardStatus()
+	visible, err := kb.IsKeyboardVisible()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to get keyboard status on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(KeyboardStatusResult{Status: status})
+	return NewSuccessResponse(KeyboardStatusResult{Visible: visible})
 }
 
 // KeyboardHideCommand hides the on-screen keyboard if it is visible
@@ -251,7 +251,7 @@ func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to hide keyboard on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(KeyboardStatusResult{Status: "hidden"})
+	return NewSuccessResponse(KeyboardStatusResult{Visible: false})
 }
 
 // SwipeCommand performs a swipe operation on the specified device

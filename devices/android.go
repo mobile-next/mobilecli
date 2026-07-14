@@ -717,27 +717,24 @@ func (d *AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
-// KeyboardStatus reports whether the on-screen keyboard (IME) is visible.
-func (d *AndroidDevice) KeyboardStatus() (string, error) {
+// IsKeyboardVisible reports whether the on-screen keyboard (IME) is visible.
+func (d *AndroidDevice) IsKeyboardVisible() (bool, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "window")
 	if err != nil {
-		return "", fmt.Errorf("AndroidDevice: failed to dumpsys window: %v\nOutput: %s", err, string(output))
+		return false, fmt.Errorf("AndroidDevice: failed to dumpsys window: %v\nOutput: %s", err, string(output))
 	}
 
-	if strings.Contains(string(output), "mIsImeShowing=true") {
-		return "visible", nil
-	}
-	return "hidden", nil
+	return strings.Contains(string(output), "mIsImeShowing=true"), nil
 }
 
 // HideKeyboard dismisses the on-screen keyboard by pressing BACK, then waits up
 // to 2 seconds for the IME to disappear.
 func (d *AndroidDevice) HideKeyboard() error {
-	status, err := d.KeyboardStatus()
+	visible, err := d.IsKeyboardVisible()
 	if err != nil {
 		return err
 	}
-	if status == "hidden" {
+	if !visible {
 		return nil
 	}
 
@@ -747,11 +744,11 @@ func (d *AndroidDevice) HideKeyboard() error {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		status, err := d.KeyboardStatus()
+		visible, err := d.IsKeyboardVisible()
 		if err != nil {
 			return err
 		}
-		if status == "hidden" {
+		if !visible {
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)

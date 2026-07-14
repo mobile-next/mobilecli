@@ -164,7 +164,7 @@ type AnimationConfigurable interface {
 // KeyboardControllable is implemented by devices that can report and hide the
 // on-screen keyboard. Devices that don't implement it return an error to callers.
 type KeyboardControllable interface {
-	KeyboardStatus() (string, error) // "visible" or "hidden"
+	IsKeyboardVisible() (bool, error)
 	HideKeyboard() error
 }
 
