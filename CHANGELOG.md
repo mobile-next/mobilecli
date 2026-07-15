@@ -1,3 +1,8 @@
+## [0.3.87](https://github.com/mobile-next/mobilecli/releases/tag/0.3.87) (2026-07-15)
+* Feat: Add mobilecli skill ([#256](https://github.com/mobile-next/mobilecli/pull/256)), thanks to [@lazynoda](https://github.com/lazynoda)
+* Fix: Include multiline TextView in iOS accessibility dump ([#294](https://github.com/mobile-next/mobilecli/pull/294)), thanks to [@Ernest94](https://github.com/Ernest94)
+* Fix: Upgrade golang.org/x/crypto and golang.org/x/net to address security alerts ([#301](https://github.com/mobile-next/mobilecli/pull/301))
+
 ## [0.3.86](https://github.com/mobile-next/mobilecli/releases/tag/0.3.86) (2026-07-13)
 * Feat: Live bitrate + keyframe control via device socket (Android only) ([#295](https://github.com/mobile-next/mobilecli/pull/295))
 
