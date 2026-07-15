@@ -1,7 +1,7 @@
 ---
 name: mobilecli
 description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, or get crash reports, even if they don't explicitly name "mobilecli".
-allowed-tools: Bash(mobilecli:*) Bash(npx:*)
+allowed-tools: Bash(mobilecli:*)
 ---
 
 # Mobile CLI
@@ -10,22 +10,7 @@ A universal automation and management skill for iOS and Android devices, simulat
 
 ---
 
-## 📖 Table of Contents
-1. [Quick Start (TL;DR)](#quick-start)
-2. [Prerequisites & Server Setup](#prerequisites-server-setup)
-3. [AI Automation Workflows](#ai-automation-workflows)
-4. [Quick Interaction Reference](#quick-interaction-reference)
-5. [Command Reference (CLI)](#command-reference-cli)
-6. [JSON-RPC Server & WebSocket API](#json-rpc-server-websocket-api)
-   - [Core JSON-RPC API Examples](#core-json-rpc-api-examples)
-   - [Custom Gestures (JSON-RPC only)](#custom-gestures-json-rpc-only)
-   - [Filesystem Limits in JSON-RPC](#filesystem-limits-in-json-rpc)
-7. [Platform-Specific Notes & Troubleshooting](#platform-specific-notes-troubleshooting)
-8. [Best Practices for AI Agents](#best-practices-for-ai-agents)
-
----
-
-## <a id="quick-start"></a>🚀 Quick Start (TL;DR)
+## Quick Start (TL;DR)
 
 A typical command sequence for testing an application on a simulator or emulator:
 
@@ -33,40 +18,37 @@ A typical command sequence for testing an application on a simulator or emulator
 # 1. Start the server daemon (speeds up subsequent runs)
 mobilecli server start --daemon
 
-# 2. Boot the target device (if offline)
-mobilecli device boot --device "iPhone 15"
+# 2. List devices and note the device id (serial/udid)
+mobilecli devices
 
-# 3. Launch your app
-mobilecli apps launch "com.example.myapp" --device "iPhone 15"
+# 3. Boot the target device (if offline)
+mobilecli device boot --device <device-id>
 
-# 4. Inspect the UI tree to find coordinates
-mobilecli dump ui --device "iPhone 15"
+# 4. Launch your app
+mobilecli apps launch "com.example.myapp" --device <device-id>
 
-# 5. Tap the center of the target element
-mobilecli io tap --device "iPhone 15" 180,320
+# 5. Inspect the UI tree to find coordinates
+mobilecli dump ui --device <device-id>
 
-# 6. Verify result with a screenshot
-mobilecli screenshot --device "iPhone 15" --output screenshot.png
+# 6. Tap the center of the target element
+mobilecli io tap --device <device-id> 180,320
 
-# 7. Clean up by stopping the server daemon
+# 7. Verify result with a screenshot
+mobilecli screenshot --device <device-id> --output screenshot.png
+
+# 8. Clean up by stopping the server daemon
 mobilecli server kill
 ```
 
 ---
 
-## <a id="prerequisites-server-setup"></a>🛠 Prerequisites & Server Setup
+## Prerequisites & Server Setup
 
 Before using this skill, ensure the environment has the necessary prerequisites installed and configured:
 
 - **Android SDK**: `adb` must be available in the system `PATH`.
 - **Xcode Command Line Tools**: Required for iOS Simulator control (on macOS).
 - **On-Device Agent**: Required for iOS input gestures, screenshots, and UI dumping, and for Android non-ASCII text input.
-
-### Run instantly with npx
-If `mobilecli` is not installed globally, you can invoke any command using `npx`:
-```bash
-npx mobilecli@latest <command>
-```
 
 ### Starting and Stopping the JSON-RPC Daemon (Recommended)
 Starting the HTTP server is highly recommended for automated scripts and fast interactions. It caches device information, keeps connections/tunnels alive, and eliminates command-line startup overhead.
@@ -84,7 +66,7 @@ mobilecli server kill --listen localhost:12000
 
 ---
 
-## <a id="ai-automation-workflows"></a>🔄 AI Automation Workflows
+## AI Automation Workflows
 
 When executing mobile automation or app testing, follow this structured loop:
 
@@ -111,7 +93,7 @@ graph TD
 
 ---
 
-## <a id="quick-interaction-reference"></a>⚡ Quick Interaction Reference
+## Quick Interaction Reference
 
 Here is a quick reference table mapping standard user actions to their `mobilecli` CLI commands and corresponding JSON-RPC methods:
 
@@ -125,7 +107,7 @@ Here is a quick reference table mapping standard user actions to their `mobilecl
 
 ---
 
-## <a id="command-reference-cli"></a>💻 Command Reference (CLI)
+## Command Reference (CLI)
 
 All commands support the global `--device <id>` flag to specify the target device, and `-v` / `--verbose` for logging.
 
@@ -222,7 +204,9 @@ All commands support the global `--device <id>` flag to specify the target devic
   ```
 * **Hardware Buttons**:
   ```bash
-  # Press buttons: HOME, BACK (Android only), POWER, VOLUME_UP, VOLUME_DOWN
+  # All platforms: HOME, POWER, VOLUME_UP, VOLUME_DOWN
+  # Android only: BACK, ENTER, BACKSPACE, APP_SWITCH,
+  #               DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
   mobilecli io button --device <device-id> HOME
   ```
 
@@ -303,12 +287,12 @@ Access files on-device or inside debuggable app private directories (Android and
 
 ---
 
-## <a id="json-rpc-server-websocket-api"></a>🔌 JSON-RPC Server & WebSocket API
+## JSON-RPC Server & WebSocket API
 
 For scripts and long-running automation, make HTTP POST requests to the server's endpoint (`http://localhost:12000/rpc`). The JSON-RPC payload format is:
 `{"jsonrpc": "2.0", "method": "<method_name>", "params": { ... }, "id": 1}`
 
-### <a id="core-json-rpc-api-examples"></a>Core JSON-RPC API Examples
+### Core JSON-RPC API Examples
 
 * **List Devices**:
   ```bash
@@ -326,7 +310,7 @@ For scripts and long-running automation, make HTTP POST requests to the server's
     -d '{"jsonrpc":"2.0", "id": 3, "method": "server.shutdown", "params": {}}'
   ```
 
-### <a id="custom-gestures-json-rpc-only"></a>Custom Gestures (JSON-RPC only)
+### Custom Gestures (JSON-RPC only)
 For complex multi-action interactions (e.g. dragging, pinching, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events.
 
 Supported actions:
@@ -355,7 +339,7 @@ Supported actions:
 }
 ```
 
-### <a id="filesystem-limits-in-json-rpc"></a>Filesystem Limits in JSON-RPC
+### Filesystem Limits in JSON-RPC
 > [!WARNING]
 > **1MB RPC payload limit**: The JSON-RPC calls `device.fs.push` and `device.fs.pull` encode file data using Base64. To maintain server performance, the maximum file size supported by these RPC endpoints is **1 MB**.
 > 
@@ -371,11 +355,15 @@ wscat -c ws://localhost:12000/ws
 
 ---
 
-## <a id="platform-specific-notes-troubleshooting"></a>🍎 Platform-Specific Notes & Troubleshooting
+## Platform-Specific Notes & Troubleshooting
 
 ### iOS Real Devices
-- **Agent Dependency**: Input gestures, screenshots, and UI dumps require the agent. Install it via:
+- **Agent Dependency**: Input gestures, screenshots, and UI dumps require the agent. Check and install it via:
   ```bash
+  # Check agent installation status
+  mobilecli agent status --device <device-id>
+
+  # Install the agent (real iOS devices require a provisioning profile)
   mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
   ```
   A valid Apple Provisioning Profile and signing identity must be present on the host to code-sign the agent.
@@ -389,7 +377,7 @@ wscat -c ws://localhost:12000/ws
 
 ---
 
-## <a id="best-practices-for-ai-agents"></a>💡 Best Practices for AI Agents
+## Best Practices for AI Agents
 
 > [!TIP]
 > **Use the JSON-RPC server whenever possible**: Invoking `mobilecli` via subprocess CLI commands incurs Go binary startup latency each time. Starting the server and querying it over HTTP/WebSocket speeds up interactions from seconds to milliseconds.
@@ -397,9 +385,8 @@ wscat -c ws://localhost:12000/ws
 > [!IMPORTANT]
 > **Tap coordinates must target the center of the bounding box**:
 > When parsing a UI element from `mobilecli dump ui`, locate the element's `rect` (`x`, `y`, `width`, `height`). Calculate the center coordinates:
-> $$\text{Center X} = x + \frac{\text{width}}{2}$$
-> $$\text{Center Y} = y + \frac{\text{height}}{2}$$
-> Send this center point to `mobilecli io tap --device <device-id> <CenterX>,<CenterY>`.
+> `centerX = x + width/2`, `centerY = y + height/2`
+> Send this center point to `mobilecli io tap --device <device-id> <centerX>,<centerY>`.
 
 > [!NOTE]
 > **Interact with input fields before writing text**:

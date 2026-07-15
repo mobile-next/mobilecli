@@ -441,6 +441,22 @@ mobilecli remote list-devices
 mobilecli remote release --device <device-id>
 ```
 
+## Claude Code Skill 🤖
+
+This repo includes an agent skill ([skills/mobilecli/SKILL.md](skills/mobilecli/SKILL.md)) that teaches Claude Code (or any SKILL.md-compatible agent) how to drive `mobilecli` — listing devices, tapping and typing, dumping UI trees, managing apps, and using the JSON-RPC server for fast automation.
+
+Install it with [skills](https://github.com/vercel-labs/skills):
+
+```bash
+# current project only
+npx skills add mobile-next/mobilecli
+
+# or globally, for all projects
+npx skills add mobile-next/mobilecli -g
+```
+
+Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
+
 ## HTTP API 🔌
 
 ***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
