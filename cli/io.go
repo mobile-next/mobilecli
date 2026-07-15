@@ -198,6 +198,32 @@ var ioSwipeCmd = &cobra.Command{
 	},
 }
 
+var (
+	focusIdentifier string
+	focusLabel      string
+)
+
+var ioFocusCmd = &cobra.Command{
+	Use:   "focus",
+	Short: "Focus an element by accessibility identity (tvOS)",
+	Long:  `Drives Siri Remote focus to an on-screen element selected by its accessibility identifier and/or label. At least one of --identifier or --label is required. Real Apple TV only.`,
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FocusRequest{
+			DeviceID:   deviceId,
+			Identifier: focusIdentifier,
+			Label:      focusLabel,
+		}
+
+		response := commands.FocusCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -205,6 +231,7 @@ func init() {
 	ioCmd.AddCommand(ioTapCmd)
 	ioCmd.AddCommand(ioLongPressCmd)
 	ioCmd.AddCommand(ioButtonCmd)
+	ioCmd.AddCommand(ioFocusCmd)
 	ioCmd.AddCommand(ioTextCmd)
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
@@ -214,6 +241,9 @@ func init() {
 	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
 	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
+	ioFocusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to focus an element on")
+	ioFocusCmd.Flags().StringVar(&focusIdentifier, "identifier", "", "accessibility identifier of the element to focus")
+	ioFocusCmd.Flags().StringVar(&focusLabel, "label", "", "accessibility label of the element to focus")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")

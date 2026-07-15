@@ -22,6 +22,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.io.text":                        handleIoText,
 		"device.io.keys":                        handleIoKeys,
 		"device.io.button":                      handleIoButton,
+		"device.io.focus":                       handleIoFocus,
 		"device.io.swipe":                       handleIoSwipe,
 		"device.io.gesture":                     handleIoGesture,
 		"device.url":                            handleURL,

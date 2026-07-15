@@ -53,18 +53,20 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		}
 	}
 
-	// Start agent if needed
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
-	}
-
 	// Take screenshot
 	imageBytes, err := targetDevice.TakeScreenshot()
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
+		err = targetDevice.StartAgent(devices.StartAgentConfig{
+			Hook: GetShutdownHook(),
+		})
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		}
+
+		imageBytes, err = targetDevice.TakeScreenshot()
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
+		}
 	}
 
 	// Convert to JPEG if requested
