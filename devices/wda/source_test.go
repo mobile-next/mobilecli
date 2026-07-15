@@ -221,6 +221,47 @@ func TestFilterSourceElementsKeepsNestedWebViewsWithDifferentRects(t *testing.T)
 	}
 }
 
+func TestFilterSourceElementsIncludesMultilineTextView(t *testing.T) {
+	// A multiline React Native TextInput renders as a UITextView
+	// (XCUIElementTypeTextView). It must appear in the dump so it can be
+	// located and filled, just like a single-line TextField.
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeOther",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeTextView",
+				Label: strPtr("Notes"),
+				Rect:  visibleRect(24, 200, 354, 120),
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element (TextView), got %d: %+v", len(output), output)
+	}
+
+	textView := output[0]
+	if textView.Type != "TextView" || elementLabel(textView) != "Notes" {
+		t.Errorf("expected a TextView labeled 'Notes', got %+v", textView)
+	}
+}
+
+func TestFilterSourceElementsIncludesTextViewWithoutIdentifier(t *testing.T) {
+	// An auto-focused multiline input may carry no label/name yet still needs
+	// to be present in the tree, so TextView is always included like TextField.
+	output := filterSourceElements(sourceTreeElement{
+		Type: "XCUIElementTypeTextView",
+		Rect: visibleRect(24, 200, 354, 120),
+	})
+
+	if len(output) != 1 || output[0].Type != "TextView" {
+		t.Fatalf("expected an unlabeled TextView to be included, got %+v", output)
+	}
+}
+
 func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 	// Leaf elements must not serialize an empty "children" array, so the
 	// JSON output stays unchanged for consumers that expect leaves.
