@@ -212,7 +212,8 @@ func ListIOSDevices() ([]IOSDevice, error) {
 		for _, deviceEntry := range deviceList.DeviceList {
 			device, err := getDeviceInfo(deviceEntry)
 			if err != nil {
-				return []IOSDevice{}, fmt.Errorf("failed to get device info: %w", err)
+				utils.Verbose("Warning: failed to get go-ios device info for %s: %v", deviceEntry.Properties.SerialNumber, err)
+				continue
 			}
 			devices = append(devices, device)
 			seen[device.Udid] = true
