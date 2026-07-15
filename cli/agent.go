@@ -17,7 +17,7 @@ import (
 const (
 	agentVersionIOS     = "0.0.20"
 	agentVersionTVOS    = "0.0.20"
-	agentVersionAndroid = "1.2.2"
+	agentVersionAndroid = "1.2.4"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	tvosRunnerBundleID  = "com.mobilenext.devicekit-tvosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
@@ -31,7 +31,7 @@ var agentChecksums = map[string]string{
 	// tvOS simulator runner is published from the same devicekit-ios release.
 	// Update this checksum whenever the tvOS runner artifact is rebuilt/republished.
 	"devicekit-tvos-Sim-arm64.zip": "49061f17046055c7e89dbf27067a59ab0bffd9d7d14d63031d5411c5963ccb81",
-	"mobilenext-devicekit.apk":     "c58484b40db6ab84c7445ccaa346ee0804e155e37507a42f1ac37b92a52bdd4f",
+	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
 }
 
 type agentMessageResponse struct {
@@ -321,7 +321,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
-	filename := "mobilenext-devicekit.apk"
+	filename := "devicekit.apk"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
