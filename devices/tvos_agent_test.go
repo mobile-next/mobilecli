@@ -64,6 +64,40 @@ func TestWriteTVOSXctestrun(t *testing.T) {
 	}
 }
 
+func TestPatchTVOSXctestrunListenEnv(t *testing.T) {
+	cacheDir := t.TempDir()
+	runnerApp := filepath.Join(cacheDir, "Payload", "devicekit-tvos-Runner.app")
+	xctest := filepath.Join(runnerApp, "PlugIns", "devicekit-tvosUITests.xctest")
+	xctestrunPath := filepath.Join(cacheDir, tvosRunnerXctestrunName)
+
+	if err := writeTVOSXctestrun(xctestrunPath, cacheDir, runnerApp, xctest); err != nil {
+		t.Fatalf("writeTVOSXctestrun returned error: %v", err)
+	}
+	if err := patchTVOSXctestrunListenEnv(xctestrunPath, "fd75:74f5:d670::1", 12004); err != nil {
+		t.Fatalf("patchTVOSXctestrunListenEnv returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(xctestrunPath)
+	if err != nil {
+		t.Fatalf("failed to read xctestrun: %v", err)
+	}
+
+	var doc map[string]map[string]any
+	if _, err := plist.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("failed to parse generated xctestrun: %v", err)
+	}
+	env, ok := doc["devicekit-tvosUITests"]["TestingEnvironmentVariables"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TestingEnvironmentVariables map, got %T", doc["devicekit-tvosUITests"]["TestingEnvironmentVariables"])
+	}
+	if got := env["DEVICEKIT_LISTEN_HOST"]; got != "fd75:74f5:d670::1" {
+		t.Errorf("unexpected DEVICEKIT_LISTEN_HOST: %v", got)
+	}
+	if got := env["DEVICEKIT_LISTEN_PORT"]; got != "12004" {
+		t.Errorf("unexpected DEVICEKIT_LISTEN_PORT: %v", got)
+	}
+}
+
 func keysOf(m map[string]map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

@@ -190,23 +190,51 @@ func writeTVOSXctestrun(xctestrunPath, cacheDir, runnerApp, xctestBundle string)
 	targetName := moduleName
 	moduleName = strings.ReplaceAll(moduleName, "-", "_")
 
-	dyld := "__PLATFORMS__/AppleTVOS.platform/Developer/usr/lib/libXCTestBundleInject.dylib"
-
 	target := map[string]any{
-		"TestHostPath":                "__TESTROOT__/" + runnerRel,
-		"TestBundlePath":              "__TESTHOST__/" + xctestRel,
-		"IsUITestBundle":              true,
-		"IsXCTRunnerHostedTestBundle": true,
-		"ProductModuleName":           moduleName,
-		"SystemAttachmentLifetime":    "deleteOnSuccess",
-		"UserAttachmentLifetime":      "deleteOnSuccess",
-		"CommandLineArguments":        []string{},
-		"EnvironmentVariables":        map[string]any{},
-		"TestingEnvironmentVariables": map[string]any{
-			"DYLD_INSERT_LIBRARIES": dyld,
-			"DYLD_FRAMEWORK_PATH":   "__TESTROOT__",
-			"DYLD_LIBRARY_PATH":     "__TESTROOT__",
+		"BlueprintName":                           targetName,
+		"BlueprintProviderName":                   "devicekit-ios",
+		"BlueprintProviderRelativePath":           "devicekit-ios.xcodeproj",
+		"BundleIdentifiersForCrashReportEmphasis": []string{"com.mobilenext.devicekit-tvosUITests"},
+		"TestHostPath":                            "__TESTROOT__/" + runnerRel,
+		"TestHostBundleIdentifier":                agentRunnerBundleIDTVOS,
+		"TestBundlePath":                          "__TESTHOST__/" + xctestRel,
+		"DefaultTestExecutionTimeAllowance":       600,
+		"DiagnosticCollectionPolicy":              1,
+		"IsUITestBundle":                          true,
+		"IsXCTRunnerHostedTestBundle":             true,
+		"PreferredScreenCaptureFormat":            "screenRecording",
+		"ProductModuleName":                       moduleName,
+		"RunOrder":                                0,
+		"SystemAttachmentLifetime":                "deleteOnSuccess",
+		"TestTimeoutsEnabled":                     false,
+		"TestLanguage":                            "",
+		"TestRegion":                              "",
+		"ToolchainsSettingValue":                  []string{},
+		"UseUITargetAppProvidedByTests":           true,
+		"UserAttachmentLifetime":                  "deleteOnSuccess",
+		"CommandLineArguments":                    []string{},
+		"EnvironmentVariables": map[string]any{
+			"APP_DISTRIBUTOR_ID_OVERRIDE":             "com.apple.AppStore",
+			"DYLD_INSERT_LIBRARIES":                   "/usr/lib/libRPAC.dylib",
+			"OS_ACTIVITY_DT_MODE":                     "YES",
+			"PERFC_ENABLE_EXTENDED_DIAGNOSTIC_FORMAT": "1",
+			"PERFC_ENABLE_PROFILE_MODE":               "1",
+			"PERFC_RESET_INSERT_LIBRARIES":            "1",
+			"PERFC_SUPPRESS_SYSTEM_REPORTS":           "1",
+			"SQLITE_ENABLE_THREAD_ASSERTIONS":         "1",
+			"TERM":                                    "dumb",
 		},
+		"TestingEnvironmentVariables": map[string]any{
+			"DYLD_INSERT_LIBRARIES":         "/usr/lib/libRPAC.dylib",
+			"PERFC_SUPPRESS_SYSTEM_REPORTS": "1",
+			"XCODE_SCHEME_NAME":             "devicekit-tvos",
+		},
+		"UITargetAppCommandLineArguments": []string{},
+		"UITargetAppEnvironmentVariables": map[string]any{
+			"APP_DISTRIBUTOR_ID_OVERRIDE": "com.apple.AppStore",
+			"XCODE_SCHEME_NAME":           "devicekit-tvos",
+		},
+		"UITargetAppPerformanceAntipatternCheckerEnabled": true,
 		"DependentProductPaths": []string{
 			"__TESTROOT__/" + runnerRel,
 			"__TESTHOST__/" + xctestRel,
@@ -224,6 +252,48 @@ func writeTVOSXctestrun(xctestrunPath, cacheDir, runnerApp, xctestBundle string)
 		return fmt.Errorf("failed to write xctestrun: %w", err)
 	}
 	return nil
+}
+
+func patchTVOSXctestrunListenEnv(xctestrunPath, host string, port int) error {
+	data, err := os.ReadFile(xctestrunPath)
+	if err != nil {
+		return fmt.Errorf("failed to read xctestrun: %w", err)
+	}
+
+	var doc map[string]any
+	if _, err := plist.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("failed to parse xctestrun: %w", err)
+	}
+
+	portString := strconv.Itoa(port)
+	for _, value := range doc {
+		target, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if isUITestBundle, _ := target["IsUITestBundle"].(bool); !isUITestBundle {
+			continue
+		}
+
+		env, _ := target["TestingEnvironmentVariables"].(map[string]any)
+		if env == nil {
+			env = map[string]any{}
+			target["TestingEnvironmentVariables"] = env
+		}
+		env["DEVICEKIT_LISTEN_HOST"] = host
+		env["DEVICEKIT_LISTEN_PORT"] = portString
+
+		patched, err := plist.MarshalIndent(doc, plist.XMLFormat, "\t")
+		if err != nil {
+			return fmt.Errorf("failed to marshal xctestrun: %w", err)
+		}
+		if err := os.WriteFile(xctestrunPath, patched, 0600); err != nil {
+			return fmt.Errorf("failed to write xctestrun: %w", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("failed to find tvOS UI test target in xctestrun")
 }
 
 // tvosRunnerAction is a pure decision helper for the runner lifecycle: reuse a
@@ -304,6 +374,11 @@ func (d *IOSDevice) startTVOSAgent(config StartAgentConfig) error {
 // that runs the DeviceKit UITest runner on the Apple TV over CoreDevice.
 func (d *IOSDevice) launchTVOSTestRunner(xctestrunPath string) error {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := patchTVOSXctestrunListenEnv(xctestrunPath, d.TunnelIP, deviceKitHTTPPort); err != nil {
+		cancel()
+		return err
+	}
 
 	cmd := exec.CommandContext(ctx, "xcodebuild", "test-without-building",
 		"-xctestrun", xctestrunPath,
