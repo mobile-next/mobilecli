@@ -639,9 +639,10 @@ type DumpUIParams struct {
 }
 
 type AppsLaunchParams struct {
-	DeviceID string `json:"deviceId"`
-	BundleID string `json:"bundleId"`
-	Activity string `json:"activity,omitempty"`
+	DeviceID string   `json:"deviceId"`
+	BundleID string   `json:"bundleId"`
+	Locales  []string `json:"locales,omitempty"`
+	Activity string   `json:"activity,omitempty"`
 }
 
 type AppsTerminateParams struct {
@@ -945,6 +946,7 @@ func handleAppsLaunch(params json.RawMessage) (any, error) {
 	req := commands.AppRequest{
 		DeviceID: appsLaunchParams.DeviceID,
 		BundleID: appsLaunchParams.BundleID,
+		Locales:  appsLaunchParams.Locales,
 		Activity: appsLaunchParams.Activity,
 	}
 
