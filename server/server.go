@@ -288,6 +288,22 @@ func StartServer(addr string, enableCORS bool) error {
 	}
 }
 
+// extendedWriteDeadline reports how long the HTTP write deadline should be
+// extended for a given RPC method, and whether an extension applies at all.
+// Some methods perform slow device-side work (booting a device, installing or
+// uninstalling an app) that routinely exceeds the default WriteTimeout. Without
+// an extension the server closes the connection mid-response, which the caller
+// sees as an opaque EOF instead of the real result.
+func extendedWriteDeadline(method string) (time.Duration, bool) {
+	switch method {
+	case "device.boot", "device.apps.install", "device.apps.uninstall":
+		return 3 * time.Minute, true
+	case "device.screenrecord.stop":
+		return 35 * time.Second, true
+	}
+	return 0, false
+}
+
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -315,12 +331,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var result any
 	var err error
 
-	// HTTP-specific: extend timeout for long-running operations
-	switch req.Method {
-	case "device.boot":
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
-	case "device.screenrecord.stop":
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(35 * time.Second))
+	// HTTP-specific: extend the write deadline for long-running operations so a
+	// slow device-side call can't trip the default WriteTimeout and close the
+	// connection mid-response (which the caller sees as an EOF).
+	if d, ok := extendedWriteDeadline(req.Method); ok {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
 	}
 
 	// Use registry for all methods
