@@ -55,11 +55,12 @@ type SimulatorDevice struct {
 	wdaClient *wda.WdaClient
 }
 
-// parseSimulatorVersion parses iOS version from simulator runtime string
+// parseSimulatorVersion parses the OS version from a simulator runtime string
 // e.g., "com.apple.CoreSimulator.SimRuntime.iOS-18-6" -> "18.6"
+// e.g., "com.apple.CoreSimulator.SimRuntime.tvOS-26-5" -> "26.5"
 func parseSimulatorVersion(runtime string) string {
-	// Use regex to extract iOS version from runtime string
-	re := regexp.MustCompile(`iOS-(\d+)-(\d+)`)
+	// Use regex to extract the OS version from the runtime string
+	re := regexp.MustCompile(`(?:iOS|tvOS|watchOS|xrOS)-(\d+)-(\d+)`)
 	matches := re.FindStringSubmatch(runtime)
 	if len(matches) == 3 {
 		return matches[1] + "." + matches[2]
@@ -69,11 +70,38 @@ func parseSimulatorVersion(runtime string) string {
 	return runtime
 }
 
+// simulatorPlatform derives the mobilecli platform identifier from a simulator
+// runtime string. tvOS simulators report "tvos"; everything else defaults to "ios".
+func simulatorPlatform(runtime string) string {
+	if strings.Contains(runtime, "tvOS") {
+		return "tvos"
+	}
+	return "ios"
+}
+
 func (s SimulatorDevice) ID() string         { return s.UDID }
 func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
-func (s SimulatorDevice) Platform() string   { return "ios" }
+func (s SimulatorDevice) Platform() string   { return simulatorPlatform(s.Runtime) }
 func (s SimulatorDevice) DeviceType() string { return "simulator" }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
+
+// agentRunnerBundleIDForPlatform returns the runner bundle id suffix expected
+// for this simulator's platform (iOS vs tvOS).
+func (s SimulatorDevice) agentRunnerBundleIDForPlatform() string {
+	if s.Platform() == "tvos" {
+		return agentRunnerBundleIDTVOS
+	}
+	return agentRunnerBundleID
+}
+
+// agentRunnerProcessNameForPlatform returns the runner process name used to
+// locate the running agent for this simulator's platform.
+func (s SimulatorDevice) agentRunnerProcessNameForPlatform() string {
+	if s.Platform() == "tvos" {
+		return "devicekit-tvosUITests-Runner"
+	}
+	return "devicekit-iosUITests-Runner"
+}
 func (s SimulatorDevice) State() string {
 	if s.Simulator.State == "Booted" {
 		return "online"
@@ -300,7 +328,7 @@ func (s SimulatorDevice) findInstalledAgentBundleID() (string, error) {
 	}
 
 	for bundleID := range installedApps {
-		if strings.HasSuffix(bundleID, agentRunnerBundleID) {
+		if strings.HasSuffix(bundleID, s.agentRunnerBundleIDForPlatform()) {
 			return bundleID, nil
 		}
 	}
@@ -589,7 +617,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 		DeviceInfo: DeviceInfo{
 			ID:       s.UDID,
 			Name:     s.Simulator.Name,
-			Platform: "ios",
+			Platform: s.Platform(),
 			Type:     "simulator",
 			Version:  parseSimulatorVersion(s.Runtime),
 			State:    s.State(),
@@ -715,7 +743,7 @@ func listAllProcesses() ([]ProcessInfo, error) {
 	return processes, nil
 }
 
-func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+func findWdaProcessForDevice(deviceUDID, runnerProcessName string) (int, string, error) {
 	processes, err := listAllProcesses()
 	if err != nil {
 		return 0, "", err
@@ -724,7 +752,7 @@ func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
 	devicePath := fmt.Sprintf("/Library/Developer/CoreSimulator/Devices/%s", deviceUDID)
 
 	for _, proc := range processes {
-		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, "devicekit-iosUITests-Runner") {
+		if strings.Contains(proc.Command, devicePath) && strings.Contains(proc.Command, runnerProcessName) {
 			return proc.PID, proc.Command, nil
 		}
 	}
@@ -763,7 +791,7 @@ func extractEnvValue(output, envVar string) (string, error) {
 }
 
 func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
-	pid, processInfo, err := findWdaProcessForDevice(s.UDID)
+	pid, processInfo, err := findWdaProcessForDevice(s.UDID, s.agentRunnerProcessNameForPlatform())
 	if err != nil {
 		utils.Verbose("Could not find WDA process: %v", err)
 		return 0, err
