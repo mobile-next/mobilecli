@@ -717,6 +717,46 @@ func (d *AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
+// IsKeyboardVisible reports whether the on-screen keyboard (IME) is visible.
+func (d *AndroidDevice) IsKeyboardVisible() (bool, error) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "window")
+	if err != nil {
+		return false, fmt.Errorf("AndroidDevice: failed to dumpsys window: %v\nOutput: %s", err, string(output))
+	}
+
+	return strings.Contains(string(output), "mIsImeShowing=true"), nil
+}
+
+// HideKeyboard dismisses the on-screen keyboard by pressing BACK, then waits up
+// to 2 seconds for the IME to disappear.
+func (d *AndroidDevice) HideKeyboard() error {
+	visible, err := d.IsKeyboardVisible()
+	if err != nil {
+		return err
+	}
+	if !visible {
+		return nil
+	}
+
+	if err := d.PressButton("BACK"); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		visible, err := d.IsKeyboardVisible()
+		if err != nil {
+			return err
+		}
+		if !visible {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return fmt.Errorf("AndroidDevice: keyboard still visible after pressing BACK")
+}
+
 // androidModifierKeycodes maps canonical modifier names to Android keycodes
 var androidModifierKeycodes = map[string]string{
 	"command": "KEYCODE_META_LEFT",

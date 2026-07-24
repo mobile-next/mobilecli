@@ -41,6 +41,16 @@ type GestureRequest struct {
 	Actions  []any  `json:"actions"`
 }
 
+// KeyboardRequest represents the parameters for a keyboard status/hide command
+type KeyboardRequest struct {
+	DeviceID string `json:"deviceId"`
+}
+
+// KeyboardStatusResult is returned by keyboard status/hide commands
+type KeyboardStatusResult struct {
+	Visible bool `json:"visible"`
+}
+
 // SwipeRequest represents the parameters for a swipe command
 type SwipeRequest struct {
 	DeviceID string `json:"deviceId"`
@@ -203,6 +213,45 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 	return NewSuccessResponse(MessageResult{
 		Message: fmt.Sprintf("Performed gesture on device %s with %d actions", targetDevice.ID(), len(req.Actions)),
 	})
+}
+
+// KeyboardStatusCommand reports whether the on-screen keyboard is visible
+func KeyboardStatusCommand(req KeyboardRequest) *CommandResponse {
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	kb, ok := targetDevice.(devices.KeyboardControllable)
+	if !ok {
+		return NewErrorResponse(fmt.Errorf("keyboard control is not supported on device %s", targetDevice.ID()))
+	}
+
+	visible, err := kb.IsKeyboardVisible()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to get keyboard status on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(KeyboardStatusResult{Visible: visible})
+}
+
+// KeyboardHideCommand hides the on-screen keyboard if it is visible
+func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
+	}
+
+	kb, ok := targetDevice.(devices.KeyboardControllable)
+	if !ok {
+		return NewErrorResponse(fmt.Errorf("keyboard control is not supported on device %s", targetDevice.ID()))
+	}
+
+	if err := kb.HideKeyboard(); err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to hide keyboard on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(KeyboardStatusResult{Visible: false})
 }
 
 // SwipeCommand performs a swipe operation on the specified device

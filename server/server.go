@@ -598,6 +598,10 @@ type IoGestureParams struct {
 	Actions  []any  `json:"actions"`
 }
 
+type IoKeyboardParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 type URLParams struct {
 	DeviceID string `json:"deviceId"`
 	URL      string `json:"url"`
@@ -721,6 +725,38 @@ func handleIoGesture(params json.RawMessage) (any, error) {
 	}
 
 	return okResponse, nil
+}
+
+func handleIoKeyboardStatus(params json.RawMessage) (any, error) {
+	var p IoKeyboardParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	response := commands.KeyboardStatusCommand(commands.KeyboardRequest{DeviceID: p.DeviceID})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleIoKeyboardHide(params json.RawMessage) (any, error) {
+	var p IoKeyboardParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	response := commands.KeyboardHideCommand(commands.KeyboardRequest{DeviceID: p.DeviceID})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
 }
 
 func handleURL(params json.RawMessage) (any, error) {
