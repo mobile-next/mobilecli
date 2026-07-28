@@ -82,7 +82,7 @@ func FetchRemoteDevices(token string) ([]devices.DeviceInfo, error) {
 	for i := range result {
 		// the server already reports its provider (including the allocation id),
 		// only fill it in when it's missing so we don't overwrite it
-		if result[i].ProviderType() == "" {
+		if len(result[i].Provider) == 0 {
 			result[i].SetProvider("mobilenext")
 		}
 	}

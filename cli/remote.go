@@ -92,7 +92,16 @@ func waitForAllocation(token string, response *commands.CommandResponse, timeout
 	}
 
 	if !result.IsAllocating() {
-		return response, nil
+		device, err := commands.FleetGetDeviceByAllocation(token, result.AllocationID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch allocated device (allocation %s): %w", result.AllocationID, err)
+		}
+
+		return commands.NewSuccessResponse(commands.FleetAllocateResponse{
+			AllocationID: result.AllocationID,
+			State:        device.State,
+			Device:       device,
+		}), nil
 	}
 
 	start := time.Now()
