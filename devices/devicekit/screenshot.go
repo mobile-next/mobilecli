@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 import (
 	"encoding/base64"

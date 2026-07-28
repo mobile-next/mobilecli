@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 func (c *WdaClient) OpenURL(url string) error {
 	params := map[string]string{

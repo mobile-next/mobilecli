@@ -24,9 +24,9 @@ import (
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
+	"github.com/mobile-next/mobilecli/devices/devicekit/mjpeg"
 	"github.com/mobile-next/mobilecli/devices/ios"
-	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -74,7 +74,7 @@ type IOSDevice struct {
 
 	mu                     sync.Mutex // protects fields below
 	tunnelManager          *ios.TunnelManager
-	wdaClient              *wda.WdaClient
+	wdaClient              *devicekit.WdaClient
 	mjpegClient            *mjpeg.WdaMjpegClient
 	wdaCancel              context.CancelFunc
 	portForwarderWda       *ios.PortForwarder
@@ -151,7 +151,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	}
 
 	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
+	device.wdaClient = devicekit.NewWdaClient("localhost:8100")
 
 	return device, nil
 }
@@ -223,7 +223,7 @@ func (d IOSDevice) Swipe(x1, y1, x2, y2 int) error {
 	return d.wdaClient.Swipe(x1, y1, x2, y2)
 }
 
-func (d IOSDevice) Gesture(actions []wda.TapAction) error {
+func (d IOSDevice) Gesture(actions []devicekit.TapAction) error {
 	return d.wdaClient.Gesture(actions)
 }
 
@@ -529,7 +529,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 			d.mu.Lock()
 			d.portForwarderWda = forwarder
-			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			d.wdaClient = devicekit.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
 			d.mu.Unlock()
 
 			utils.Verbose("WDA port forwarder set up on port %d", port)
@@ -542,7 +542,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			// ensure wdaClient is set if not already
 			d.mu.Lock()
 			if d.wdaClient == nil {
-				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
+				d.wdaClient = devicekit.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
 			}
 			d.mu.Unlock()
 		}

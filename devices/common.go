@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -126,7 +126,7 @@ type ControllableDevice interface {
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
 	Swipe(x1, y1, x2, y2 int) error
-	Gesture(actions []wda.TapAction) error
+	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
 	PressKeys(combos []KeyCombo) error

@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 func (c *WdaClient) SendKeys(text string) error {
 	params := map[string]string{

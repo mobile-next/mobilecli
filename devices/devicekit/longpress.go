@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 func (c *WdaClient) LongPress(x, y, duration int) error {
 	params := map[string]float64{

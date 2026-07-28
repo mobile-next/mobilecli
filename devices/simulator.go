@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
+	"github.com/mobile-next/mobilecli/devices/devicekit/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 	"howett.net/plist"
 )
@@ -52,7 +52,7 @@ type Simulator struct {
 // SimulatorDevice wraps a Simulator to implement the AnyDevice interface
 type SimulatorDevice struct {
 	Simulator
-	wdaClient *wda.WdaClient
+	wdaClient *devicekit.WdaClient
 }
 
 // parseSimulatorVersion parses iOS version from simulator runtime string
@@ -432,7 +432,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
 
 		// create new client or update with new port
-		s.wdaClient = wda.NewWdaClient(expectedURL)
+		s.wdaClient = devicekit.NewWdaClient(expectedURL)
 		if _, err := s.wdaClient.GetStatus(); err == nil {
 			// double check succeeded
 			return nil // Already running and accessible
@@ -475,7 +475,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	// update WDA client to use the actual port
-	s.wdaClient = wda.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
+	s.wdaClient = devicekit.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
 
 	if config.OnProgress != nil {
 		config.OnProgress("Waiting for agent to start")
@@ -514,7 +514,7 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
 	return s.wdaClient.Swipe(x1, y1, x2, y2)
 }
 
-func (s SimulatorDevice) Gesture(actions []wda.TapAction) error {
+func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
 	return s.wdaClient.Gesture(actions)
 }
 

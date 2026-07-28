@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 )
 
 // TapRequest represents the parameters for a tap command
@@ -180,15 +180,15 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Convert []any to []wda.TapAction
-	tapActions := make([]wda.TapAction, len(req.Actions))
+	// Convert []any to []devicekit.TapAction
+	tapActions := make([]devicekit.TapAction, len(req.Actions))
 	for i, action := range req.Actions {
 		actionBytes, err := json.Marshal(action)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to marshal action at index %d: %v", i, err))
 		}
 
-		var tapAction wda.TapAction
+		var tapAction devicekit.TapAction
 		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to unmarshal action at index %d: %v", i, err))
 		}

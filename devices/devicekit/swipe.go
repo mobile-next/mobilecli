@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 func (c *WdaClient) Swipe(x1, y1, x2, y2 int) error {
 	params := map[string]int{
