@@ -23,6 +23,7 @@ test-cover: build-cover
 
 test-e2e: build-cover
 	rm -rf test/coverage
+	(cd test && npm run test:server)
 	(cd test && npm run test:simulator)
 	go tool covdata textfmt -i=test/coverage -o cover.out
 	go tool cover -func=cover.out

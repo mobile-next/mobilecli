@@ -9,7 +9,6 @@ import {
 	ErrCodeMethodNotFound,
 	ErrCodeServerError
 } from './jsonrpc';
-import {randomUUID} from "node:crypto";
 import {mkdirSync} from "fs";
 
 const TEST_SERVER_URL = 'http://localhost:12001';
@@ -19,8 +18,8 @@ const SERVER_TIMEOUT = 8000; // 8 seconds
 let serverProcess: ChildProcess | null = null;
 
 const createCoverageDirectory = (): string => {
-	const dir = path.join(__dirname, "cover-" + randomUUID());
-	mkdirSync(dir);
+	const dir = path.join(__dirname, "coverage");
+	mkdirSync(dir, {recursive: true});
 	return dir;
 }
 
