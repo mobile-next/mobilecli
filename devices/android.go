@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -423,7 +423,7 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 }
 
 // Gesture performs a sequence of touch actions on the Android device
-func (d *AndroidDevice) Gesture(actions []wda.TapAction) error {
+func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
 
 	x := 0
 	y := 0

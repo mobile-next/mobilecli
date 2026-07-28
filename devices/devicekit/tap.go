@@ -1,4 +1,4 @@
-package wda
+package devicekit
 
 func (c *WdaClient) Tap(x, y int) error {
 	params := map[string]float64{
