@@ -261,6 +261,48 @@ test.describe('iOS Simulator Tests', () => {
 				verifyRawViewtreeDump(rawDump);
 			});
 
+			test('should rotate the playground app between portrait and landscape', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				// starting the device agent dismisses whatever is in the foreground,
+				// so warm it up before launching the app under test
+				dumpUI(simulatorId);
+
+				// relaunch so the app starts at its root menu instead of a previously visited screen
+				terminateApp(simulatorId, 'com.mobilenext.playground');
+				await new Promise(resolve => setTimeout(resolve, 2000));
+				launchApp(simulatorId, 'com.mobilenext.playground');
+				await new Promise(resolve => setTimeout(resolve, 5000));
+
+				tapElementByName(simulatorId, 'Basic UI');
+				await new Promise(resolve => setTimeout(resolve, 3000));
+				verifyElementExists(dumpUI(simulatorId), 'Reset Counter');
+
+				expect(getOrientation(simulatorId)).toBe('portrait');
+				const portraitScreenshot = getScreenshotDimensions(simulatorId);
+				expect(portraitScreenshot.height).toBeGreaterThan(portraitScreenshot.width);
+
+				setOrientation(simulatorId, 'landscape');
+				await new Promise(resolve => setTimeout(resolve, 3000));
+				expect(getOrientation(simulatorId)).toBe('landscape');
+
+				// the shorter landscape viewport pushes Reset Counter below the fold,
+				// while Text Input stays visible at the top of the form
+				const landscapeDump = dumpUI(simulatorId);
+				verifyElementDoesNotExist(landscapeDump, 'Reset Counter');
+				verifyElementExists(landscapeDump, 'Text Input');
+
+				const landscapeScreenshot = getScreenshotDimensions(simulatorId);
+				expect(landscapeScreenshot.width).toBeGreaterThan(landscapeScreenshot.height);
+
+				setOrientation(simulatorId, 'portrait');
+				await new Promise(resolve => setTimeout(resolve, 3000));
+				expect(getOrientation(simulatorId)).toBe('portrait');
+
+				const restoredScreenshot = getScreenshotDimensions(simulatorId);
+				expect(restoredScreenshot.height).toBeGreaterThan(restoredScreenshot.width);
+			});
+
 			test.describe('fs operations on app container (com.mobilenext.playground)', () => {
 				const packageName = 'com.mobilenext.playground';
 				let containerPath: string;
@@ -535,6 +577,35 @@ function tap(simulatorId: string, x: number, y: number): void {
 
 function pressButton(simulatorId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', simulatorId]);
+}
+
+function tapElementByName(simulatorId: string, name: string): void {
+	const element = findElementByName(dumpUI(simulatorId), name);
+	const centerX = element.rect.x + Math.floor(element.rect.width / 2);
+	const centerY = element.rect.y + Math.floor(element.rect.height / 2);
+	tap(simulatorId, centerX, centerY);
+}
+
+function getOrientation(simulatorId: string): string {
+	const response = mobilecli(['device', 'orientation', 'get', '--device', simulatorId]);
+	expect(response.status).toBe('ok');
+	return response.data.orientation;
+}
+
+function setOrientation(simulatorId: string, orientation: string): void {
+	const response = mobilecli(['device', 'orientation', 'set', orientation, '--device', simulatorId]);
+	expect(response.status).toBe('ok');
+}
+
+function verifyElementDoesNotExist(uiDump: UIDumpResponse, name: string): void {
+	const elements = uiDump?.data?.elements;
+
+	if (!elements) {
+		throw new Error(`No UI elements found in response. Status: ${uiDump?.status}`);
+	}
+
+	const element = elements.find(el => el.name === name || el.label === name);
+	expect(element, `Element "${name}" was expected to be off screen, but was found`).toBeUndefined();
 }
 
 function verifyElementExists(uiDump: UIDumpResponse, name: string): void {
