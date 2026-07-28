@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,6 +31,11 @@ type AndroidDevice struct {
 	state       string // "online" or "offline"
 	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
 	model       string
+
+	// Persistent on-device agent (lazy, one-time setup, sticky failure).
+	agentOnce sync.Once
+	agent     *androidAgent
+	agentErr  error
 }
 
 func (d *AndroidDevice) ID() string {
@@ -252,6 +258,14 @@ func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
 }
 
 func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
+	if agent, err := d.getAgent(); err == nil {
+		if data, err := agent.screenshot(); err == nil {
+			return data, nil
+		} else {
+			utils.Verbose("agent screenshot failed, falling back to adb: %v", err)
+		}
+	}
+
 	displayCount := d.getDisplayCount()
 
 	if displayCount <= 1 {
@@ -394,6 +408,14 @@ func (d *AndroidDevice) Shutdown() error {
 
 // Tap simulates a tap at (x, y) on the Android device.
 func (d *AndroidDevice) Tap(x, y int) error {
+	if agent, err := d.getAgent(); err == nil {
+		if err := agent.tap(x, y); err == nil {
+			return nil
+		} else {
+			utils.Verbose("agent tap failed, falling back to adb: %v", err)
+		}
+	}
+
 	_, err := d.runAdbCommand("shell", "input", "tap", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y))
 	if err != nil {
 		return err
@@ -404,6 +426,14 @@ func (d *AndroidDevice) Tap(x, y int) error {
 
 // LongPress simulates a long press at (x, y) on the Android device.
 func (d *AndroidDevice) LongPress(x, y, duration int) error {
+	if agent, err := d.getAgent(); err == nil {
+		if err := agent.longPress(x, y, duration); err == nil {
+			return nil
+		} else {
+			utils.Verbose("agent longpress failed, falling back to adb: %v", err)
+		}
+	}
+
 	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", duration))
 	if err != nil {
 		return err
@@ -414,6 +444,14 @@ func (d *AndroidDevice) LongPress(x, y, duration int) error {
 
 // Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device with 1000ms duration.
 func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
+	if agent, err := d.getAgent(); err == nil {
+		if err := agent.swipe(x1, y1, x2, y2, 1000); err == nil {
+			return nil
+		} else {
+			utils.Verbose("agent swipe failed, falling back to adb: %v", err)
+		}
+	}
+
 	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), "1000")
 	if err != nil {
 		return err
@@ -424,6 +462,13 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 
 // Gesture performs a sequence of touch actions on the Android device
 func (d *AndroidDevice) Gesture(actions []wda.TapAction) error {
+	if agent, err := d.getAgent(); err == nil {
+		if err := agent.gesture(actions); err == nil {
+			return nil
+		} else {
+			utils.Verbose("agent gesture failed, falling back to adb: %v", err)
+		}
+	}
 
 	x := 0
 	y := 0
@@ -709,6 +754,14 @@ func (d *AndroidDevice) PressButton(key string) error {
 		return fmt.Errorf("AndroidDevice: unsupported button key: %s", key)
 	}
 
+	if agent, err := d.getAgent(); err == nil {
+		if err := agent.key(keycode); err == nil {
+			return nil
+		} else {
+			utils.Verbose("agent key failed, falling back to adb: %v", err)
+		}
+	}
+
 	output, err := d.runAdbCommand("shell", "input", "keyevent", keycode)
 	if err != nil {
 		return fmt.Errorf("AndroidDevice: failed to press %s button: %v\nOutput: %s", key, err, string(output))
@@ -802,7 +855,21 @@ func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
 		adbArgs[i] = append(args, keycode)
 	}
 
+	// modifier-free presses can go through the fast agent; combos with
+	// modifiers stay on adb (`input keycombination`).
+	agent, agentErr := d.getAgent()
+
 	for i, args := range adbArgs {
+		if agentErr == nil && len(combos[i].Modifiers) == 0 {
+			// adbArgs[i] is ["shell", "input", "keyevent", "<KEYCODE_*>"]
+			keycode := args[len(args)-1]
+			if err := agent.key(keycode); err == nil {
+				continue
+			} else {
+				utils.Verbose("agent key failed, falling back to adb: %v", err)
+			}
+		}
+
 		output, err := d.runAdbCommand(args...)
 		if err != nil {
 			if strings.Contains(string(output), "Unknown command") {
@@ -861,6 +928,16 @@ func (d *AndroidDevice) SendKeys(text string) error {
 	}
 
 	if isAscii(text) {
+		// fast path: inject via the on-device KeyCharacterMap (same mechanism
+		// as `adb shell input text`, without the per-call JVM spawn).
+		if agent, err := d.getAgent(); err == nil {
+			if err := agent.typeText(text); err == nil {
+				return nil
+			} else {
+				utils.Verbose("agent text failed, falling back to adb: %v", err)
+			}
+		}
+
 		// adb shell input only supports ascii characters. and
 		// some of the keys have to be escaped.
 		escapedText := escapeShellText(text)
@@ -1584,6 +1661,14 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
+	if agent, err := d.getAgent(); err == nil {
+		if jsonStr, err := agent.dumpRaw(); err == nil {
+			return jsonStr, nil
+		} else {
+			utils.Verbose("agent dump unavailable, falling back to devicekit: %v", err)
+		}
+	}
+
 	if jsonStr, err := d.getDeviceKitDump(); err == nil {
 		return jsonStr, nil
 	} else {
@@ -1599,6 +1684,14 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 }
 
 func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	if agent, err := d.getAgent(); err == nil {
+		if nodes, err := agent.dump(); err == nil {
+			return collectAgentElements(nodes), nil
+		} else {
+			utils.Verbose("agent dump unavailable, falling back to devicekit: %v", err)
+		}
+	}
+
 	if nodes, err := d.getDeviceKitNodes(); err == nil {
 		return collectDeviceKitElements(nodes), nil
 	} else {
