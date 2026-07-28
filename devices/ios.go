@@ -39,6 +39,7 @@ const (
 	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
 	agentRunnerBundleID       = "com.mobilenext.devicekit-iosUITests.xctrunner"
+	agentRunnerBundleIDTVOS   = "com.mobilenext.devicekit-tvosUITests.xctrunner"
 )
 
 // deviceInfoCache caches device name and OS version to avoid expensive GetValues() calls

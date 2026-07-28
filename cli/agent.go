@@ -16,8 +16,10 @@ import (
 
 const (
 	agentVersionIOS     = "0.0.20"
+	agentVersionTVOS    = "0.0.20"
 	agentVersionAndroid = "1.2.4"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
+	tvosRunnerBundleID  = "com.mobilenext.devicekit-tvosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
 
@@ -26,6 +28,9 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "8040f4918892f63d79713b5824184ac5f296c5ec9b23266c25af34777550f28c",
 	"devicekit-ios-Sim-x86_64.zip": "78a8f2d208a22523efbaa5cb2a735557e807f877bb8ec1a1c31c886f2e425684",
 	"devicekit-ios-runner.ipa":     "f5fe88d4169c39001ed012101651c5ac00e8ab54aefb72c74455e7037c2e8205",
+	// tvOS simulator runner is published from the same devicekit-ios release.
+	// Update this checksum whenever the tvOS runner artifact is rebuilt/republished.
+	"devicekit-tvos-Sim-arm64.zip": "49061f17046055c7e89dbf27067a59ab0bffd9d7d14d63031d5411c5963ccb81",
 	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
 }
 
@@ -130,6 +135,13 @@ var agentInstallCmd = &cobra.Command{
 			default:
 				return fmt.Errorf("unsupported device type: %s", device.DeviceType())
 			}
+		case "tvos":
+			switch device.DeviceType() {
+			case "simulator":
+				installErr = installAgentOnSimulator(device)
+			default:
+				return fmt.Errorf("unsupported tvOS device type: %s (only the tvOS Simulator is supported)", device.DeviceType())
+			}
 		case "android":
 			installErr = installAgentOnAndroid(device)
 		default:
@@ -195,6 +207,8 @@ func agentPackageForPlatform(platform string) string {
 		return androidPackageName
 	case "ios":
 		return iosRunnerBundleID
+	case "tvos":
+		return tvosRunnerBundleID
 	default:
 		return ""
 	}
@@ -206,6 +220,8 @@ func agentVersionForPlatform(platform string) string {
 		return agentVersionAndroid
 	case "ios":
 		return agentVersionIOS
+	case "tvos":
+		return agentVersionTVOS
 	default:
 		return ""
 	}
@@ -259,8 +275,21 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 		arch = "arm64"
 	}
 
-	filename := fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch)
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
+	var filename, version string
+	switch device.Platform() {
+	case "tvos":
+		// The tvOS runner is currently published for Apple Silicon (arm64) only.
+		if arch != "arm64" {
+			return fmt.Errorf("the tvOS simulator runner is only available for arm64 (Apple Silicon)")
+		}
+		filename = "devicekit-tvos-Sim-arm64.zip"
+		version = agentVersionTVOS
+	default:
+		filename = fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch)
+		version = agentVersionIOS
+	}
+
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", version, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
 	if err != nil {
