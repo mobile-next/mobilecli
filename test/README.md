@@ -38,7 +38,30 @@ You should see the simulator listed with `"platform": "ios"` and `"type": "simul
 
 ## Android
 
-The Android tests pick the first emulator reported by `mobilecli devices --platform android --type emulator`. No emulator is created automatically — you need one already running before executing the tests. A physical Android device is never selected.
+The Android tests live in a single spec that runs against either an emulator or a
+physical handset. The Playwright project decides which, through the `deviceType`
+option, so there is one copy of the tests:
+
+```sh
+npm run test:emulator   # --type emulator (what CI runs)
+npm run test:android    # --type real
+```
+
+Each picks the first device reported by `mobilecli devices --platform android --type <type>`.
+Nothing is created or booted automatically — have the emulator running, or the handset
+plugged in with USB debugging enabled, before running the tests.
+
+**A real device must stay awake for the whole run.** Most tests do not generate input
+events, so the screen-off timer keeps running; once the screen is off there is no focused
+window and `apps foreground` fails. Enable *Developer options → Stay awake*, or:
+
+```sh
+adb shell svc power stayon usb     # revert with: adb shell svc power stayon false
+```
+
+Three tests are skipped on a real device: the screenshot size check (it assumes a known
+screen state), the Settings tap test (it matches English UI labels), and the app-container
+fs group (it needs a debuggable build of `com.mobilenext.playground` installed).
 
 ### Setting up an Android emulator
 

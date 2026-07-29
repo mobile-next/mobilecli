@@ -1,4 +1,4 @@
-import {test, expect} from '@playwright/test';
+import {test, expect} from './fixtures';
 import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -17,6 +17,13 @@ const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
 // settings is present on every android image, unlike chrome or play store
 const SETTINGS_PACKAGE = 'com.android.settings';
+
+const PLAYGROUND_PACKAGE = 'com.mobilenext.playground';
+
+// the settings search ui is a separate package that joins the settings task via
+// taskAffinity=com.android.settings.root. force-stopping settings alone leaves its
+// activity on top of that task, so `am start` resumes a task settings no longer owns
+const SETTINGS_SEARCH_PACKAGE = 'com.google.android.settings.intelligence';
 
 // google_apis images use com.google.android.apps.nexuslauncher, aosp images use
 // com.android.launcher3 — match on the shared substring instead of pinning one
@@ -44,9 +51,9 @@ type Point = {
 // this spec is written against an emulator: it force-stops apps, writes to
 // /sdcard, and leaves the device on arbitrary screens. a physical android device
 // reports type "real" and is left alone.
-function getFirstAndroidEmulator(): Device | null {
+function getFirstAndroidDevice(deviceType: string): Device | null {
 	try {
-		const output = execFileSync(mobilecliBinary, ['devices', '--platform', 'android', '--type', 'emulator'], {
+		const output = execFileSync(mobilecliBinary, ['devices', '--platform', 'android', '--type', deviceType], {
 			encoding: 'utf8',
 			env: coverageEnv(),
 		});
@@ -56,18 +63,20 @@ function getFirstAndroidEmulator(): Device | null {
 	}
 }
 
-test.describe('Android Emulator Tests', () => {
+test.describe('Android Tests', () => {
 	let device: Device | null;
 
-	test.beforeAll(() => {
-		device = getFirstAndroidEmulator();
+	test.beforeAll(({deviceType}) => {
+		device = getFirstAndroidDevice(deviceType);
 		if (!device) {
-			console.log('No Android emulator found. See test/README.md for setup instructions.');
+			console.log(`No Android ${deviceType} device found. See test/README.md for setup instructions.`);
 		}
 	});
 
-	test('should take screenshot', () => {
-		test.skip(!device, 'No Android emulator found');
+	test('should take screenshot', ({deviceType}) => {
+		test.skip(!device, 'No Android device found');
+		// a locked or sleeping handset produces a near-empty png well under this floor
+		test.skip(deviceType === 'real', 'screenshot size assumes a known screen state');
 
 		const screenshotPath = `/tmp/screenshot-android-${Date.now()}.png`;
 		mobilecli(['screenshot', '--device', device!.id, '--format', 'png', '--output', screenshotPath]);
@@ -81,7 +90,7 @@ test.describe('Android Emulator Tests', () => {
 
 	test.describe('screenrecord', () => {
 		test('should record with --time-limit 5 and produce a playable mp4', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 
 			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
 			recordScreenWithTimeLimit(device!.id, videoPath, 5);
@@ -91,7 +100,7 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 
 			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
 			await recordThenInterruptWithCtrlC(device!.id, videoPath, 5);
@@ -102,19 +111,19 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should open URL https://example.com', () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		mobilecli(['url', 'https://example.com', '--device', device!.id]);
 	});
 
 	test('should get device info', () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		mobilecli(['device', 'info', '--device', device!.id]);
 	});
 
 	test('should list installed apps', () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		const apps = listApps(device!.id);
 		apps.forEach(expectAppShape);
@@ -122,7 +131,7 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should launch Settings app and verify it is in foreground', async () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(3000);
@@ -131,7 +140,10 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should terminate Settings app and verify launcher is in foreground', async () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
+
+		// tear down any existing settings task so the launch below builds a fresh one
+		clearSettingsTask(device!.id);
 
 		// force-stop returns to whatever task sits below the app, so start from the
 		// launcher — otherwise an app left running by an earlier test surfaces instead
@@ -148,7 +160,7 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should handle launching app twice (idempotency)', async () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(3000);
@@ -161,7 +173,7 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should press HOME button and return to launcher from Settings', async () => {
-		test.skip(!device, 'No Android emulator found');
+		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(3000);
@@ -173,12 +185,14 @@ test.describe('Android Emulator Tests', () => {
 		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
 	});
 
-	test('should tap on Network & internet in Settings and navigate to that screen', async () => {
-		test.skip(!device, 'No Android emulator found');
+	test('should tap on Network & internet in Settings and navigate to that screen', async ({deviceType}) => {
+		test.skip(!device, 'No Android device found');
+		// matches on english settings labels, so it only holds for a known locale
+		test.skip(deviceType === 'real', 'asserts english ui labels');
 
-		// `am start` resumes an existing task, so terminate first to guarantee we
+		// `am start` resumes an existing task, so clear it first to guarantee we
 		// land on the settings root screen rather than wherever a previous test left it
-		terminateApp(device!.id, SETTINGS_PACKAGE);
+		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(5000);
 
@@ -194,26 +208,26 @@ test.describe('Android Emulator Tests', () => {
 		const remoteFile = `${remoteDir}/hello.txt`;
 
 		test('should create a nested directory with mkdir -p', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
 		test('should push a file into /sdcard/Download', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const localFile = writeTempFile('hello from mobilecli');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
 		test('should list the pushed file in /sdcard/Download', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
 			expect(names).toContain('hello.txt');
 		});
 
 		test('should pull the file back and verify contents match', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
@@ -222,7 +236,7 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should remove the test directory recursively', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, '/sdcard/Download');
 			const names = entries.map((e: any) => e.name);
@@ -231,7 +245,11 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
-		const packageName = 'com.mobilenext.playground';
+		// reading an app sandbox needs a debuggable build installed, which is
+		// guaranteed on an emulator image but not on someone's phone
+		test.skip(({deviceType}) => deviceType === 'real', 'requires a debuggable playground build');
+
+		const packageName = PLAYGROUND_PACKAGE;
 		let containerPath: string;
 		let remoteDir: string;
 		let remoteFile: string;
@@ -244,37 +262,37 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should return a valid container path for com.mobilenext.playground', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			expect(containerPath).toMatch(/^\/data\/user\/\d+\/com\.mobilenext\.playground/);
 		});
 
 		test('should list the app container root', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, containerPath);
 			expect(Array.isArray(entries)).toBe(true);
 		});
 
 		test('should create a directory inside the app container', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
 		test('should push a file into the app container', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const localFile = writeTempFile('app container test');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
 		test('should list the file inside the app container', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
 			expect(names).toContain('data.txt');
 		});
 
 		test('should pull the file from the app container and verify contents', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
@@ -283,7 +301,7 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should remove the test directory from the app container', () => {
-			test.skip(!device, 'No Android emulator found');
+			test.skip(!device, 'No Android device found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, `${containerPath}/files`);
 			const names = entries.map((e: any) => e.name);
@@ -349,6 +367,13 @@ function launchApp(deviceId: string, packageName: string): void {
 
 function terminateApp(deviceId: string, packageName: string): void {
 	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
+}
+
+// force-stops every package that can hold an activity in the settings task, so the
+// next launch starts from a clean root instead of resuming whatever was left open
+function clearSettingsTask(deviceId: string): void {
+	terminateApp(deviceId, SETTINGS_PACKAGE);
+	terminateApp(deviceId, SETTINGS_SEARCH_PACKAGE);
 }
 
 function getForegroundApp(deviceId: string): ForegroundAppResponse {

@@ -8,7 +8,8 @@
 		"test:server": "playwright test --project=server",
 		"test:ios": "playwright test --project=simulator",
 		"test:simulator": "playwright test --project=simulator",
-		"test:android": "playwright test --project=emulator"
+		"test:emulator": "playwright test --project=emulator",
+		"test:android": "playwright test --project=android"
 	},
 	"author": "",
 	"license": "ISC",
