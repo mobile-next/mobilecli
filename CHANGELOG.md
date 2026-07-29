@@ -1,3 +1,8 @@
+## [0.3.88](https://github.com/mobile-next/mobilecli/releases/tag/0.3.88) (2026-07-29)
+* Fix: Remote mobilenext.ai device allocation response change ([#309](https://github.com/mobile-next/mobilecli/pull/309))
+* Fix: Thread locales through device.apps.launch JSON-RPC handler ([#303](https://github.com/mobile-next/mobilecli/pull/303))
+* Fix: Extend write deadline for app install/uninstall RPCs ([#304](https://github.com/mobile-next/mobilecli/pull/304))
+
 ## [0.3.87](https://github.com/mobile-next/mobilecli/releases/tag/0.3.87) (2026-07-15)
 * Feat: Add mobilecli skill ([#256](https://github.com/mobile-next/mobilecli/pull/256)), thanks to [@lazynoda](https://github.com/lazynoda)
 * Fix: Include multiline TextView in iOS accessibility dump ([#294](https://github.com/mobile-next/mobilecli/pull/294)), thanks to [@Ernest94](https://github.com/Ernest94)
