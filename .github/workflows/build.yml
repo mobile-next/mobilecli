@@ -296,9 +296,8 @@ jobs:
 
     - name: Build
       run: |
-        go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
-      env:
-        GOARCH: amd64
+        $env:GOARCH="amd64"; go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
+        $env:GOARCH="arm64"; go build -ldflags="-s -w" -o mobilecli-windows-arm64.exe
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v5
@@ -306,6 +305,7 @@ jobs:
         name: windows-build
         path: |
           mobilecli-windows-amd64.exe
+          mobilecli-windows-arm64.exe
 
   ios_simulator_test:
     if: false
@@ -523,6 +523,11 @@ jobs:
         cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
         zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli.exe
         rm -f mobilecli.exe
+
+        # windows-arm64
+        cp ../mobilecli-windows/mobilecli-windows-arm64.exe mobilecli.exe
+        zip -9 ../mobilecli-${{ github.ref_name }}-windows-arm64.zip mobilecli.exe
+        rm -f mobilecli.exe
         cd ..
 
         ls -l *.zip
@@ -545,6 +550,7 @@ jobs:
         mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
         mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
         mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
+        mv ./mobilecli-windows/mobilecli-windows-arm64.exe publish/npm/bin
         chmod +x publish/npm/bin/*
         # copy README.md
         cp README.md publish/npm

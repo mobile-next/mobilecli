@@ -28,9 +28,21 @@ switch (process.platform) {
 		}
 		break;
 
-	default:
-		console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
-		process.exit(1);
+	case "win32":
+		switch (process.arch) {
+			case "arm64":
+				binary = "mobilecli-windows-arm64.exe";
+				break;
+			case "x64":
+				binary = "mobilecli-windows-amd64.exe";
+				break;
+		}
+		break;
+}
+
+if (!binary) {
+	console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
+	process.exit(1);
 }
 
 const binaryPath = join(__dirname, "bin", binary);
