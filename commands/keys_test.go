@@ -2,6 +2,7 @@ package commands
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/devices"
@@ -48,5 +49,26 @@ func TestParseKeyComboErrors(t *testing.T) {
 		if _, err := ParseKeyCombo(combo); err == nil {
 			t.Errorf("ParseKeyCombo(%q) should have returned an error", combo)
 		}
+	}
+}
+
+// every combo is validated before any key is pressed, so a bad combo anywhere in
+// the list must be rejected without reaching a device
+func TestKeysCommandRejectsEmptyKeyList(t *testing.T) {
+	response := KeysCommand(KeysRequest{DeviceID: "any-device", Keys: nil})
+
+	if response.Status != "error" {
+		t.Fatalf("expected an error response, got %q", response.Status)
+	}
+}
+
+func TestKeysCommandRejectsAnInvalidComboBeforeTouchingADevice(t *testing.T) {
+	response := KeysCommand(KeysRequest{DeviceID: "any-device", Keys: []string{"cmd+a", "nosuchmod+b"}})
+
+	if response.Status != "error" {
+		t.Fatalf("expected an error response, got %q", response.Status)
+	}
+	if !strings.Contains(response.Error, "nosuchmod") {
+		t.Fatalf("expected the offending modifier to be named, got %q", response.Error)
 	}
 }
