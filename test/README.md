@@ -2,9 +2,9 @@
 
 ## iOS
 
-The iOS simulator tests look up an existing simulator by name — no simulator is created automatically. You must create and boot the simulator before running the tests.
+The iOS simulator tests use the first booted simulator reported by `mobilecli devices --platform ios --type simulator` — no simulator is created or booted automatically. You must create and boot one before running the tests, and a physical iPhone is never selected.
 
-The expected simulator name for iOS 26 is `Test-iOS-26`. To create it:
+Any simulator will do; the examples below use `Test-iOS-26`. To create it:
 
 **1. Find the iOS 26 runtime identifier**
 
@@ -38,7 +38,7 @@ You should see the simulator listed with `"platform": "ios"` and `"type": "simul
 
 ## Android
 
-The Android tests pick the first available device reported by `mobilecli devices`. No emulator is created automatically — you need one already running before executing the tests.
+The Android tests pick the first emulator reported by `mobilecli devices --platform android --type emulator`. No emulator is created automatically — you need one already running before executing the tests. A physical Android device is never selected.
 
 ### Setting up an Android emulator
 

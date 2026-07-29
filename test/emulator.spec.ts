@@ -3,8 +3,24 @@ import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import type {UIElement, UIDumpResponse, ForegroundAppResponse} from './types';
+import {coverageEnv} from './coverage';
+import {
+	expectAppShape,
+	expectFsListingShape,
+	expectForegroundAppShape,
+	expectOkEnvelope,
+	expectUIDumpShape,
+} from './shapes';
 
 const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
+
+// settings is present on every android image, unlike chrome or play store
+const SETTINGS_PACKAGE = 'com.android.settings';
+
+// google_apis images use com.google.android.apps.nexuslauncher, aosp images use
+// com.android.launcher3 — match on the shared substring instead of pinning one
+const LAUNCHER_PACKAGE_PATTERN = /launcher/i;
 
 type Device = {
 	id: string;
@@ -20,11 +36,21 @@ type Dimensions = {
 	height: number;
 };
 
-function getFirstAndroidDevice(): Device | null {
+type Point = {
+	x: number;
+	y: number;
+};
+
+// this spec is written against an emulator: it force-stops apps, writes to
+// /sdcard, and leaves the device on arbitrary screens. a physical android device
+// reports type "real" and is left alone.
+function getFirstAndroidEmulator(): Device | null {
 	try {
-		const output = execFileSync(mobilecliBinary, ['devices'], {encoding: 'utf8'});
-		const result = JSON.parse(output);
-		return result?.data?.devices?.find((d: Device) => d.platform === 'android') ?? null;
+		const output = execFileSync(mobilecliBinary, ['devices', '--platform', 'android', '--type', 'emulator'], {
+			encoding: 'utf8',
+			env: coverageEnv(),
+		});
+		return JSON.parse(output)?.data?.devices?.[0] ?? null;
 	} catch (error) {
 		return null;
 	}
@@ -34,14 +60,14 @@ test.describe('Android Emulator Tests', () => {
 	let device: Device | null;
 
 	test.beforeAll(() => {
-		device = getFirstAndroidDevice();
+		device = getFirstAndroidEmulator();
 		if (!device) {
-			console.log('No Android device found. See test/README.md for setup instructions.');
+			console.log('No Android emulator found. See test/README.md for setup instructions.');
 		}
 	});
 
 	test('should take screenshot', () => {
-		test.skip(!device, 'No Android device found');
+		test.skip(!device, 'No Android emulator found');
 
 		const screenshotPath = `/tmp/screenshot-android-${Date.now()}.png`;
 		mobilecli(['screenshot', '--device', device!.id, '--format', 'png', '--output', screenshotPath]);
@@ -55,17 +81,17 @@ test.describe('Android Emulator Tests', () => {
 
 	test.describe('screenrecord', () => {
 		test('should record with --time-limit 5 and produce a playable mp4', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 
 			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
-			mobilecli(['screenrecord', '--device', device!.id, '--time-limit', '5', '--output', videoPath]);
+			recordScreenWithTimeLimit(device!.id, videoPath, 5);
 
 			assertVideoIsPlayable(videoPath);
 			fs.unlinkSync(videoPath);
 		});
 
 		test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 
 			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
 			await recordThenInterruptWithCtrlC(device!.id, videoPath, 5);
@@ -76,15 +102,91 @@ test.describe('Android Emulator Tests', () => {
 	});
 
 	test('should open URL https://example.com', () => {
-		test.skip(!device, 'No Android device found');
+		test.skip(!device, 'No Android emulator found');
 
 		mobilecli(['url', 'https://example.com', '--device', device!.id]);
 	});
 
 	test('should get device info', () => {
-		test.skip(!device, 'No Android device found');
+		test.skip(!device, 'No Android emulator found');
 
 		mobilecli(['device', 'info', '--device', device!.id]);
+	});
+
+	test('should list installed apps', () => {
+		test.skip(!device, 'No Android emulator found');
+
+		const apps = listApps(device!.id);
+		apps.forEach(expectAppShape);
+		expect(apps.map((a: any) => a.packageName)).toContain(SETTINGS_PACKAGE);
+	});
+
+	test('should launch Settings app and verify it is in foreground', async () => {
+		test.skip(!device, 'No Android emulator found');
+
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+
+		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+	});
+
+	test('should terminate Settings app and verify launcher is in foreground', async () => {
+		test.skip(!device, 'No Android emulator found');
+
+		// force-stop returns to whatever task sits below the app, so start from the
+		// launcher — otherwise an app left running by an earlier test surfaces instead
+		pressButton(device!.id, 'HOME');
+		await sleep(2000);
+
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+
+		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+	});
+
+	test('should handle launching app twice (idempotency)', async () => {
+		test.skip(!device, 'No Android emulator found');
+
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+
+		// launching again should resume the app, not fail
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+
+		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+	});
+
+	test('should press HOME button and return to launcher from Settings', async () => {
+		test.skip(!device, 'No Android emulator found');
+
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(3000);
+		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+
+		pressButton(device!.id, 'HOME');
+		await sleep(3000);
+
+		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+	});
+
+	test('should tap on Network & internet in Settings and navigate to that screen', async () => {
+		test.skip(!device, 'No Android emulator found');
+
+		// `am start` resumes an existing task, so terminate first to guarantee we
+		// land on the settings root screen rather than wherever a previous test left it
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+		launchApp(device!.id, SETTINGS_PACKAGE);
+		await sleep(5000);
+
+		const entry = findElementByText(dumpUI(device!.id), 'Network & internet');
+		tap(device!.id, centerOf(entry).x, centerOf(entry).y);
+		await sleep(3000);
+
+		verifyElementWithTextExists(dumpUI(device!.id), 'Airplane mode');
 	});
 
 	test.describe('fs operations on /sdcard/Download', () => {
@@ -92,26 +194,26 @@ test.describe('Android Emulator Tests', () => {
 		const remoteFile = `${remoteDir}/hello.txt`;
 
 		test('should create a nested directory with mkdir -p', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
 		test('should push a file into /sdcard/Download', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const localFile = writeTempFile('hello from mobilecli');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
 		test('should list the pushed file in /sdcard/Download', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
 			expect(names).toContain('hello.txt');
 		});
 
 		test('should pull the file back and verify contents match', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
@@ -120,7 +222,7 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should remove the test directory recursively', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, '/sdcard/Download');
 			const names = entries.map((e: any) => e.name);
@@ -142,37 +244,37 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should return a valid container path for com.mobilenext.playground', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			expect(containerPath).toMatch(/^\/data\/user\/\d+\/com\.mobilenext\.playground/);
 		});
 
 		test('should list the app container root', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const entries = fsList(device!.id, containerPath);
 			expect(Array.isArray(entries)).toBe(true);
 		});
 
 		test('should create a directory inside the app container', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			fsMkdir(device!.id, remoteDir, true);
 		});
 
 		test('should push a file into the app container', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const localFile = writeTempFile('app container test');
 			fsPush(device!.id, localFile, remoteFile);
 			fs.unlinkSync(localFile);
 		});
 
 		test('should list the file inside the app container', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const entries = fsList(device!.id, remoteDir);
 			const names = entries.map((e: any) => e.name);
 			expect(names).toContain('data.txt');
 		});
 
 		test('should pull the file from the app container and verify contents', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
 			fsPull(device!.id, remoteFile, localDest);
 			const contents = fs.readFileSync(localDest, 'utf8');
@@ -181,7 +283,7 @@ test.describe('Android Emulator Tests', () => {
 		});
 
 		test('should remove the test directory from the app container', () => {
-			test.skip(!device, 'No Android device found');
+			test.skip(!device, 'No Android emulator found');
 			fsRm(device!.id, remoteDir, true);
 			const entries = fsList(device!.id, `${containerPath}/files`);
 			const names = entries.map((e: any) => e.name);
@@ -190,13 +292,18 @@ test.describe('Android Emulator Tests', () => {
 	});
 });
 
-function mobilecli(args: string[]): void {
+// every command routed through here answers with a json envelope; asserting it
+// centrally means a change to the output format fails these tests instead of
+// silently passing because only the exit code was checked
+function mobilecli(args: string[]): any {
 	try {
-		execFileSync(mobilecliBinary, args, {
+		const output = execFileSync(mobilecliBinary, args, {
 			encoding: 'utf8',
 			timeout: 180000,
 			stdio: ['pipe', 'pipe', 'pipe'],
+			env: coverageEnv(),
 		});
+		return expectOkEnvelope(JSON.parse(output));
 	} catch (error: any) {
 		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
 		if (error.stderr) console.log(`stderr: ${error.stderr}`);
@@ -210,20 +317,97 @@ function mobilecliJson(args: string[]): any {
 		encoding: 'utf8',
 		timeout: 60000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: { ANDROID_HOME: process.env.ANDROID_HOME || '' },
+		env: coverageEnv(),
 	});
-	return JSON.parse(result);
+	const parsed = JSON.parse(result);
+	expectOkEnvelope(parsed);
+	return parsed;
+}
+
+// screenrecord streams progress to stderr and prints no json envelope, so it
+// bypasses mobilecli() entirely
+function recordScreenWithTimeLimit(deviceId: string, videoPath: string, timeLimitSeconds: number): void {
+	execFileSync(mobilecliBinary, ['screenrecord', '--device', deviceId, '--time-limit', String(timeLimitSeconds), '--output', videoPath], {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function listApps(deviceId: string): any[] {
+	return mobilecliJson(['apps', 'list', '--device', deviceId]).data;
+}
+
+function launchApp(deviceId: string, packageName: string): void {
+	mobilecli(['apps', 'launch', packageName, '--device', deviceId]);
+}
+
+function terminateApp(deviceId: string, packageName: string): void {
+	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
+}
+
+function getForegroundApp(deviceId: string): ForegroundAppResponse {
+	const response = mobilecliJson(['apps', 'foreground', '--device', deviceId]);
+	expectForegroundAppShape(response.data);
+	return response;
+}
+
+function dumpUI(deviceId: string): UIDumpResponse {
+	const response = mobilecliJson(['dump', 'ui', '--device', deviceId]);
+	expectUIDumpShape(response.data.elements);
+	return response;
+}
+
+function tap(deviceId: string, x: number, y: number): void {
+	mobilecli(['io', 'tap', `${x},${y}`, '--device', deviceId]);
+}
+
+function pressButton(deviceId: string, button: string): void {
+	mobilecli(['io', 'button', button, '--device', deviceId]);
+}
+
+// android returns the view hierarchy as a nested tree, so flatten it before searching
+function flattenElements(elements: UIElement[]): UIElement[] {
+	return elements.flatMap(element => [element, ...flattenElements(element.children ?? [])]);
+}
+
+function findElementByText(uiDump: UIDumpResponse, text: string): UIElement {
+	const element = flattenElements(uiDump.data.elements).find(el => el.text === text);
+	if (!element) {
+		throw new Error(`Element with text "${text}" not found. Available texts: ${allTextsIn(uiDump).join(', ')}`);
+	}
+
+	return element;
+}
+
+function verifyElementWithTextExists(uiDump: UIDumpResponse, text: string): void {
+	const exists = flattenElements(uiDump.data.elements).some(el => el.text === text);
+	expect(exists, `Expected an element with text "${text}". Available texts: ${allTextsIn(uiDump).join(', ')}`).toBe(true);
+}
+
+function allTextsIn(uiDump: UIDumpResponse): string[] {
+	return flattenElements(uiDump.data.elements).map(el => el.text).filter(Boolean) as string[];
+}
+
+function centerOf(element: UIElement): Point {
+	return {
+		x: element.rect.x + Math.floor(element.rect.width / 2),
+		y: element.rect.y + Math.floor(element.rect.height / 2),
+	};
 }
 
 function getAppContainerPath(deviceId: string, packageName: string): string {
-	const response = mobilecliJson(['apps', 'path', packageName, '--device', deviceId]);
-	expect(response.status).toBe('ok');
-	return response.data.path;
+	return mobilecliJson(['apps', 'path', packageName, '--device', deviceId]).data.path;
 }
 
 function fsList(deviceId: string, remotePath: string): any[] {
 	const response = mobilecliJson(['fs', 'ls', '--device', deviceId, remotePath]);
-	expect(response.status).toBe('ok');
+	expectFsListingShape(response.data);
 	return response.data;
 }
 
@@ -250,6 +434,7 @@ function recordThenInterruptWithCtrlC(deviceId: string, outputPath: string, reco
 	return new Promise((resolve, reject) => {
 		const child = spawn(mobilecliBinary, ['screenrecord', '--device', deviceId, '--output', outputPath], {
 			stdio: ['pipe', 'pipe', 'pipe'],
+			env: coverageEnv(),
 		});
 
 		child.on('error', reject);
