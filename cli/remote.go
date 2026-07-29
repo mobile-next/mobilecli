@@ -71,53 +71,65 @@ Name supports wildcard prefix matching:
 		}
 
 		if fleetWait {
-			result, ok := response.Data.(commands.FleetAllocateResponse)
-			if !ok {
-				printJson(response)
-				return fmt.Errorf("unexpected response format")
-			}
-
-			if result.IsAllocating() {
-				utils.Verbose("waiting for device allocation, session %s (0 seconds elapsed)", result.SessionID)
-				start := time.Now()
-				deadline := start.Add(time.Duration(fleetTimeout) * time.Second)
-				for {
-					if time.Now().After(deadline) {
-						err := fmt.Errorf("timed out waiting for device allocation after %d seconds (session %s)", fleetTimeout, result.SessionID)
-						printJson(commands.NewErrorResponse(err))
-						return err
-					}
-					time.Sleep(5 * time.Second)
-					elapsed := int(time.Since(start).Seconds())
-					utils.Verbose("waiting for device allocation, session %s (%d seconds elapsed)", result.SessionID, elapsed)
-					device, err := commands.FleetGetDeviceBySession(token, result.SessionID)
-					if err != nil {
-						err = fmt.Errorf("failed to check device status (session %s): %w", result.SessionID, err)
-						printJson(commands.NewErrorResponse(err))
-						return err
-					}
-					if device.State != "allocating" {
-						response = commands.NewSuccessResponse(commands.FleetAllocateResponse{
-							SessionID:   result.SessionID,
-							ProvisionID: result.ProvisionID,
-							State:       device.State,
-							Device: commands.FleetAllocateDevice{
-								ID:       device.ID,
-								Name:     device.Name,
-								Platform: device.Platform,
-								Status:   device.State,
-								Model:    device.Model,
-							},
-						})
-						break
-					}
-				}
+			response, err = waitForAllocation(token, response, fleetTimeout)
+			if err != nil {
+				printJson(commands.NewErrorResponse(err))
+				return err
 			}
 		}
 
 		printJson(response)
 		return nil
 	},
+}
+
+// polls devices.list until the allocation leaves the "allocating" state, and returns
+// a response with the allocated device filled in
+func waitForAllocation(token string, response *commands.CommandResponse, timeoutSeconds int) (*commands.CommandResponse, error) {
+	result, ok := response.Data.(commands.FleetAllocateResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	if !result.IsAllocating() {
+		device, err := commands.FleetGetDeviceByAllocation(token, result.AllocationID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch allocated device (allocation %s): %w", result.AllocationID, err)
+		}
+
+		return commands.NewSuccessResponse(commands.FleetAllocateResponse{
+			AllocationID: result.AllocationID,
+			State:        device.State,
+			Device:       device,
+		}), nil
+	}
+
+	start := time.Now()
+	deadline := start.Add(time.Duration(timeoutSeconds) * time.Second)
+	utils.Verbose("waiting for device allocation %s (0 seconds elapsed)", result.AllocationID)
+
+	for {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for device allocation after %d seconds (allocation %s)", timeoutSeconds, result.AllocationID)
+		}
+
+		time.Sleep(5 * time.Second)
+		elapsed := int(time.Since(start).Seconds())
+		utils.Verbose("waiting for device allocation %s (%d seconds elapsed)", result.AllocationID, elapsed)
+
+		device, err := commands.FleetGetDeviceByAllocation(token, result.AllocationID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check device status (allocation %s): %w", result.AllocationID, err)
+		}
+
+		if device.State != "allocating" {
+			return commands.NewSuccessResponse(commands.FleetAllocateResponse{
+				AllocationID: result.AllocationID,
+				State:        device.State,
+				Device:       device,
+			}), nil
+		}
+	}
 }
 
 var remoteListDevicesCmd = &cobra.Command{
