@@ -271,7 +271,7 @@ test.describe('rpc method validation', () => {
 		{method: 'device.apps.launch', params: {bundleId: 'com.example.app'}},
 		{method: 'device.apps.terminate', params: {bundleId: 'com.example.app'}},
 		{method: 'device.apps.path', params: {bundleId: 'com.example.app'}},
-		{method: 'device.apps.uninstall', params: {packageName: 'com.example.app'}},
+		{method: 'device.apps.uninstall', params: {bundleId: 'com.example.app'}},
 		{method: 'device.io.tap', params: {x: 10, y: 10}},
 		{method: 'device.io.longpress', params: {x: 10, y: 10}},
 		{method: 'device.io.swipe', params: {x1: 1, y1: 2, x2: 3, y2: 4}},
@@ -296,21 +296,26 @@ test.describe('rpc method validation', () => {
 		});
 	}
 
-	const methodsMissingARequiredField: {name: string; method: string; params: any}[] = [
-		{name: 'device.apps.path without bundleId', method: 'device.apps.path', params: {}},
-		{name: 'device.crashes.get without id', method: 'device.crashes.get', params: {}},
-		{name: 'device.fs.pull without remotePath', method: 'device.fs.pull', params: {}},
-		{name: 'device.fs.push without remotePath', method: 'device.fs.push', params: {content: 'aGk='}},
-		{name: 'device.fs.push without content', method: 'device.fs.push', params: {remotePath: '/tmp/x'}},
-		{name: 'device.fs.mkdir without remotePath', method: 'device.fs.mkdir', params: {}},
-		{name: 'device.fs.rm without remotePath', method: 'device.fs.rm', params: {}},
-		{name: 'device.io.swipe without x2', method: 'device.io.swipe', params: {deviceId: UNKNOWN_DEVICE_ID, x1: 1, y1: 2, y2: 4}},
-		{name: 'device.webview.goto without url', method: 'device.webview.goto', params: {deviceId: UNKNOWN_DEVICE_ID, id: 'x'}},
+	// every case supplies a device id, so a handler that validated the device first
+	// would surface a device error and fail the `mentions` assertion instead of
+	// quietly passing as though the field check had run
+	const methodsMissingARequiredField: {name: string; method: string; params: any; mentions: string}[] = [
+		{name: 'device.apps.path without bundleId', method: 'device.apps.path', params: {}, mentions: 'bundleId'},
+		{name: 'device.apps.uninstall without bundleId', method: 'device.apps.uninstall', params: {}, mentions: 'bundleId'},
+		{name: 'device.crashes.get without id', method: 'device.crashes.get', params: {}, mentions: 'id'},
+		{name: 'device.fs.pull without remotePath', method: 'device.fs.pull', params: {}, mentions: 'remotePath'},
+		{name: 'device.fs.push without remotePath', method: 'device.fs.push', params: {content: 'aGk='}, mentions: 'remotePath'},
+		{name: 'device.fs.push without content', method: 'device.fs.push', params: {remotePath: '/tmp/x'}, mentions: 'content'},
+		{name: 'device.fs.mkdir without remotePath', method: 'device.fs.mkdir', params: {}, mentions: 'remotePath'},
+		{name: 'device.fs.rm without remotePath', method: 'device.fs.rm', params: {}, mentions: 'remotePath'},
+		{name: 'device.io.swipe without x2', method: 'device.io.swipe', params: {x1: 1, y1: 2, y2: 4}, mentions: 'x2'},
+		{name: 'device.webview.goto without url', method: 'device.webview.goto', params: {id: 'x'}, mentions: 'url'},
 	];
 
-	for (const {name, method, params} of methodsMissingARequiredField) {
-		test(`${name} should return an error`, async () => {
-			await rpcExpectError(method, params);
+	for (const {name, method, params, mentions} of methodsMissingARequiredField) {
+		test(`${name} should return an error naming the field`, async () => {
+			const error = await rpcExpectError(method, {deviceId: UNKNOWN_DEVICE_ID, ...params});
+			expect(String(error.data)).toContain(mentions);
 		});
 	}
 

@@ -1,6 +1,8 @@
 package rpc
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -87,12 +89,18 @@ func TestDialRejectsAnUnparseableFleetURL(t *testing.T) {
 }
 
 func TestCallReportsConnectionFailure(t *testing.T) {
-	// port 1 is reserved and never listening, so the dial fails fast
-	t.Setenv("MOBILECLI_FLEET_URL", "ws://127.0.0.1:1/ws")
+	// a server that never upgrades fails the websocket handshake deterministically,
+	// instead of relying on some port happening to be closed on the host
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not a websocket endpoint", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	t.Setenv("MOBILECLI_FLEET_URL", "ws"+strings.TrimPrefix(server.URL, "http"))
 
 	err := Call("token", "devices.list", nil, nil)
 	if err == nil {
-		t.Fatal("expected an error when the fleet server is unreachable")
+		t.Fatal("expected an error when the fleet server refuses the handshake")
 	}
 	if !strings.Contains(err.Error(), "failed to connect to fleet server") {
 		t.Fatalf("expected a connection failure, got %v", err)

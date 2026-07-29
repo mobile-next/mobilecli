@@ -33,6 +33,9 @@ export function expectForegroundAppShape(foreground: any): void {
 	expect(typeof foreground.packageName).toBe('string');
 	expect(foreground.packageName.length).toBeGreaterThan(0);
 	expect(typeof foreground.appName).toBe('string');
+	// ForegroundAppInfo.Version has no omitempty, so the field is always present
+	// even when the platform cannot determine a version
+	expect(typeof foreground.version).toBe('string');
 }
 
 // both platforms return a tree; only `type` and `rect` are common to all of

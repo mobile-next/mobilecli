@@ -60,19 +60,19 @@ func TestParseNALUnitsWithMixedStartCodeLengths(t *testing.T) {
 	}
 }
 
-// the type lives in the low 5 bits; the two high bits are nal_ref_idc and must
-// not leak into the reported type
+// a nal header is forbidden_zero_bit(1) | nal_ref_idc(2) | nal_unit_type(5), so
+// 0x45 is ref_idc=2 type=5 — a valid header that still exercises the masking
 func TestParseNALUnitsMasksRefIdcOutOfType(t *testing.T) {
-	data := annexB(startCode4, []byte{0xE5})
+	data := annexB(startCode4, []byte{0x45})
 
 	units := ParseNALUnits(data)
 	if len(units) != 1 {
 		t.Fatalf("expected 1 NAL unit, got %d", len(units))
 	}
 	if units[0].Type != 5 {
-		t.Errorf("expected type 5 from header 0xE5, got %d", units[0].Type)
+		t.Errorf("expected type 5 from header 0x45, got %d", units[0].Type)
 	}
-	if units[0].Data[0] != 0xE5 {
+	if units[0].Data[0] != 0x45 {
 		t.Errorf("expected Data to retain the original header byte, got 0x%02X", units[0].Data[0])
 	}
 }

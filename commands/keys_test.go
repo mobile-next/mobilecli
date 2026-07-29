@@ -60,6 +60,11 @@ func TestKeysCommandRejectsEmptyKeyList(t *testing.T) {
 	if response.Status != "error" {
 		t.Fatalf("expected an error response, got %q", response.Status)
 	}
+	// asserting the message keeps this pinned to the empty-list branch; a plain
+	// status check would also pass if device lookup happened to fail
+	if response.Error != "at least one key combo is required" {
+		t.Fatalf("expected the empty-key-list validation error, got %q", response.Error)
+	}
 }
 
 func TestKeysCommandRejectsAnInvalidComboBeforeTouchingADevice(t *testing.T) {

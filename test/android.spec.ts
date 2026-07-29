@@ -331,15 +331,22 @@ function mobilecli(args: string[]): any {
 }
 
 function mobilecliJson(args: string[]): any {
-	const result = execFileSync(mobilecliBinary, args, {
-		encoding: 'utf8',
-		timeout: 60000,
-		stdio: ['pipe', 'pipe', 'pipe'],
-		env: coverageEnv(),
-	});
-	const parsed = JSON.parse(result);
-	expectOkEnvelope(parsed);
-	return parsed;
+	try {
+		const result = execFileSync(mobilecliBinary, args, {
+			encoding: 'utf8',
+			timeout: 60000,
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: coverageEnv(),
+		});
+		const parsed = JSON.parse(result);
+		expectOkEnvelope(parsed);
+		return parsed;
+	} catch (error: any) {
+		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
+		if (error.stderr) console.log(`stderr: ${error.stderr}`);
+		if (error.stdout) console.log(`stdout: ${error.stdout}`);
+		throw error;
+	}
 }
 
 // screenrecord streams progress to stderr and prints no json envelope, so it
