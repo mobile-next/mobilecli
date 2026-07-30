@@ -307,7 +307,7 @@ jobs:
         path: |
           mobilecli-windows-amd64.exe
 
-  e2e-test:
+  e2e_test:
     runs-on: self-hosted
     timeout-minutes: 10
     needs: [build_on_macos]
@@ -344,7 +344,7 @@ jobs:
     permissions:
       id-token: write  # Required for npm trusted publishing with OIDC
       contents: write
-    needs: [build_on_windows, build_on_linux, build_on_macos, server_test]
+    needs: [build_on_windows, build_on_linux, build_on_macos, e2e_test]
     steps:
     - uses: actions/checkout@v5
       with:
