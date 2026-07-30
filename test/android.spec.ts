@@ -6,6 +6,7 @@ import * as os from 'os';
 import type {UIElement, UIDumpResponse, ForegroundAppResponse} from './types';
 import {coverageEnv} from './coverage';
 import {
+	expectAgentShape,
 	expectAppShape,
 	expectFsListingShape,
 	expectForegroundAppShape,
@@ -24,6 +25,9 @@ const PLAYGROUND_PACKAGE = 'com.mobilenext.playground';
 // taskAffinity=com.android.settings.root. force-stopping settings alone leaves its
 // activity on top of that task, so `am start` resumes a task settings no longer owns
 const SETTINGS_SEARCH_PACKAGE = 'com.google.android.settings.intelligence';
+
+const AGENT_BUNDLE_ID = 'com.mobilenext.devicekit';
+const AGENT_MISSING_MESSAGE = 'Agent is not installed on the device';
 
 // google_apis images use com.google.android.apps.nexuslauncher, aosp images use
 // com.android.launcher3 — match on the shared substring instead of pinning one
@@ -244,6 +248,73 @@ test.describe('Android Tests', () => {
 		});
 	});
 
+	// these run in order and share device state: each step depends on what the
+	// previous one left installed
+	test.describe('agent lifecycle', () => {
+		test.beforeAll(() => {
+			if (!device) return;
+			// the device may arrive with an agent from an earlier run, so start clean.
+			// the response is ignored: "not installed" is a perfectly good outcome here
+			runAgentCommand(device.id, 'uninstall');
+		});
+
+		test('status should report no agent before installation', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'status');
+			expect(response.status).toBe('fail');
+			expect(response.data.message).toBe(AGENT_MISSING_MESSAGE);
+		});
+
+		test('uninstall should report no agent when none is installed', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'uninstall');
+			expect(response.status).toBe('fail');
+			expect(response.data.message).toBe(AGENT_MISSING_MESSAGE);
+		});
+
+		test('install should report a successful installation', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'install');
+			expect(response.status).toBe('ok');
+			expect(response.data.message).toBe('Agent installed successfully');
+			expectAgentShape(response.data.agent);
+			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
+		});
+
+		test('installing again should report the agent is already installed', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'install');
+			expect(response.status).toBe('ok');
+			expect(response.data.message).toBe('Agent is already installed');
+			expectAgentShape(response.data.agent);
+			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
+		});
+
+		test('status should report the installed agent', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'status');
+			expect(response.status).toBe('ok');
+			expectAgentShape(response.data.agent);
+			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
+			// derived from the reported version rather than a literal, so bumping the
+			// pinned agent in cli/agent.go does not require editing this test
+			expect(response.data.message).toBe(`Agent version ${response.data.agent.version} is installed on device`);
+		});
+
+		test('uninstall should succeed once an agent is installed', () => {
+			test.skip(!device, 'No Android device found');
+
+			const response = runAgentCommand(device!.id, 'uninstall');
+			expect(response.status).toBe('ok');
+			expect(response.data.message).toBe('Agent uninstalled successfully');
+		});
+	});
+
 	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
 		// reading an app sandbox needs a debuggable build installed, which is
 		// guaranteed on an emulator image but not on someone's phone
@@ -378,6 +449,26 @@ function terminateApp(deviceId: string, packageName: string): void {
 
 // force-stops every package that can hold an activity in the settings task, so the
 // next launch starts from a clean root instead of resuming whatever was left open
+// agent subcommands report a missing agent with status "fail" and still exit 0, so
+// they cannot go through mobilecli(), which asserts an ok envelope
+function runAgentCommand(deviceId: string, subcommand: string): any {
+	const args = ['agent', subcommand, '--device', deviceId];
+	try {
+		const output = execFileSync(mobilecliBinary, args, {
+			encoding: 'utf8',
+			timeout: 180000,
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: coverageEnv(),
+		});
+		return JSON.parse(output);
+	} catch (error: any) {
+		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
+		if (error.stderr) console.log(`stderr: ${error.stderr}`);
+		if (error.stdout) console.log(`stdout: ${error.stdout}`);
+		throw error;
+	}
+}
+
 function clearSettingsTask(deviceId: string): void {
 	terminateApp(deviceId, SETTINGS_PACKAGE);
 	terminateApp(deviceId, SETTINGS_SEARCH_PACKAGE);

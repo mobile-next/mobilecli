@@ -67,6 +67,14 @@ export function expectUIDumpShape(elements: any): void {
 	}
 }
 
+export function expectAgentShape(agent: any): void {
+	expect(agent, 'response is missing the agent descriptor').toBeDefined();
+	expect(typeof agent.version).toBe('string');
+	expect(agent.version.length).toBeGreaterThan(0);
+	expect(typeof agent.bundleId).toBe('string');
+	expect(agent.bundleId.length).toBeGreaterThan(0);
+}
+
 export function expectFsEntryShape(entry: any): void {
 	expect(typeof entry.name, `entry.name: ${JSON.stringify(entry)}`).toBe('string');
 	expect(entry.name.length).toBeGreaterThan(0);
