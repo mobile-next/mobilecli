@@ -12,7 +12,7 @@ type ActiveAppInfo struct {
 	ProcessID int    `json:"pid"`
 }
 
-func (c *WdaClient) GetActiveAppInfo() (*ActiveAppInfo, error) {
+func (c *DeviceKitClient) GetActiveAppInfo() (*ActiveAppInfo, error) {
 	result, err := c.CallRPC("device.apps.foreground", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active app info: %w", err)

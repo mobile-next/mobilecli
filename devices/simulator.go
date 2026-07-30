@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	LOW_WDA_PORT  = 13001
-	HIGH_WDA_PORT = 13200
+	LOW_DEVICEKIT_PORT  = 13001
+	HIGH_DEVICEKIT_PORT = 13200
 )
 
 // AppInfo corresponds to the structure from plutil output
@@ -52,7 +52,7 @@ type Simulator struct {
 // SimulatorDevice wraps a Simulator to implement the AnyDevice interface
 type SimulatorDevice struct {
 	Simulator
-	wdaClient *devicekit.WdaClient
+	deviceKitClient *devicekit.DeviceKitClient
 }
 
 // parseSimulatorVersion parses iOS version from simulator runtime string
@@ -82,7 +82,7 @@ func (s SimulatorDevice) State() string {
 }
 
 func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	return s.wdaClient.TakeScreenshot()
+	return s.deviceKitClient.TakeScreenshot()
 }
 
 // Reboot shuts down and then boots the iOS simulator.
@@ -417,14 +417,14 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("unexpected simulator state: %s", state)
 	}
 
-	if currentPort, err := s.getWdaPort(); err == nil {
+	if currentPort, err := s.getDeviceKitPort(); err == nil {
 		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
 
 		// check if we already have a client pointing to the same port
 		expectedURL := fmt.Sprintf("localhost:%d", currentPort)
-		if s.wdaClient != nil {
+		if s.deviceKitClient != nil {
 			// check if the existing client is already pointing to the same port
-			if _, err := s.wdaClient.GetStatus(); err == nil {
+			if _, err := s.deviceKitClient.GetStatus(); err == nil {
 				return nil // already connected to the right port
 			}
 		}
@@ -432,8 +432,8 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
 
 		// create new client or update with new port
-		s.wdaClient = devicekit.NewWdaClient(expectedURL)
-		if _, err := s.wdaClient.GetStatus(); err == nil {
+		s.deviceKitClient = devicekit.NewDeviceKitClient(expectedURL)
+		if _, err := s.deviceKitClient.GetStatus(); err == nil {
 			// double check succeeded
 			return nil // Already running and accessible
 		}
@@ -458,7 +458,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	// find available port
-	usePort, err := utils.FindAvailablePortInRange(LOW_WDA_PORT, HIGH_WDA_PORT)
+	usePort, err := utils.FindAvailablePortInRange(LOW_DEVICEKIT_PORT, HIGH_DEVICEKIT_PORT)
 	if err != nil {
 		return fmt.Errorf("failed to find available port: %w", err)
 	}
@@ -475,13 +475,13 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	// update WDA client to use the actual port
-	s.wdaClient = devicekit.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
+	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", usePort))
 
 	if config.OnProgress != nil {
 		config.OnProgress("Waiting for agent to start")
 	}
 
-	err = s.wdaClient.WaitForAgent()
+	err = s.deviceKitClient.WaitForAgent()
 	if err != nil {
 		_ = s.TerminateApp(agentBundleID)
 		return err
@@ -491,31 +491,31 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 }
 
 func (s SimulatorDevice) PressButton(key string) error {
-	return s.wdaClient.PressButton(key)
+	return s.deviceKitClient.PressButton(key)
 }
 
 func (s SimulatorDevice) SendKeys(text string) error {
-	return s.wdaClient.SendKeys(text)
+	return s.deviceKitClient.SendKeys(text)
 }
 
 func (s SimulatorDevice) PressKeys(combos []KeyCombo) error {
-	return s.wdaClient.PressKeys(toWdaKeyCombos(combos))
+	return s.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
 }
 
 func (s SimulatorDevice) Tap(x, y int) error {
-	return s.wdaClient.Tap(x, y)
+	return s.deviceKitClient.Tap(x, y)
 }
 
 func (s SimulatorDevice) LongPress(x, y, duration int) error {
-	return s.wdaClient.LongPress(x, y, duration)
+	return s.deviceKitClient.LongPress(x, y, duration)
 }
 
 func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
-	return s.wdaClient.Swipe(x1, y1, x2, y2)
+	return s.deviceKitClient.Swipe(x1, y1, x2, y2)
 }
 
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
-	return s.wdaClient.Gesture(actions)
+	return s.deviceKitClient.Gesture(actions)
 }
 
 func (s *SimulatorDevice) OpenURL(url string) error {
@@ -549,7 +549,7 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	// get active app info from WDA
-	activeApp, err := s.wdaClient.GetActiveAppInfo()
+	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active app info: %w", err)
 	}
@@ -580,7 +580,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := s.wdaClient.GetWindowSize()
+	wdaSize, err := s.deviceKitClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -604,7 +604,7 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
-	mjpegPort, err := s.getWdaMjpegPort()
+	mjpegPort, err := s.getDeviceKitMjpegPort()
 	if err != nil {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
 	}
@@ -614,7 +614,7 @@ func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	mjpegURL := buildMjpegURL(mjpegPort, config.FPS, config.Scale)
-	mjpegClient := mjpeg.NewWdaMjpegClient(mjpegURL)
+	mjpegClient := mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	return mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
@@ -715,7 +715,7 @@ func listAllProcesses() ([]ProcessInfo, error) {
 	return processes, nil
 }
 
-func findWdaProcessForDevice(deviceUDID string) (int, string, error) {
+func findDeviceKitProcessForDevice(deviceUDID string) (int, string, error) {
 	processes, err := listAllProcesses()
 	if err != nil {
 		return 0, "", err
@@ -762,8 +762,8 @@ func extractEnvValue(output, envVar string) (string, error) {
 	return output[valueStart:valueEnd], nil
 }
 
-func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
-	pid, processInfo, err := findWdaProcessForDevice(s.UDID)
+func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
+	pid, processInfo, err := findDeviceKitProcessForDevice(s.UDID)
 	if err != nil {
 		utils.Verbose("Could not find WDA process: %v", err)
 		return 0, err
@@ -787,20 +787,20 @@ func (s *SimulatorDevice) getWdaEnvPort(envVar string) (int, error) {
 }
 
 func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
-	return s.wdaClient.GetSourceElements()
+	return s.deviceKitClient.GetSourceElements()
 }
 
 func (s SimulatorDevice) DumpSourceRaw() (any, error) {
-	return s.wdaClient.GetSourceRaw()
+	return s.deviceKitClient.GetSourceRaw()
 }
 
-func (s *SimulatorDevice) getWdaPort() (int, error) {
-	return s.getWdaEnvPort("DEVICEKIT_LISTEN_PORT")
+func (s *SimulatorDevice) getDeviceKitPort() (int, error) {
+	return s.getDeviceKitEnvPort("DEVICEKIT_LISTEN_PORT")
 }
 
-func (s *SimulatorDevice) getWdaMjpegPort() (int, error) {
+func (s *SimulatorDevice) getDeviceKitMjpegPort() (int, error) {
 	// mjpeg is served on the same port as the main agent at /mjpeg
-	return s.getWdaPort()
+	return s.getDeviceKitPort()
 }
 
 func (s SimulatorDevice) InstallApp(path string) error {
@@ -863,12 +863,12 @@ func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, er
 
 // GetOrientation gets the current device orientation
 func (s SimulatorDevice) GetOrientation() (string, error) {
-	return s.wdaClient.GetOrientation()
+	return s.deviceKitClient.GetOrientation()
 }
 
 // SetOrientation sets the device orientation
 func (s SimulatorDevice) SetOrientation(orientation string) error {
-	return s.wdaClient.SetOrientation(orientation)
+	return s.deviceKitClient.SetOrientation(orientation)
 }
 
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")

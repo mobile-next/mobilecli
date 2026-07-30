@@ -1,6 +1,6 @@
 package devicekit
 
-func (c *WdaClient) LongPress(x, y, duration int) error {
+func (c *DeviceKitClient) LongPress(x, y, duration int) error {
 	params := map[string]float64{
 		"x":        float64(x),
 		"y":        float64(y),

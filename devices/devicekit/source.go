@@ -94,7 +94,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	return []types.ScreenElement{element}
 }
 
-func (c *WdaClient) GetSourceRaw() (any, error) {
+func (c *DeviceKitClient) GetSourceRaw() (any, error) {
 	startTime := time.Now()
 
 	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "raw"})
@@ -113,7 +113,7 @@ func (c *WdaClient) GetSourceRaw() (any, error) {
 	return value, nil
 }
 
-func (c *WdaClient) GetSourceElements() ([]types.ScreenElement, error) {
+func (c *DeviceKitClient) GetSourceElements() ([]types.ScreenElement, error) {
 	startTime := time.Now()
 
 	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "json"})

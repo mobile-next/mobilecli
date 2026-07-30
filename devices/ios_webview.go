@@ -173,7 +173,7 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
-	if s.wdaClient == nil {
+	if s.deviceKitClient == nil {
 		if err := s.StartAgent(StartAgentConfig{}); err != nil {
 			return 0, fmt.Errorf("webview commands require DeviceKit to be running — %w", err)
 		}

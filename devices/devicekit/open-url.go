@@ -1,6 +1,6 @@
 package devicekit
 
-func (c *WdaClient) OpenURL(url string) error {
+func (c *DeviceKitClient) OpenURL(url string) error {
 	params := map[string]string{
 		"url": url,
 	}

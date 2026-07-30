@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func (c *WdaClient) TakeScreenshot() ([]byte, error) {
+func (c *DeviceKitClient) TakeScreenshot() ([]byte, error) {
 	params := map[string]string{
 		"format": "png",
 	}

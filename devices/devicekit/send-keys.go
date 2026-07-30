@@ -1,6 +1,6 @@
 package devicekit
 
-func (c *WdaClient) SendKeys(text string) error {
+func (c *DeviceKitClient) SendKeys(text string) error {
 	params := map[string]string{
 		"text": text,
 	}

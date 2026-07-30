@@ -6,19 +6,19 @@ import (
 	"time"
 )
 
-type WdaClient struct {
+type DeviceKitClient struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
-func NewWdaClient(hostPort string) *WdaClient {
+func NewDeviceKitClient(hostPort string) *DeviceKitClient {
 	baseURL := hostPort
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		baseURL = "http://" + baseURL
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	return &WdaClient{
+	return &DeviceKitClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
