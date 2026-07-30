@@ -1340,6 +1340,8 @@ type uiAutomatorXmlNode struct {
 	ResourceID  string               `xml:"resource-id,attr"`
 	Clickable   string               `xml:"clickable,attr"`
 	Checkable   string               `xml:"checkable,attr"`
+	Checked     string               `xml:"checked,attr"`
+	Enabled     string               `xml:"enabled,attr"`
 	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
@@ -1362,6 +1364,8 @@ type deviceKitNode struct {
 	ContentDesc string          `json:"content-desc"`
 	ResourceID  string          `json:"resource-id"`
 	Focused     bool            `json:"focused"`
+	Enabled     bool            `json:"enabled"`
+	Checked     bool            `json:"checked"`
 	Visible     bool            `json:"visible"`
 	Rect        deviceKitRect   `json:"rect"`
 	Children    []deviceKitNode `json:"children"`
@@ -1443,6 +1447,19 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		element.Focused = &focused
 	}
 
+	// set enabled if false; uiautomator omits the attribute for some nodes,
+	// so treat "false" explicitly rather than "not true"
+	if node.Enabled == "false" {
+		enabled := false
+		element.Enabled = &enabled
+	}
+
+	// set checked if true
+	if node.Checked == attrTrue {
+		checked := true
+		element.Checked = &checked
+	}
+
 	// set identifier from resource-id
 	if node.ResourceID != "" {
 		element.Identifier = &node.ResourceID
@@ -1494,6 +1511,14 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 		if node.Focused {
 			focused := true
 			element.Focused = &focused
+		}
+		if !node.Enabled {
+			enabled := false
+			element.Enabled = &enabled
+		}
+		if node.Checked {
+			checked := true
+			element.Checked = &checked
 		}
 		if node.ResourceID != "" {
 			element.Identifier = &node.ResourceID
