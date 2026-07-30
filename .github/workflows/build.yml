@@ -307,7 +307,7 @@ jobs:
         path: |
           mobilecli-windows-amd64.exe
 
-  test:
+  e2e-test:
     runs-on: self-hosted
     timeout-minutes: 10
     needs: [build_on_macos]
