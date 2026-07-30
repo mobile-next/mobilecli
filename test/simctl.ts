@@ -1,20 +1,5 @@
 import {execSync} from 'child_process';
 
-export function findSimulatorByName(name: string): string {
-	const output = execSync('xcrun simctl list devices --json', {encoding: 'utf8'});
-	const data = JSON.parse(output);
-
-	for (const runtime of Object.values(data.devices) as any[]) {
-		for (const device of runtime as any[]) {
-			if (device.name === name) {
-				return device.udid;
-			}
-		}
-	}
-
-	throw new Error(`Simulator "${name}" not found. Please create and boot it before running tests.`);
-}
-
 export function printAllLogsFromSimulator(simulatorId: string): void {
 	try {
 		execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m >/tmp/${simulatorId}.txt`, {

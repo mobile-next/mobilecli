@@ -3,6 +3,7 @@ export interface UIElement {
 	label?: string;
 	name?: string;
 	value?: string;
+	text?: string;
 	identifier?: string;
 	rect: {
 		x: number;
@@ -10,6 +11,8 @@ export interface UIElement {
 		width: number;
 		height: number;
 	},
+	// both platforms return a nested tree
+	children?: UIElement[];
 }
 
 export interface UIDumpResponse {
