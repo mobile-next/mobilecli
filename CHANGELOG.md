@@ -1,3 +1,8 @@
+## [0.3.89](https://github.com/mobile-next/mobilecli/releases/tag/0.3.89) (2026-07-30)
+* Feat: Add windows arm64 build ([#314](https://github.com/mobile-next/mobilecli/pull/314), closes [#305](https://github.com/mobile-next/mobilecli/issues/305))
+* Feat: Report enabled and checked state in android ui dump ([#317](https://github.com/mobile-next/mobilecli/pull/317), see [mobilewright#252](https://github.com/mobile-next/mobilewright/pull/252))
+* Docs: How to run e2e tests ([#316](https://github.com/mobile-next/mobilecli/pull/316))
+
 ## [0.3.88](https://github.com/mobile-next/mobilecli/releases/tag/0.3.88) (2026-07-29)
 * Fix: Remote mobilenext.ai device allocation response change ([#309](https://github.com/mobile-next/mobilecli/pull/309))
 * Fix: Thread locales through device.apps.launch JSON-RPC handler ([#303](https://github.com/mobile-next/mobilecli/pull/303))
