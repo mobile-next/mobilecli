@@ -187,7 +187,11 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i '' 's/Version = \"dev\"/Version = \"${{ github.ref_name }}\"/' server/server.go
+        if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
+          exit 1
+        fi
+        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
 
     - name: Build
       run: |
@@ -242,7 +246,11 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i 's/Version = \"dev\"/Version = \"${{ github.ref_name }}\"/' server/server.go
+        if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
+          exit 1
+        fi
+        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
 
     - name: Build
       run: |
@@ -292,7 +300,11 @@ jobs:
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
-        sed -i 's/Version = \"dev\"/Version = \"${{ github.ref_name }}\"/' server/server.go
+        if ($env:GITHUB_REF_NAME -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+          Write-Error "Invalid release tag format: $env:GITHUB_REF_NAME"
+          exit 1
+        }
+        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') server/server.go
 
     - name: Build
       run: |
@@ -375,36 +387,41 @@ jobs:
 
     - name: Zip builds
       run: |
+        if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
+          exit 1
+        fi
+
         mkdir dist
         cd dist
         # macos-arm64
         cp ../mobilecli-darwin/mobilecli-darwin-arm64 mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-macos-arm64.zip mobilecli
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-macos-arm64.zip" mobilecli
         rm -f mobilecli
 
         # macos-amd64
         cp ../mobilecli-darwin/mobilecli-darwin-amd64 mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-macos-amd64.zip mobilecli
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-macos-amd64.zip" mobilecli
         rm -f mobilecli
 
         # linux-amd64
         cp ../mobilecli-linux/mobilecli-linux-amd64 mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-linux-amd64.zip mobilecli
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-linux-amd64.zip" mobilecli
         rm -f mobilecli
 
         # linux-arm64
         cp ../mobilecli-linux/mobilecli-linux-arm64 mobilecli
-        zip -9 ../mobilecli-${{ github.ref_name }}-linux-arm64.zip mobilecli
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-linux-arm64.zip" mobilecli
         rm -f mobilecli
 
         # windows-amd64
         cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
-        zip -9 ../mobilecli-${{ github.ref_name }}-windows-amd64.zip mobilecli.exe
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-windows-amd64.zip" mobilecli.exe
         rm -f mobilecli.exe
 
         # windows-arm64
         cp ../mobilecli-windows/mobilecli-windows-arm64.exe mobilecli.exe
-        zip -9 ../mobilecli-${{ github.ref_name }}-windows-arm64.zip mobilecli.exe
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-windows-arm64.zip" mobilecli.exe
         rm -f mobilecli.exe
         cd ..
 
@@ -434,6 +451,6 @@ jobs:
         cp README.md publish/npm
         # publish to npm
         cd publish/npm
-        npm version "${{ github.ref_name }}" --no-git-tag-version
+        npm version "$GITHUB_REF_NAME" --no-git-tag-version
         npm install --ignore-scripts
         npm publish --access public --provenance
