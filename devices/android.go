@@ -1342,6 +1342,7 @@ type uiAutomatorXmlNode struct {
 	Checkable   string               `xml:"checkable,attr"`
 	Checked     string               `xml:"checked,attr"`
 	Enabled     string               `xml:"enabled,attr"`
+	Selected    string               `xml:"selected,attr"`
 	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
@@ -1366,6 +1367,7 @@ type deviceKitNode struct {
 	Focused     bool            `json:"focused"`
 	Enabled     bool            `json:"enabled"`
 	Checked     bool            `json:"checked"`
+	Selected    bool            `json:"selected"`
 	Visible     bool            `json:"visible"`
 	Rect        deviceKitRect   `json:"rect"`
 	Children    []deviceKitNode `json:"children"`
@@ -1460,6 +1462,12 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		element.Checked = &checked
 	}
 
+	// set selected if true (single-select controls: tabs, chips, radio-style pickers)
+	if node.Selected == attrTrue {
+		selected := true
+		element.Selected = &selected
+	}
+
 	// set identifier from resource-id
 	if node.ResourceID != "" {
 		element.Identifier = &node.ResourceID
@@ -1519,6 +1527,10 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 		if node.Checked {
 			checked := true
 			element.Checked = &checked
+		}
+		if node.Selected {
+			selected := true
+			element.Selected = &selected
 		}
 		if node.ResourceID != "" {
 			element.Identifier = &node.ResourceID
