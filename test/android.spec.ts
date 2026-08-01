@@ -137,6 +137,7 @@ test.describe('Android Tests', () => {
 	test('should launch Settings app and verify it is in foreground', async () => {
 		test.skip(!device, 'No Android device found');
 
+		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(3000);
 
@@ -157,7 +158,7 @@ test.describe('Android Tests', () => {
 		launchApp(device!.id, SETTINGS_PACKAGE);
 		await sleep(3000);
 
-		terminateApp(device!.id, SETTINGS_PACKAGE);
+		clearSettingsTask(device!.id);
 		await sleep(3000);
 
 		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
