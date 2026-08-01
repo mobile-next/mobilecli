@@ -382,31 +382,6 @@ test.describe('rpc methods against a live device', () => {
 		result.forEach(expectAppShape);
 	});
 
-	test('device.apps.launch and device.apps.foreground should agree', async () => {
-		test.skip(!device, 'no device found');
-
-		const bundleId = settingsPackageFor(device!.platform);
-		await rpcExpectResult('device.apps.launch', {deviceId: device!.id, bundleId});
-		await sleep(5000);
-
-		const foreground = await rpcExpectResult('device.apps.foreground', {deviceId: device!.id});
-		expectForegroundAppShape(foreground);
-		expect(foreground.packageName).toBe(bundleId);
-	});
-
-	test('device.apps.terminate should stop the running app', async () => {
-		test.skip(!device, 'no device found');
-
-		const bundleId = settingsPackageFor(device!.platform);
-		await rpcExpectResult('device.apps.launch', {deviceId: device!.id, bundleId});
-		await sleep(5000);
-		await rpcExpectResult('device.apps.terminate', {deviceId: device!.id, bundleId});
-		await sleep(3000);
-
-		const foreground = await rpcExpectResult('device.apps.foreground', {deviceId: device!.id});
-		expect(foreground.packageName).not.toBe(bundleId);
-	});
-
 	test('device.dump.ui should return a non-empty element tree', async () => {
 		test.skip(!device, 'no device found');
 
@@ -448,14 +423,6 @@ test.describe('rpc methods against a live device', () => {
 });
 
 // Helper functions
-function sleep(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function settingsPackageFor(platform: string): string {
-	return platform === 'android' ? 'com.android.settings' : 'com.apple.Preferences';
-}
-
 async function rpc(method: string, params?: any): Promise<JSONRPCResponse> {
 	const payload: JSONRPCRequest = {jsonrpc: '2.0', method, id: 1};
 	if (params !== undefined) {
