@@ -15,7 +15,7 @@ type WindowSize struct {
 	ScreenSize Size `json:"screenSize"`
 }
 
-func (c *WdaClient) GetWindowSize() (*WindowSize, error) {
+func (c *DeviceKitClient) GetWindowSize() (*WindowSize, error) {
 	result, err := c.CallRPC("device.info", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device info: %w", err)

@@ -1,11 +1,11 @@
 package mjpeg
 
-type WdaMjpegClient struct {
+type DeviceKitMjpegClient struct {
 	baseURL string
 }
 
-func NewWdaMjpegClient(baseURL string) *WdaMjpegClient {
-	return &WdaMjpegClient{
+func NewDeviceKitMjpegClient(baseURL string) *DeviceKitMjpegClient {
+	return &DeviceKitMjpegClient{
 		baseURL: baseURL,
 	}
 }

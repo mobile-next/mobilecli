@@ -15,7 +15,7 @@ const perKeyTimeout = 2 * time.Second
 // maxPressKeysTimeout keeps the request below the http client's own timeout
 const maxPressKeysTimeout = 55 * time.Second
 
-func (c *WdaClient) PressKeys(combos []KeyCombo) error {
+func (c *DeviceKitClient) PressKeys(combos []KeyCombo) error {
 	params := map[string]any{
 		"keys": combos,
 	}

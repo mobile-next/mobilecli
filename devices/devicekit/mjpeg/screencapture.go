@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (c *WdaMjpegClient) StartScreenCapture(format string, callback func([]byte) bool) error {
+func (c *DeviceKitMjpegClient) StartScreenCapture(format string, callback func([]byte) bool) error {
 
 	client := &http.Client{
 		Timeout: 0, // no timeout for long-lived streaming requests

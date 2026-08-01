@@ -36,11 +36,11 @@ type jsonRPCError struct {
 
 const defaultRPCTimeout = 10 * time.Second
 
-func (c *WdaClient) CallRPC(method string, params any) (json.RawMessage, error) {
+func (c *DeviceKitClient) CallRPC(method string, params any) (json.RawMessage, error) {
 	return c.CallRPCWithTimeout(method, params, defaultRPCTimeout)
 }
 
-func (c *WdaClient) CallRPCWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
+func (c *DeviceKitClient) CallRPCWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	rpcReq := jsonRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -87,11 +87,11 @@ func (c *WdaClient) CallRPCWithTimeout(method string, params any, timeout time.D
 	return rpcResp.Result, nil
 }
 
-func (c *WdaClient) WaitForAgent() error {
+func (c *DeviceKitClient) WaitForAgent() error {
 	return c.WaitForAgentWithDiagnostics(nil)
 }
 
-func (c *WdaClient) WaitForAgentWithDiagnostics(readDiagnostic AgentStartupDiagnostic) error {
+func (c *DeviceKitClient) WaitForAgentWithDiagnostics(readDiagnostic AgentStartupDiagnostic) error {
 	// Set timeout for the entire operation
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

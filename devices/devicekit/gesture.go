@@ -78,7 +78,7 @@ func convertActions(actions []TapAction) []gestureAction {
 	return result
 }
 
-func (c *WdaClient) Gesture(actions []TapAction) error {
+func (c *DeviceKitClient) Gesture(actions []TapAction) error {
 	params := map[string]any{
 		"actions": convertActions(actions),
 	}
@@ -87,7 +87,7 @@ func (c *WdaClient) Gesture(actions []TapAction) error {
 	return err
 }
 
-func (c *WdaClient) GestureFromJSON(jsonData []byte) error {
+func (c *DeviceKitClient) GestureFromJSON(jsonData []byte) error {
 	var actions []TapAction
 	if err := json.Unmarshal(jsonData, &actions); err != nil {
 		return fmt.Errorf("failed to parse gesture actions: %v", err)

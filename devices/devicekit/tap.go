@@ -1,6 +1,6 @@
 package devicekit
 
-func (c *WdaClient) Tap(x, y int) error {
+func (c *DeviceKitClient) Tap(x, y int) error {
 	params := map[string]float64{
 		"x": float64(x),
 		"y": float64(y),

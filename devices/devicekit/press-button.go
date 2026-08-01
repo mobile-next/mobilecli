@@ -2,7 +2,7 @@ package devicekit
 
 import "fmt"
 
-func (c *WdaClient) PressButton(key string) error {
+func (c *DeviceKitClient) PressButton(key string) error {
 	buttonMap := map[string]string{
 		"VOLUME_UP":   "volumeUp",
 		"VOLUME_DOWN": "volumeDown",

@@ -244,8 +244,8 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		simulatorsCount = len(filteredSims)
 		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
-				Simulator: sim,
-				wdaClient: nil,
+				Simulator:       sim,
+				deviceKitClient: nil,
 			})
 		}
 	}

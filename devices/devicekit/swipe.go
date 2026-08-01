@@ -1,6 +1,6 @@
 package devicekit
 
-func (c *WdaClient) Swipe(x1, y1, x2, y2 int) error {
+func (c *DeviceKitClient) Swipe(x1, y1, x2, y2 int) error {
 	params := map[string]int{
 		"x1": x1,
 		"y1": y1,

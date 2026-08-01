@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func (c *WdaClient) GetOrientation() (string, error) {
+func (c *DeviceKitClient) GetOrientation() (string, error) {
 	result, err := c.CallRPC("device.io.orientation.get", nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to get orientation: %w", err)
@@ -28,7 +28,7 @@ func (c *WdaClient) GetOrientation() (string, error) {
 	}
 }
 
-func (c *WdaClient) SetOrientation(orientation string) error {
+func (c *DeviceKitClient) SetOrientation(orientation string) error {
 	if orientation != "portrait" && orientation != "landscape" {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}

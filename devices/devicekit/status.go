@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c *WdaClient) GetStatus() (map[string]any, error) {
+func (c *DeviceKitClient) GetStatus() (map[string]any, error) {
 	url := fmt.Sprintf("%s/health", c.baseURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

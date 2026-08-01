@@ -156,7 +156,7 @@ func (d *IOSDevice) injectFreshAgent() (int, error) {
 	}
 
 	utils.Verbose("getting foreground app via WDA")
-	activeApp, err := d.wdaClient.GetActiveAppInfo()
+	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
 	if err != nil {
 		return 0, fmt.Errorf("get foreground app: %w", err)
 	}
