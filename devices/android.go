@@ -22,6 +22,8 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+const androidDiscoveryGetpropTimeout = 5 * time.Second
+
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
 	id          string
@@ -470,22 +472,37 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 			status := parts[1]
 			if status == "device" {
 				deviceID := transportID
+				avdName := ""
 
 				// for emulators, use AVD name as the consistent ID
 				if strings.HasPrefix(transportID, "emulator-") {
-					avdName := getAVDName(transportID)
+					var err error
+					avdName, err = getAVDName(transportID)
+					if err != nil {
+						continue
+					}
 					if avdName != "" {
 						deviceID = avdName
 					}
 				}
 
+				model, err := getAndroidDeviceModel(transportID)
+				if err != nil {
+					continue
+				}
+
+				version, err := getAndroidDeviceVersion(transportID)
+				if err != nil {
+					continue
+				}
+
 				devices = append(devices, &AndroidDevice{
 					id:          deviceID,
 					transportID: transportID,
-					name:        getAndroidDeviceName(transportID),
-					version:     getAndroidDeviceVersion(transportID),
+					name:        getAndroidDeviceName(transportID, avdName, model),
+					version:     version,
 					state:       "online",
-					model:       getAndroidDeviceModel(transportID),
+					model:       model,
 				})
 			}
 		}
@@ -494,24 +511,33 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 	return devices
 }
 
-// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
-func getAVDName(transportID string) string {
-	avdCmd := exec.Command(getAdbPath(), "-s", transportID, "shell", "getprop", "ro.boot.qemu.avd_name")
-	avdOutput, err := avdCmd.CombinedOutput()
-	if err == nil && len(avdOutput) > 0 {
-		avdName := strings.TrimSpace(string(avdOutput))
-		return avdName
+func getAndroidProperty(deviceID, property string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), androidDiscoveryGetpropTimeout)
+	defer cancel()
+
+	propertyCmd := exec.CommandContext(ctx, getAdbPath(), "-s", deviceID, "shell", "getprop", property)
+	propertyOutput, err := propertyCmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("getprop timed out after 5 seconds for Android device %s while reading %s; you probably want to run 'adb kill-server'", deviceID, property)
+		} else {
+			utils.Verbose("getprop failed for Android device %s while reading %s: %v; you probably want to run 'adb kill-server'", deviceID, property, err)
+		}
+		return "", err
 	}
-	return ""
+
+	return strings.TrimSpace(string(propertyOutput)), nil
 }
 
-func getAndroidDeviceName(deviceID string) string {
+// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
+func getAVDName(transportID string) (string, error) {
+	return getAndroidProperty(transportID, "ro.boot.qemu.avd_name")
+}
+
+func getAndroidDeviceName(deviceID, avdName, model string) string {
 	// for emulators, prioritize AVD name
-	if strings.HasPrefix(deviceID, "emulator-") {
-		avdName := getAVDName(deviceID)
-		if avdName != "" {
-			return strings.ReplaceAll(avdName, "_", " ")
-		}
+	if strings.HasPrefix(deviceID, "emulator-") && avdName != "" {
+		return strings.ReplaceAll(avdName, "_", " ")
 	}
 
 	// for real devices, try getting device name from settings
@@ -525,34 +551,20 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// fall back to product model
-	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
-	modelOutput, err := modelCmd.CombinedOutput()
-	if err == nil && len(modelOutput) > 0 {
-		return strings.TrimSpace(string(modelOutput))
+	// fall back to the previously queried product model
+	if model != "" {
+		return model
 	}
 
 	return deviceID
 }
 
-func getAndroidDeviceModel(deviceID string) string {
-	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
-	modelOutput, err := modelCmd.CombinedOutput()
-	if err == nil && len(modelOutput) > 0 {
-		return strings.TrimSpace(string(modelOutput))
-	}
-
-	return ""
+func getAndroidDeviceModel(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.product.model")
 }
 
-func getAndroidDeviceVersion(deviceID string) string {
-	versionCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.build.version.release")
-	versionOutput, err := versionCmd.CombinedOutput()
-	if err == nil && len(versionOutput) > 0 {
-		return strings.TrimSpace(string(versionOutput))
-	}
-
-	return ""
+func getAndroidDeviceVersion(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.build.version.release")
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
@@ -1342,6 +1354,7 @@ type uiAutomatorXmlNode struct {
 	Checkable   string               `xml:"checkable,attr"`
 	Checked     string               `xml:"checked,attr"`
 	Enabled     string               `xml:"enabled,attr"`
+	Selected    string               `xml:"selected,attr"`
 	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
@@ -1366,6 +1379,7 @@ type deviceKitNode struct {
 	Focused     bool            `json:"focused"`
 	Enabled     bool            `json:"enabled"`
 	Checked     bool            `json:"checked"`
+	Selected    bool            `json:"selected"`
 	Visible     bool            `json:"visible"`
 	Rect        deviceKitRect   `json:"rect"`
 	Children    []deviceKitNode `json:"children"`
@@ -1460,6 +1474,12 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		element.Checked = &checked
 	}
 
+	// set selected if true (single-select controls: tabs, chips, radio-style pickers)
+	if node.Selected == attrTrue {
+		selected := true
+		element.Selected = &selected
+	}
+
 	// set identifier from resource-id
 	if node.ResourceID != "" {
 		element.Identifier = &node.ResourceID
@@ -1519,6 +1539,10 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 		if node.Checked {
 			checked := true
 			element.Checked = &checked
+		}
+		if node.Selected {
+			selected := true
+			element.Selected = &selected
 		}
 		if node.ResourceID != "" {
 			element.Identifier = &node.ResourceID

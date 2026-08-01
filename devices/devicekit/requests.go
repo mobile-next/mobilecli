@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+type AgentStartupDiagnostic func() (string, error)
 
 type jsonRPCRequest struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -85,6 +88,10 @@ func (c *DeviceKitClient) CallRPCWithTimeout(method string, params any, timeout 
 }
 
 func (c *DeviceKitClient) WaitForAgent() error {
+	return c.WaitForAgentWithDiagnostics(nil)
+}
+
+func (c *DeviceKitClient) WaitForAgentWithDiagnostics(readDiagnostic AgentStartupDiagnostic) error {
 	// Set timeout for the entire operation
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -95,12 +102,19 @@ func (c *DeviceKitClient) WaitForAgent() error {
 	for {
 		select {
 		case <-ctx.Done():
+			if diagnostic := readAgentStartupDiagnostic(readDiagnostic); diagnostic != "" {
+				return fmt.Errorf("timed out waiting for WebDriverAgent to be ready; agent stderr:\n%s", diagnostic)
+			}
 			return fmt.Errorf("timed out waiting for WebDriverAgent to be ready")
 
 		case <-ticker.C:
 			_, err := c.GetStatus()
 			if err != nil {
 				utils.Verbose("WebDriverAgent not ready yet: %v", err)
+				diagnostic := readAgentStartupDiagnostic(readDiagnostic)
+				if isFatalAgentStartupDiagnostic(diagnostic) {
+					return fmt.Errorf("WebDriverAgent failed to start:\n%s", diagnostic)
+				}
 				continue
 			}
 
@@ -108,4 +122,24 @@ func (c *DeviceKitClient) WaitForAgent() error {
 			return nil
 		}
 	}
+}
+
+func readAgentStartupDiagnostic(readDiagnostic AgentStartupDiagnostic) string {
+	if readDiagnostic == nil {
+		return ""
+	}
+
+	diagnostic, err := readDiagnostic()
+	if err != nil {
+		utils.Verbose("Failed to read WebDriverAgent startup diagnostics: %v", err)
+		return ""
+	}
+
+	return strings.TrimSpace(diagnostic)
+}
+
+func isFatalAgentStartupDiagnostic(diagnostic string) bool {
+	return strings.Contains(diagnostic, "Library not loaded:") ||
+		strings.Contains(diagnostic, "Termination Reason:") ||
+		strings.Contains(diagnostic, "Fatal error:")
 }

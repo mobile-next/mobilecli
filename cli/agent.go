@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.20"
+	agentVersionIOS     = "0.0.23"
 	agentVersionAndroid = "1.2.4"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
@@ -23,9 +23,9 @@ const (
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "8040f4918892f63d79713b5824184ac5f296c5ec9b23266c25af34777550f28c",
-	"devicekit-ios-Sim-x86_64.zip": "78a8f2d208a22523efbaa5cb2a735557e807f877bb8ec1a1c31c886f2e425684",
-	"devicekit-ios-runner.ipa":     "f5fe88d4169c39001ed012101651c5ac00e8ab54aefb72c74455e7037c2e8205",
+	"devicekit-ios-Sim-arm64.zip":  "db7cc329f8d756be9ad60cf15ae57107ed831c53d35be240708dd2baf8da2d4e",
+	"devicekit-ios-Sim-x86_64.zip": "9de3e48798a6abf600c1bdddefcd3465e2ecccdf373683358b10183e680d6e3a",
+	"devicekit-ios-runner.ipa":     "38e052df988101cba2820c01ba14b6e7193470ca729d4b86a6e44a9a4fbb55fa",
 	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
 }
 
