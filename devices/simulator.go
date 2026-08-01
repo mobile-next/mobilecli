@@ -199,8 +199,16 @@ func filterSimulatorsByDownloadsDirectory(simulators []Simulator) []Simulator {
 }
 
 func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string) error {
+	return s.launchAppWithEnv(bundleID, env, "")
+}
+
+func (s SimulatorDevice) launchAppWithEnv(bundleID string, env map[string]string, stderrPath string) error {
 	// Build simctl command
-	fullArgs := append([]string{"simctl", "launch"}, s.UDID, bundleID)
+	fullArgs := []string{"simctl", "launch"}
+	if stderrPath != "" {
+		fullArgs = append(fullArgs, "--stderr="+stderrPath)
+	}
+	fullArgs = append(fullArgs, s.UDID, bundleID)
 	cmd := exec.Command("xcrun", fullArgs...)
 
 	// Set environment variables with SIMCTL_CHILD_ prefix for this command only
@@ -214,6 +222,13 @@ func (s SimulatorDevice) LaunchAppWithEnv(bundleID string, env map[string]string
 	}
 
 	return nil
+}
+
+func simulatorAgentDiagnosticPaths(homeDir string, udid string, launchID int64) (string, string) {
+	filename := fmt.Sprintf("devicekit-agent-%d.stderr", launchID)
+	simulatorPath := filepath.Join("/private/tmp", filename)
+	hostPath := filepath.Join(homeDir, "Library", "Developer", "CoreSimulator", "Devices", udid, "data", "tmp", filename)
+	return simulatorPath, hostPath
 }
 
 func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
@@ -470,7 +485,19 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		"DEVICEKIT_LISTEN_PORT": strconv.Itoa(usePort),
 	}
 
-	err = s.LaunchAppWithEnv(agentBundleID, env)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to locate simulator startup diagnostics: %w", err)
+	}
+
+	simulatorStderrPath, hostStderrPath := simulatorAgentDiagnosticPaths(homeDir, s.UDID, time.Now().UnixNano())
+	defer func() {
+		if err := os.Remove(hostStderrPath); err != nil && !os.IsNotExist(err) {
+			utils.Verbose("Failed to remove WebDriverAgent startup diagnostics: %v", err)
+		}
+	}()
+
+	err = s.launchAppWithEnv(agentBundleID, env, simulatorStderrPath)
 	if err != nil {
 		return err
 	}
@@ -482,7 +509,16 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		config.OnProgress("Waiting for agent to start")
 	}
 
-	err = s.wdaClient.WaitForAgent()
+	err = s.wdaClient.WaitForAgentWithDiagnostics(func() (string, error) {
+		contents, err := os.ReadFile(hostStderrPath)
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return string(contents), nil
+	})
 	if err != nil {
 		_ = s.TerminateApp(agentBundleID)
 		return err
