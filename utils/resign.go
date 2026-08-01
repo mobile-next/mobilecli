@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha1" // #nosec G505 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,11 +15,12 @@ import (
 )
 
 type provisioningProfile struct {
-	Name               string       `plist:"Name"`
-	TeamIdentifier     []string     `plist:"TeamIdentifier"`
-	ProvisionedDevices []string     `plist:"ProvisionedDevices"`
-	Entitlements       entitlements `plist:"Entitlements"`
-	ExpirationDate     time.Time    `plist:"ExpirationDate"`
+	Name                  string       `plist:"Name"`
+	TeamIdentifier        []string     `plist:"TeamIdentifier"`
+	ProvisionedDevices    []string     `plist:"ProvisionedDevices"`
+	DeveloperCertificates [][]byte     `plist:"DeveloperCertificates"`
+	Entitlements          entitlements `plist:"Entitlements"`
+	ExpirationDate        time.Time    `plist:"ExpirationDate"`
 }
 
 type entitlements struct {
@@ -68,7 +71,7 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	teamID := profile.TeamIdentifier[0]
 	Verbose("Team ID: %s", teamID)
 
-	identity, err := resolveSigningIdentity(identityOverride, teamID)
+	identity, err := resolveSigningIdentity(identityOverride, profile)
 	if err != nil {
 		return "", err
 	}
@@ -168,11 +171,11 @@ func resolveProvisioningProfile(profileOverride, deviceUDID, bundleID string) (s
 	return findMatchingProfile(deviceUDID, bundleID)
 }
 
-func resolveSigningIdentity(identityOverride, teamID string) (string, error) {
+func resolveSigningIdentity(identityOverride string, profile *provisioningProfile) (string, error) {
 	if identityOverride != "" {
 		return identityOverride, nil
 	}
-	return findSigningIdentity(teamID)
+	return findSigningIdentity(profile)
 }
 
 func readBundleID(appPath string) (string, error) {
@@ -326,50 +329,38 @@ c) use --provisioning-profile to specify a profile manually
 note: provisioning profiles require a paid Apple Developer Program membership ($99/year)`, bundleID, deviceUDID)
 }
 
-func findSigningIdentity(teamID string) (string, error) {
-	cmd := exec.Command("security", "find-identity", "-v", "-p", "codesigning")
+func findSigningIdentity(profile *provisioningProfile) (string, error) {
+	cmd := exec.Command("/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list signing identities: %w", err)
 	}
 
-	// pre-fetch all certificates so OU lookups don't shell out per identity
-	certDump := dumpAllCertificates()
+	identity := findProfileSigningIdentity(string(output), profile.DeveloperCertificates)
+	if identity != "" {
+		Verbose("Found signing identity included in provisioning profile: %s", identity)
+		return identity, nil
+	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if !strings.Contains(line, "Apple Development") && !strings.Contains(line, "iPhone Developer") {
-			continue
-		}
+	return "", fmt.Errorf("none of the signing certificates included in provisioning profile %q have a corresponding private key in the keychain", profile.Name)
+}
 
-		startQuote := strings.Index(line, "\"")
-		endQuote := strings.LastIndex(line, "\"")
-		if startQuote == -1 || endQuote == -1 || startQuote == endQuote {
-			continue
-		}
+func findProfileSigningIdentity(identityOutput string, developerCertificates [][]byte) string {
+	profileHashes := make(map[string]struct{}, len(developerCertificates))
+	for _, certificate := range developerCertificates {
+		// #nosec G401 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
+		sum := sha1.Sum(certificate)
+		profileHashes[strings.ToUpper(hex.EncodeToString(sum[:]))] = struct{}{}
+	}
 
-		identity := line[startQuote+1 : endQuote]
-
-		// check display name first (e.g. "Apple Development: Name (TEAMID)").
-		// return the SHA-1 hash to avoid ambiguity when multiple certs share the same name.
-		if strings.Contains(identity, teamID) {
-			hash := extractCertHash(line)
-			if hash != "" {
-				return hash, nil
-			}
-			return identity, nil
-		}
-
-		// the display name may contain a personal ID instead of the team ID,
-		// so also check the certificate's OU field which holds the actual team ID.
-		hash := extractCertHash(line)
-		if hash != "" && certOUMatchesTeam(certDump, hash, teamID) {
-			Verbose("Found signing identity via certificate OU: %s (hash: %s)", identity, hash)
-			return hash, nil
+	for _, line := range strings.Split(identityOutput, "\n") {
+		hash := strings.ToUpper(extractCertHash(line))
+		if _, matchesProfile := profileHashes[hash]; matchesProfile {
+			return hash
 		}
 	}
 
-	return "", fmt.Errorf("no Apple Development signing identity found for team %s. create one in Xcode: Settings → Accounts → select your account → Manage Certificates → + → Apple Development", teamID)
+	return ""
 }
 
 func extractCertHash(identityLine string) string {
@@ -378,33 +369,6 @@ func extractCertHash(identityLine string) string {
 		return parts[1]
 	}
 	return ""
-}
-
-func dumpAllCertificates() string {
-	cmd := exec.Command("security", "find-certificate", "-a", "-Z")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return string(output)
-}
-
-func certOUMatchesTeam(certDump, certHash, teamID string) bool {
-	lines := strings.Split(certDump, "\n")
-	var inTargetCert bool
-
-	for _, line := range lines {
-		if strings.HasPrefix(line, "SHA-1 hash:") {
-			hash := strings.TrimSpace(strings.TrimPrefix(line, "SHA-1 hash:"))
-			inTargetCert = (hash == certHash)
-		}
-		// the "subj" blob contains the certificate subject with OU
-		if inTargetCert && strings.Contains(line, "\"subj\"") && strings.Contains(line, teamID) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
