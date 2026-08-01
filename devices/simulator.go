@@ -231,6 +231,32 @@ func simulatorAgentDiagnosticPaths(homeDir string, udid string, launchID int64) 
 	return simulatorPath, hostPath
 }
 
+func removeSimulatorAgentDiagnostics(homeDir string, udid string, exceptPath string) {
+	diagnosticsDirectory := filepath.Join(homeDir, "Library", "Developer", "CoreSimulator", "Devices", udid, "data", "tmp")
+	entries, err := os.ReadDir(diagnosticsDirectory)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			utils.Verbose("Failed to read WebDriverAgent startup diagnostics: %v", err)
+		}
+		return
+	}
+
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "devicekit-agent-") || !strings.HasSuffix(entry.Name(), ".stderr") {
+			continue
+		}
+
+		diagnosticPath := filepath.Join(diagnosticsDirectory, entry.Name())
+		if diagnosticPath == exceptPath {
+			continue
+		}
+
+		if err := os.Remove(diagnosticPath); err != nil && !os.IsNotExist(err) {
+			utils.Verbose("Failed to remove WebDriverAgent startup diagnostics: %v", err)
+		}
+	}
+}
+
 func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if opts.Activity != "" {
 		return fmt.Errorf("--activity is not supported on iOS")
@@ -245,7 +271,20 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	_, err := runSimctl("terminate", s.UDID, bundleID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			utils.Verbose("Failed to locate WebDriverAgent startup diagnostics: %v", err)
+		} else {
+			removeSimulatorAgentDiagnostics(homeDir, s.UDID, "")
+		}
+	}
+
+	return nil
 }
 
 func InstallApp(udid string, appPath string) error {
@@ -491,16 +530,12 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	simulatorStderrPath, hostStderrPath := simulatorAgentDiagnosticPaths(homeDir, s.UDID, time.Now().UnixNano())
-	defer func() {
-		if err := os.Remove(hostStderrPath); err != nil && !os.IsNotExist(err) {
-			utils.Verbose("Failed to remove WebDriverAgent startup diagnostics: %v", err)
-		}
-	}()
 
 	err = s.launchAppWithEnv(agentBundleID, env, simulatorStderrPath)
 	if err != nil {
 		return err
 	}
+	removeSimulatorAgentDiagnostics(homeDir, s.UDID, hostStderrPath)
 
 	// update WDA client to use the actual port
 	s.wdaClient = devicekit.NewWdaClient(fmt.Sprintf("localhost:%d", usePort))
