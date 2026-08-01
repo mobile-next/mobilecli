@@ -1,6 +1,13 @@
+## [1.0.0](https://github.com/mobile-next/mobilecli/releases/tag/1.0.0) (2026-08-01)
+* Fix(ios): Find the right iOS resigner matching provisioning profile ([#325](https://github.com/mobile-next/mobilecli/pull/325))
+* Feat(android): Report selected state in Android UI dump ([#320](https://github.com/mobile-next/mobilecli/pull/320)), thanks to [@sjy](https://github.com/sjy)
+* Fix(android): Add timeout on getprop in case adbd needs a kill-server ([#322](https://github.com/mobile-next/mobilecli/pull/322))
+* Fix(ios): Correct iOS UI dump positions for elements in nested windows ([#321](https://github.com/mobile-next/mobilecli/pull/321), [devicekit-ios#55](https://github.com/mobile-next/devicekit-ios/pull/55))
+* Fix(ios): Restore Xcode 26.5 testing support and fix simulator agent version checks and upgrades ([#324](https://github.com/mobile-next/mobilecli/pull/324), [devicekit-ios#57](https://github.com/mobile-next/devicekit-ios/pull/57))
+
 ## [0.3.89](https://github.com/mobile-next/mobilecli/releases/tag/0.3.89) (2026-07-30)
 * Feat: Add windows arm64 build ([#314](https://github.com/mobile-next/mobilecli/pull/314), closes [#305](https://github.com/mobile-next/mobilecli/issues/305))
-* Feat: Report enabled and checked state in android ui dump ([#317](https://github.com/mobile-next/mobilecli/pull/317), see [mobilewright#252](https://github.com/mobile-next/mobilewright/pull/252))
+* Feat(android): Report enabled and checked state in android ui dump ([#317](https://github.com/mobile-next/mobilecli/pull/317), see [mobilewright#252](https://github.com/mobile-next/mobilewright/pull/252))
 * Docs: How to run e2e tests ([#316](https://github.com/mobile-next/mobilecli/pull/316))
 
 ## [0.3.88](https://github.com/mobile-next/mobilecli/releases/tag/0.3.88) (2026-07-29)
