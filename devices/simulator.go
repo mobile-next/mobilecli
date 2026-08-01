@@ -29,6 +29,7 @@ type AppInfo struct {
 	CFBundleIdentifier  string `json:"CFBundleIdentifier"`
 	CFBundleDisplayName string `json:"CFBundleDisplayName"`
 	CFBundleVersion     string `json:"CFBundleVersion"`
+	Path                string `json:"Path"`
 }
 
 // devicePlist represents the structure of device.plist
@@ -537,10 +538,20 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 
 	var apps []InstalledAppInfo
 	for _, app := range appsMap {
+		version := app.CFBundleVersion
+		if app.Path != "" {
+			metadata, metadataErr := utils.ParseAppMetadata(app.Path)
+			if metadataErr != nil {
+				utils.Verbose("failed to read app metadata at %s, using build version %s: %v", app.Path, app.CFBundleVersion, metadataErr)
+			} else if metadata.Version != "" {
+				version = metadata.Version
+			}
+		}
+
 		apps = append(apps, InstalledAppInfo{
 			PackageName: app.CFBundleIdentifier,
 			AppName:     app.CFBundleDisplayName,
-			Version:     app.CFBundleVersion,
+			Version:     version,
 		})
 	}
 
