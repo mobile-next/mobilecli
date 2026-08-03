@@ -29,7 +29,7 @@ var (
 	// for remote allocate command
 	fleetType     string
 	fleetVersions []string
-	fleetNames    []string
+	fleetName     string
 	fleetWait     bool
 	fleetTimeout  int
 
