@@ -34,7 +34,7 @@ var remoteAllocateCmd = &cobra.Command{
 	Short: "Allocate a remote device",
 	Long: `Allocates a device from the remote fleet matching the given filters.
 
-Flags --version and --name can be specified multiple times (all are ANDed).
+Flag --version can be specified multiple times (all are ANDed).
 
 Version supports comparison operators:
   --version ">=18"    (greater than or equal)
@@ -54,7 +54,7 @@ Name supports wildcard prefix matching:
 			return err
 		}
 
-		filters, err := buildAllocateFilters(platform, fleetType, fleetVersions, fleetNames)
+		filters, err := buildAllocateFilters(platform, fleetType, fleetVersions, fleetName)
 		if err != nil {
 			return err
 		}
@@ -191,7 +191,7 @@ func init() {
 	_ = remoteAllocateCmd.MarkFlagRequired("platform")
 	remoteAllocateCmd.Flags().StringVar(&fleetType, "type", "", "device type (real)")
 	remoteAllocateCmd.Flags().StringArrayVar(&fleetVersions, "version", nil, "OS version filter (supports >=, >, <=, < prefixes)")
-	remoteAllocateCmd.Flags().StringArrayVar(&fleetNames, "name", nil, "device name filter (supports trailing * for prefix match)")
+	remoteAllocateCmd.Flags().StringVar(&fleetName, "name", "", "device name filter (supports trailing * for prefix match)")
 	remoteAllocateCmd.Flags().BoolVar(&fleetWait, "wait", false, "wait for device to finish allocating before returning")
 	remoteAllocateCmd.Flags().IntVar(&fleetTimeout, "timeout", 900, "seconds to wait for allocation (only used with --wait)")
 
