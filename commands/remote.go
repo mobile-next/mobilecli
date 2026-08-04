@@ -3,6 +3,8 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/rpc"
@@ -16,14 +18,14 @@ type DeviceFilter struct {
 	Value     string `json:"value"`
 }
 
-// fleetAllocateParams is the params object of the fleet.allocate rpc
+// fleetAllocateParams is the request body of POST /api/v1/sessions/{sessionId}/devices
 type fleetAllocateParams struct {
 	Filters []DeviceFilter `json:"filters"`
 }
 
-// fleetReleaseParams is the params object of the fleet.release rpc
-type fleetReleaseParams struct {
-	DeviceID string `json:"deviceId"`
+// createSessionResponse is the response body of POST /api/v1/sessions
+type createSessionResponse struct {
+	ID string `json:"id"`
 }
 
 // devicesListResult is the result object of the devices.list rpc
@@ -62,12 +64,20 @@ func (r FleetAllocateResponse) IsAllocating() bool {
 	return r.State == "allocating"
 }
 
+// FleetAllocateCommand creates a session and allocates a device into it over REST, so the
+// allocation is linked to a sessions row from the start (a WebSocket fleet.allocate call has
+// no sessionId, leaving the allocation invisible to GET /api/v1/sessions).
 func FleetAllocateCommand(req FleetAllocateRequest) *CommandResponse {
+	var session createSessionResponse
+	if err := rpc.RESTCall(req.Token, http.MethodPost, "/api/v1/sessions", nil, &session); err != nil {
+		return NewErrorResponse(fmt.Errorf("create session: %w", err))
+	}
+
 	var result FleetAllocateResponse
 	params := fleetAllocateParams{Filters: req.Filters}
-	err := rpc.Call(req.Token, "fleet.allocate", params, &result)
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("fleet.allocate: %w", err))
+	path := fmt.Sprintf("/api/v1/sessions/%s/devices", session.ID)
+	if err := rpc.RESTCall(req.Token, http.MethodPost, path, params, &result); err != nil {
+		return NewErrorResponse(fmt.Errorf("allocate device: %w", err))
 	}
 	return NewSuccessResponse(result)
 }
@@ -137,9 +147,66 @@ type FleetReleaseRequest struct {
 	Token    string
 }
 
+// sessionDeviceEntry is a device as embedded in a GET /api/v1/sessions session's "devices" list.
+type sessionDeviceEntry struct {
+	Status string `json:"status"`
+	Info   struct {
+		Serial string `json:"serial"`
+	} `json:"info"`
+}
+
+// sessionListEntry is one session as returned by GET /api/v1/sessions.
+type sessionListEntry struct {
+	ID      string               `json:"id"`
+	Devices []sessionDeviceEntry `json:"devices"`
+}
+
+// sessionsPageResponse is the paginated envelope of GET /api/v1/sessions.
+type sessionsPageResponse struct {
+	Data       []sessionListEntry `json:"data"`
+	NextCursor *string            `json:"nextCursor"`
+}
+
+// findOwningSessionID pages through the account's sessions to find the one holding a live
+// (not yet released) allocation of deviceID. The release endpoint is session-scoped, and
+// fleet.release/devices.list never surface a device's owning sessionId, so this is the only
+// way to recover it.
+func findOwningSessionID(token, deviceID string) (string, error) {
+	before := ""
+	for {
+		path := "/api/v1/sessions?limit=500"
+		if before != "" {
+			path += "&before=" + url.QueryEscape(before)
+		}
+
+		var page sessionsPageResponse
+		if err := rpc.RESTCall(token, http.MethodGet, path, nil, &page); err != nil {
+			return "", fmt.Errorf("list sessions: %w", err)
+		}
+
+		for _, session := range page.Data {
+			for _, device := range session.Devices {
+				if device.Info.Serial == deviceID && device.Status != "released" {
+					return session.ID, nil
+				}
+			}
+		}
+
+		if page.NextCursor == nil {
+			return "", fmt.Errorf("device %s is not allocated in any active session", deviceID)
+		}
+		before = *page.NextCursor
+	}
+}
+
 func FleetReleaseCommand(req FleetReleaseRequest) *CommandResponse {
-	err := rpc.Call(req.Token, "fleet.release", fleetReleaseParams{DeviceID: req.DeviceID}, nil)
+	sessionID, err := findOwningSessionID(req.Token, req.DeviceID)
 	if err != nil {
+		return NewErrorResponse(fmt.Errorf("fleet.release: %w", err))
+	}
+
+	path := fmt.Sprintf("/api/v1/sessions/%s/devices/%s/release", url.PathEscape(sessionID), url.PathEscape(req.DeviceID))
+	if err := rpc.RESTCall(req.Token, http.MethodPost, path, nil, nil); err != nil {
 		return NewErrorResponse(fmt.Errorf("fleet.release: %w", err))
 	}
 	return NewSuccessResponse(nil)
