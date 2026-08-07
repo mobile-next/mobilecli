@@ -1557,7 +1557,20 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	return elements
 }
 
+// getDeviceKitNodes returns the UI hierarchy, preferring the persistent
+// DeviceKitServer (fast: no process fork per call) and falling back to the
+// one-shot ViewTreeDump instrumentation when the server isn't available.
 func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
+	if nodes, err := d.getDeviceKitServerNodes(); err == nil {
+		return nodes, nil
+	} else {
+		utils.Verbose("devicekit server dump unavailable, falling back to one-shot instrument: %v", err)
+	}
+
+	return d.getDeviceKitNodesOneShot()
+}
+
+func (d *AndroidDevice) getDeviceKitNodesOneShot() ([]deviceKitNode, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
