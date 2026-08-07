@@ -53,12 +53,22 @@ func (d *AndroidDevice) ensureDeviceKitServerReady() (int, error) {
 	deadline := time.Now().Add(5 * time.Second)
 	for !isAgentReady(port) {
 		if time.Now().After(deadline) {
+			d.removeForward(port)
 			return 0, fmt.Errorf("devicekit server did not start within 5s on port %d", port)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	return port, nil
+}
+
+// removeForward tears down a host TCP forward created by this device, best
+// effort — used to avoid leaking a forward when the server it points at never
+// became ready.
+func (d *AndroidDevice) removeForward(port int) {
+	if _, err := d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", port)); err != nil {
+		utils.Verbose("failed to remove stale forward on port %d: %v", port, err)
+	}
 }
 
 // getDeviceKitServerNodes fetches the UI hierarchy from the persistent
@@ -80,6 +90,9 @@ func (d *AndroidDevice) getDeviceKitServerNodes() ([]deviceKitNode, error) {
 	var hierarchy deviceKitHierarchy
 	if err := json.Unmarshal(raw, &hierarchy); err != nil {
 		return nil, fmt.Errorf("parse devicekit server response: %w", err)
+	}
+	if len(hierarchy.Hierarchy) == 0 {
+		return nil, fmt.Errorf("no hierarchy found in devicekit server dump")
 	}
 
 	utils.Verbose("getDeviceKitServerNodes took %s", time.Since(startTime))
