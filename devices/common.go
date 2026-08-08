@@ -173,6 +173,13 @@ type WebViewable interface {
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
+// KeyboardControllable is implemented by devices that can query and dismiss
+// the on-screen keyboard.
+type KeyboardControllable interface {
+	HideKeyboard() (bool, error)
+	IsKeyboardVisible() (bool, error)
+}
+
 // GetAllControllableDevices aggregates all known devices with options
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 

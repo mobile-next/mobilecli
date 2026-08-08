@@ -198,6 +198,40 @@ var ioSwipeCmd = &cobra.Command{
 	},
 }
 
+var ioKeyboardCmd = &cobra.Command{
+	Use:   "keyboard",
+	Short: "On-screen keyboard operations",
+	Long:  `Query or dismiss the on-screen keyboard on a device.`,
+}
+
+var ioKeyboardStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check whether the on-screen keyboard is visible",
+	Long:  `Reports whether the on-screen keyboard is currently visible on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response := commands.KeyboardStatusCommand(commands.KeyboardRequest{DeviceID: deviceId})
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
+var ioKeyboardHideCmd = &cobra.Command{
+	Use:   "hide",
+	Short: "Hide the on-screen keyboard",
+	Long:  `Dismisses the on-screen keyboard on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		response := commands.KeyboardHideCommand(commands.KeyboardRequest{DeviceID: deviceId})
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -208,6 +242,11 @@ func init() {
 	ioCmd.AddCommand(ioTextCmd)
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioKeyboardCmd)
+
+	// io keyboard subcommands
+	ioKeyboardCmd.AddCommand(ioKeyboardStatusCmd)
+	ioKeyboardCmd.AddCommand(ioKeyboardHideCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -217,4 +256,6 @@ func init() {
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
+	ioKeyboardStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check keyboard status on")
+	ioKeyboardHideCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to hide keyboard on")
 }
