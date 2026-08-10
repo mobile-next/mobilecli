@@ -60,6 +60,7 @@ type StreamSession struct {
 	Format    string // "mjpeg" or "avc"
 	Quality   int
 	Scale     float64
+	FPS       int
 	CreatedAt time.Time
 	ExpiresAt time.Time // CreatedAt + 1 minute
 	InUse     bool      // prevents duplicate connections
@@ -1312,6 +1313,11 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		scale = devices.DefaultScale
 	}
 
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
+	}
+
 	// generate session ID
 	sessionID := uuid.New().String()
 
@@ -1328,6 +1334,7 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
 		Scale:     scale,
+		FPS:       fps,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(1 * time.Minute),
 		InUse:     false,
@@ -1481,6 +1488,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		Format:     session.Format,
 		Quality:    session.Quality,
 		Scale:      session.Scale,
+		FPS:        session.FPS,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
@@ -1549,6 +1557,11 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		scale = devices.DefaultScale
 	}
 
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
+	}
+
 	// Set headers for streaming response based on format
 	if screenCaptureParams.Format == "mjpeg" {
 		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
@@ -1592,6 +1605,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		Format:     screenCaptureParams.Format,
 		Quality:    quality,
 		Scale:      scale,
+		FPS:        fps,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
