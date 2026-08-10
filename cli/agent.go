@@ -16,7 +16,7 @@ import (
 
 const (
 	agentVersionIOS     = "0.0.23"
-	agentVersionAndroid = "1.2.4"
+	agentVersionAndroid = "1.2.5"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
@@ -26,7 +26,7 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "db7cc329f8d756be9ad60cf15ae57107ed831c53d35be240708dd2baf8da2d4e",
 	"devicekit-ios-Sim-x86_64.zip": "9de3e48798a6abf600c1bdddefcd3465e2ecccdf373683358b10183e680d6e3a",
 	"devicekit-ios-runner.ipa":     "38e052df988101cba2820c01ba14b6e7193470ca729d4b86a6e44a9a4fbb55fa",
-	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
+	"devicekit.apk":                "792d5b78125e7749ffc40cfc4a41e4a37912dd12f321fad7b2c22a39f7bab72f",
 }
 
 type agentMessageResponse struct {
