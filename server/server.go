@@ -1284,6 +1284,12 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
 	}
 
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return nil, fmt.Errorf("fps must not be negative")
+	}
+
 	// validate device exists (early error detection)
 	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
 	if err != nil {
@@ -1523,12 +1529,6 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		return fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	// Find the target device
-	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
-	if err != nil {
-		return fmt.Errorf("error finding device: %w", err)
-	}
-
 	// Set default format if not provided
 	if screenCaptureParams.Format == "" {
 		screenCaptureParams.Format = "mjpeg"
@@ -1537,6 +1537,18 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	// Validate format
 	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
 		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return fmt.Errorf("fps must not be negative")
+	}
+
+	// Find the target device
+	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
 	}
 
 	// avc format is supported on Android and iOS real devices (not simulators)
