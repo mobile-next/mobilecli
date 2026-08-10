@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/mobile-next/mobilecli/releases/tag/1.0.1) (2026-08-10)
+* Feat(screencapture): Default FPS to 30 instead of leaving it unset ([#335](https://github.com/mobile-next/mobilecli/pull/335))
+* Feat: Dump UI via persistent devicekit server on android ([#334](https://github.com/mobile-next/mobilecli/pull/334))
+* Fix: Remote allocate/release fixes ([#332](https://github.com/mobile-next/mobilecli/pull/332))
+* Fix: Make remote allocate --name accept a single value ([#331](https://github.com/mobile-next/mobilecli/pull/331))
+* Chore: Bump devicekit-android agent to 1.2.5 ([#337](https://github.com/mobile-next/mobilecli/pull/337))
+
 ## [1.0.0](https://github.com/mobile-next/mobilecli/releases/tag/1.0.0) (2026-08-01)
 * Fix(ios): Find the right iOS resigner matching provisioning profile ([#325](https://github.com/mobile-next/mobilecli/pull/325))
 * Feat(android): Report selected state in Android UI dump ([#320](https://github.com/mobile-next/mobilecli/pull/320)), thanks to [@sjy](https://github.com/sjy)
