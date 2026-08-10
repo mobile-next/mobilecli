@@ -60,6 +60,7 @@ type StreamSession struct {
 	Format    string // "mjpeg" or "avc"
 	Quality   int
 	Scale     float64
+	FPS       int
 	CreatedAt time.Time
 	ExpiresAt time.Time // CreatedAt + 1 minute
 	InUse     bool      // prevents duplicate connections
@@ -1283,6 +1284,12 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
 	}
 
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return nil, fmt.Errorf("fps must not be negative")
+	}
+
 	// validate device exists (early error detection)
 	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
 	if err != nil {
@@ -1312,6 +1319,11 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		scale = devices.DefaultScale
 	}
 
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
+	}
+
 	// generate session ID
 	sessionID := uuid.New().String()
 
@@ -1328,6 +1340,7 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
 		Scale:     scale,
+		FPS:       fps,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(1 * time.Minute),
 		InUse:     false,
@@ -1481,6 +1494,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		Format:     session.Format,
 		Quality:    session.Quality,
 		Scale:      session.Scale,
+		FPS:        session.FPS,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
@@ -1515,12 +1529,6 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		return fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	// Find the target device
-	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
-	if err != nil {
-		return fmt.Errorf("error finding device: %w", err)
-	}
-
 	// Set default format if not provided
 	if screenCaptureParams.Format == "" {
 		screenCaptureParams.Format = "mjpeg"
@@ -1529,6 +1537,18 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	// Validate format
 	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
 		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return fmt.Errorf("fps must not be negative")
+	}
+
+	// Find the target device
+	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
 	}
 
 	// avc format is supported on Android and iOS real devices (not simulators)
@@ -1547,6 +1567,11 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	scale := screenCaptureParams.Scale
 	if scale == 0.0 {
 		scale = devices.DefaultScale
+	}
+
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
 	}
 
 	// Set headers for streaming response based on format
@@ -1592,6 +1617,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		Format:     screenCaptureParams.Format,
 		Quality:    quality,
 		Scale:      scale,
+		FPS:        fps,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
