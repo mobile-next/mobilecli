@@ -41,13 +41,9 @@ func (d *AndroidDevice) ensureDeviceKitServerReady() (int, error) {
 		return 0, fmt.Errorf("launch devicekit server: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	out, err := d.runAdbCommand("forward", "tcp:0", deviceKitServerTarget)
+	port, err := d.addForward(deviceKitServerTarget)
 	if err != nil {
-		return 0, fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
+		return 0, err
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -59,6 +55,20 @@ func (d *AndroidDevice) ensureDeviceKitServerReady() (int, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	return port, nil
+}
+
+// addForward creates a host TCP forward to target (e.g.
+// "localabstract:devicekit") on a freshly assigned local port and returns it.
+func (d *AndroidDevice) addForward(target string) (int, error) {
+	out, err := d.runAdbCommand("forward", "tcp:0", target)
+	if err != nil {
+		return 0, fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
+	}
 	return port, nil
 }
 
