@@ -1005,6 +1005,12 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			}
 		}
 
+		// DeviceKit is confirmed running (either reused or freshly started and the
+		// broadcast picker was clicked) — safe to tell the caller capture is live.
+		if config.OnReady != nil {
+			config.OnReady()
+		}
+
 		if config.OnProgress != nil {
 			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d", deviceKitInfo.StreamPort))
 		}

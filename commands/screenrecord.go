@@ -19,7 +19,21 @@ type ScreenRecordRequest struct {
 	OutputPath string
 	TimeLimit  int             // max recording duration in seconds, 0 = no limit
 	StopChan   <-chan struct{} // when non-nil, stops recording when closed (server mode)
+	Ready      chan<- error    // optional (server mode): signaled once, with nil once recording is confirmed live or with an error if it failed to start
 	Silent     bool
+}
+
+// signalReady notifies req.Ready, if present, that the recording is confirmed
+// live (err == nil) or failed to start (err != nil). Safe to call more than
+// once or with a nil Ready channel — only the first send has any effect.
+func (req ScreenRecordRequest) signalReady(err error) {
+	if req.Ready == nil {
+		return
+	}
+	select {
+	case req.Ready <- err:
+	default:
+	}
 }
 
 // ScreenRecordResponse contains the result of a screen recording
@@ -33,6 +47,7 @@ type ScreenRecordResponse struct {
 func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
+		req.signalReady(err)
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
@@ -43,6 +58,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 		Hook: GetShutdownHook(),
 	})
 	if err != nil {
+		req.signalReady(err)
 		return NewErrorResponse(fmt.Errorf("error starting agent: %w", err))
 	}
 
@@ -55,6 +71,9 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 			OnDownloadProgress: progress.downloadProgress,
 			OnDownloaded:       progress.downloaded,
 		}
+		// no async on-device UI step here (unlike real iOS devices) — the
+		// recording is live as soon as we're about to dispatch it.
+		req.signalReady(nil)
 		return screenRecordNative(func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan, cb)
 		}, req, progress)
@@ -64,23 +83,33 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	case targetDevice.Platform() == "android":
 		dev, ok := targetDevice.(*devices.AndroidDevice)
 		if !ok {
-			return NewErrorResponse(fmt.Errorf("expected android device"))
+			err := fmt.Errorf("expected android device")
+			req.signalReady(err)
+			return NewErrorResponse(err)
 		}
+		req.signalReady(nil)
 		return screenRecordNative(func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
 	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator":
 		dev, ok := targetDevice.(*devices.SimulatorDevice)
 		if !ok {
-			return NewErrorResponse(fmt.Errorf("expected simulator device"))
+			err := fmt.Errorf("expected simulator device")
+			req.signalReady(err)
+			return NewErrorResponse(err)
 		}
+		req.signalReady(nil)
 		return screenRecordNative(func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
 	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "real":
+		// real iOS devices route through DeviceKit + ReplayKit; screenRecordIOSDevice
+		// signals req.Ready itself once the broadcast picker is confirmed started.
 		return screenRecordIOSDevice(targetDevice, req, progress)
 	default:
-		return NewErrorResponse(fmt.Errorf("screen recording is not supported for this device type"))
+		err := fmt.Errorf("screen recording is not supported for this device type")
+		req.signalReady(err)
+		return NewErrorResponse(err)
 	}
 }
 
@@ -165,6 +194,7 @@ func (p *screenRecordProgress) downloaded(speedMBps float64) {
 func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
 	tempFile, err := os.CreateTemp("", "screenrecord-*.avc")
 	if err != nil {
+		req.signalReady(err)
 		return NewErrorResponse(fmt.Errorf("error creating temp file: %w", err))
 	}
 	tempPath := tempFile.Name()
@@ -188,6 +218,9 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 		OnProgress: func(message string) {
 			utils.Verbose(message)
 		},
+		OnReady: func() {
+			req.signalReady(nil)
+		},
 		OnData: withStopChan(func(data []byte) bool {
 			_, writeErr := tempFile.Write(data)
 			return writeErr == nil
@@ -203,6 +236,9 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 	tempFile.Close()
 
 	if err != nil {
+		// no-op if OnReady already fired above; covers failures that happen
+		// before DeviceKit/the broadcast picker was ever confirmed live.
+		req.signalReady(err)
 		return NewErrorResponse(fmt.Errorf("error during screen capture: %w", err))
 	}
 
