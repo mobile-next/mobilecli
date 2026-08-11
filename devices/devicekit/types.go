@@ -2,6 +2,8 @@ package devicekit
 
 import (
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +29,21 @@ func NewDeviceKitClient(hostPort string) *DeviceKitClient {
 			},
 		},
 	}
+}
+
+// Port returns the port this client talks to, parsed from its base URL.
+func (c *DeviceKitClient) Port() int {
+	parsed, err := url.Parse(c.baseURL)
+	if err != nil {
+		return 0
+	}
+
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		return 0
+	}
+
+	return port
 }
 
 type TapAction struct {
