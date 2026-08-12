@@ -384,7 +384,11 @@ type agentNode struct {
 	Text       string        `json:"text"`
 	Label      string        `json:"label"`
 	Identifier string        `json:"identifier"`
+	Hint       string        `json:"hint"`
 	Enabled    bool          `json:"enabled"`
+	Focused    bool          `json:"focused"`
+	Checked    bool          `json:"checked"`
+	Selected   bool          `json:"selected"`
 	Visible    bool          `json:"visible"`
 	Rect       deviceKitRect `json:"rect"`
 	Children   []agentNode   `json:"children"`
@@ -412,17 +416,20 @@ func (a *androidAgent) dumpRaw() (string, error) {
 	return string(res), nil
 }
 
-// collectAgentElements flattens the agent node tree into ScreenElements,
-// matching the filtering used for devicekit/uiautomator dumps.
+// collectAgentElements converts the agent node tree into ScreenElements,
+// matching the filtering, nesting and state reporting of collectDeviceKitElements
+// so the dump output is identical whichever path served it.
 func collectAgentElements(nodes []agentNode) []types.ScreenElement {
 	var elements []types.ScreenElement
 	for _, node := range nodes {
-		elements = append(elements, collectAgentElements(node.Children)...)
+		childElements := collectAgentElements(node.Children)
 
-		if node.Text == "" && node.Label == "" && node.Identifier == "" {
+		if node.Text == "" && node.Label == "" && node.Hint == "" && node.Identifier == "" {
+			elements = append(elements, childElements...)
 			continue
 		}
 		if node.Rect.Width <= 0 || node.Rect.Height <= 0 {
+			elements = append(elements, childElements...)
 			continue
 		}
 
@@ -436,10 +443,29 @@ func collectAgentElements(nodes []agentNode) []types.ScreenElement {
 				Width:  node.Rect.Width,
 				Height: node.Rect.Height,
 			},
+			Children: childElements,
 		}
+
+		setPlaceholderFromHint(&element, node.Hint)
 		if node.Label != "" {
 			label := node.Label
 			element.Label = &label
+		}
+		if node.Focused {
+			focused := true
+			element.Focused = &focused
+		}
+		if !node.Enabled {
+			enabled := false
+			element.Enabled = &enabled
+		}
+		if node.Checked {
+			checked := true
+			element.Checked = &checked
+		}
+		if node.Selected {
+			selected := true
+			element.Selected = &selected
 		}
 		if node.Identifier != "" {
 			id := node.Identifier

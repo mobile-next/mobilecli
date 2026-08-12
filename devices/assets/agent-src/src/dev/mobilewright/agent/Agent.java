@@ -413,7 +413,11 @@ public final class Agent {
             sb.append(",\"text\":").append(jstr(text(node.getText())));
             sb.append(",\"label\":").append(jstr(text(node.getContentDescription())));
             sb.append(",\"identifier\":").append(jstr(text(node.getViewIdResourceName())));
+            sb.append(",\"hint\":").append(jstr(hintText(node)));
             sb.append(",\"enabled\":").append(node.isEnabled());
+            sb.append(",\"focused\":").append(node.isFocused());
+            sb.append(",\"checked\":").append(node.isChecked());
+            sb.append(",\"selected\":").append(node.isSelected());
             sb.append(",\"visible\":").append(node.isVisibleToUser());
             sb.append(",\"rect\":{\"x\":").append(r.left)
               .append(",\"y\":").append(r.top)
@@ -456,6 +460,13 @@ public final class Agent {
 
     private static String text(CharSequence cs) {
         return cs == null ? "" : cs.toString();
+    }
+
+    // getHintText() is API 26+; this agent targets min-api 24, so guard the
+    // call rather than risk a NoSuchMethodError on API 24-25.
+    private static String hintText(AccessibilityNodeInfo node) {
+        if (android.os.Build.VERSION.SDK_INT < 26) return "";
+        return text(node.getHintText());
     }
 
     private static String jstr(String s) {
