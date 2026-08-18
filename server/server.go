@@ -1098,6 +1098,12 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 	return response.Data, nil
 }
 
+// screenRecordReadyTimeout bounds how long handleScreenRecord waits for the
+// recording to be confirmed live before giving up. Sized generously above a
+// worst-case cold DeviceKit start on real iOS devices (WDA/app launch +
+// two 10s broadcast-picker button polls + the 5s post-click TCP wait).
+const screenRecordReadyTimeout = 60 * time.Second
+
 func handleScreenRecord(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, output")
@@ -1122,6 +1128,7 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		OutputPath: p.Output,
 		TimeLimit:  p.TimeLimit,
 		StopChan:   session.StopChan,
+		Ready:      session.Ready,
 	}
 
 	go func() {
@@ -1129,10 +1136,40 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		session.Done <- resp
 	}()
 
-	return map[string]any{
-		"status": "recording",
-		"output": p.Output,
-	}, nil
+	// Don't ack until the recording is actually confirmed live. On real iOS
+	// devices this waits for the ReplayKit broadcast picker to be clicked, so
+	// callers never race a still-starting recording with device commands.
+	select {
+	case readyErr := <-session.Ready:
+		if readyErr != nil {
+			recorder.clear()
+			return nil, fmt.Errorf("failed to start recording: %w", readyErr)
+		}
+		return map[string]any{
+			"status": "recording",
+			"output": p.Output,
+		}, nil
+	case resp := <-session.Done:
+		// recording finished (or failed) before ever confirming it was live
+		recorder.clear()
+		if resp.Status == "error" {
+			return nil, fmt.Errorf("%s", resp.Error)
+		}
+		return nil, fmt.Errorf("recording ended before it was confirmed started")
+	case <-time.After(screenRecordReadyTimeout):
+		// the command goroutine may still be starting (or even recording);
+		// ask it to stop and wait for it to exit before freeing the session,
+		// so it cannot overlap a subsequent capture
+		if _, stopErr := recorder.stop(); stopErr == nil {
+			select {
+			case <-session.Done:
+			case <-time.After(30 * time.Second):
+			}
+		}
+
+		recorder.clear()
+		return nil, fmt.Errorf("timed out waiting for recording to start")
+	}
 }
 
 // ScreenRecordStopParams represents the parameters for stopping a screen recording

@@ -999,10 +999,16 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			// start DeviceKit
 			// Note: passing nil registry since this is internal call from StartScreenCapture
 			// ScreenCapture callers should have already registered the device via StartAgent
-			deviceKitInfo, err = d.StartDeviceKit(nil)
+			deviceKitInfo, err = d.StartDeviceKitAvc(nil)
 			if err != nil {
 				return fmt.Errorf("failed to start DeviceKit: %w", err)
 			}
+		}
+
+		// DeviceKit is confirmed running (either reused or freshly started and the
+		// broadcast picker was clicked) — safe to tell the caller capture is live.
+		if config.OnReady != nil {
+			config.OnReady()
 		}
 
 		if config.OnProgress != nil {
@@ -1061,7 +1067,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	wdaPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
+	wdaPort := d.deviceKitClient.Port()
 	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
 	d.mjpegClient = mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	d.mu.Unlock()
@@ -1163,7 +1169,10 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	// first dump: handle "Press to Start Broadcasting" screen if present
 	firstElements, err := d.DumpSource()
 	if err == nil {
-		if hasText(firstElements, "Press to Start Broadcasting") {
+		if hasText(firstElements, "BroadcastUploadExtension") {
+			// dialog is already open, no need to click anything
+			utils.Verbose("It seems that the start broadcasting dialog is already visible")
+		} else if hasText(firstElements, "Press to Start Broadcasting") {
 			utils.Verbose("Found 'Press to Start Broadcasting' screen; tapping the only button.")
 			buttons := filterButtons(firstElements)
 			if len(buttons) != 1 {
@@ -1172,6 +1181,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 
 			centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
 			centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+			utils.Verbose("Tapping at %f,%f", centerX, centerY)
 			if err = d.Tap(centerX, centerY); err != nil {
 				return fmt.Errorf("failed to tap broadcast button: %w", err)
 			}
@@ -1417,10 +1427,90 @@ func (d *IOSDevice) isDeviceKitRunning() bool {
 	return true
 }
 
-// StartDeviceKit starts the devicekit-ios XCUITest which provides:
+// findScreenCaptureAppBundleId finds the DeviceKit H.264 screen capture app
+// (not the xctrunner) among the device's installed apps.
+func findScreenCaptureAppBundleId(apps []InstalledAppInfo) (string, error) {
+	for _, app := range apps {
+		if strings.Contains(app.PackageName, "com.mobilenext.devicekit-h264") {
+			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
+			return app.PackageName, nil
+		}
+	}
+	return "", fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
+}
+
+// startDeviceKitAvcForwarders sets up the HTTP and H.264 stream port forwarders,
+// cleaning up any partially created forwarder on failure.
+func (d *IOSDevice) startDeviceKitAvcForwarders() (int, int, error) {
+	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to find available port for HTTP: %w", err)
+	}
+
+	d.mu.Lock()
+	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	if err := d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort); err != nil {
+		return 0, 0, fmt.Errorf("failed to forward HTTP port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
+
+	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		_ = d.portForwarderDeviceKit.Stop()
+		return 0, 0, fmt.Errorf("failed to find available port for stream: %w", err)
+	}
+
+	d.mu.Lock()
+	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	if err := d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort); err != nil {
+		_ = d.portForwarderDeviceKit.Stop()
+		return 0, 0, fmt.Errorf("failed to forward stream port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
+
+	return localHTTPPort, localStreamPort, nil
+}
+
+// stopDeviceKitAvcForwarders stops the HTTP and H.264 stream port forwarders.
+func (d *IOSDevice) stopDeviceKitAvcForwarders() {
+	_ = d.portForwarderDeviceKit.Stop()
+	_ = d.portForwarderAvc.Stop()
+}
+
+// launchDeviceKitApp launches the DeviceKit app and waits for it to reach the foreground.
+func (d *IOSDevice) launchDeviceKitApp(bundleId string) error {
+	utils.Verbose("Launching DeviceKit app: %s", bundleId)
+	if err := d.LaunchApp(bundleId, LaunchOptions{}); err != nil {
+		return fmt.Errorf("failed to launch DeviceKit app: %w", err)
+	}
+
+	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
+	if err := d.waitForAppInForeground(bundleId, deviceKitAppLaunchTimeout); err != nil {
+		return fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	}
+
+	return nil
+}
+
+// dismissDeviceKitApp presses HOME a few times to return to the home screen
+// after the broadcast has started.
+func (d *IOSDevice) dismissDeviceKitApp() {
+	for i := 0; i < 3; i++ {
+		if err := d.PressButton("HOME"); err != nil {
+			utils.Verbose("Failed to press HOME button (attempt %d): %v", i+1, err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// StartDeviceKitAvc starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
-func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
+func (d *IOSDevice) StartDeviceKitAvc(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// register cleanup hook for this device
 	if hook != nil {
 		hookName := fmt.Sprintf("ios-devicekit-%s", d.Udid)
@@ -1428,87 +1518,32 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	}
 
 	// Start tunnel if needed (iOS 17+)
-	err := d.startTunnel()
-	if err != nil {
+	if err := d.startTunnel(); err != nil {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
 	// Broadcast is not running, we need to start it.
 	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
 
-	// find DeviceKit main app (not the xctrunner)
 	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
 
-	var devicekitMainAppBundleId string
-	for _, app := range apps {
-		// look for the main app, not the test runner
-		if strings.HasPrefix(app.PackageName, "com.") && strings.Contains(app.PackageName, "devicekit-ios") && !strings.Contains(app.PackageName, "UITests") {
-			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
-			devicekitMainAppBundleId = app.PackageName
-			break
-		}
-	}
-
-	if devicekitMainAppBundleId == "" {
-		return nil, fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
-	}
-
-	// Find available local port for HTTP forwarding and bind immediately.
-	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	screenCaptureAppBundleId, err := findScreenCaptureAppBundleId(apps)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
+		return nil, err
 	}
 
-	d.mu.Lock()
-	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
-	d.mu.Unlock()
-
-	err = d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort)
+	localHTTPPort, localStreamPort, err := d.startDeviceKitAvcForwarders()
 	if err != nil {
-		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
-	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
-	// Find available local port for stream forwarding after HTTP is bound.
-	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-	if err != nil {
-		_ = d.portForwarderDeviceKit.Stop()
-		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+		return nil, err
 	}
 
-	d.mu.Lock()
-	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
-	d.mu.Unlock()
-
-	err = d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort)
-	if err != nil {
-		// clean up HTTP forwarder on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		return nil, fmt.Errorf("failed to forward stream port: %w", err)
-	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
-
-	// Launch the main DeviceKit app
-	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	startTime := time.Now()
-	err = d.LaunchApp(devicekitMainAppBundleId, LaunchOptions{})
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
-		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
-	}
-
-	// wait for the app to be in foreground
-	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
-	err = d.waitForAppInForeground(devicekitMainAppBundleId, deviceKitAppLaunchTimeout)
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
-		return nil, fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	if err := d.launchDeviceKitApp(screenCaptureAppBundleId); err != nil {
+		d.stopDeviceKitAvcForwarders()
+		return nil, err
 	}
 
 	// Start WebDriverAgent to be able to tap on the screen
@@ -1517,20 +1552,14 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 			utils.Verbose(message)
 		},
 	})
-
 	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
+		d.stopDeviceKitAvcForwarders()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
 	// find and tap the "Start Broadcast" button
-	err = d.clickStartBroadcastButton()
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
+	if err := d.clickStartBroadcastButton(); err != nil {
+		d.stopDeviceKitAvcForwarders()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 
@@ -1542,14 +1571,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
 	time.Sleep(deviceKitBroadcastTimeout)
 
-	// Press HOME 3 times to dismiss the DeviceKit app and return to home screen
-	for i := 0; i < 3; i++ {
-		err = d.PressButton("HOME")
-		if err != nil {
-			utils.Verbose("Failed to press HOME button (attempt %d): %v", i+1, err)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	d.dismissDeviceKitApp()
 
 	utils.Verbose("DeviceKit broadcast started successfully")
 

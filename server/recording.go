@@ -13,6 +13,7 @@ type RecordingSession struct {
 	Output    string
 	StartedAt time.Time
 	StopChan  chan struct{}
+	Ready     chan error // signaled once: nil once recording is confirmed live, or an error if it failed to start
 	Done      chan *commands.CommandResponse
 	stopped   bool // true after StopChan has been closed
 }
@@ -36,6 +37,7 @@ func (rm *recordingManager) start(output string) (*RecordingSession, error) {
 		Output:    output,
 		StartedAt: time.Now(),
 		StopChan:  make(chan struct{}),
+		Ready:     make(chan error, 1),
 		Done:      make(chan *commands.CommandResponse, 1),
 	}
 	rm.session = s

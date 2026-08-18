@@ -81,6 +81,7 @@ type ScreenCaptureConfig struct {
 	FPS        int
 	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
+	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
 
