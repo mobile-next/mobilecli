@@ -1157,6 +1157,16 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		}
 		return nil, fmt.Errorf("recording ended before it was confirmed started")
 	case <-time.After(screenRecordReadyTimeout):
+		// the command goroutine may still be starting (or even recording);
+		// ask it to stop and wait for it to exit before freeing the session,
+		// so it cannot overlap a subsequent capture
+		if _, stopErr := recorder.stop(); stopErr == nil {
+			select {
+			case <-session.Done:
+			case <-time.After(30 * time.Second):
+			}
+		}
+
 		recorder.clear()
 		return nil, fmt.Errorf("timed out waiting for recording to start")
 	}
