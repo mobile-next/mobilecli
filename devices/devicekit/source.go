@@ -55,6 +55,12 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		}
 	}
 
+	// elements explicitly tagged with accessibilityIdentifier are always
+	// included, regardless of type, see https://github.com/mobile-next/mobilecli/issues/341
+	if source.RawIdentifier != nil && *source.RawIdentifier != "" {
+		typeAccepted = true
+	}
+
 	if !typeAccepted || !isVisible(source.Rect) {
 		return childElements
 	}

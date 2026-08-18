@@ -262,6 +262,78 @@ func TestFilterSourceElementsIncludesTextViewWithoutIdentifier(t *testing.T) {
 	}
 }
 
+func TestFilterSourceElementsIncludesAnyElementWithAccessibilityIdentifier(t *testing.T) {
+	// A container view tagged with accessibilityIdentifier must appear in the
+	// dump with its children nested, even though its type ("Other") is not
+	// whitelisted. See https://github.com/mobile-next/mobilecli/issues/341
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeOther",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:          "XCUIElementTypeOther",
+				Name:          strPtr("interviewBannerView"),
+				RawIdentifier: strPtr("interviewBannerView"),
+				Rect:          visibleRect(33, 194, 336, 20),
+				Children: []sourceTreeElement{
+					{
+						Type:  "XCUIElementTypeStaticText",
+						Label: strPtr("Interview starting soon"),
+						Rect:  visibleRect(66, 194, 173, 20),
+					},
+					{
+						Type:  "XCUIElementTypeButton",
+						Label: strPtr("Join"),
+						Rect:  visibleRect(338, 194, 31, 20),
+					},
+				},
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element (the tagged container), got %d: %+v", len(output), output)
+	}
+
+	container := output[0]
+	if container.Type != "Other" || container.Identifier == nil || *container.Identifier != "interviewBannerView" {
+		t.Fatalf("expected an Other container identified 'interviewBannerView', got %+v", container)
+	}
+
+	if len(container.Children) != 2 {
+		t.Fatalf("expected container to keep its 2 children nested, got %d: %+v", len(container.Children), container.Children)
+	}
+
+	if elementLabel(container.Children[0]) != "Interview starting soon" || elementLabel(container.Children[1]) != "Join" {
+		t.Errorf("expected children 'Interview starting soon' and 'Join', got %+v", container.Children)
+	}
+}
+
+func TestFilterSourceElementsRejectsUntaggedContainersWithEmptyIdentifier(t *testing.T) {
+	// An "Other" node whose rawIdentifier is an empty string is layout noise
+	// and must still be rejected, hoisting its children.
+	tree := sourceTreeElement{
+		Type:          "XCUIElementTypeOther",
+		RawIdentifier: strPtr(""),
+		Rect:          visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Inside"),
+				Rect:  visibleRect(0, 0, 100, 50),
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected the container to be rejected and its button hoisted, got %+v", output)
+	}
+}
+
 func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 	// Leaf elements must not serialize an empty "children" array, so the
 	// JSON output stays unchanged for consumers that expect leaves.
