@@ -1166,6 +1166,7 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 			case <-time.After(30 * time.Second):
 			}
 		}
+
 		recorder.clear()
 		return nil, fmt.Errorf("timed out waiting for recording to start")
 	}
