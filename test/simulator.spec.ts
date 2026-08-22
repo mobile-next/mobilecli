@@ -27,328 +27,324 @@ type Dimensions = {
 const TEST_SERVER_URL = 'http://localhost:12001';
 
 test.describe('iOS Simulator Tests', () => {
-	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
-		test.describe(`iOS ${iosVersion}`, () => {
-			let simulatorId: string;
+	let simulatorId: string;
 
-			test.beforeAll(() => {
+	test.beforeAll(() => {
+		try {
+			simulatorId = findFirstSimulatorId() ?? '';
+			if (!simulatorId) {
+				console.log('No booted iOS simulator found. See test/README.md for setup instructions.');
+				return;
+			}
+			installDeviceKitAgent(simulatorId);
+		} catch (error) {
+			console.log(`Could not look up an iOS simulator, skipping tests: ${error}`);
+		}
+	});
+
+	test.afterAll(() => {
+		if (simulatorId) {
+			printAllLogsFromSimulator(simulatorId);
+		}
+	});
+
+	test('should take screenshot', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
+
+		takeScreenshot(simulatorId, screenshotPath);
+		verifyScreenshotFileWasCreated(screenshotPath);
+		verifyScreenshotFileHasValidContent(screenshotPath);
+
+		// console.log(`Screenshot saved at: ${screenshotPath}`);
+	});
+
+	test('should open URL https://example.com', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		openUrl(simulatorId, 'https://example.com');
+	});
+
+	test.describe('screenrecord', () => {
+		test('should record with --time-limit 5 and produce a playable mp4', () => {
+			test.skip(!simulatorId, 'simulator not found');
+
+			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
+			recordScreenWithTimeLimit(simulatorId, videoPath, 5);
+
+			verifyVideoIsPlayable(videoPath);
+			verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+			fs.unlinkSync(videoPath);
+		});
+
+		test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+
+			const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
+			await recordScreenThenInterruptWithCtrlC(simulatorId, videoPath, 5);
+
+			verifyVideoIsPlayable(videoPath);
+			verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
+			fs.unlinkSync(videoPath);
+		});
+	});
+
+	test('should list all devices', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		const devices = listDevices(false);
+		verifyDeviceListContainsSimulator(devices, simulatorId);
+	});
+
+	test('should get device info', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		const info = getDeviceInfo(simulatorId);
+		verifyDeviceInfo(info, simulatorId);
+	});
+
+	test('should list installed apps', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		const apps = listApps(simulatorId);
+		verifyAppsListContainsSafari(apps);
+	});
+
+	test('should launch Safari app and verify it is in foreground', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+
+		// Wait for Safari to fully launch
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
+
+	test('should terminate Safari app and verify SpringBoard is in foreground', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		// First launch Safari
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		// Now terminate it
+		terminateApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySpringBoardIsForeground(foregroundApp);
+	});
+
+	test('should handle launching app twice (idempotency)', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		// Launch again - should not fail
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
+
+	test('should handle launch-terminate-launch cycle', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		// Launch
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		// Terminate
+		terminateApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// Launch again
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+	});
+
+	test('should tap on General button in Settings and navigate to General settings', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		// Launch Settings app
+		launchApp(simulatorId, 'com.apple.Preferences');
+		await new Promise(resolve => setTimeout(resolve, 5000));
+
+		// Dump UI to find General button
+		const uiDump = dumpUI(simulatorId);
+		const generalElement = findElementByName(uiDump, 'General');
+
+		// Calculate center coordinates for tap
+		const centerX = generalElement.rect.x + Math.floor(generalElement.rect.width / 2);
+		const centerY = generalElement.rect.y + Math.floor(generalElement.rect.height / 2);
+
+		// Tap on General button
+		tap(simulatorId, centerX, centerY);
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// Verify we're in General settings by checking for About element
+		const generalUiDump = dumpUI(simulatorId);
+		verifyElementExists(generalUiDump, 'About');
+	});
+
+	test('should press HOME button and return to home screen from Safari', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		// Launch Safari
+		launchApp(simulatorId, 'com.apple.mobilesafari');
+		await new Promise(resolve => setTimeout(resolve, 10000));
+
+		// Verify Safari is in foreground
+		const foregroundApp = getForegroundApp(simulatorId);
+		verifySafariIsForeground(foregroundApp);
+
+		// Press HOME button
+		pressButton(simulatorId, 'HOME');
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// Verify SpringBoard (home screen) is now in foreground
+		const foregroundAfterHome = getForegroundApp(simulatorId);
+		verifySpringBoardIsForeground(foregroundAfterHome);
+	});
+
+	test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
+		// shutdown simulator using simctl to get it offline
+		shutdownSimulator(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// list offline devices - verify simulator is there and offline
+		const offlineDevices = listDevices(true);
+		verifyDeviceIsOffline(offlineDevices, simulatorId);
+
+		// boot the simulator using mobilecli
+		bootDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 5000));
+
+		// verify simulator is now online
+		const devicesAfterBoot = listDevices(false);
+		verifyDeviceIsOnline(devicesAfterBoot, simulatorId);
+
+		// reboot the simulator
+		rebootDevice(simulatorId);
+
+		// immediately check - should be offline (or at least not in the online list during reboot)
+		await new Promise(resolve => setTimeout(resolve, 2000));
+		const devicesDuringReboot = listDevices(true);
+		// during reboot, state might be "Booting" or "Shutdown"
+		// we just verify it exists in the full list
+		verifyDeviceExists(devicesDuringReboot, simulatorId);
+
+		// wait a bit more for reboot to complete
+		await new Promise(resolve => setTimeout(resolve, 15000));
+
+		// verify simulator came back online
+		const devicesAfterReboot = listDevices(false);
+		verifyDeviceIsOnline(devicesAfterReboot, simulatorId);
+
+		// shutdown the simulator
+		shutdownDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// verify simulator is offline
+		const devicesAfterShutdown = listDevices(true);
+		verifyDeviceIsOffline(devicesAfterShutdown, simulatorId);
+
+		// boot it again for cleanup and other tests
+		bootDevice(simulatorId);
+		await new Promise(resolve => setTimeout(resolve, 5000));
+	});
+
+	test('should dump UI source in raw format', async () => {
+		test.skip(!simulatorId, 'simulator not found');
+
+		const rawDump = dumpUIRaw(simulatorId);
+		verifyRawViewtreeDump(rawDump);
+	});
+
+	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
+		const packageName = 'com.mobilenext.playground';
+		let containerPath: string;
+		let remoteDir: string;
+		let remoteFile: string;
+
+		test.beforeAll(() => {
+			if (!simulatorId) return;
+			containerPath = getAppContainerPath(simulatorId, packageName);
+			remoteDir = `${containerPath}/Documents/mobilecli-test-` + (+new Date());
+			remoteFile = `${remoteDir}/data.txt`;
+		});
+
+		test('should return a valid container path for com.mobilenext.playground', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			expect(typeof containerPath).toBe('string');
+			expect(containerPath).toMatch(/^\/Users\//);
+		});
+
+		test('should list the app container root', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			const entries = fsList(simulatorId, containerPath);
+			expect(Array.isArray(entries)).toBe(true);
+			const known = entries.filter(e => e.name === "Documents" || e.name === "Library");
+			expect(known.length).toBe(2);
+		});
+
+		test('should create a directory inside the app container', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			fsMkdir(simulatorId, remoteDir, true);
+		});
+
+		test('should push a file into the app container', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			const localFile = writeTempFile('app container test');
+			fsPush(simulatorId, localFile, remoteFile);
+			fs.unlinkSync(localFile);
+		});
+
+		test('should list the file inside the app container', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			const entries = fsList(simulatorId, remoteDir);
+			const names = entries.map((e: any) => e.name);
+			expect(names).toContain('data.txt');
+		});
+
+		test('should pull the file from the app container and verify contents match', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+			fsPull(simulatorId, remoteFile, localDest);
+			const contents = fs.readFileSync(localDest, 'utf8');
+			expect(contents.trim()).toBe('app container test');
+			fs.unlinkSync(localDest);
+		});
+
+		test('should remove the test directory from the app container', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			fsRm(simulatorId, remoteDir, true);
+			const entries = fsList(simulatorId, `${containerPath}/Documents`);
+			const names = entries.map((e: any) => e.name);
+			expect(names).not.toContain('mobilecli-test');
+		});
+
+		test('should prevent escaping the app container sandbox', async () => {
+			test.skip(!simulatorId, 'simulator not found');
+			const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+			for (let depth=1; depth<32; depth++) {
 				try {
-					simulatorId = findFirstSimulatorId() ?? '';
-					if (!simulatorId) {
-						console.log('No booted iOS simulator found. See test/README.md for setup instructions.');
-						return;
-					}
-					installDeviceKitAgent(simulatorId);
-				} catch (error) {
-					console.log(`Could not look up an iOS simulator, skipping tests: ${error}`);
-				}
-			});
-
-			test.afterAll(() => {
-				if (simulatorId) {
-					printAllLogsFromSimulator(simulatorId);
-				}
-			});
-
-			test('should take screenshot', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				const screenshotPath = `/tmp/screenshot-ios${iosVersion}-${Date.now()}.png`;
-
-				takeScreenshot(simulatorId, screenshotPath);
-				verifyScreenshotFileWasCreated(screenshotPath);
-				verifyScreenshotFileHasValidContent(screenshotPath);
-
-				// console.log(`Screenshot saved at: ${screenshotPath}`);
-			});
-
-			test('should open URL https://example.com', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				openUrl(simulatorId, 'https://example.com');
-			});
-
-			test.describe('screenrecord', () => {
-				test('should record with --time-limit 5 and produce a playable mp4', () => {
-					test.skip(!simulatorId, 'simulator not found');
-
-					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-timelimit-${Date.now()}.mp4`);
-					recordScreenWithTimeLimit(simulatorId, videoPath, 5);
-
-					verifyVideoIsPlayable(videoPath);
-					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
-					fs.unlinkSync(videoPath);
-				});
-
-				test('should record without time limit and finalize a playable mp4 on Ctrl-C', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-
-					const videoPath = path.join(os.tmpdir(), `mobilecli-rec-ctrlc-${Date.now()}.mp4`);
-					await recordScreenThenInterruptWithCtrlC(simulatorId, videoPath, 5);
-
-					verifyVideoIsPlayable(videoPath);
-					verifyVideoMatchesScreenshotDimensions(videoPath, simulatorId);
-					fs.unlinkSync(videoPath);
-				});
-			});
-
-			test('should list all devices', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				const devices = listDevices(false);
-				verifyDeviceListContainsSimulator(devices, simulatorId);
-			});
-
-			test('should get device info', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				const info = getDeviceInfo(simulatorId);
-				verifyDeviceInfo(info, simulatorId);
-			});
-
-			test('should list installed apps', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				const apps = listApps(simulatorId);
-				verifyAppsListContainsSafari(apps);
-			});
-
-			test('should launch Safari app and verify it is in foreground', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-
-				// Wait for Safari to fully launch
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
-
-			test('should terminate Safari app and verify SpringBoard is in foreground', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				// First launch Safari
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				// Now terminate it
-				terminateApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundApp);
-			});
-
-			test('should handle launching app twice (idempotency)', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				// Launch again - should not fail
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
-
-			test('should handle launch-terminate-launch cycle', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				// Launch
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				// Terminate
-				terminateApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// Launch again
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-			});
-
-			test('should tap on General button in Settings and navigate to General settings', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				// Launch Settings app
-				launchApp(simulatorId, 'com.apple.Preferences');
-				await new Promise(resolve => setTimeout(resolve, 5000));
-
-				// Dump UI to find General button
-				const uiDump = dumpUI(simulatorId);
-				const generalElement = findElementByName(uiDump, 'General');
-
-				// Calculate center coordinates for tap
-				const centerX = generalElement.rect.x + Math.floor(generalElement.rect.width / 2);
-				const centerY = generalElement.rect.y + Math.floor(generalElement.rect.height / 2);
-
-				// Tap on General button
-				tap(simulatorId, centerX, centerY);
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// Verify we're in General settings by checking for About element
-				const generalUiDump = dumpUI(simulatorId);
-				verifyElementExists(generalUiDump, 'About');
-			});
-
-			test('should press HOME button and return to home screen from Safari', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				// Launch Safari
-				launchApp(simulatorId, 'com.apple.mobilesafari');
-				await new Promise(resolve => setTimeout(resolve, 10000));
-
-				// Verify Safari is in foreground
-				const foregroundApp = getForegroundApp(simulatorId);
-				verifySafariIsForeground(foregroundApp);
-
-				// Press HOME button
-				pressButton(simulatorId, 'HOME');
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// Verify SpringBoard (home screen) is now in foreground
-				const foregroundAfterHome = getForegroundApp(simulatorId);
-				verifySpringBoardIsForeground(foregroundAfterHome);
-			});
-
-			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
-				// shutdown simulator using simctl to get it offline
-				shutdownSimulator(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// list offline devices - verify simulator is there and offline
-				const offlineDevices = listDevices(true);
-				verifyDeviceIsOffline(offlineDevices, simulatorId);
-
-				// boot the simulator using mobilecli
-				bootDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 5000));
-
-				// verify simulator is now online
-				const devicesAfterBoot = listDevices(false);
-				verifyDeviceIsOnline(devicesAfterBoot, simulatorId);
-
-				// reboot the simulator
-				rebootDevice(simulatorId);
-
-				// immediately check - should be offline (or at least not in the online list during reboot)
-				await new Promise(resolve => setTimeout(resolve, 2000));
-				const devicesDuringReboot = listDevices(true);
-				// during reboot, state might be "Booting" or "Shutdown"
-				// we just verify it exists in the full list
-				verifyDeviceExists(devicesDuringReboot, simulatorId);
-
-				// wait a bit more for reboot to complete
-				await new Promise(resolve => setTimeout(resolve, 15000));
-
-				// verify simulator came back online
-				const devicesAfterReboot = listDevices(false);
-				verifyDeviceIsOnline(devicesAfterReboot, simulatorId);
-
-				// shutdown the simulator
-				shutdownDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 3000));
-
-				// verify simulator is offline
-				const devicesAfterShutdown = listDevices(true);
-				verifyDeviceIsOffline(devicesAfterShutdown, simulatorId);
-
-				// boot it again for cleanup and other tests
-				bootDevice(simulatorId);
-				await new Promise(resolve => setTimeout(resolve, 5000));
-			});
-
-			test('should dump UI source in raw format', async () => {
-				test.skip(!simulatorId, 'simulator not found');
-
-				const rawDump = dumpUIRaw(simulatorId);
-				verifyRawViewtreeDump(rawDump);
-			});
-
-			test.describe('fs operations on app container (com.mobilenext.playground)', () => {
-				const packageName = 'com.mobilenext.playground';
-				let containerPath: string;
-				let remoteDir: string;
-				let remoteFile: string;
-
-				test.beforeAll(() => {
-					if (!simulatorId) return;
-					containerPath = getAppContainerPath(simulatorId, packageName);
-					remoteDir = `${containerPath}/Documents/mobilecli-test-` + (+new Date());
-					remoteFile = `${remoteDir}/data.txt`;
-				});
-
-				test('should return a valid container path for com.mobilenext.playground', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					expect(typeof containerPath).toBe('string');
-					expect(containerPath).toMatch(/^\/Users\//);
-				});
-
-				test('should list the app container root', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					const entries = fsList(simulatorId, containerPath);
-					expect(Array.isArray(entries)).toBe(true);
-					const known = entries.filter(e => e.name === "Documents" || e.name === "Library");
-					expect(known.length).toBe(2);
-				});
-
-				test('should create a directory inside the app container', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					fsMkdir(simulatorId, remoteDir, true);
-				});
-
-				test('should push a file into the app container', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					const localFile = writeTempFile('app container test');
-					fsPush(simulatorId, localFile, remoteFile);
-					fs.unlinkSync(localFile);
-				});
-
-				test('should list the file inside the app container', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					const entries = fsList(simulatorId, remoteDir);
-					const names = entries.map((e: any) => e.name);
-					expect(names).toContain('data.txt');
-				});
-
-				test('should pull the file from the app container and verify contents match', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
+					const remoteFile = remoteDir + "/..".repeat(depth) + "/etc/hosts";
 					fsPull(simulatorId, remoteFile, localDest);
-					const contents = fs.readFileSync(localDest, 'utf8');
-					expect(contents.trim()).toBe('app container test');
-					fs.unlinkSync(localDest);
-				});
+				} catch {
+					// ignored, expected fsPull tof ail
+				}
 
-				test('should remove the test directory from the app container', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					fsRm(simulatorId, remoteDir, true);
-					const entries = fsList(simulatorId, `${containerPath}/Documents`);
-					const names = entries.map((e: any) => e.name);
-					expect(names).not.toContain('mobilecli-test');
-				});
-
-				test('should prevent escaping the app container sandbox', async () => {
-					test.skip(!simulatorId, 'simulator not found');
-					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
-					for (let depth=1; depth<32; depth++) {
-						try {
-							const remoteFile = remoteDir + "/..".repeat(depth) + "/etc/hosts";
-							fsPull(simulatorId, remoteFile, localDest);
-						} catch {
-							// ignored, expected fsPull tof ail
-						}
-
-						expect(fs.existsSync(localDest)).toBe(false);
-					}
-				});
-			});
+				expect(fs.existsSync(localDest)).toBe(false);
+			}
 		});
 	});
 });
