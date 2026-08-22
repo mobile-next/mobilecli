@@ -15,6 +15,8 @@ JSON-RPC API for mobile device automation and control
 - [device.apps.terminate](#deviceappsterminate)
 - [device.apps.uninstall](#deviceappsuninstall)
 - [device.boot](#deviceboot)
+- [device.clipboard.get](#deviceclipboardget)
+- [device.clipboard.set](#deviceclipboardset)
 - [device.crashes.get](#devicecrashesget)
 - [device.crashes.list](#devicecrasheslist)
 - [device.dump.ui](#devicedumpui)
@@ -363,6 +365,72 @@ Boot operation result
   "method": "device.boot",
   "params": {
     "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.clipboard.get
+
+**Read clipboard**
+
+Reads the text currently on the device clipboard
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** `object`
+
+Clipboard contents
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.get",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.clipboard.set
+
+**Write clipboard**
+
+Replaces the text on the device clipboard, an empty string clears it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `text` | `string` | ✓ | Text to place on the clipboard |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.set",
+  "params": {
+    "deviceId": "string",
+    "text": "string"
   },
   "id": 1
 }

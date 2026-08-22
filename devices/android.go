@@ -424,6 +424,43 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 	return nil
 }
 
+const devicekitClipboardClass = "com.mobilenext.devicekit.Clipboard"
+
+func (d *AndroidDevice) clipboardCommand(args ...string) (string, error) {
+	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
+	if err != nil || appPath == "" {
+		return "", fmt.Errorf("DeviceKit is not installed on device %s, it is required for clipboard access", d.ID())
+	}
+
+	cmdArgs := append([]string{"exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", devicekitClipboardClass}, args...)
+	out, err := d.runAdbCommand(cmdArgs...)
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
+}
+
+func (d *AndroidDevice) GetClipboard() (string, error) {
+	out, err := d.clipboardCommand("get")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
+func (d *AndroidDevice) SetClipboard(text string) error {
+	if text == "" {
+		_, err := d.clipboardCommand("clear")
+		return err
+	}
+
+	// base64 keeps spaces, emoji and other UTF-8 intact across the shell.
+	_, err := d.clipboardCommand("set", "--base64", base64.StdEncoding.EncodeToString([]byte(text)))
+	return err
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
 

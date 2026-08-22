@@ -548,6 +548,54 @@ func handleIoSwipe(params json.RawMessage) (any, error) {
 	return okResponse, nil
 }
 
+type ClipboardGetParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type ClipboardSetParams struct {
+	DeviceID string `json:"deviceId"`
+	Text     string `json:"text"`
+}
+
+func handleClipboardGet(params json.RawMessage) (any, error) {
+	var clipboardParams ClipboardGetParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &clipboardParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	response := commands.ClipboardGetCommand(commands.ClipboardGetRequest{
+		DeviceID: clipboardParams.DeviceID,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleClipboardSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
+	}
+
+	var clipboardParams ClipboardSetParams
+	if err := json.Unmarshal(params, &clipboardParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
+	}
+
+	response := commands.ClipboardSetCommand(commands.ClipboardSetRequest{
+		DeviceID: clipboardParams.DeviceID,
+		Text:     clipboardParams.Text,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
 type IoTextParams struct {
 	DeviceID string `json:"deviceId"`
 	Text     string `json:"text"`
