@@ -582,8 +582,8 @@ func (s SimulatorDevice) LongPress(x, y, duration int) error {
 	return s.deviceKitClient.LongPress(x, y, duration)
 }
 
-func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
-	return s.deviceKitClient.Swipe(x1, y1, x2, y2)
+func (s SimulatorDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	return s.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {

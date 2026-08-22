@@ -48,6 +48,7 @@ type SwipeRequest struct {
 	Y1       int    `json:"y1"`
 	X2       int    `json:"x2"`
 	Y2       int    `json:"y2"`
+	Duration int    `json:"duration"`
 }
 
 // TapCommand performs a tap operation on the specified device
@@ -219,7 +220,7 @@ func SwipeCommand(req SwipeRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2)
+	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2, req.Duration)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to swipe on device %s: %v", targetDevice.ID(), err))
 	}

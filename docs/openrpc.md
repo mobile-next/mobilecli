@@ -908,6 +908,7 @@ Performs a swipe gesture from one coordinate to another on the device screen
 | `y1` | `integer` | ✓ | Starting Y coordinate |
 | `x2` | `integer` | ✓ | Ending X coordinate |
 | `y2` | `integer` | ✓ | Ending Y coordinate |
+| `duration` | `integer` |  | Duration of the swipe in milliseconds, omitted applies the platform default |
 
 #### Response
 
@@ -926,7 +927,8 @@ Operation result
     "x1": 0,
     "y1": 0,
     "x2": 0,
-    "y2": 0
+    "y2": 0,
+    "duration": 0
   },
   "id": 1
 }

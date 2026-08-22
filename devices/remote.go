@@ -123,8 +123,13 @@ func (r *RemoteDevice) LongPress(x, y, duration int) error {
 	return r.fireRPC("device.io.longpress", params{"x": x, "y": y, "duration": duration})
 }
 
-func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
-	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	p := params{"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+	if duration > 0 {
+		p["duration"] = duration
+	}
+
+	return r.fireRPC("device.io.swipe", p)
 }
 
 func (r *RemoteDevice) Gesture(actions []devicekit.TapAction) error {

@@ -219,8 +219,8 @@ func (d IOSDevice) LongPress(x, y, duration int) error {
 	return d.deviceKitClient.LongPress(x, y, duration)
 }
 
-func (d IOSDevice) Swipe(x1, y1, x2, y2 int) error {
-	return d.deviceKitClient.Swipe(x1, y1, x2, y2)
+func (d IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	return d.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
 func (d IOSDevice) Gesture(actions []devicekit.TapAction) error {
