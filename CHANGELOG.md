@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/mobile-next/mobilecli/releases/tag/1.0.2) (2026-08-23)
+* Feat: Optional duration for swipe gestures ([#344](https://github.com/mobile-next/mobilecli/pull/344)), thanks to [@hakanor](https://github.com/hakanor)
+* Feat(apps): Report version and versionCode for installed apps on all platforms ([#347](https://github.com/mobile-next/mobilecli/pull/347))
+* Fix(ios): Include elements with accessibilityIdentifier in dump ui regardless of type ([#342](https://github.com/mobile-next/mobilecli/pull/342))
+* Fix: Don't ack device.screenrecord until the broadcast is confirmed live ([#339](https://github.com/mobile-next/mobilecli/pull/339))
+
 ## [1.0.1](https://github.com/mobile-next/mobilecli/releases/tag/1.0.1) (2026-08-10)
 * Feat(screencapture): Default FPS to 30 instead of leaving it unset ([#335](https://github.com/mobile-next/mobilecli/pull/335))
 * Feat: Dump UI via persistent devicekit server on android ([#334](https://github.com/mobile-next/mobilecli/pull/334))
