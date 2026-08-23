@@ -448,6 +448,7 @@ type IoSwipeParams struct {
 	Y1       int    `json:"y1"`
 	X2       int    `json:"x2"`
 	Y2       int    `json:"y2"`
+	Duration int    `json:"duration"`
 }
 
 func handleIoTap(params json.RawMessage) (any, error) {
@@ -538,6 +539,7 @@ func handleIoSwipe(params json.RawMessage) (any, error) {
 		Y1:       ioSwipeParams.Y1,
 		X2:       ioSwipeParams.X2,
 		Y2:       ioSwipeParams.Y2,
+		Duration: ioSwipeParams.Duration,
 	}
 
 	response := commands.SwipeCommand(req)

@@ -126,7 +126,7 @@ type ControllableDevice interface {
 	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
-	Swipe(x1, y1, x2, y2 int) error
+	Swipe(x1, y1, x2, y2, duration int) error
 	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
