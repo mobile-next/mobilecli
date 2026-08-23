@@ -48,7 +48,7 @@ var clipboardSetCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(clipboardCmd)
+	ioCmd.AddCommand(clipboardCmd)
 	clipboardCmd.AddCommand(clipboardGetCmd)
 	clipboardCmd.AddCommand(clipboardSetCmd)
 

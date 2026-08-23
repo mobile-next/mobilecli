@@ -553,8 +553,8 @@ type ClipboardGetParams struct {
 }
 
 type ClipboardSetParams struct {
-	DeviceID string `json:"deviceId"`
-	Text     string `json:"text"`
+	DeviceID string  `json:"deviceId"`
+	Text     *string `json:"text"`
 }
 
 func handleClipboardGet(params json.RawMessage) (any, error) {
@@ -585,9 +585,13 @@ func handleClipboardSet(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
 	}
 
+	if clipboardParams.Text == nil {
+		return nil, fmt.Errorf("'text' is required")
+	}
+
 	response := commands.ClipboardSetCommand(commands.ClipboardSetRequest{
 		DeviceID: clipboardParams.DeviceID,
-		Text:     clipboardParams.Text,
+		Text:     *clipboardParams.Text,
 	})
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
