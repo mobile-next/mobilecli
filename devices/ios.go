@@ -886,6 +886,7 @@ func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 			PackageName: app.CFBundleIdentifier(),
 			AppName:     app.CFBundleName(),
 			Version:     app.CFBundleShortVersionString(),
+			VersionCode: stringValue(app[installationproxy.CFBundleVersion]),
 		})
 	}
 
@@ -1657,4 +1658,10 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+// stringValue returns v as a string when it is one, else "".
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
 }

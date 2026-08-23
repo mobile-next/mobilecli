@@ -384,6 +384,8 @@ type InstalledAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName,omitempty"`
 	Version     string `json:"version,omitempty"`
+	// VersionCode is the build identifier: CFBundleVersion on iOS, versionCode on Android.
+	VersionCode string `json:"versionCode,omitempty"`
 }
 
 // ForegroundAppInfo represents information about the currently foreground application

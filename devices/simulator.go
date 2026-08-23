@@ -623,6 +623,7 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 			PackageName: app.CFBundleIdentifier,
 			AppName:     app.CFBundleDisplayName,
 			Version:     version,
+			VersionCode: app.CFBundleVersion,
 		})
 	}
 

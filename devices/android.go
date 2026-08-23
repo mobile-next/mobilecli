@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mobile-next/mobilecli/agents"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -929,48 +930,66 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
 	}
 
-	lines := strings.Split(string(output), "\n")
-
-	var packageNames []string
-	seen := make(map[string]bool)
-
-	for _, line := range lines {
+	launchable := make(map[string]bool)
+	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "packageName=") {
-			packageName := strings.TrimPrefix(line, "packageName=")
-			if !seen[packageName] {
-				seen[packageName] = true
-				packageNames = append(packageNames, packageName)
-			}
+			launchable[strings.TrimPrefix(line, "packageName=")] = true
 		}
 	}
 
-	var apps []InstalledAppInfo
-	for _, packageName := range packageNames {
-		apps = append(apps, InstalledAppInfo{
-			PackageName: packageName,
-		})
+	all, err := d.listAllPackages()
+	if err != nil {
+		return nil, err
 	}
 
+	var apps []InstalledAppInfo
+	for _, app := range all {
+		if launchable[app.PackageName] {
+			apps = append(apps, app)
+		}
+	}
 	return apps, nil
 }
 
+// listAllPackages runs the embedded PackageLister (agents/android/java/PackageLister.java)
+// on the device via app_process, which returns name and versions for every package in one
+// call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
-	output, err := d.runAdbCommand("shell", "pm", "list", "packages")
+	const tmpDEX = "/data/local/tmp/mobilecli.dex"
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+		return nil, fmt.Errorf("push .dex: %w", err)
+	}
+
+	output, err := d.runAdbCommand("exec-out", "CLASSPATH="+tmpDEX, "app_process", "/", "com.mobilenext.mobilecli.PackageLister")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list packages: %w", err)
+		return nil, fmt.Errorf("failed to list packages: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
-	var apps []InstalledAppInfo
-	for _, line := range strings.Split(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "package:") {
-			apps = append(apps, InstalledAppInfo{
-				PackageName: strings.TrimPrefix(line, "package:"),
-			})
-		}
+	return parsePackageListerOutput(output)
+}
+
+// parsePackageListerOutput decodes the JSON array printed by PackageLister.
+func parsePackageListerOutput(output []byte) ([]InstalledAppInfo, error) {
+	var listed []struct {
+		PackageName string `json:"packageName"`
+		AppName     string `json:"appName"`
+		Version     string `json:"version"`
+		VersionCode int64  `json:"versionCode"`
+	}
+	if err := json.Unmarshal(output, &listed); err != nil {
+		return nil, fmt.Errorf("failed to parse package list: %w: %s", err, string(output[:min(len(output), 200)]))
 	}
 
+	apps := make([]InstalledAppInfo, 0, len(listed))
+	for _, app := range listed {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: app.PackageName,
+			AppName:     app.AppName,
+			Version:     app.Version,
+			VersionCode: strconv.FormatInt(app.VersionCode, 10),
+		})
+	}
 	return apps, nil
 }
 
