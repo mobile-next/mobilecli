@@ -1,3 +1,9 @@
+## [1.0.4](https://github.com/mobile-next/mobilecli/releases/tag/1.0.4) (2026-08-24)
+* Fix(ios): Start recording time limit and progress ticker when capture is live, not during setup ([#353](https://github.com/mobile-next/mobilecli/pull/353))
+* Fix(ios): Search nested element tree when waiting for broadcast picker buttons ([#352](https://github.com/mobile-next/mobilecli/pull/352))
+* Fix(android): Pass --scale with 4-decimal precision ([#343](https://github.com/mobile-next/mobilecli/pull/343))
+* Fix(android): Align scaled capture dimensions to encoder alignment ([#354](https://github.com/mobile-next/mobilecli/pull/354), [devicekit-android#42](https://github.com/mobile-next/devicekit-android/pull/42))
+
 ## [1.0.3](https://github.com/mobile-next/mobilecli/releases/tag/1.0.3) (2026-08-24)
 * Fix(ios): Re-tap record button while waiting for broadcast picker ([#350](https://github.com/mobile-next/mobilecli/pull/350))
 
