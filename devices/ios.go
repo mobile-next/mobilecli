@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1178,16 +1179,23 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	var lastElements []ScreenElement
 	for broadcastExtensionButton == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear")
+			dump, err := json.Marshal(lastElements)
+			if err != nil {
+				dump = []byte(err.Error())
+			}
+			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
 		case <-ticker.C:
 			elements, err := d.DumpSource()
 			if err != nil {
 				// continue trying on error
 				continue
 			}
+			elements = flattenElements(elements)
+			lastElements = elements
 
 			// find the "BroadcastUploadExtension" button
 			for i := range elements {
@@ -1234,16 +1242,23 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	ticker = time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	lastElements = nil
 	for startBroadcastButton == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for Start Broadcast button to appear")
+			dump, err := json.Marshal(lastElements)
+			if err != nil {
+				dump = []byte(err.Error())
+			}
+			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
 			elements, err := d.DumpSource()
 			if err != nil {
 				// continue trying on error
 				continue
 			}
+			elements = flattenElements(elements)
+			lastElements = elements
 
 			// find the "Start Broadcast" button
 			for i := range elements {
@@ -1267,6 +1282,17 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	}
 
 	return nil
+}
+
+// flattenElements returns the element tree as a flat depth-first list,
+// since DumpSource now returns nested children.
+func flattenElements(elements []ScreenElement) []ScreenElement {
+	var flat []ScreenElement
+	for i := range elements {
+		flat = append(flat, elements[i])
+		flat = append(flat, flattenElements(elements[i].Children)...)
+	}
+	return flat
 }
 
 func hasText(elements []ScreenElement, text string) bool {
