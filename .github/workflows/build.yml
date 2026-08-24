@@ -123,6 +123,9 @@ jobs:
         go fmt ./...
         git diff --exit-code
 
+    - name: Create placeholder agent binaries for typecheck
+      run: touch agents/android/mobilecli.so agents/android/mobilecli.dex agents/ios/agent-sim.dylib
+
     - name: Lint
       uses: golangci/golangci-lint-action@v8
       with:
