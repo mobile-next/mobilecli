@@ -126,7 +126,7 @@ jobs:
     - name: Lint
       uses: golangci/golangci-lint-action@v8
       with:
-        version: v2.2.2
+        version: v2.13.1
       continue-on-error: true
 
   security:
