@@ -120,6 +120,7 @@ type screenRecordProgress struct {
 	stopOnce    sync.Once
 	tickerDone  chan struct{}
 	endedCalled bool
+	wasStarted  bool
 }
 
 func newScreenRecordProgress(req ScreenRecordRequest) *screenRecordProgress {
@@ -131,6 +132,7 @@ func newScreenRecordProgress(req ScreenRecordRequest) *screenRecordProgress {
 }
 
 func (p *screenRecordProgress) started() {
+	p.wasStarted = true
 	if p.silent {
 		return
 	}
@@ -174,6 +176,10 @@ func (p *screenRecordProgress) recordingEnded() {
 	}
 	p.stopTicker()
 	p.endedCalled = true
+	// nothing to report if capture failed before it ever started
+	if !p.wasStarted {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "\nScreen recording ended, please wait while finalizing video\n")
 }
 
@@ -207,9 +213,6 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	}
 
-	progress.started()
-	progress.startTicker()
-
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 		Format:  "avc",
 		Quality: devices.DefaultQuality,
@@ -218,7 +221,12 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 		OnProgress: func(message string) {
 			utils.Verbose(message)
 		},
+		// started/startTicker live here rather than before StartScreenCapture so
+		// the displayed timer doesn't run during the ~10s DeviceKit/broadcast
+		// picker setup.
 		OnReady: func() {
+			progress.started()
+			progress.startTicker()
 			req.signalReady(nil)
 		},
 		OnData: withStopChan(func(data []byte) bool {
@@ -328,14 +336,17 @@ func withStopChan(onData func([]byte) bool, timeLimitSec int, stopChan <-chan st
 		return onData
 	}
 
+	// the deadline starts at the first data frame, not at wrap time: on real iOS
+	// devices setup (DeviceKit + broadcast picker) can take ~10s, which would
+	// otherwise expire a short time limit before any frame arrives.
 	var deadline time.Time
-	if hasTimeLimit {
-		deadline = time.Now().Add(time.Duration(timeLimitSec) * time.Second)
-	}
-
 	return func(data []byte) bool {
-		if hasTimeLimit && time.Now().After(deadline) {
-			return false
+		if hasTimeLimit {
+			if deadline.IsZero() {
+				deadline = time.Now().Add(time.Duration(timeLimitSec) * time.Second)
+			} else if time.Now().After(deadline) {
+				return false
+			}
 		}
 		if hasStopChan {
 			select {
