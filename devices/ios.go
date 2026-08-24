@@ -1167,29 +1167,11 @@ type DeviceKitInfo struct {
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
 // then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
-	// first dump: handle "Press to Start Broadcasting" screen if present
-	firstElements, err := d.DumpSource()
-	if err == nil {
-		if hasText(firstElements, "BroadcastUploadExtension") {
-			// dialog is already open, no need to click anything
-			utils.Verbose("It seems that the start broadcasting dialog is already visible")
-		} else if hasText(firstElements, "Press to Start Broadcasting") {
-			utils.Verbose("Found 'Press to Start Broadcasting' screen; tapping the only button.")
-			buttons := filterButtons(firstElements)
-			if len(buttons) != 1 {
-				return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
-			}
-
-			centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
-			centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
-			utils.Verbose("Tapping at %f,%f", centerX, centerY)
-			if err = d.Tap(centerX, centerY); err != nil {
-				return fmt.Errorf("failed to tap broadcast button: %w", err)
-			}
-		}
-	}
-
-	// first, find and tap "BroadcastUploadExtension"
+	// Poll until the broadcast picker's "BroadcastUploadExtension" entry shows up,
+	// re-tapping the app's record button on every tick where the app screen (and not
+	// the picker) is visible. A single up-front dump is not enough: right after launch
+	// the dump can error or catch the app before it rendered, and skipping the record
+	// tap then means the picker never opens and the old wait loop timed out.
 	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
 	var broadcastExtensionButton *ScreenElement
 	timeout := time.After(10 * time.Second)
@@ -1214,6 +1196,23 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 					break
 				}
 			}
+			if broadcastExtensionButton != nil {
+				break
+			}
+
+			// picker not open yet: tap the record button whenever the app screen is up
+			if hasText(elements, "Press to Start Broadcasting") {
+				buttons := filterButtons(elements)
+				if len(buttons) != 1 {
+					return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
+				}
+				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
+				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+				utils.Verbose("Tapping record button at %f,%f", centerX, centerY)
+				if err = d.Tap(centerX, centerY); err != nil {
+					return fmt.Errorf("failed to tap broadcast button: %w", err)
+				}
+			}
 		}
 	}
 
@@ -1224,8 +1223,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	centerY := broadcastExtensionButton.Rect.Y + broadcastExtensionButton.Rect.Height/2
 	utils.Verbose("Tapping BroadcastUploadExtension button at (%d, %d)", centerX, centerY)
 
-	err = d.Tap(centerX, centerY)
-	if err != nil {
+	if err := d.Tap(centerX, centerY); err != nil {
 		return fmt.Errorf("failed to tap BroadcastUploadExtension button: %w", err)
 	}
 
@@ -1264,8 +1262,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	centerY = startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
 	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
 
-	err = d.Tap(centerX, centerY)
-	if err != nil {
+	if err := d.Tap(centerX, centerY); err != nil {
 		return fmt.Errorf("failed to tap Start Broadcast button: %w", err)
 	}
 
