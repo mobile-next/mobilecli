@@ -1242,10 +1242,15 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	ticker = time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	lastElements = nil
 	for startBroadcastButton == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for Start Broadcast button to appear")
+			dump, err := json.Marshal(lastElements)
+			if err != nil {
+				dump = []byte(err.Error())
+			}
+			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
 			elements, err := d.DumpSource()
 			if err != nil {
@@ -1253,6 +1258,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 				continue
 			}
 			elements = flattenElements(elements)
+			lastElements = elements
 
 			// find the "Start Broadcast" button
 			for i := range elements {
