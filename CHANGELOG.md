@@ -1,3 +1,6 @@
+## [1.0.3](https://github.com/mobile-next/mobilecli/releases/tag/1.0.3) (2026-08-24)
+* Fix(ios): Re-tap record button while waiting for broadcast picker ([#350](https://github.com/mobile-next/mobilecli/pull/350))
+
 ## [1.0.2](https://github.com/mobile-next/mobilecli/releases/tag/1.0.2) (2026-08-23)
 * Feat: Optional duration for swipe gestures ([#344](https://github.com/mobile-next/mobilecli/pull/344)), thanks to [@hakanor](https://github.com/hakanor)
 * Feat(apps): Report version and versionCode for installed apps on all platforms ([#347](https://github.com/mobile-next/mobilecli/pull/347))
