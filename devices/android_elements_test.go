@@ -338,3 +338,212 @@ func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
 		t.Errorf("expected text '•', got %q", got)
 	}
 }
+
+// A disabled node (enabled="false") must still be reported, with Enabled set
+// to false so callers can tell it apart from an interactable one.
+func TestCollectElementsMarksDisabledNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:      "android.widget.Button",
+		Text:       "DISABLED BUTTON",
+		ResourceID: "com.mobilenext.playground:id/disabled_button",
+		Clickable:  "true",
+		Enabled:    "false",
+		Bounds:     "[48,1666][1232,1834]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled == nil || *output[0].Enabled != false {
+		t.Errorf("expected Enabled to be false, got %+v", output[0].Enabled)
+	}
+}
+
+// An enabled node must leave Enabled unset (nil), matching the omitempty
+// convention already used for Focused.
+func TestCollectElementsLeavesEnabledNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:      "android.widget.Button",
+		Text:       "ENABLED BUTTON",
+		ResourceID: "com.mobilenext.playground:id/enabled_button",
+		Clickable:  "true",
+		Enabled:    "true",
+		Bounds:     "[48,1666][1232,1834]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled != nil {
+		t.Errorf("expected Enabled to be nil for an enabled node, got %+v", *output[0].Enabled)
+	}
+}
+
+// devicekit reports enabled as a real bool; a disabled node must surface
+// Enabled=false the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksDisabledNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:      "android.widget.Button",
+			Text:       "DISABLED BUTTON",
+			ResourceID: "com.mobilenext.playground:id/disabled_button",
+			Enabled:    false,
+			Rect:       deviceKitRect{X: 48, Y: 1666, Width: 1184, Height: 168},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled == nil || *output[0].Enabled != false {
+		t.Errorf("expected Enabled to be false, got %+v", output[0].Enabled)
+	}
+}
+
+// A checked Switch (checked="true") must surface Checked=true.
+func TestCollectElementsMarksCheckedSwitch(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.Switch",
+		ContentDesc: "toggle",
+		ResourceID:  "com.mobilenext.playground:id/toggle",
+		Clickable:   "true",
+		Checkable:   "true",
+		Checked:     "true",
+		Bounds:      "[1050,1196][1190,1277]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked == nil || *output[0].Checked != true {
+		t.Errorf("expected Checked to be true, got %+v", output[0].Checked)
+	}
+}
+
+// An unchecked Switch must leave Checked unset (nil), matching the
+// omitempty convention already used for Focused and Enabled.
+func TestCollectElementsLeavesUncheckedSwitchUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.Switch",
+		ContentDesc: "toggle",
+		ResourceID:  "com.mobilenext.playground:id/toggle",
+		Clickable:   "true",
+		Checkable:   "true",
+		Checked:     "false",
+		Bounds:      "[1050,1196][1190,1277]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked != nil {
+		t.Errorf("expected Checked to be nil for an unchecked switch, got %+v", *output[0].Checked)
+	}
+}
+
+// devicekit reports checked as a real bool; a checked node must surface
+// Checked=true the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksCheckedNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.widget.Switch",
+			ContentDesc: "toggle",
+			ResourceID:  "com.mobilenext.playground:id/toggle",
+			Checked:     true,
+			Rect:        deviceKitRect{X: 1050, Y: 1196, Width: 140, Height: 81},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked == nil || *output[0].Checked != true {
+		t.Errorf("expected Checked to be true, got %+v", output[0].Checked)
+	}
+}
+
+// A selected node (e.g. a chosen tab / chip / radio-style option) must surface
+// Selected=true. Compose maps `semantics { selected = true }` to the
+// accessibility selected state, which uiautomator dumps as selected="true".
+func TestCollectElementsMarksSelectedNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.view.View",
+		ContentDesc: "9:16",
+		ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
+		Clickable:   "true",
+		Selected:    "true",
+		Bounds:      "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected == nil || *output[0].Selected != true {
+		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
+	}
+}
+
+// An unselected node must leave Selected unset (nil), matching the omitempty
+// convention already used for Focused, Enabled and Checked.
+func TestCollectElementsLeavesUnselectedNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.view.View",
+		ContentDesc: "1:1",
+		ResourceID:  "com.mobilenext.playground:id/ratio_1_1",
+		Clickable:   "true",
+		Selected:    "false",
+		Bounds:      "[140,0][280,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected != nil {
+		t.Errorf("expected Selected to be nil for an unselected node, got %+v", *output[0].Selected)
+	}
+}
+
+// devicekit reports selected as a real bool; a selected node must surface
+// Selected=true the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.view.View",
+			ContentDesc: "9:16",
+			ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
+			Selected:    true,
+			Rect:        deviceKitRect{X: 0, Y: 0, Width: 140, Height: 140},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected == nil || *output[0].Selected != true {
+		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
+	}
+}

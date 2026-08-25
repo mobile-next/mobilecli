@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.20"
+	agentVersionIOS     = "0.0.24"
 	agentVersionTVOS    = "0.0.20"
-	agentVersionAndroid = "1.2.4"
+	agentVersionAndroid = "1.2.6"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	tvosRunnerBundleID  = "com.mobilenext.devicekit-tvosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
@@ -25,13 +25,13 @@ const (
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "8040f4918892f63d79713b5824184ac5f296c5ec9b23266c25af34777550f28c",
-	"devicekit-ios-Sim-x86_64.zip": "78a8f2d208a22523efbaa5cb2a735557e807f877bb8ec1a1c31c886f2e425684",
-	"devicekit-ios-runner.ipa":     "f5fe88d4169c39001ed012101651c5ac00e8ab54aefb72c74455e7037c2e8205",
+	"devicekit-ios-Sim-arm64.zip":  "72b11809b7e3bb24aaa23f24458bb28bb859967b31fa9dd0a46db2fc080f6915",
+	"devicekit-ios-Sim-x86_64.zip": "aaac190073188c48b3cbc03bcdb4536ab24db2b530187b3ea6878ade3ef821ea",
+	"devicekit-ios-runner.ipa":     "40483399f3a1a1173d8edb932ea3d836edd641b4a1dfd42f7fd7d4618db7b3f6",
 	// tvOS simulator runner is published from the same devicekit-ios release.
 	// Update this checksum whenever the tvOS runner artifact is rebuilt/republished.
 	"devicekit-tvos-Sim-arm64.zip": "49061f17046055c7e89dbf27067a59ab0bffd9d7d14d63031d5411c5963ccb81",
-	"devicekit.apk":                "63b1111fbd3b986c7452bc7c28150b1e9c0d611b2ecd7f6917a0f50a84d0836b",
+	"devicekit.apk":                "01d933a311dac113bb89f2cb3256482467c1e02b287a2fd5e412863b8f907c51",
 }
 
 type agentMessageResponse struct {

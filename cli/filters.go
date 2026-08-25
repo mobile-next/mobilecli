@@ -60,7 +60,7 @@ func parseNameFilter(value string) (commands.DeviceFilter, error) {
 }
 
 // buildAllocateFilters builds a filters slice from CLI flag values.
-func buildAllocateFilters(platform, deviceType string, versions, names []string) ([]commands.DeviceFilter, error) {
+func buildAllocateFilters(platform, deviceType string, versions []string, name string) ([]commands.DeviceFilter, error) {
 	var filters []commands.DeviceFilter
 
 	filters = append(filters, commands.DeviceFilter{
@@ -85,10 +85,10 @@ func buildAllocateFilters(platform, deviceType string, versions, names []string)
 		filters = append(filters, f)
 	}
 
-	for _, n := range names {
-		f, err := parseNameFilter(n)
+	if name != "" {
+		f, err := parseNameFilter(name)
 		if err != nil {
-			return nil, fmt.Errorf("invalid --name %q: %w", n, err)
+			return nil, fmt.Errorf("invalid --name %q: %w", name, err)
 		}
 		filters = append(filters, f)
 	}

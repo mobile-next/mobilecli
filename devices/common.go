@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -81,6 +81,7 @@ type ScreenCaptureConfig struct {
 	FPS        int
 	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
+	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
 
@@ -125,8 +126,8 @@ type ControllableDevice interface {
 	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
-	Swipe(x1, y1, x2, y2 int) error
-	Gesture(actions []wda.TapAction) error
+	Swipe(x1, y1, x2, y2, duration int) error
+	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
 	PressKeys(combos []KeyCombo) error
@@ -244,8 +245,8 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		simulatorsCount = len(filteredSims)
 		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
-				Simulator: sim,
-				wdaClient: nil,
+				Simulator:       sim,
+				deviceKitClient: nil,
 			})
 		}
 	}
@@ -270,8 +271,8 @@ type DeviceListOptions struct {
 }
 
 type DeviceProvider struct {
-	Type      string `json:"type"`
-	SessionID string `json:"sessionId,omitempty"`
+	Type         string `json:"type"`
+	AllocationID string `json:"allocationId,omitempty"`
 }
 
 type DeviceInfo struct {
@@ -383,6 +384,8 @@ type InstalledAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName,omitempty"`
 	Version     string `json:"version,omitempty"`
+	// VersionCode is the build identifier: CFBundleVersion on iOS, versionCode on Android.
+	VersionCode string `json:"versionCode,omitempty"`
 }
 
 // ForegroundAppInfo represents information about the currently foreground application

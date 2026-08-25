@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,9 +25,9 @@ import (
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
+	"github.com/mobile-next/mobilecli/devices/devicekit/mjpeg"
 	"github.com/mobile-next/mobilecli/devices/ios"
-	"github.com/mobile-next/mobilecli/devices/wda"
-	"github.com/mobile-next/mobilecli/devices/wda/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -73,15 +74,15 @@ type IOSDevice struct {
 	OSVersion   string `json:"Version"`
 	ProductType string `json:"ProductType"`
 
-	mu                     sync.Mutex // protects fields below
-	tunnelManager          *ios.TunnelManager
-	wdaClient              *wda.WdaClient
-	mjpegClient            *mjpeg.WdaMjpegClient
-	wdaCancel              context.CancelFunc
-	portForwarderWda       *ios.PortForwarder
-	portForwarderMjpeg     *ios.PortForwarder
-	portForwarderDeviceKit *ios.PortForwarder // devicekit http forwarder
-	portForwarderAvc       *ios.PortForwarder // devicekit h264 stream forwarder
+	mu                          sync.Mutex // protects fields below
+	tunnelManager               *ios.TunnelManager
+	deviceKitClient             *devicekit.DeviceKitClient
+	mjpegClient                 *mjpeg.DeviceKitMjpegClient
+	deviceKitCancel             context.CancelFunc
+	portForwarderDeviceKitAgent *ios.PortForwarder
+	portForwarderMjpeg          *ios.PortForwarder
+	portForwarderDeviceKit      *ios.PortForwarder // devicekit http forwarder
+	portForwarderAvc            *ios.PortForwarder // devicekit h264 stream forwarder
 }
 
 func (d IOSDevice) ID() string {
@@ -152,7 +153,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	}
 
 	device.tunnelManager = tunnelManager
-	device.wdaClient = wda.NewWdaClient("localhost:8100")
+	device.deviceKitClient = devicekit.NewDeviceKitClient("localhost:8100")
 
 	return device, nil
 }
@@ -178,7 +179,7 @@ func ListIOSDevices() ([]IOSDevice, error) {
 }
 
 func (d IOSDevice) TakeScreenshot() ([]byte, error) {
-	return d.wdaClient.TakeScreenshot()
+	return d.deviceKitClient.TakeScreenshot()
 }
 
 func (d IOSDevice) Reboot() error {
@@ -213,19 +214,19 @@ func (d IOSDevice) Shutdown() error {
 }
 
 func (d IOSDevice) Tap(x, y int) error {
-	return d.wdaClient.Tap(x, y)
+	return d.deviceKitClient.Tap(x, y)
 }
 
 func (d IOSDevice) LongPress(x, y, duration int) error {
-	return d.wdaClient.LongPress(x, y, duration)
+	return d.deviceKitClient.LongPress(x, y, duration)
 }
 
-func (d IOSDevice) Swipe(x1, y1, x2, y2 int) error {
-	return d.wdaClient.Swipe(x1, y1, x2, y2)
+func (d IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	return d.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
-func (d IOSDevice) Gesture(actions []wda.TapAction) error {
-	return d.wdaClient.Gesture(actions)
+func (d IOSDevice) Gesture(actions []devicekit.TapAction) error {
+	return d.deviceKitClient.Gesture(actions)
 }
 
 type Tunnel struct {
@@ -286,7 +287,7 @@ func (d *IOSDevice) Cleanup() error {
 	var errs []error
 
 	// cleanup each resource type
-	if err := d.cleanupWDA(); err != nil {
+	if err := d.cleanupDeviceKit(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -310,8 +311,8 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	hasWda := d.wdaCancel != nil
-	hasWdaPort := d.portForwarderWda != nil && d.portForwarderWda.IsRunning()
+	hasWda := d.deviceKitCancel != nil
+	hasWdaPort := d.portForwarderDeviceKitAgent != nil && d.portForwarderDeviceKitAgent.IsRunning()
 	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
 	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
 	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
@@ -320,11 +321,11 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
 }
 
-// cleanupWDA cancels the WebDriverAgent context
-func (d *IOSDevice) cleanupWDA() error {
+// cleanupDeviceKit cancels the WebDriverAgent context
+func (d *IOSDevice) cleanupDeviceKit() error {
 	d.mu.Lock()
-	cancel := d.wdaCancel
-	d.wdaCancel = nil
+	cancel := d.deviceKitCancel
+	d.deviceKitCancel = nil
 	d.mu.Unlock()
 
 	if cancel != nil {
@@ -338,7 +339,7 @@ func (d *IOSDevice) cleanupWDA() error {
 // cleanupPortForwarders stops WDA, MJPEG, and DeviceKit port forwarders
 func (d *IOSDevice) cleanupPortForwarders() error {
 	d.mu.Lock()
-	wdaForwarder := d.portForwarderWda
+	wdaForwarder := d.portForwarderDeviceKitAgent
 	mjpegForwarder := d.portForwarderMjpeg
 	httpForwarder := d.portForwarderDeviceKit
 	streamForwarder := d.portForwarderAvc
@@ -476,7 +477,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	_, err := d.wdaClient.GetStatus()
+	_, err := d.deviceKitClient.GetStatus()
 	if err != nil {
 		utils.Verbose("WebdriverAgent is not running, starting it")
 
@@ -513,7 +514,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 		// set up WDA port forwarding if not already running
 		d.mu.Lock()
-		needsPortForwarder := d.portForwarderWda == nil || !d.portForwarderWda.IsRunning()
+		needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
 		d.mu.Unlock()
 
 		if needsPortForwarder {
@@ -529,27 +530,27 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 			}
 
 			d.mu.Lock()
-			d.portForwarderWda = forwarder
-			d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", port))
+			d.portForwarderDeviceKitAgent = forwarder
+			d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
 			d.mu.Unlock()
 
 			utils.Verbose("WDA port forwarder set up on port %d", port)
 		} else {
 			d.mu.Lock()
-			srcPort, _ := d.portForwarderWda.GetPorts()
+			srcPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
 			d.mu.Unlock()
 			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
 
-			// ensure wdaClient is set if not already
+			// ensure deviceKitClient is set if not already
 			d.mu.Lock()
-			if d.wdaClient == nil {
-				d.wdaClient = wda.NewWdaClient(fmt.Sprintf("http://localhost:%d", srcPort))
+			if d.deviceKitClient == nil {
+				d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", srcPort))
 			}
 			d.mu.Unlock()
 		}
 
 		// check if wda is already running, now that we have a port forwarder set up
-		status, err := d.wdaClient.GetStatus()
+		status, err := d.deviceKitClient.GetStatus()
 		if err == nil {
 			utils.Verbose("WebDriverAgent is already running")
 		}
@@ -571,19 +572,19 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 				config.OnProgress("Waiting for agent to start")
 			}
 
-			err = d.wdaClient.WaitForAgent()
+			err = d.deviceKitClient.WaitForAgent()
 			if err != nil {
 				return fmt.Errorf("failed to wait for agent: %w", err)
 			}
 
 			// background the agent if it's in the foreground
-			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			activeApp, err := d.deviceKitClient.GetActiveAppInfo()
 			if err == nil {
 				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
 
 				if activeApp.BundleID == agentBundleId {
 					utils.Verbose("agent is active, pressing HOME to background it")
-					_ = d.wdaClient.PressButton("HOME")
+					_ = d.deviceKitClient.PressButton("HOME")
 					time.Sleep(1 * time.Second)
 				}
 			}
@@ -614,7 +615,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 
 	// check if wda is already running (thread-safe)
 	d.mu.Lock()
-	if d.wdaCancel != nil {
+	if d.deviceKitCancel != nil {
 		d.mu.Unlock()
 		utils.Verbose("WebDriverAgent is already running")
 		return nil
@@ -622,7 +623,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 
 	// create context and store cancel function
 	ctx, cancel := context.WithCancel(context.Background())
-	d.wdaCancel = cancel
+	d.deviceKitCancel = cancel
 	d.mu.Unlock()
 
 	// start WDA in background using testmanagerd similar to go-ios runwda command
@@ -645,7 +646,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 
 		// clear cancel function when done (thread-safe)
 		d.mu.Lock()
-		d.wdaCancel = nil
+		d.deviceKitCancel = nil
 		d.mu.Unlock()
 	}()
 
@@ -654,7 +655,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 }
 
 func (d *IOSDevice) PressButton(key string) error {
-	return d.wdaClient.PressButton(key)
+	return d.deviceKitClient.PressButton(key)
 }
 
 func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
@@ -841,15 +842,15 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 }
 
 func (d IOSDevice) SendKeys(text string) error {
-	return d.wdaClient.SendKeys(text)
+	return d.deviceKitClient.SendKeys(text)
 }
 
 func (d IOSDevice) PressKeys(combos []KeyCombo) error {
-	return d.wdaClient.PressKeys(toWdaKeyCombos(combos))
+	return d.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
 }
 
 func (d IOSDevice) OpenURL(url string) error {
-	return d.wdaClient.OpenURL(url)
+	return d.deviceKitClient.OpenURL(url)
 }
 
 func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
@@ -887,6 +888,7 @@ func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 			PackageName: app.CFBundleIdentifier(),
 			AppName:     app.CFBundleName(),
 			Version:     app.CFBundleShortVersionString(),
+			VersionCode: stringValue(app[installationproxy.CFBundleVersion]),
 		})
 	}
 
@@ -895,7 +897,7 @@ func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 
 func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	// get active app info from WDA
-	activeApp, err := d.wdaClient.GetActiveAppInfo()
+	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active app info: %w", err)
 	}
@@ -926,7 +928,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d IOSDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := d.wdaClient.GetWindowSize()
+	wdaSize, err := d.deviceKitClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
 	}
@@ -1000,10 +1002,16 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			// start DeviceKit
 			// Note: passing nil registry since this is internal call from StartScreenCapture
 			// ScreenCapture callers should have already registered the device via StartAgent
-			deviceKitInfo, err = d.StartDeviceKit(nil)
+			deviceKitInfo, err = d.StartDeviceKitAvc(nil)
 			if err != nil {
 				return fmt.Errorf("failed to start DeviceKit: %w", err)
 			}
+		}
+
+		// DeviceKit is confirmed running (either reused or freshly started and the
+		// broadcast picker was clicked) — safe to tell the caller capture is live.
+		if config.OnReady != nil {
+			config.OnReady()
 		}
 
 		if config.OnProgress != nil {
@@ -1062,9 +1070,9 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	wdaPort, _ := d.portForwarderWda.GetPorts()
+	wdaPort := d.deviceKitClient.Port()
 	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
-	d.mjpegClient = mjpeg.NewWdaMjpegClient(mjpegURL)
+	d.mjpegClient = mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	d.mu.Unlock()
 
 	if config.OnProgress != nil {
@@ -1075,11 +1083,11 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 }
 
 func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
-	return d.wdaClient.GetSourceElements()
+	return d.deviceKitClient.GetSourceElements()
 }
 
 func (d IOSDevice) DumpSourceRaw() (any, error) {
-	return d.wdaClient.GetSourceRaw()
+	return d.deviceKitClient.GetSourceRaw()
 }
 
 func (d IOSDevice) InstallApp(path string) error {
@@ -1144,12 +1152,12 @@ func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 
 // GetOrientation gets the current device orientation
 func (d IOSDevice) GetOrientation() (string, error) {
-	return d.wdaClient.GetOrientation()
+	return d.deviceKitClient.GetOrientation()
 }
 
 // SetOrientation sets the device orientation
 func (d IOSDevice) SetOrientation(orientation string) error {
-	return d.wdaClient.SetOrientation(orientation)
+	return d.deviceKitClient.SetOrientation(orientation)
 }
 
 // DeviceKitInfo contains information about the started DeviceKit session
@@ -1161,47 +1169,57 @@ type DeviceKitInfo struct {
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
 // then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
-	// first dump: handle "Press to Start Broadcasting" screen if present
-	firstElements, err := d.DumpSource()
-	if err == nil {
-		if hasText(firstElements, "Press to Start Broadcasting") {
-			utils.Verbose("Found 'Press to Start Broadcasting' screen; tapping the only button.")
-			buttons := filterButtons(firstElements)
-			if len(buttons) != 1 {
-				return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
-			}
-
-			centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
-			centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
-			if err = d.Tap(centerX, centerY); err != nil {
-				return fmt.Errorf("failed to tap broadcast button: %w", err)
-			}
-		}
-	}
-
-	// first, find and tap "BroadcastUploadExtension"
+	// Poll until the broadcast picker's "BroadcastUploadExtension" entry shows up,
+	// re-tapping the app's record button on every tick where the app screen (and not
+	// the picker) is visible. A single up-front dump is not enough: right after launch
+	// the dump can error or catch the app before it rendered, and skipping the record
+	// tap then means the picker never opens and the old wait loop timed out.
 	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
 	var broadcastExtensionButton *ScreenElement
 	timeout := time.After(10 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	var lastElements []ScreenElement
 	for broadcastExtensionButton == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear")
+			dump, err := json.Marshal(lastElements)
+			if err != nil {
+				dump = []byte(err.Error())
+			}
+			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
 		case <-ticker.C:
 			elements, err := d.DumpSource()
 			if err != nil {
 				// continue trying on error
 				continue
 			}
+			elements = flattenElements(elements)
+			lastElements = elements
 
 			// find the "BroadcastUploadExtension" button
 			for i := range elements {
 				if elements[i].Name != nil && *elements[i].Name == "BroadcastUploadExtension" {
 					broadcastExtensionButton = &elements[i]
 					break
+				}
+			}
+			if broadcastExtensionButton != nil {
+				break
+			}
+
+			// picker not open yet: tap the record button whenever the app screen is up
+			if hasText(elements, "Press to Start Broadcasting") {
+				buttons := filterButtons(elements)
+				if len(buttons) != 1 {
+					return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
+				}
+				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
+				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+				utils.Verbose("Tapping record button at %f,%f", centerX, centerY)
+				if err = d.Tap(centerX, centerY); err != nil {
+					return fmt.Errorf("failed to tap broadcast button: %w", err)
 				}
 			}
 		}
@@ -1214,8 +1232,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	centerY := broadcastExtensionButton.Rect.Y + broadcastExtensionButton.Rect.Height/2
 	utils.Verbose("Tapping BroadcastUploadExtension button at (%d, %d)", centerX, centerY)
 
-	err = d.Tap(centerX, centerY)
-	if err != nil {
+	if err := d.Tap(centerX, centerY); err != nil {
 		return fmt.Errorf("failed to tap BroadcastUploadExtension button: %w", err)
 	}
 
@@ -1226,16 +1243,23 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	ticker = time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	lastElements = nil
 	for startBroadcastButton == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timeout waiting for Start Broadcast button to appear")
+			dump, err := json.Marshal(lastElements)
+			if err != nil {
+				dump = []byte(err.Error())
+			}
+			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
 			elements, err := d.DumpSource()
 			if err != nil {
 				// continue trying on error
 				continue
 			}
+			elements = flattenElements(elements)
+			lastElements = elements
 
 			// find the "Start Broadcast" button
 			for i := range elements {
@@ -1254,12 +1278,22 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	centerY = startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
 	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
 
-	err = d.Tap(centerX, centerY)
-	if err != nil {
+	if err := d.Tap(centerX, centerY); err != nil {
 		return fmt.Errorf("failed to tap Start Broadcast button: %w", err)
 	}
 
 	return nil
+}
+
+// flattenElements returns the element tree as a flat depth-first list,
+// since DumpSource now returns nested children.
+func flattenElements(elements []ScreenElement) []ScreenElement {
+	var flat []ScreenElement
+	for i := range elements {
+		flat = append(flat, elements[i])
+		flat = append(flat, flattenElements(elements[i].Children)...)
+	}
+	return flat
 }
 
 func hasText(elements []ScreenElement, text string) bool {
@@ -1418,10 +1452,90 @@ func (d *IOSDevice) isDeviceKitRunning() bool {
 	return true
 }
 
-// StartDeviceKit starts the devicekit-ios XCUITest which provides:
+// findScreenCaptureAppBundleId finds the DeviceKit H.264 screen capture app
+// (not the xctrunner) among the device's installed apps.
+func findScreenCaptureAppBundleId(apps []InstalledAppInfo) (string, error) {
+	for _, app := range apps {
+		if strings.Contains(app.PackageName, "com.mobilenext.devicekit-h264") {
+			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
+			return app.PackageName, nil
+		}
+	}
+	return "", fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
+}
+
+// startDeviceKitAvcForwarders sets up the HTTP and H.264 stream port forwarders,
+// cleaning up any partially created forwarder on failure.
+func (d *IOSDevice) startDeviceKitAvcForwarders() (int, int, error) {
+	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to find available port for HTTP: %w", err)
+	}
+
+	d.mu.Lock()
+	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	if err := d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort); err != nil {
+		return 0, 0, fmt.Errorf("failed to forward HTTP port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
+
+	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		_ = d.portForwarderDeviceKit.Stop()
+		return 0, 0, fmt.Errorf("failed to find available port for stream: %w", err)
+	}
+
+	d.mu.Lock()
+	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
+	d.mu.Unlock()
+
+	if err := d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort); err != nil {
+		_ = d.portForwarderDeviceKit.Stop()
+		return 0, 0, fmt.Errorf("failed to forward stream port: %w", err)
+	}
+	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
+
+	return localHTTPPort, localStreamPort, nil
+}
+
+// stopDeviceKitAvcForwarders stops the HTTP and H.264 stream port forwarders.
+func (d *IOSDevice) stopDeviceKitAvcForwarders() {
+	_ = d.portForwarderDeviceKit.Stop()
+	_ = d.portForwarderAvc.Stop()
+}
+
+// launchDeviceKitApp launches the DeviceKit app and waits for it to reach the foreground.
+func (d *IOSDevice) launchDeviceKitApp(bundleId string) error {
+	utils.Verbose("Launching DeviceKit app: %s", bundleId)
+	if err := d.LaunchApp(bundleId, LaunchOptions{}); err != nil {
+		return fmt.Errorf("failed to launch DeviceKit app: %w", err)
+	}
+
+	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
+	if err := d.waitForAppInForeground(bundleId, deviceKitAppLaunchTimeout); err != nil {
+		return fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	}
+
+	return nil
+}
+
+// dismissDeviceKitApp presses HOME a few times to return to the home screen
+// after the broadcast has started.
+func (d *IOSDevice) dismissDeviceKitApp() {
+	for i := 0; i < 3; i++ {
+		if err := d.PressButton("HOME"); err != nil {
+			utils.Verbose("Failed to press HOME button (attempt %d): %v", i+1, err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// StartDeviceKitAvc starts the devicekit-ios XCUITest which provides:
 // - An HTTP server for tap/dumpUI commands (port 12004)
 // - A broadcast extension for H.264 screen streaming (port 12005)
-func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
+func (d *IOSDevice) StartDeviceKitAvc(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	// register cleanup hook for this device
 	if hook != nil {
 		hookName := fmt.Sprintf("ios-devicekit-%s", d.Udid)
@@ -1429,87 +1543,32 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	}
 
 	// Start tunnel if needed (iOS 17+)
-	err := d.startTunnel()
-	if err != nil {
+	if err := d.startTunnel(); err != nil {
 		return nil, fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
 	// Broadcast is not running, we need to start it.
 	utils.Verbose("Broadcast extension not running, starting DeviceKit app...")
 
-	// find DeviceKit main app (not the xctrunner)
 	apps, err := d.ListApps(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
 
-	var devicekitMainAppBundleId string
-	for _, app := range apps {
-		// look for the main app, not the test runner
-		if strings.HasPrefix(app.PackageName, "com.") && strings.Contains(app.PackageName, "devicekit-ios") && !strings.Contains(app.PackageName, "UITests") {
-			utils.Verbose("DeviceKit main app found, bundle ID: %s", app.PackageName)
-			devicekitMainAppBundleId = app.PackageName
-			break
-		}
-	}
-
-	if devicekitMainAppBundleId == "" {
-		return nil, fmt.Errorf("DeviceKit main app not found. Please install devicekit-ios on the device")
-	}
-
-	// Find available local port for HTTP forwarding and bind immediately.
-	localHTTPPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	screenCaptureAppBundleId, err := findScreenCaptureAppBundleId(apps)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find available port for HTTP: %w", err)
+		return nil, err
 	}
 
-	d.mu.Lock()
-	d.portForwarderDeviceKit = ios.NewPortForwarder(d.ID())
-	d.mu.Unlock()
-
-	err = d.portForwarderDeviceKit.Forward(localHTTPPort, deviceKitHTTPPort)
+	localHTTPPort, localStreamPort, err := d.startDeviceKitAvcForwarders()
 	if err != nil {
-		return nil, fmt.Errorf("failed to forward HTTP port: %w", err)
-	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (HTTP)", localHTTPPort, deviceKitHTTPPort)
-	// Find available local port for stream forwarding after HTTP is bound.
-	localStreamPort, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-	if err != nil {
-		_ = d.portForwarderDeviceKit.Stop()
-		return nil, fmt.Errorf("failed to find available port for stream: %w", err)
+		return nil, err
 	}
 
-	d.mu.Lock()
-	d.portForwarderAvc = ios.NewPortForwarder(d.ID())
-	d.mu.Unlock()
-
-	err = d.portForwarderAvc.Forward(localStreamPort, deviceKitStreamPort)
-	if err != nil {
-		// clean up HTTP forwarder on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		return nil, fmt.Errorf("failed to forward stream port: %w", err)
-	}
-	utils.Verbose("Port forwarding started: localhost:%d -> device:%d (H.264 stream)", localStreamPort, deviceKitStreamPort)
-
-	// Launch the main DeviceKit app
-	utils.Verbose("Launching DeviceKit app: %s", devicekitMainAppBundleId)
 	startTime := time.Now()
-	err = d.LaunchApp(devicekitMainAppBundleId, LaunchOptions{})
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
-		return nil, fmt.Errorf("failed to launch DeviceKit app: %w", err)
-	}
-
-	// wait for the app to be in foreground
-	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
-	err = d.waitForAppInForeground(devicekitMainAppBundleId, deviceKitAppLaunchTimeout)
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
-		return nil, fmt.Errorf("failed to wait for DeviceKit app: %w", err)
+	if err := d.launchDeviceKitApp(screenCaptureAppBundleId); err != nil {
+		d.stopDeviceKitAvcForwarders()
+		return nil, err
 	}
 
 	// Start WebDriverAgent to be able to tap on the screen
@@ -1518,20 +1577,14 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 			utils.Verbose(message)
 		},
 	})
-
 	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
+		d.stopDeviceKitAvcForwarders()
 		return nil, fmt.Errorf("failed to start agent: %w", err)
 	}
 
 	// find and tap the "Start Broadcast" button
-	err = d.clickStartBroadcastButton()
-	if err != nil {
-		// clean up port forwarders on failure
-		_ = d.portForwarderDeviceKit.Stop()
-		_ = d.portForwarderAvc.Stop()
+	if err := d.clickStartBroadcastButton(); err != nil {
+		d.stopDeviceKitAvcForwarders()
 		return nil, fmt.Errorf("failed to click Start Broadcast button: %w", err)
 	}
 
@@ -1543,14 +1596,7 @@ func (d *IOSDevice) StartDeviceKit(hook *ShutdownHook) (*DeviceKitInfo, error) {
 	utils.Verbose("Waiting %v for broadcast TCP server to start...", deviceKitBroadcastTimeout)
 	time.Sleep(deviceKitBroadcastTimeout)
 
-	// Press HOME 3 times to dismiss the DeviceKit app and return to home screen
-	for i := 0; i < 3; i++ {
-		err = d.PressButton("HOME")
-		if err != nil {
-			utils.Verbose("Failed to press HOME button (attempt %d): %v", i+1, err)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	d.dismissDeviceKitApp()
 
 	utils.Verbose("DeviceKit broadcast started successfully")
 
@@ -1571,7 +1617,7 @@ func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duratio
 		case <-deadline:
 			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
 		case <-ticker.C:
-			activeApp, err := d.wdaClient.GetActiveAppInfo()
+			activeApp, err := d.deviceKitClient.GetActiveAppInfo()
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1636,4 +1682,10 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+// stringValue returns v as a string when it is one, else "".
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
 }

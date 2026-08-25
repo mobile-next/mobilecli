@@ -442,6 +442,14 @@
           "schema": {
             "type": "integer"
           }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the swipe in milliseconds, omitted applies the platform default",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
         }
       ],
       "result": {

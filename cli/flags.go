@@ -26,10 +26,10 @@ var (
 	agentForce               bool
 	agentProvisioningProfile string
 
-	// for fleet allocate command
+	// for remote allocate command
 	fleetType     string
 	fleetVersions []string
-	fleetNames    []string
+	fleetName     string
 	fleetWait     bool
 	fleetTimeout  int
 
