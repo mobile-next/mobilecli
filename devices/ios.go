@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,33 +83,36 @@ type IOSDevice struct {
 	portForwarderMjpeg          *ios.PortForwarder
 	portForwarderDeviceKit      *ios.PortForwarder // devicekit http forwarder
 	portForwarderAvc            *ios.PortForwarder // devicekit h264 stream forwarder
+	avcStreamConn               net.Conn           // live h264 stream conn, doubles as the control channel
+
+	avcWriteMu sync.Mutex // serializes control writes on avcStreamConn
 }
 
-func (d IOSDevice) ID() string {
+func (d *IOSDevice) ID() string {
 	return d.Udid
 }
 
-func (d IOSDevice) Name() string {
+func (d *IOSDevice) Name() string {
 	return d.DeviceName
 }
 
-func (d IOSDevice) Version() string {
+func (d *IOSDevice) Version() string {
 	return d.OSVersion
 }
 
-func (d IOSDevice) Platform() string {
+func (d *IOSDevice) Platform() string {
 	return "ios"
 }
 
-func (d IOSDevice) DeviceType() string {
+func (d *IOSDevice) DeviceType() string {
 	return "real"
 }
 
-func (d IOSDevice) State() string {
+func (d *IOSDevice) State() string {
 	return "online"
 }
 
-func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
+func getDeviceInfo(deviceEntry goios.DeviceEntry) (*IOSDevice, error) {
 	log.SetLevel(log.WarnLevel)
 
 	udid := deviceEntry.Properties.SerialNumber
@@ -124,7 +128,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	} else {
 		allValues, err := goios.GetValues(deviceEntry)
 		if err != nil {
-			return IOSDevice{}, fmt.Errorf("failed getting values for device %s: %w", udid, err)
+			return nil, fmt.Errorf("failed getting values for device %s: %w", udid, err)
 		}
 
 		deviceName = allValues.Value.DeviceName
@@ -139,7 +143,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 		})
 	}
 
-	device := IOSDevice{
+	device := &IOSDevice{
 		Udid:        udid,
 		DeviceName:  deviceName,
 		OSVersion:   osVersion,
@@ -148,7 +152,7 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 
 	tunnelManager, err := ios.NewTunnelManager(udid)
 	if err != nil {
-		return IOSDevice{}, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
+		return nil, fmt.Errorf("failed to create tunnel manager for device %s: %w", udid, err)
 	}
 
 	device.tunnelManager = tunnelManager
@@ -157,19 +161,19 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (IOSDevice, error) {
 	return device, nil
 }
 
-func ListIOSDevices() ([]IOSDevice, error) {
+func ListIOSDevices() ([]*IOSDevice, error) {
 	log.SetLevel(log.WarnLevel)
 
 	deviceList, err := goios.ListDevices()
 	if err != nil {
-		return []IOSDevice{}, fmt.Errorf("failed getting device list: %w", err)
+		return nil, fmt.Errorf("failed getting device list: %w", err)
 	}
 
-	devices := make([]IOSDevice, len(deviceList.DeviceList))
+	devices := make([]*IOSDevice, len(deviceList.DeviceList))
 	for i, deviceEntry := range deviceList.DeviceList {
 		device, err := getDeviceInfo(deviceEntry)
 		if err != nil {
-			return []IOSDevice{}, fmt.Errorf("failed to get device info: %w", err)
+			return nil, fmt.Errorf("failed to get device info: %w", err)
 		}
 		devices[i] = device
 	}
@@ -177,11 +181,11 @@ func ListIOSDevices() ([]IOSDevice, error) {
 	return devices, nil
 }
 
-func (d IOSDevice) TakeScreenshot() ([]byte, error) {
+func (d *IOSDevice) TakeScreenshot() ([]byte, error) {
 	return d.deviceKitClient.TakeScreenshot()
 }
 
-func (d IOSDevice) Reboot() error {
+func (d *IOSDevice) Reboot() error {
 	log.SetLevel(log.WarnLevel)
 
 	// ensure tunnel is running for iOS 17+
@@ -204,35 +208,35 @@ func (d IOSDevice) Reboot() error {
 	return nil
 }
 
-func (d IOSDevice) Boot() error {
+func (d *IOSDevice) Boot() error {
 	return fmt.Errorf("boot is not supported for real iOS devices")
 }
 
-func (d IOSDevice) Shutdown() error {
+func (d *IOSDevice) Shutdown() error {
 	return fmt.Errorf("shutdown is not supported for real iOS devices")
 }
 
-func (d IOSDevice) Tap(x, y int) error {
+func (d *IOSDevice) Tap(x, y int) error {
 	return d.deviceKitClient.Tap(x, y)
 }
 
-func (d IOSDevice) LongPress(x, y, duration int) error {
+func (d *IOSDevice) LongPress(x, y, duration int) error {
 	return d.deviceKitClient.LongPress(x, y, duration)
 }
 
-func (d IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
+func (d *IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return d.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
-func (d IOSDevice) GetClipboard() (string, error) {
+func (d *IOSDevice) GetClipboard() (string, error) {
 	return d.deviceKitClient.GetClipboard()
 }
 
-func (d IOSDevice) SetClipboard(text string) error {
+func (d *IOSDevice) SetClipboard(text string) error {
 	return d.deviceKitClient.SetClipboard(text)
 }
 
-func (d IOSDevice) Gesture(actions []devicekit.TapAction) error {
+func (d *IOSDevice) Gesture(actions []devicekit.TapAction) error {
 	return d.deviceKitClient.Gesture(actions)
 }
 
@@ -244,7 +248,7 @@ type Tunnel struct {
 	UserspaceTunPort int    `json:"userspaceTunPort"`
 }
 
-func (d IOSDevice) ListTunnels() ([]Tunnel, error) {
+func (d *IOSDevice) ListTunnels() ([]Tunnel, error) {
 	log.SetLevel(log.WarnLevel)
 
 	if d.tunnelManager == nil {
@@ -690,7 +694,7 @@ func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string
 }
 
 // getEnhancedDevice gets device info enhanced with tunnel/RSD information for iOS 17+
-func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
+func (d *IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	const userspaceTunnelHost = "localhost"
 
 	device, err := goios.GetDevice(d.Udid)
@@ -732,7 +736,7 @@ func (d IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	return device, nil
 }
 
-func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
+func (d *IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
@@ -777,7 +781,7 @@ func (d IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 	return nil
 }
 
-func (d IOSDevice) TerminateApp(bundleID string) error {
+func (d *IOSDevice) TerminateApp(bundleID string) error {
 	if bundleID == "" {
 		return fmt.Errorf("bundleID cannot be empty")
 	}
@@ -848,15 +852,15 @@ func (d IOSDevice) TerminateApp(bundleID string) error {
 	return fmt.Errorf("process of %s not found", bundleID)
 }
 
-func (d IOSDevice) SendKeys(text string) error {
+func (d *IOSDevice) SendKeys(text string) error {
 	return d.deviceKitClient.SendKeys(text)
 }
 
-func (d IOSDevice) PressKeys(combos []KeyCombo) error {
+func (d *IOSDevice) PressKeys(combos []KeyCombo) error {
 	return d.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
 }
 
-func (d IOSDevice) OpenURL(url string) error {
+func (d *IOSDevice) OpenURL(url string) error {
 	return d.deviceKitClient.OpenURL(url)
 }
 
@@ -934,7 +938,7 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	}, nil
 }
 
-func (d IOSDevice) Info() (*FullDeviceInfo, error) {
+func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 	wdaSize, err := d.deviceKitClient.GetWindowSize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
@@ -956,6 +960,49 @@ func (d IOSDevice) Info() (*FullDeviceInfo, error) {
 			Scale:  wdaSize.Scale,
 		},
 	}, nil
+}
+
+// maxAvcControlMessageSize bounds the length-prefixed control messages sent to
+// the broadcast extension; real payloads are ~100 bytes.
+const maxAvcControlMessageSize = 1 << 20
+
+// sendAvcControl sends a live encoder control message to the broadcast
+// extension as length-prefixed JSON-RPC (4-byte big-endian length + payload)
+// on the running H.264 stream connection. Fire-and-forget: the extension
+// sends no responses on this channel.
+func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
+	d.mu.Lock()
+	conn := d.avcStreamConn
+	d.mu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("no active H.264 capture stream")
+	}
+
+	msg, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+		"id":      1,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", method, err)
+	}
+
+	// bound the length before the allocation and uint32 conversion (CodeQL CWE-190)
+	if len(msg) > maxAvcControlMessageSize {
+		return fmt.Errorf("control message too large: %d bytes", len(msg))
+	}
+
+	buf := make([]byte, 4+len(msg))
+	binary.BigEndian.PutUint32(buf, uint32(len(msg)))
+	copy(buf[4:], msg)
+
+	d.avcWriteMu.Lock()
+	defer d.avcWriteMu.Unlock()
+	if _, err := conn.Write(buf); err != nil {
+		return fmt.Errorf("send %s: %w", method, err)
+	}
+	return nil
 }
 
 func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
@@ -1031,6 +1078,21 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 			return fmt.Errorf("failed to connect to stream port: %w", err)
 		}
 
+		// Expose the stream conn as the live encoder control channel. Control
+		// must ride this exact conn: the extension's TCPServer redirects video
+		// output to its newest client, so a separate control connection would
+		// steal the stream.
+		d.mu.Lock()
+		d.avcStreamConn = conn
+		d.mu.Unlock()
+		defer func() {
+			d.mu.Lock()
+			if d.avcStreamConn == conn {
+				d.avcStreamConn = nil
+			}
+			d.mu.Unlock()
+		}()
+
 		// setup signal handling for Ctrl+C
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -1089,15 +1151,15 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
-func (d IOSDevice) DumpSource() ([]ScreenElement, error) {
+func (d *IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.deviceKitClient.GetSourceElements()
 }
 
-func (d IOSDevice) DumpSourceRaw() (any, error) {
+func (d *IOSDevice) DumpSourceRaw() (any, error) {
 	return d.deviceKitClient.GetSourceRaw()
 }
 
-func (d IOSDevice) InstallApp(path string) error {
+func (d *IOSDevice) InstallApp(path string) error {
 	log.SetLevel(log.WarnLevel)
 
 	// ensure tunnel is running for iOS 17+
@@ -1125,7 +1187,7 @@ func (d IOSDevice) InstallApp(path string) error {
 	return nil
 }
 
-func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+func (d *IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
 	// ensure tunnel is running for iOS 17+
@@ -1158,12 +1220,12 @@ func (d IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 }
 
 // GetOrientation gets the current device orientation
-func (d IOSDevice) GetOrientation() (string, error) {
+func (d *IOSDevice) GetOrientation() (string, error) {
 	return d.deviceKitClient.GetOrientation()
 }
 
 // SetOrientation sets the device orientation
-func (d IOSDevice) SetOrientation(orientation string) error {
+func (d *IOSDevice) SetOrientation(orientation string) error {
 	return d.deviceKitClient.SetOrientation(orientation)
 }
 

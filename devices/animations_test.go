@@ -12,7 +12,7 @@ func TestAnimationConfigurableImplementers(t *testing.T) {
 		t.Error("AndroidDevice should implement AnimationConfigurable")
 	}
 
-	var ios any = IOSDevice{}
+	var ios any = (*IOSDevice)(nil)
 	if _, ok := ios.(AnimationConfigurable); ok {
 		t.Error("IOSDevice should not implement AnimationConfigurable (no-op expected)")
 	}

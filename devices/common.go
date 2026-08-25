@@ -230,7 +230,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	} else {
 		iosCount = len(iosDevices)
 		for i := range iosDevices {
-			allDevices = append(allDevices, &iosDevices[i])
+			allDevices = append(allDevices, iosDevices[i])
 		}
 	}
 
