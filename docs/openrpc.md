@@ -1768,7 +1768,7 @@ Describes where the device is provided from
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `type` | `string` | ✓ | Provider type (e.g. 'mobilenext', 'local') |
-| `sessionId` | `string` |  | Session identifier for this device allocation |
+| `allocationId` | `string` |  | Allocation identifier for this device |
 
 ### Rect
 

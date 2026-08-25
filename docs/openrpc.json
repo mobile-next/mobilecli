@@ -1825,9 +1825,9 @@
             "type": "string",
             "description": "Provider type (e.g. 'mobilenext', 'local')"
           },
-          "sessionId": {
+          "allocationId": {
             "type": "string",
-            "description": "Session identifier for this device allocation"
+            "description": "Allocation identifier for this device"
           }
         },
         "required": [

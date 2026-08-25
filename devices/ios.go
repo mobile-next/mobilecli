@@ -1290,7 +1290,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 				}
 				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
 				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
-				utils.Verbose("Tapping record button at %f,%f", centerX, centerY)
+				utils.Verbose("Tapping record button at %d,%d", centerX, centerY)
 				if err = d.Tap(centerX, centerY); err != nil {
 					return fmt.Errorf("failed to tap broadcast button: %w", err)
 				}
