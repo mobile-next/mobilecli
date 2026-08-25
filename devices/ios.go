@@ -954,6 +954,10 @@ func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
+// maxAvcControlMessageSize bounds the length-prefixed control messages sent to
+// the broadcast extension; real payloads are ~100 bytes.
+const maxAvcControlMessageSize = 1 << 20
+
 // sendAvcControl sends a live encoder control message to the broadcast
 // extension as length-prefixed JSON-RPC (4-byte big-endian length + payload)
 // on the running H.264 stream connection. Fire-and-forget: the extension
@@ -974,6 +978,11 @@ func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
 	})
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", method, err)
+	}
+
+	// bound the length before the allocation and uint32 conversion (CodeQL CWE-190)
+	if len(msg) > maxAvcControlMessageSize {
+		return fmt.Errorf("control message too large: %d bytes", len(msg))
 	}
 
 	buf := make([]byte, 4+len(msg))
