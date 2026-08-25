@@ -941,6 +941,39 @@ func (s SimulatorDevice) InstallApp(path string) error {
 	return InstallApp(s.UDID, path)
 }
 
+func (s SimulatorDevice) ClearApp(bundleID string) error {
+	output, err := runSimctl("get_app_container", s.UDID, bundleID, "data")
+	if err != nil {
+		return fmt.Errorf("failed to get data container for %s: %w", bundleID, err)
+	}
+
+	containerPath := filepath.Clean(strings.TrimSpace(string(output)))
+	if containerPath == "" {
+		return fmt.Errorf("no data container found for %s", bundleID)
+	}
+
+	// sanity check before recursive deletion: path must be inside this simulator's app-data containers
+	expectedSubpath := filepath.Join("CoreSimulator", "Devices", s.UDID, "data", "Containers", "Data", "Application") + string(os.PathSeparator)
+	if !filepath.IsAbs(containerPath) || !strings.Contains(containerPath, expectedSubpath) {
+		return fmt.Errorf("refusing to clear unexpected container path: %s", containerPath)
+	}
+
+	_ = s.TerminateApp(bundleID)
+
+	entries, err := os.ReadDir(containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to read data container: %w", err)
+	}
+
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(containerPath, entry.Name())); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
 func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {
