@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,6 +83,9 @@ type IOSDevice struct {
 	portForwarderMjpeg          *ios.PortForwarder
 	portForwarderDeviceKit      *ios.PortForwarder // devicekit http forwarder
 	portForwarderAvc            *ios.PortForwarder // devicekit h264 stream forwarder
+	avcStreamConn               net.Conn           // live h264 stream conn, doubles as the control channel
+
+	avcWriteMu sync.Mutex // serializes control writes on avcStreamConn
 }
 
 func (d *IOSDevice) ID() string {
@@ -950,6 +954,40 @@ func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
+// sendAvcControl sends a live encoder control message to the broadcast
+// extension as length-prefixed JSON-RPC (4-byte big-endian length + payload)
+// on the running H.264 stream connection. Fire-and-forget: the extension
+// sends no responses on this channel.
+func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
+	d.mu.Lock()
+	conn := d.avcStreamConn
+	d.mu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("no active H.264 capture stream")
+	}
+
+	msg, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+		"id":      1,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", method, err)
+	}
+
+	buf := make([]byte, 4+len(msg))
+	binary.BigEndian.PutUint32(buf, uint32(len(msg)))
+	copy(buf[4:], msg)
+
+	d.avcWriteMu.Lock()
+	defer d.avcWriteMu.Unlock()
+	if _, err := conn.Write(buf); err != nil {
+		return fmt.Errorf("send %s: %w", method, err)
+	}
+	return nil
+}
+
 func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit
 	if config.Format == "avc" {
@@ -1022,6 +1060,21 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to connect to stream port: %w", err)
 		}
+
+		// Expose the stream conn as the live encoder control channel. Control
+		// must ride this exact conn: the extension's TCPServer redirects video
+		// output to its newest client, so a separate control connection would
+		// steal the stream.
+		d.mu.Lock()
+		d.avcStreamConn = conn
+		d.mu.Unlock()
+		defer func() {
+			d.mu.Lock()
+			if d.avcStreamConn == conn {
+				d.avcStreamConn = nil
+			}
+			d.mu.Unlock()
+		}()
 
 		// setup signal handling for Ctrl+C
 		sigChan := make(chan os.Signal, 1)

@@ -15,39 +15,46 @@ import (
 // forward host stdin to the device process.
 const avcControlSocket = "devicekit-avc"
 
-// SetAvcBitrate changes the bitrate of an in-flight Android AVC capture without
-// restarting the stream. Returns an error for non-Android devices (iOS uses
-// MJPEG, which has no live control channel).
+// SetAvcBitrate changes the bitrate of an in-flight AVC capture without
+// restarting the stream. Both platforms accept the same payload
+// ("screencapture.setBitrate" with a "bps" param); only the transport differs —
+// Android over the localabstract control socket, iOS over the live stream conn.
 func SetAvcBitrate(device ControllableDevice, bitrate int) error {
-	android, ok := device.(*AndroidDevice)
-	if !ok {
-		return fmt.Errorf("live bitrate control is only supported for Android AVC captures")
+	switch dev := device.(type) {
+	case *AndroidDevice:
+		port, err := dev.ensureControlForward()
+		if err != nil {
+			return err
+		}
+		if _, err := agentRequest(port, "screencapture.setBitrate", map[string]any{"bps": bitrate}); err != nil {
+			return fmt.Errorf("set AVC bitrate: %w", err)
+		}
+		return nil
+	case *IOSDevice:
+		return dev.sendAvcControl("screencapture.setBitrate", map[string]any{"bps": bitrate})
+	default:
+		return fmt.Errorf("live bitrate control is not supported for this device type")
 	}
-	port, err := android.ensureControlForward()
-	if err != nil {
-		return err
-	}
-	if _, err := agentRequest(port, "screencapture.setBitrate", map[string]any{"bps": bitrate}); err != nil {
-		return fmt.Errorf("set AVC bitrate: %w", err)
-	}
-	return nil
 }
 
-// RequestAvcKeyFrame asks the in-flight Android AVC encoder for an immediate sync
+// RequestAvcKeyFrame asks the in-flight AVC encoder for an immediate sync
 // frame (e.g. in response to a viewer PLI).
 func RequestAvcKeyFrame(device ControllableDevice) error {
-	android, ok := device.(*AndroidDevice)
-	if !ok {
-		return fmt.Errorf("keyframe request is only supported for Android AVC captures")
+	switch dev := device.(type) {
+	case *AndroidDevice:
+		port, err := dev.ensureControlForward()
+		if err != nil {
+			return err
+		}
+		if _, err := agentRequest(port, "screencapture.requestKeyFrame", nil); err != nil {
+			return fmt.Errorf("request AVC keyframe: %w", err)
+		}
+		return nil
+	case *IOSDevice:
+		return dev.sendAvcControl("screencapture.requestKeyFrame", nil)
+	default:
+		return fmt.Errorf("keyframe request is not supported for this device type")
 	}
-	port, err := android.ensureControlForward()
-	if err != nil {
-		return err
-	}
-	if _, err := agentRequest(port, "screencapture.requestKeyFrame", nil); err != nil {
-		return fmt.Errorf("request AVC keyframe: %w", err)
-	}
-	return nil
 }
 
 // ensureControlForward returns a host TCP port forwarded to the AvcServer control
