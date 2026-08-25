@@ -586,6 +586,14 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return s.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
+func (s SimulatorDevice) GetClipboard() (string, error) {
+	return s.deviceKitClient.GetClipboard()
+}
+
+func (s SimulatorDevice) SetClipboard(text string) error {
+	return s.deviceKitClient.SetClipboard(text)
+}
+
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
 	return s.deviceKitClient.Gesture(actions)
 }

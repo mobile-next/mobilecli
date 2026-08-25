@@ -217,6 +217,28 @@ test.describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
 
+			test('should set and read back clipboard text', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				const text = `mobilecli-${randomUUID()}`;
+				setClipboard(simulatorId, text);
+				expect(getClipboard(simulatorId)).toBe(text);
+			});
+
+			test('should clear the clipboard when set to an empty string', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				setClipboard(simulatorId, 'not empty');
+				setClipboard(simulatorId, '');
+				expect(getClipboard(simulatorId)).toBe('');
+			});
+
+			test('should reject clipboard set without a text argument', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				expect(() => mobilecli(['io', 'clipboard', 'set', '--device', simulatorId])).toThrow();
+			});
+
 			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
@@ -548,6 +570,15 @@ function tap(simulatorId: string, x: number, y: number): void {
 
 function pressButton(simulatorId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', simulatorId]);
+}
+
+function setClipboard(simulatorId: string, text: string): void {
+	mobilecli(['io', 'clipboard', 'set', text, '--device', simulatorId]);
+}
+
+function getClipboard(simulatorId: string): string {
+	const response = mobilecli(['io', 'clipboard', 'get', '--device', simulatorId]);
+	return response.data.text;
 }
 
 function verifyElementExists(uiDump: UIDumpResponse, name: string): void {

@@ -179,6 +179,12 @@ mobilecli io button --device <device-id> POWER
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
+
+# Read device clipboard
+mobilecli io clipboard get --device <device-id>
+
+# Write device clipboard
+mobilecli io clipboard set --device <device-id> 'hello world'
 ```
 
 ### Supported Hardware Buttons

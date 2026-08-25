@@ -130,6 +130,8 @@ type ControllableDevice interface {
 	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
+	GetClipboard() (string, error)
+	SetClipboard(text string) error
 	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
 	LaunchApp(bundleID string, opts LaunchOptions) error

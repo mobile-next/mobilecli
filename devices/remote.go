@@ -132,6 +132,21 @@ func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return r.fireRPC("device.io.swipe", p)
 }
 
+func (r *RemoteDevice) GetClipboard() (string, error) {
+	resp, err := rpcCall[struct {
+		Text string `json:"text"`
+	}](r, "device.clipboard.get", params{})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Text, nil
+}
+
+func (r *RemoteDevice) SetClipboard(text string) error {
+	return r.fireRPC("device.clipboard.set", params{"text": text})
+}
+
 func (r *RemoteDevice) Gesture(actions []devicekit.TapAction) error {
 	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }
