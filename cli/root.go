@@ -91,6 +91,12 @@ INPUT/OUTPUT:
   # Send text input
   mobilecli io text --device <device-id> "Hello World"
 
+  # Read device clipboard
+  mobilecli io clipboard get --device <device-id>
+
+  # Write device clipboard
+  mobilecli io clipboard set --device <device-id> "Hello World"
+
 WEBVIEW:
   # List embedded webviews in the foreground app
   mobilecli webview list --device <device-id>

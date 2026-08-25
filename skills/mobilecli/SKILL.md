@@ -104,6 +104,8 @@ Here is a quick reference table mapping standard user actions to their `mobilecl
 | **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | `device.io.swipe` | Drag from start to end coordinates |
 | **Type Text** | `mobilecli io text "<text>"` | `device.io.text` | Send raw text to the focused field |
 | **Key Press** | `mobilecli io button <BUTTON_NAME>` | `device.io.button` | Press hardware buttons (e.g. HOME, POWER) |
+| **Read Clipboard** | `mobilecli io clipboard get` | `device.clipboard.get` | Read text from the device clipboard |
+| **Write Clipboard** | `mobilecli io clipboard set "<text>"` | `device.clipboard.set` | Replace text on the device clipboard |
 
 ---
 
@@ -208,6 +210,14 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Android only: BACK, ENTER, BACKSPACE, APP_SWITCH,
   #               DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
   mobilecli io button --device <device-id> HOME
+  ```
+* **Clipboard**:
+  ```bash
+  # Read the device clipboard
+  mobilecli io clipboard get --device <device-id>
+
+  # Write to the device clipboard
+  mobilecli io clipboard set --device <device-id> "Hello World"
   ```
 
 ### 5. UI Inspection & Webviews

@@ -228,6 +228,14 @@ func (d *IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return d.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
+func (d *IOSDevice) GetClipboard() (string, error) {
+	return d.deviceKitClient.GetClipboard()
+}
+
+func (d *IOSDevice) SetClipboard(text string) error {
+	return d.deviceKitClient.SetClipboard(text)
+}
+
 func (d *IOSDevice) Gesture(actions []devicekit.TapAction) error {
 	return d.deviceKitClient.Gesture(actions)
 }
