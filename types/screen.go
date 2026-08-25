@@ -8,12 +8,17 @@ type ScreenElementRect struct {
 }
 
 type ScreenElement struct {
-	Type       string             `json:"type"`
-	Label      *string            `json:"label,omitempty"`
-	Text       *string            `json:"text,omitempty"`
-	Name       *string            `json:"name,omitempty"`
-	Value      *string            `json:"value,omitempty"`
-	Identifier *string            `json:"identifier,omitempty"`
-	Rect       ScreenElementRect  `json:"rect"`
-	Focused    *bool              `json:"focused,omitempty"` // currently only on android tv
+	Type        string            `json:"type"`
+	Label       *string           `json:"label,omitempty"`
+	Text        *string           `json:"text,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	Value       *string           `json:"value,omitempty"`
+	Placeholder *string           `json:"placeholder,omitempty"`
+	Identifier  *string           `json:"identifier,omitempty"`
+	Rect        ScreenElementRect `json:"rect"`
+	Focused     *bool             `json:"focused,omitempty"`  // currently only on android tv
+	Enabled     *bool             `json:"enabled,omitempty"`  // only set when false
+	Checked     *bool             `json:"checked,omitempty"`  // only set when true
+	Selected    *bool             `json:"selected,omitempty"` // only set when true
+	Children    []ScreenElement   `json:"children,omitempty"`
 }

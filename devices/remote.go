@@ -14,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/rpc"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+const artifactsHost = "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com"
 
 type params map[string]any
 
@@ -121,16 +123,44 @@ func (r *RemoteDevice) LongPress(x, y, duration int) error {
 	return r.fireRPC("device.io.longpress", params{"x": x, "y": y, "duration": duration})
 }
 
-func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
-	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	p := params{"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+	if duration > 0 {
+		p["duration"] = duration
+	}
+
+	return r.fireRPC("device.io.swipe", p)
 }
 
-func (r *RemoteDevice) Gesture(actions []wda.TapAction) error {
+func (r *RemoteDevice) GetClipboard() (string, error) {
+	resp, err := rpcCall[struct {
+		Text string `json:"text"`
+	}](r, "device.clipboard.get", params{})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Text, nil
+}
+
+func (r *RemoteDevice) SetClipboard(text string) error {
+	return r.fireRPC("device.clipboard.set", params{"text": text})
+}
+
+func (r *RemoteDevice) Gesture(actions []devicekit.TapAction) error {
 	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }
 
 func (r *RemoteDevice) SendKeys(text string) error {
 	return r.fireRPC("device.io.text", params{"text": text})
+}
+
+func (r *RemoteDevice) PressKeys(combos []KeyCombo) error {
+	keys := make([]string, len(combos))
+	for i, combo := range combos {
+		keys[i] = strings.Join(append(append([]string{}, combo.Modifiers...), combo.Key), "+")
+	}
+	return r.fireRPC("device.io.keys", params{"keys": keys})
 }
 
 func (r *RemoteDevice) PressButton(key string) error {
@@ -141,10 +171,13 @@ func (r *RemoteDevice) OpenURL(url string) error {
 	return r.fireRPC("device.url", params{"url": url})
 }
 
-func (r *RemoteDevice) LaunchApp(bundleID string, locales []string) error {
+func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	p := params{"bundleId": bundleID}
-	if len(locales) > 0 {
-		p["locales"] = locales
+	if len(opts.Locales) > 0 {
+		p["locales"] = opts.Locales
+	}
+	if opts.Activity != "" {
+		p["activity"] = opts.Activity
 	}
 	return r.fireRPC("device.apps.launch", p)
 }
@@ -229,8 +262,8 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("invalid upload URL: %w", err)
 	}
-	if u.Scheme != "https" || u.Host != "mobilenexthq-artifacts.s3.us-west-2.amazonaws.com" {
-		return fmt.Errorf("upload URL must be https://mobilenexthq-artifacts.s3.us-west-2.amazonaws.com/..., got: %s", uploadURL)
+	if u.Scheme != "https" || u.Hostname() != artifactsHost {
+		return fmt.Errorf("upload URL must be https://%s/..., got: %s", artifactsHost, uploadURL)
 	}
 
 	f, err := os.Open(filePath)
@@ -278,11 +311,13 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("invalid download URL: %w", err)
 	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("download URL must use HTTPS scheme, got %q", parsed.Scheme)
+
+	if parsed.Scheme != "https" || parsed.Hostname() != artifactsHost {
+		return fmt.Errorf("download URL must be https://%s/..., got: %s", artifactsHost, downloadURL)
 	}
 
-	resp, err := http.Get(parsed.String()) //nolint:gosec // URL is validated above
+	utils.Verbose("downloading from %v", parsed)
+	resp, err := http.Get(parsed.String())
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}

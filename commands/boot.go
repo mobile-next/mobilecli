@@ -21,11 +21,11 @@ func BootCommand(req BootRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to boot device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]any{
-		"message":  fmt.Sprintf("Device %s booted successfully", targetDevice.ID()),
-		"platform": targetDevice.Platform(),
-		"type":     targetDevice.DeviceType(),
-		"version":  targetDevice.Version(),
+	return NewSuccessResponse(DeviceActionResult{
+		Message:  fmt.Sprintf("Device %s booted successfully", targetDevice.ID()),
+		Platform: targetDevice.Platform(),
+		Type:     targetDevice.DeviceType(),
+		Version:  targetDevice.Version(),
 	})
 }
 
@@ -46,10 +46,10 @@ func ShutdownCommand(req ShutdownRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to shutdown device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(map[string]any{
-		"message":  fmt.Sprintf("Device %s shut down successfully", targetDevice.ID()),
-		"platform": targetDevice.Platform(),
-		"type":     targetDevice.DeviceType(),
-		"version":  targetDevice.Version(),
+	return NewSuccessResponse(DeviceActionResult{
+		Message:  fmt.Sprintf("Device %s shut down successfully", targetDevice.ID()),
+		Platform: targetDevice.Platform(),
+		Type:     targetDevice.DeviceType(),
+		Version:  targetDevice.Version(),
 	})
 }

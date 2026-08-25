@@ -1,0 +1,549 @@
+package devices
+
+import (
+	"testing"
+
+	"github.com/mobile-next/mobilecli/types"
+)
+
+func screenElementText(e types.ScreenElement) string {
+	if e.Text == nil {
+		return ""
+	}
+	return *e.Text
+}
+
+func screenElementPlaceholder(e types.ScreenElement) string {
+	if e.Placeholder == nil {
+		return ""
+	}
+	return *e.Placeholder
+}
+
+// A realistic uiautomator subtree: the webview content (text views, buttons)
+// is nested inside the android.webkit.WebView node, separated by layout
+// wrapper nodes that carry no text, content-desc, hint or resource-id and are
+// therefore filtered out.
+func sampleLoginScreenXmlTree() uiAutomatorXmlNode {
+	return uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:  "android.widget.Button",
+				Text:   "Back",
+				Bounds: "[40,150][150,260]",
+			},
+			{
+				Class:      "android.webkit.WebView",
+				ResourceID: "com.mobilenext.playground:id/webview",
+				Bounds:     "[0,290][1080,2300]",
+				Nodes: []uiAutomatorXmlNode{
+					{
+						Class:  "android.view.View",
+						Bounds: "[0,290][1080,2300]",
+						Nodes: []uiAutomatorXmlNode{
+							{
+								Class:  "android.widget.TextView",
+								Text:   "Sample Login",
+								Bounds: "[60,900][490,990]",
+							},
+							{
+								Class:  "android.widget.Button",
+								Text:   "Submit",
+								Bounds: "[60,1340][940,1470]",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestCollectElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	d := &AndroidDevice{}
+	output := d.collectElements(sampleLoginScreenXmlTree())
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements (Back button, WebView), got %d: %+v", len(output), output)
+	}
+
+	backButton := output[0]
+	if backButton.Type != "android.widget.Button" || screenElementText(backButton) != "Back" {
+		t.Errorf("expected first top-level element to be the Back button, got %+v", backButton)
+	}
+
+	webview := output[1]
+	if webview.Type != "android.webkit.WebView" {
+		t.Fatalf("expected second top-level element to be the WebView, got %+v", webview)
+	}
+
+	if len(webview.Children) != 2 {
+		t.Fatalf("expected WebView to have 2 children (Sample Login, Submit), got %d: %+v", len(webview.Children), webview.Children)
+	}
+
+	if screenElementText(webview.Children[0]) != "Sample Login" {
+		t.Errorf("expected first WebView child to be 'Sample Login', got %+v", webview.Children[0])
+	}
+
+	if screenElementText(webview.Children[1]) != "Submit" {
+		t.Errorf("expected second WebView child to be 'Submit', got %+v", webview.Children[1])
+	}
+}
+
+func TestCollectElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	d := &AndroidDevice{}
+
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:  "android.widget.LinearLayout",
+				Bounds: "[0,0][1080,1200]",
+				Nodes: []uiAutomatorXmlNode{
+					{
+						Class:  "android.widget.Button",
+						Text:   "First",
+						Bounds: "[0,0][200,100]",
+					},
+				},
+			},
+			{
+				Class:  "android.widget.Button",
+				Text:   "Second",
+				Bounds: "[0,1300][200,1400]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
+	}
+
+	if screenElementText(output[0]) != "First" || screenElementText(output[1]) != "Second" {
+		t.Errorf("expected buttons 'First' and 'Second' at top level, got %+v", output)
+	}
+}
+
+func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class: "android.widget.FrameLayout",
+			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 2400},
+			Children: []deviceKitNode{
+				{
+					Class:      "android.webkit.WebView",
+					ResourceID: "com.mobilenext.playground:id/webview",
+					Rect:       deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+					Children: []deviceKitNode{
+						{
+							Class: "android.view.View",
+							Rect:  deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+							Children: []deviceKitNode{
+								{
+									Class: "android.widget.TextView",
+									Text:  "Sample Login",
+									Rect:  deviceKitRect{X: 60, Y: 900, Width: 430, Height: 90},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element (WebView), got %d: %+v", len(output), output)
+	}
+
+	webview := output[0]
+	if webview.Type != "android.webkit.WebView" {
+		t.Fatalf("expected top-level element to be the WebView, got %+v", webview)
+	}
+
+	if len(webview.Children) != 1 || screenElementText(webview.Children[0]) != "Sample Login" {
+		t.Errorf("expected WebView child 'Sample Login', got %+v", webview.Children)
+	}
+}
+
+func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class: "android.widget.LinearLayout",
+			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 1200},
+			Children: []deviceKitNode{
+				{
+					Class: "android.widget.Button",
+					Text:  "First",
+					Rect:  deviceKitRect{X: 0, Y: 0, Width: 200, Height: 100},
+				},
+			},
+		},
+		{
+			Class: "android.widget.Button",
+			Text:  "Second",
+			Rect:  deviceKitRect{X: 0, Y: 1300, Width: 200, Height: 100},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
+	}
+
+	if screenElementText(output[0]) != "First" || screenElementText(output[1]) != "Second" {
+		t.Errorf("expected buttons 'First' and 'Second' at top level, got %+v", output)
+	}
+}
+
+// The hint becomes the placeholder; the text is left exactly as the source
+// reported it, even when it happens to equal the hint.
+func TestCollectElementsHintBecomesPlaceholderAndKeepsText(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.EditText",
+		Text:        "Password",
+		Hint:        "Password",
+		ContentDesc: "password_field",
+		Bounds:      "[48,607][1232,756]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Password" {
+		t.Errorf("expected placeholder 'Password', got %q", got)
+	}
+	if got := screenElementText(output[0]); got != "Password" {
+		t.Errorf("expected text left as source reported ('Password'), got %q", got)
+	}
+}
+
+// A filled field keeps its real text alongside the hint placeholder.
+func TestCollectElementsFilledFieldKeepsTextAndPlaceholder(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.EditText",
+		Text:        "hello",
+		Hint:        "Text Field",
+		ContentDesc: "text_field",
+		Bounds:      "[48,455][1232,604]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementText(output[0]); got != "hello" {
+		t.Errorf("expected text 'hello', got %q", got)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Text Field" {
+		t.Errorf("expected placeholder 'Text Field', got %q", got)
+	}
+}
+
+// An unlabeled but interactable node (e.g. an empty EditText) carries no text,
+// content-desc, hint or resource-id, but should still be returned because the
+// user can interact with it.
+func TestCollectElementsKeepsUnlabeledClickableAndCheckableNodes(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:     "android.widget.EditText",
+				Clickable: "true",
+				Bounds:    "[84,2155][996,2302]",
+			},
+			{
+				Class:     "android.widget.CheckBox",
+				Checkable: "true",
+				Bounds:    "[84,2344][996,2400]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 2 {
+		t.Fatalf("expected 2 elements (clickable EditText, checkable CheckBox), got %d: %+v", len(output), output)
+	}
+	if output[0].Type != "android.widget.EditText" {
+		t.Errorf("expected clickable EditText to be kept, got %+v", output[0])
+	}
+	if output[1].Type != "android.widget.CheckBox" {
+		t.Errorf("expected checkable CheckBox to be kept, got %+v", output[1])
+	}
+}
+
+// A node with no text, content-desc, hint, resource-id, and no interactable
+// flags carries no useful signal and should be filtered out.
+func TestCollectElementsDropsUnlabeledNonInteractableNodes(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.FrameLayout",
+		Bounds: "[0,0][1080,2400]",
+		Nodes: []uiAutomatorXmlNode{
+			{
+				Class:     "android.view.View",
+				Clickable: "false",
+				Checkable: "false",
+				Bounds:    "[0,0][1080,200]",
+			},
+		},
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 0 {
+		t.Fatalf("expected unlabeled non-interactable node to be dropped, got %d: %+v", len(output), output)
+	}
+}
+
+// devicekit sends a separate hint field; it becomes the placeholder, and the
+// masked password text is preserved.
+func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.widget.EditText",
+			Text:        "•",
+			Hint:        "Password",
+			ContentDesc: "password_field",
+			ResourceID:  "com.mobilenext.playground:id/password_field",
+			Rect:        deviceKitRect{X: 48, Y: 607, Width: 1184, Height: 149},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Password" {
+		t.Errorf("expected placeholder 'Password', got %q", got)
+	}
+	if got := screenElementText(output[0]); got != "•" {
+		t.Errorf("expected text '•', got %q", got)
+	}
+}
+
+// A disabled node (enabled="false") must still be reported, with Enabled set
+// to false so callers can tell it apart from an interactable one.
+func TestCollectElementsMarksDisabledNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:      "android.widget.Button",
+		Text:       "DISABLED BUTTON",
+		ResourceID: "com.mobilenext.playground:id/disabled_button",
+		Clickable:  "true",
+		Enabled:    "false",
+		Bounds:     "[48,1666][1232,1834]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled == nil || *output[0].Enabled != false {
+		t.Errorf("expected Enabled to be false, got %+v", output[0].Enabled)
+	}
+}
+
+// An enabled node must leave Enabled unset (nil), matching the omitempty
+// convention already used for Focused.
+func TestCollectElementsLeavesEnabledNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:      "android.widget.Button",
+		Text:       "ENABLED BUTTON",
+		ResourceID: "com.mobilenext.playground:id/enabled_button",
+		Clickable:  "true",
+		Enabled:    "true",
+		Bounds:     "[48,1666][1232,1834]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled != nil {
+		t.Errorf("expected Enabled to be nil for an enabled node, got %+v", *output[0].Enabled)
+	}
+}
+
+// devicekit reports enabled as a real bool; a disabled node must surface
+// Enabled=false the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksDisabledNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:      "android.widget.Button",
+			Text:       "DISABLED BUTTON",
+			ResourceID: "com.mobilenext.playground:id/disabled_button",
+			Enabled:    false,
+			Rect:       deviceKitRect{X: 48, Y: 1666, Width: 1184, Height: 168},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Enabled == nil || *output[0].Enabled != false {
+		t.Errorf("expected Enabled to be false, got %+v", output[0].Enabled)
+	}
+}
+
+// A checked Switch (checked="true") must surface Checked=true.
+func TestCollectElementsMarksCheckedSwitch(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.Switch",
+		ContentDesc: "toggle",
+		ResourceID:  "com.mobilenext.playground:id/toggle",
+		Clickable:   "true",
+		Checkable:   "true",
+		Checked:     "true",
+		Bounds:      "[1050,1196][1190,1277]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked == nil || *output[0].Checked != true {
+		t.Errorf("expected Checked to be true, got %+v", output[0].Checked)
+	}
+}
+
+// An unchecked Switch must leave Checked unset (nil), matching the
+// omitempty convention already used for Focused and Enabled.
+func TestCollectElementsLeavesUncheckedSwitchUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.widget.Switch",
+		ContentDesc: "toggle",
+		ResourceID:  "com.mobilenext.playground:id/toggle",
+		Clickable:   "true",
+		Checkable:   "true",
+		Checked:     "false",
+		Bounds:      "[1050,1196][1190,1277]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked != nil {
+		t.Errorf("expected Checked to be nil for an unchecked switch, got %+v", *output[0].Checked)
+	}
+}
+
+// devicekit reports checked as a real bool; a checked node must surface
+// Checked=true the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksCheckedNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.widget.Switch",
+			ContentDesc: "toggle",
+			ResourceID:  "com.mobilenext.playground:id/toggle",
+			Checked:     true,
+			Rect:        deviceKitRect{X: 1050, Y: 1196, Width: 140, Height: 81},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Checked == nil || *output[0].Checked != true {
+		t.Errorf("expected Checked to be true, got %+v", output[0].Checked)
+	}
+}
+
+// A selected node (e.g. a chosen tab / chip / radio-style option) must surface
+// Selected=true. Compose maps `semantics { selected = true }` to the
+// accessibility selected state, which uiautomator dumps as selected="true".
+func TestCollectElementsMarksSelectedNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.view.View",
+		ContentDesc: "9:16",
+		ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
+		Clickable:   "true",
+		Selected:    "true",
+		Bounds:      "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected == nil || *output[0].Selected != true {
+		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
+	}
+}
+
+// An unselected node must leave Selected unset (nil), matching the omitempty
+// convention already used for Focused, Enabled and Checked.
+func TestCollectElementsLeavesUnselectedNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:       "android.view.View",
+		ContentDesc: "1:1",
+		ResourceID:  "com.mobilenext.playground:id/ratio_1_1",
+		Clickable:   "true",
+		Selected:    "false",
+		Bounds:      "[140,0][280,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected != nil {
+		t.Errorf("expected Selected to be nil for an unselected node, got %+v", *output[0].Selected)
+	}
+}
+
+// devicekit reports selected as a real bool; a selected node must surface
+// Selected=true the same way the uiautomator path does.
+func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.view.View",
+			ContentDesc: "9:16",
+			ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
+			Selected:    true,
+			Rect:        deviceKitRect{X: 0, Y: 0, Width: 140, Height: 140},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Selected == nil || *output[0].Selected != true {
+		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
+	}
+}

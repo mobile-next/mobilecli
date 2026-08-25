@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -14,18 +15,18 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.16"
-	agentVersionAndroid = "1.1.5"
+	agentVersionIOS     = "0.0.24"
+	agentVersionAndroid = "1.2.6"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "c6c6a374fa69749555acaffbd81b57c26785aa17df7f782f6ec094db19e45df8",
-	"devicekit-ios-Sim-x86_64.zip": "b85d37b71422b178c1c20560f3218d2922805b906412445003dd9ab4e0aa8751",
-	"devicekit-ios-runner.ipa":     "0a1d3b4885d84930496ffec0b340ae9d34e1d851cdb65a0c108a62b10dc358e6",
-	"mobilenext-devicekit.apk":     "843c71b81db846ccde7d34c41f3a49a2380d0c1b2acfcbcfafdcd673fadb23ab",
+	"devicekit-ios-Sim-arm64.zip":  "72b11809b7e3bb24aaa23f24458bb28bb859967b31fa9dd0a46db2fc080f6915",
+	"devicekit-ios-Sim-x86_64.zip": "aaac190073188c48b3cbc03bcdb4536ab24db2b530187b3ea6878ade3ef821ea",
+	"devicekit-ios-runner.ipa":     "40483399f3a1a1173d8edb932ea3d836edd641b4a1dfd42f7fd7d4618db7b3f6",
+	"devicekit.apk":                "01d933a311dac113bb89f2cb3256482467c1e02b287a2fd5e412863b8f907c51",
 }
 
 type agentMessageResponse struct {
@@ -95,15 +96,23 @@ var agentInstallCmd = &cobra.Command{
 
 		if !agentForce {
 			if agent := findInstalledAgent(device); agent != nil {
-				utils.Verbose("agent already installed")
-				printJson(commands.NewSuccessResponse(agentStatusResponse{
-					Message: "Agent is already installed",
-					Agent: agentInfo{
-						Version:  agent.Version,
-						BundleID: agent.PackageName,
-					},
-				}))
-				return nil
+				expectedVersion := agentVersionForPlatform(device.Platform())
+				if agent.Version == expectedVersion {
+					utils.Verbose("agent already installed with version %s", agent.Version)
+					printJson(commands.NewSuccessResponse(agentStatusResponse{
+						Message: "Agent is already installed",
+						Agent: agentInfo{
+							Version:  agent.Version,
+							BundleID: agent.PackageName,
+						},
+					}))
+					return nil
+				}
+
+				utils.Verbose("installed agent version %s differs from expected %s, uninstalling before reinstall", agent.Version, expectedVersion)
+				if _, err := device.UninstallApp(agent.PackageName); err != nil {
+					return fmt.Errorf("failed to uninstall existing agent: %w", err)
+				}
 			}
 		}
 
@@ -147,12 +156,56 @@ var agentInstallCmd = &cobra.Command{
 	},
 }
 
+var agentUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstall the agent from a device",
+	Long:  `Removes the on-device agent from the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		device, err := commands.FindDeviceOrAutoSelect(deviceId)
+		if err != nil {
+			return err
+		}
+
+		agent := findInstalledAgent(device)
+		if agent == nil {
+			printJson(&commands.CommandResponse{
+				Status: "fail",
+				Data: agentMessageResponse{
+					Message: "Agent is not installed on the device",
+				},
+			})
+			return nil
+		}
+
+		utils.Verbose("uninstalling agent %s from device %s", agent.PackageName, device.ID())
+		if _, err := device.UninstallApp(agent.PackageName); err != nil {
+			return fmt.Errorf("failed to uninstall agent: %w", err)
+		}
+
+		printJson(commands.NewSuccessResponse(agentMessageResponse{
+			Message: "Agent uninstalled successfully",
+		}))
+		return nil
+	},
+}
+
 func agentPackageForPlatform(platform string) string {
 	switch platform {
 	case "android":
 		return androidPackageName
 	case "ios":
 		return iosRunnerBundleID
+	default:
+		return ""
+	}
+}
+
+func agentVersionForPlatform(platform string) string {
+	switch platform {
+	case "android":
+		return agentVersionAndroid
+	case "ios":
+		return agentVersionIOS
 	default:
 		return ""
 	}
@@ -239,7 +292,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
-	filename := "mobilenext-devicekit.apk"
+	filename := "devicekit.apk"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
@@ -259,11 +312,28 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 		return nil
 	}
 	for _, app := range apps {
-		if app.PackageName == agentPackage {
+		if agentMatchesApp(device.Platform(), app.PackageName, agentPackage) {
+			if app.Version == "" {
+				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
+					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
+						app.Version = v
+					}
+				}
+			}
 			return &app
 		}
 	}
 	return nil
+}
+
+// agentMatchesApp reports whether an installed app's bundle id identifies the agent.
+// On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
+// suffix match is used; other platforms require an exact match.
+func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
+	if platform == "ios" {
+		return strings.HasSuffix(installedPackage, agentPackage)
+	}
+	return installedPackage == agentPackage
 }
 
 func isAgentInstalled(device devices.ControllableDevice) bool {
@@ -291,9 +361,11 @@ func init() {
 
 	agentCmd.AddCommand(agentInstallCmd)
 	agentCmd.AddCommand(agentStatusCmd)
+	agentCmd.AddCommand(agentUninstallCmd)
 
 	agentInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install the agent on")
 	agentStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check")
+	agentUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall the agent from")
 	agentInstallCmd.Flags().BoolVar(&agentForce, "force", false, "force install even if agent is already installed")
 	agentInstallCmd.Flags().StringVar(&agentProvisioningProfile, "provisioning-profile", "", "path to a .mobileprovision file to use for re-signing (required for real iOS devices)")
 }

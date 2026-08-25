@@ -91,7 +91,7 @@ func TestParseNameFilter_JustWildcard(t *testing.T) {
 }
 
 func TestBuildAllocateFilters_PlatformOnly(t *testing.T) {
-	filters, err := buildAllocateFilters("ios", "", nil, nil)
+	filters, err := buildAllocateFilters("ios", "", nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestBuildAllocateFilters_PlatformOnly(t *testing.T) {
 }
 
 func TestBuildAllocateFilters_WithType(t *testing.T) {
-	filters, err := buildAllocateFilters("ios", "real", nil, nil)
+	filters, err := buildAllocateFilters("ios", "real", nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestBuildAllocateFilters_WithType(t *testing.T) {
 }
 
 func TestBuildAllocateFilters_Combined(t *testing.T) {
-	filters, err := buildAllocateFilters("ios", "real", []string{">=18", "<20"}, []string{"iPhone*"})
+	filters, err := buildAllocateFilters("ios", "real", []string{">=18", "<20"}, "iPhone*")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

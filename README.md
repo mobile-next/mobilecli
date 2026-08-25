@@ -16,12 +16,12 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
     <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
   </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-AGPL v3.0-blue.svg" alt="Mobile MCP is released under the AGPL v3.0 License">
+    <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
 </p>
 
 <p align="center">
-  <a href="http://mobilenexthq.com/join-slack">
+  <a href="http://mobilenext.ai/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -36,7 +36,9 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
+- **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
+- **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
 ### 🎯 Platform Support
 
@@ -177,6 +179,15 @@ mobilecli io button --device <device-id> POWER
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
+
+# Read device clipboard
+mobilecli io clipboard get --device <device-id>
+
+# Write device clipboard
+mobilecli io clipboard set --device <device-id> 'hello world'
+
+# Send keys combination to paste (cmd+v for iOS)
+mobilecli io keys --device <device-id> "cmd+v"
 ```
 
 ### Supported Hardware Buttons
@@ -225,6 +236,88 @@ Example output for `apps foreground`:
 }
 ```
 
+### Filesystem 📂
+
+Access files on the device or inside an app's data container. Currently supported on **Android** and **iOS Simulator**.
+
+```bash
+# Get the data container path of an app (Android)
+mobilecli apps path <bundle-id> --device <device-id>
+
+# List files at any absolute path (defaults to device root if omitted)
+mobilecli fs ls --device <device-id>
+mobilecli fs ls --device <device-id> /sdcard
+mobilecli fs ls --device <device-id> /sdcard/Download
+
+# List files inside an app's data container
+mobilecli fs ls --device <device-id> com.example.app
+mobilecli fs ls --device <device-id> com.example.app /Documents
+
+# Pull a file from the device to local disk
+mobilecli fs pull --device <device-id> /sdcard/recording.mp4 ./recording.mp4
+
+# Pull a file from an app's private container
+mobilecli fs pull --device <device-id> /data/user/0/com.example.app/files/db.sqlite ./db.sqlite
+
+# Push a file to the device
+mobilecli fs push --device <device-id> ./config.json /sdcard/config.json
+
+# Push a file into an app's private container
+mobilecli fs push --device <device-id> ./config.json /data/user/0/com.example.app/files/config.json
+
+# Create a directory
+mobilecli fs mkdir --device <device-id> /sdcard/myfolder
+
+# Create a directory and all parent directories
+mobilecli fs mkdir --device <device-id> -p /sdcard/a/b/c
+mobilecli fs mkdir --device <device-id> -p /data/user/0/com.example.app/files/cache/v2
+
+# Remove a file
+mobilecli fs rm --device <device-id> /sdcard/old_file.txt
+
+# Remove a directory recursively
+mobilecli fs rm --device <device-id> -r /sdcard/myfolder
+mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
+```
+
+Example output for `apps path`:
+```json
+{
+  "status": "ok",
+  "data": {
+    "path": "/data/user/0/com.example.app"
+  }
+}
+```
+
+Example output for `fs ls`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "name": "files",
+      "path": "/data/user/0/com.example.app/files",
+      "size": 4096,
+      "modTime": "2026-05-11T19:20:00Z",
+      "isDir": true
+    },
+    {
+      "name": "shared_prefs",
+      "path": "/data/user/0/com.example.app/shared_prefs",
+      "size": 4096,
+      "modTime": "2026-05-11T12:49:00Z",
+      "isDir": true
+    }
+  ]
+}
+```
+
+**Notes:**
+- Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
+- Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
+- Pulling binary files (images, databases, DEX files) is fully supported and binary-safe on all platforms.
+
 ### Agent Management 🤖
 
 On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
@@ -259,14 +352,74 @@ Example output for `agent status`:
 }
 ```
 
+### Webview Inspection 🌐
+
+Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
+
+```bash
+# List embedded webviews in the foreground app
+mobilecli webview list --device <device-id>
+
+# Navigate a webview to a URL
+mobilecli webview goto <id> https://example.com --device <device-id>
+
+# Reload, go back or forward
+mobilecli webview reload <id> --device <device-id>
+mobilecli webview back <id> --device <device-id>
+mobilecli webview forward <id> --device <device-id>
+
+# Get current URL and page title
+mobilecli webview url <id> --device <device-id>
+mobilecli webview title <id> --device <device-id>
+
+# Dump the full HTML content of the page
+mobilecli webview content <id> --device <device-id>
+
+# Query DOM elements by CSS selector
+mobilecli webview query <id> "button" --device <device-id>
+mobilecli webview query <id> "[data-testid='submit']" --device <device-id>
+
+# Evaluate arbitrary JavaScript
+mobilecli webview eval <id> "document.querySelectorAll('a').length" --device <device-id>
+
+# Wait for the page to finish loading
+mobilecli webview wait <id> --state load --device <device-id>
+mobilecli webview wait <id> --state domcontentloaded --timeout 5000 --device <device-id>
+```
+
+Example output for `webview list`:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "id": "1",
+      "url": "https://example.com",
+      "title": "Example Domain"
+    }
+  ]
+}
+```
+
+Example output for `webview query <id> "button"`:
+```json
+{
+  "status": "ok",
+  "data": [
+    { "tag": "button", "text": "Sign In", "id": "login-btn", "class": "btn-primary", "value": null, "href": null },
+    { "tag": "button", "text": "Cancel", "id": null, "class": "btn-secondary", "value": null, "href": null }
+  ]
+}
+```
+
 ### Crash Reports 💥
 
 ```bash
 # List crash reports from a device
-mobilecli crashes list --device <device-id>
+mobilecli device crashes list --device <device-id>
 
 # Get a specific crash report by ID
-mobilecli crashes get <crash-id> --device <device-id>
+mobilecli device crashes get <crash-id> --device <device-id>
 ```
 
 Example output for `crashes list`:
@@ -284,6 +437,38 @@ Example output for `crashes list`:
 ```
 
 **Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
+
+### Remote Devices ☁️
+
+```bash
+# Allocate a remote iOS device
+mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wait
+
+# Allocate a remote Android device (exact OS version)
+mobilecli remote allocate --platform android --version 14 --wait
+
+# List available remote devices
+mobilecli remote list-devices
+
+# Release an allocated remote device
+mobilecli remote release --device <device-id>
+```
+
+## Claude Code Skill 🤖
+
+This repo includes an agent skill ([skills/mobilecli/SKILL.md](skills/mobilecli/SKILL.md)) that teaches Claude Code (or any SKILL.md-compatible agent) how to drive `mobilecli` — listing devices, tapping and typing, dumping UI trees, managing apps, and using the JSON-RPC server for fast automation.
+
+Install it with [skills](https://github.com/vercel-labs/skills):
+
+```bash
+# current project only
+npx skills add mobile-next/mobilecli
+
+# or globally, for all projects
+npx skills add mobile-next/mobilecli -g
+```
+
+Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
 
 ## HTTP API 🔌
 
@@ -338,7 +523,7 @@ make test
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
-Be sure to <a href="http://mobilenexthq.com/join-slack">join our slack channel</a> today 💜
+Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
 
-To learn more about <a href="https://mobilenexthq.com/">Mobile Next</a> and what we're building, <a href="https://mobilenexthq.com/#newsletter">subscribe to our newsletter</a>.
+To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
 

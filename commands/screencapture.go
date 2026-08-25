@@ -5,4 +5,5 @@ type ScreenCaptureRequest struct {
 	Format   string  `json:"format"`
 	Quality  int     `json:"quality,omitempty"`
 	Scale    float64 `json:"scale,omitempty"`
+	FPS      int     `json:"fps,omitempty"`
 }

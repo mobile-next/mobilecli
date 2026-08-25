@@ -12,7 +12,7 @@ import (
 var ioCmd = &cobra.Command{
 	Use:   "io",
 	Short: "Input/output operations with devices",
-	Long:  `Perform input/output operations like tapping, pressing buttons, and sending text to devices.`,
+	Long:  `Perform input/output operations like tapping, pressing buttons, sending text, and reading or writing the device clipboard.`,
 }
 
 var ioTapCmd = &cobra.Command{
@@ -54,6 +54,7 @@ var ioTapCmd = &cobra.Command{
 }
 
 var longPressDuration int
+var swipeDuration int
 
 var ioLongPressCmd = &cobra.Command{
 	Use:   "longpress [x,y]",
@@ -134,6 +135,28 @@ var ioTextCmd = &cobra.Command{
 	},
 }
 
+var ioKeysCmd = &cobra.Command{
+	Use:   "keys [key-combo...]",
+	Short: "Press keyboard keys with optional modifiers on a device",
+	Long: `Presses one or more key combinations on the specified device, in order. A combo is a key with optional modifiers, e.g. "cmd+a", "ctrl+shift+z", "backspace".
+
+Keys name physical keys and are case-insensitive: "cmd+A" is the same as "cmd+a" (the A key, i.e. select-all), not Shift+A. Use "shift+a" to hold shift.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.KeysRequest{
+			DeviceID: deviceId,
+			Keys:     args,
+		}
+
+		response := commands.KeysCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+		return nil
+	},
+}
+
 var ioSwipeCmd = &cobra.Command{
 	Use:   "swipe [x1,y1,x2,y2]",
 	Short: "Swipe on a device screen from one point to another",
@@ -165,6 +188,7 @@ var ioSwipeCmd = &cobra.Command{
 			Y1:       y1,
 			X2:       x2,
 			Y2:       y2,
+			Duration: swipeDuration,
 		}
 
 		response := commands.SwipeCommand(req)
@@ -184,13 +208,16 @@ func init() {
 	ioCmd.AddCommand(ioLongPressCmd)
 	ioCmd.AddCommand(ioButtonCmd)
 	ioCmd.AddCommand(ioTextCmd)
+	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
 	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
 	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
+	ioSwipeCmd.Flags().IntVar(&swipeDuration, "duration", 0, "duration of the swipe in milliseconds (0 uses the platform default)")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
+	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 }

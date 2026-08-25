@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -79,20 +79,38 @@ type ScreenCaptureConfig struct {
 	Quality    int
 	Scale      float64
 	FPS        int
+	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
+	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
 }
 
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {
 	OnProgress func(message string) // optional progress callback
-	Hook       *ShutdownHook         // optional shutdown hook for cleanup tracking
+	Hook       *ShutdownHook        // optional shutdown hook for cleanup tracking
 }
 
 // ScreenElementRect represents the rectangle coordinates and dimensions
 // Re-export types for backward compatibility
 type ScreenElementRect = types.ScreenElementRect
 type ScreenElement = types.ScreenElement
+
+// FileEntry represents a file or directory in an app's container
+type FileEntry struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	IsDir   bool      `json:"isDir"`
+}
+
+// LaunchOptions carries optional parameters for launching an app.
+// Activity is Android-only; passing it to an iOS device is an error.
+type LaunchOptions struct {
+	Locales  []string
+	Activity string
+}
 
 type ControllableDevice interface {
 	ID() string
@@ -108,12 +126,15 @@ type ControllableDevice interface {
 	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
-	Swipe(x1, y1, x2, y2 int) error
-	Gesture(actions []wda.TapAction) error
+	Swipe(x1, y1, x2, y2, duration int) error
+	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
+	GetClipboard() (string, error)
+	SetClipboard(text string) error
+	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
-	LaunchApp(bundleID string, locales []string) error
+	LaunchApp(bundleID string, opts LaunchOptions) error
 	TerminateApp(bundleID string) error
 	OpenURL(url string) error
 	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
@@ -129,6 +150,31 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
+	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
+	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// AnimationConfigurable is implemented by devices that can toggle system
+// animations. Devices that don't implement it are treated as a no-op by callers.
+type AnimationConfigurable interface {
+	SetAnimationsEnabled(enabled bool) error
+}
+
+// WebViewable is implemented by devices that support webview inspection and control.
+type WebViewable interface {
+	ListWebViews() ([]WebViewInfo, error)
+	WebViewGoto(webviewID, url string) error
+	WebViewReload(webviewID string) error
+	WebViewGoBack(webviewID string) error
+	WebViewGoForward(webviewID string) error
+	WebViewContent(webviewID string) (string, error)
+	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
+	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
 // GetAllControllableDevices aggregates all known devices with options
@@ -185,7 +231,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	} else {
 		iosCount = len(iosDevices)
 		for i := range iosDevices {
-			allDevices = append(allDevices, &iosDevices[i])
+			allDevices = append(allDevices, iosDevices[i])
 		}
 	}
 
@@ -202,8 +248,8 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 		simulatorsCount = len(filteredSims)
 		for _, sim := range filteredSims {
 			allDevices = append(allDevices, &SimulatorDevice{
-				Simulator: sim,
-				wdaClient: nil,
+				Simulator:       sim,
+				deviceKitClient: nil,
 			})
 		}
 	}
@@ -228,8 +274,8 @@ type DeviceListOptions struct {
 }
 
 type DeviceProvider struct {
-	Type      string `json:"type"`
-	SessionID string `json:"sessionId,omitempty"`
+	Type         string `json:"type"`
+	AllocationID string `json:"allocationId,omitempty"`
 }
 
 type DeviceInfo struct {
@@ -341,6 +387,8 @@ type InstalledAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName,omitempty"`
 	Version     string `json:"version,omitempty"`
+	// VersionCode is the build identifier: CFBundleVersion on iOS, versionCode on Android.
+	VersionCode string `json:"versionCode,omitempty"`
 }
 
 // ForegroundAppInfo represents information about the currently foreground application

@@ -12,18 +12,14 @@ make test
 
 ## Integration Tests
 
-The integration tests use iOS simulators to test real device functionality.
+The integration tests use iOS simulator, Android real device and Android emulator, to test functionality.
 
 ### Prerequisites
 
-1. **Install iOS Simulator Runtimes**
-   - Open Xcode
-   - **Settings** → **Components**
-   - Click the **"+"** button in the bottom-left corner
-   - Install the following iOS platforms:
-     - **iOS 16.4** (Build 20E247)
-     - **iOS 17.5** (Build 21F79) 
-     - **iOS 18.6** (Build 22G86)
+1. Have one (or more) of these devices connected. Only the first device of each platform and type will be used:
+  - Android real device
+  - Android emulator, booted
+  - iOS simulator, booted
 
 2. **Install Node.js dependencies**
    ```bash
@@ -35,21 +31,8 @@ The integration tests use iOS simulators to test real device functionality.
 
 Run all integration tests:
 ```bash
-cd test
-npm run test
+make test-e2e
 ```
 
-Run tests for specific iOS version:
-```bash
-cd test
-npm run test -- --grep "iOS 16"
-npm run test -- --grep "iOS 17" 
-npm run test -- --grep "iOS 18"
-```
-
-### Test Behavior
-
-- Tests automatically skip if the required iOS runtime is not installed
-- Each test creates a fresh simulator and cleans up after completion
-- Tests include screenshot capture and URL opening functionality
-
+Running the tests will print out statement coverage per function. An output `coverage.html` will also be written, which is the same information but
+more human-friendly.

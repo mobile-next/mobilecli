@@ -1,3 +1,131 @@
+## [1.0.4](https://github.com/mobile-next/mobilecli/releases/tag/1.0.4) (2026-08-24)
+* Fix(ios): Start recording time limit and progress ticker when capture is live, not during setup ([#353](https://github.com/mobile-next/mobilecli/pull/353))
+* Fix(ios): Search nested element tree when waiting for broadcast picker buttons ([#352](https://github.com/mobile-next/mobilecli/pull/352))
+* Fix(android): Pass --scale with 4-decimal precision ([#343](https://github.com/mobile-next/mobilecli/pull/343))
+* Fix(android): Align scaled capture dimensions to encoder alignment ([#354](https://github.com/mobile-next/mobilecli/pull/354), [devicekit-android#42](https://github.com/mobile-next/devicekit-android/pull/42))
+
+## [1.0.3](https://github.com/mobile-next/mobilecli/releases/tag/1.0.3) (2026-08-24)
+* Fix(ios): Re-tap record button while waiting for broadcast picker ([#350](https://github.com/mobile-next/mobilecli/pull/350))
+
+## [1.0.2](https://github.com/mobile-next/mobilecli/releases/tag/1.0.2) (2026-08-23)
+* Feat: Optional duration for swipe gestures ([#344](https://github.com/mobile-next/mobilecli/pull/344)), thanks to [@hakanor](https://github.com/hakanor)
+* Feat(apps): Report version and versionCode for installed apps on all platforms ([#347](https://github.com/mobile-next/mobilecli/pull/347))
+* Fix(ios): Include elements with accessibilityIdentifier in dump ui regardless of type ([#342](https://github.com/mobile-next/mobilecli/pull/342))
+* Fix: Don't ack device.screenrecord until the broadcast is confirmed live ([#339](https://github.com/mobile-next/mobilecli/pull/339))
+
+## [1.0.1](https://github.com/mobile-next/mobilecli/releases/tag/1.0.1) (2026-08-10)
+* Feat(screencapture): Default FPS to 30 instead of leaving it unset ([#335](https://github.com/mobile-next/mobilecli/pull/335))
+* Feat: Dump UI via persistent devicekit server on android ([#334](https://github.com/mobile-next/mobilecli/pull/334))
+* Fix: Remote allocate/release fixes ([#332](https://github.com/mobile-next/mobilecli/pull/332))
+* Fix: Make remote allocate --name accept a single value ([#331](https://github.com/mobile-next/mobilecli/pull/331))
+* Chore: Bump devicekit-android agent to 1.2.5 ([#337](https://github.com/mobile-next/mobilecli/pull/337))
+
+## [1.0.0](https://github.com/mobile-next/mobilecli/releases/tag/1.0.0) (2026-08-01)
+* Fix(ios): Find the right iOS resigner matching provisioning profile ([#325](https://github.com/mobile-next/mobilecli/pull/325))
+* Feat(android): Report selected state in Android UI dump ([#320](https://github.com/mobile-next/mobilecli/pull/320)), thanks to [@sjy](https://github.com/sjy)
+* Fix(android): Add timeout on getprop in case adbd needs a kill-server ([#322](https://github.com/mobile-next/mobilecli/pull/322))
+* Fix(ios): Correct iOS UI dump positions for elements in nested windows ([#321](https://github.com/mobile-next/mobilecli/pull/321), [devicekit-ios#55](https://github.com/mobile-next/devicekit-ios/pull/55))
+* Fix(ios): Restore Xcode 26.5 testing support and fix simulator agent version checks and upgrades ([#324](https://github.com/mobile-next/mobilecli/pull/324), [devicekit-ios#57](https://github.com/mobile-next/devicekit-ios/pull/57))
+
+## [0.3.89](https://github.com/mobile-next/mobilecli/releases/tag/0.3.89) (2026-07-30)
+* Feat: Add windows arm64 build ([#314](https://github.com/mobile-next/mobilecli/pull/314), closes [#305](https://github.com/mobile-next/mobilecli/issues/305))
+* Feat(android): Report enabled and checked state in android ui dump ([#317](https://github.com/mobile-next/mobilecli/pull/317), see [mobilewright#252](https://github.com/mobile-next/mobilewright/pull/252))
+* Docs: How to run e2e tests ([#316](https://github.com/mobile-next/mobilecli/pull/316))
+
+## [0.3.88](https://github.com/mobile-next/mobilecli/releases/tag/0.3.88) (2026-07-29)
+* Fix: Remote mobilenext.ai device allocation response change ([#309](https://github.com/mobile-next/mobilecli/pull/309))
+* Fix: Thread locales through device.apps.launch JSON-RPC handler ([#303](https://github.com/mobile-next/mobilecli/pull/303))
+* Fix: Extend write deadline for app install/uninstall RPCs ([#304](https://github.com/mobile-next/mobilecli/pull/304))
+
+## [0.3.87](https://github.com/mobile-next/mobilecli/releases/tag/0.3.87) (2026-07-15)
+* Feat: Add mobilecli skill ([#256](https://github.com/mobile-next/mobilecli/pull/256)), thanks to [@lazynoda](https://github.com/lazynoda)
+* Fix: Include multiline TextView in iOS accessibility dump ([#294](https://github.com/mobile-next/mobilecli/pull/294)), thanks to [@Ernest94](https://github.com/Ernest94)
+* Fix: Upgrade golang.org/x/crypto and golang.org/x/net to address security alerts ([#301](https://github.com/mobile-next/mobilecli/pull/301))
+
+## [0.3.86](https://github.com/mobile-next/mobilecli/releases/tag/0.3.86) (2026-07-13)
+* Feat: Live bitrate + keyframe control via device socket (Android only) ([#295](https://github.com/mobile-next/mobilecli/pull/295))
+
+## [0.3.85](https://github.com/mobile-next/mobilecli/releases/tag/0.3.85) (2026-06-17)
+* Feat: Device.settings.apply with animations toggle ([#287](https://github.com/mobile-next/mobilecli/pull/287))
+
+## [0.3.84](https://github.com/mobile-next/mobilecli/releases/tag/0.3.84) (2026-06-15)
+* Fix: Include clickable and checkable elements in android view tree dump ([#284](https://github.com/mobile-next/mobilecli/pull/284))
+
+## [0.3.83](https://github.com/mobile-next/mobilecli/releases/tag/0.3.83) (2026-06-15)
+* Fix: Scale press-keys RPC timeout by key count ([#281](https://github.com/mobile-next/mobilecli/pull/281))
+* Fix: Match agent bundle id by suffix to support re-signed runner ([#280](https://github.com/mobile-next/mobilecli/pull/280))
+* Chore: Update devicekit-ios agent to 0.0.20 ([#282](https://github.com/mobile-next/mobilecli/pull/282))
+
+## [0.3.82](https://github.com/mobile-next/mobilecli/releases/tag/0.3.82) (2026-06-14)
+* Feat: Update agent automatically on install command when the installed version differs ([#278](https://github.com/mobile-next/mobilecli/pull/278))
+* Feat: Add agent uninstall command ([#277](https://github.com/mobile-next/mobilecli/pull/277))
+* Feat: Add placeholder field to android's dump ui ([#276](https://github.com/mobile-next/mobilecli/pull/276))
+* Feat: Android now returns the version and versionCode of apps in list apps (requires devicekit-android installed)
+* Feat: Return installed app metadata from apps install ([#274](https://github.com/mobile-next/mobilecli/pull/274))
+
+## [0.3.81](https://github.com/mobile-next/mobilecli/releases/tag/0.3.81) (2026-06-12)
+* Fix: Wait a bit for android foreground app, it might be null if there's a transition animation ([#271](https://github.com/mobile-next/mobilecli/pull/271))
+* Fix: Nest elements in 'dump ui' command, it was flat ([#267](https://github.com/mobile-next/mobilecli/pull/267))
+* Feat: Add --bitrate to screencapture command ([#269](https://github.com/mobile-next/mobilecli/pull/269))
+* Feat: Add --activity for apps launch on android ([#272](https://github.com/mobile-next/mobilecli/pull/272))
+
+## [0.3.80](https://github.com/mobile-next/mobilecli/releases/tag/0.3.80) (2026-06-11)
+* Feat: Support --insecure-storage if keychain/gnome-keyring doesn't exist ([#266](https://github.com/mobile-next/mobilecli/pull/266))
+* Fix: Add missing webview element ([#265](https://github.com/mobile-next/mobilecli/pull/265))
+* Feat: Add "io keys" command for pressing keys with modifiers ([#264](https://github.com/mobile-next/mobilecli/pull/264))
+* Feat: Add --provider to mobilecli auth login ([#263](https://github.com/mobile-next/mobilecli/pull/263))
+
+## [0.3.79](https://github.com/mobile-next/mobilecli/releases/tag/0.3.79) (2026-06-09)
+* Fix: Await promises in WebView JS eval via token-based poll loop ([#261](https://github.com/mobile-next/mobilecli/pull/261))
+* Fix: Use callAsyncJavaScript instead of evaluateJavaScript for webview evals ([#258](https://github.com/mobile-next/mobilecli/pull/258))
+* Fix: Webview race condition getting port if app not yet in foreground ([#260](https://github.com/mobile-next/mobilecli/pull/260))
+* Fix: Increase websocket message size to 8MB ([#257](https://github.com/mobile-next/mobilecli/pull/257))
+
+## [0.3.78](https://github.com/mobile-next/mobilecli/releases/tag/0.3.78) (2026-06-04)
+* Android: Wrongly wrap IIFE expressions around webview evals ([#254](https://github.com/mobile-next/mobilecli/pull/254))
+
+## [0.3.77](https://github.com/mobile-next/mobilecli/releases/tag/0.3.77) (2026-06-03)
+* Feat: Add device.webview.url and device.webview.title JSON-RPC methods ([#251](https://github.com/mobile-next/mobilecli/pull/251))
+* Fix: Finalize android screenrecord mp4 on ctrl-c by signaling on-device process ([#249](https://github.com/mobile-next/mobilecli/pull/249))
+
+## [0.3.76](https://github.com/mobile-next/mobilecli/releases/tag/0.3.76) (2026-06-02)
+* Feat: Webview support for real iOS devices ([#246](https://github.com/mobile-next/mobilecli/pull/246))
+* Feat: Webview support for iOS simulators and Android real devices and emulators ([#244](https://github.com/mobile-next/mobilecli/pull/244))
+* Fix: Recover from panics in websocket handlers to prevent server crash ([#240](https://github.com/mobile-next/mobilecli/pull/240))
+
+## [0.3.75](https://github.com/mobile-next/mobilecli/releases/tag/0.3.75) (2026-05-26)
+* General: File system support for ls, mkdir, rm, push, pull and get app path ([#228](https://github.com/mobile-next/mobilecli/pull/228))
+* General: Fix websocket timeouts after around 50-60 seconds ([#239](https://github.com/mobile-next/mobilecli/pull/239))
+
+## [0.3.74](https://github.com/mobile-next/mobilecli/releases/tag/0.3.74) (2026-05-17)
+* Android: Use devicekit instrumentation for android view tree dump ([#233](https://github.com/mobile-next/mobilecli/pull/233))
+
+## [0.3.73](https://github.com/mobile-next/mobilecli/releases/tag/0.3.73) (2026-05-12)
+* Android: Include elements with `resource-id` in UI element tree dump even when text and content-desc are empty
+
+## [0.3.72](https://github.com/mobile-next/mobilecli/releases/tag/0.3.72) (2026-05-11)
+* Android: Fix launching apps installed with `-t` (test) flag ([#225](https://github.com/mobile-next/mobilecli/pull/225))
+
+## [0.3.71](https://github.com/mobile-next/mobilecli/releases/tag/0.3.71) (2026-05-05)
+* Android: Fix launching apps on emulators with `hw.keyboard = no` by passing `--pct-syskeys 0` to monkey
+
+## [0.3.70](https://github.com/mobile-next/mobilecli/releases/tag/0.3.70) (2026-05-04)
+* iOS: Fix terminating simulator runner and register shutdown hook on agent start ([#217](https://github.com/mobile-next/mobilecli/pull/217))
+* iOS: Update devicekit-ios agent to 0.0.18 ([#220](https://github.com/mobile-next/mobilecli/pull/220))
+* iOS: Include `placeholder` field in dump UI view tree response
+
+## [0.3.69](https://github.com/mobile-next/mobilecli/releases/tag/0.3.69) (2026-05-01)
+* iOS: update go-ios library to v1.0.211 which fixes iOS 26 on OSX Tahoe ([#212](https://github.com/mobile-next/mobilecli/pull/212))
+
+## [0.3.68](https://github.com/mobile-next/mobilecli/releases/tag/0.3.68) (2026-05-01)
+* General: Add `mobilecli remote` commands for allocating, listing, and releasing remote devices, deprecate `mobilecli fleet`
+* General: Move `crashes` commands under `device crashes`, deprecate root `crashes` ([#209](https://github.com/mobile-next/mobilecli/pull/209))
+
+## [0.3.67](https://github.com/mobile-next/mobilecli/releases/tag/0.3.67) (2026-04-27)
+* General: Validate artifact host for upload and download to address codeql ssrf alerts ([#207](https://github.com/mobile-next/mobilecli/pull/207))
+* iOS: Fix race condition when assigning device kit agent a random port for iOS Simulator ([#204](https://github.com/mobile-next/mobilecli/pull/204))
+* iOS: Remove redundant HOME button press after launching device kit agent ([#203](https://github.com/mobile-next/mobilecli/pull/203))
+
 ## [0.3.66](https://github.com/mobile-next/mobilecli/releases/tag/0.3.66) (2026-04-16)
 * General: Add `mobilecli agent install` command for automatically installing devicekit-ios and devicekit-android ([#196](https://github.com/mobile-next/mobilecli/pull/196))
 * iOS: Disable HTTP keep-alives to fix real device port forwarding ([#197](https://github.com/mobile-next/mobilecli/pull/197))
@@ -31,7 +159,7 @@
 * Android: Support mp4 screen recording across Android real devices and Emulators ([#179](https://github.com/mobile-next/mobilecli/pull/179))
 
 ## [0.1.59](https://github.com/mobile-next/mobilecli/releases/tag/0.1.59) (2026-02-25)
-* General: Allocate remote Android and iOS devices on Mobile Fleet, see https://mobilenexthq.com ([#176](https://github.com/mobile-next/mobilecli/pull/176))
+* General: Allocate remote Android and iOS devices on Mobile Fleet, see https://mobilenext.ai ([#176](https://github.com/mobile-next/mobilecli/pull/176))
 
 ## [0.1.58](https://github.com/mobile-next/mobilecli/releases/tag/0.1.58) (2026-02-14)
 * iOS: Click HOME button three times after Broadcast Extension starts running ([#27afdbe](https://github.com/mobile-next/mobilecli/commit/27afdbed955aebd6649ab8645068ae83322875a3))

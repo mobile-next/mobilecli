@@ -130,6 +130,37 @@ var deviceShutdownCmd = &cobra.Command{
 	},
 }
 
+var settingsCmd = &cobra.Command{
+	Use:   "settings",
+	Short: "Device settings commands",
+	Long:  `Commands for applying device-level settings such as animations.`,
+}
+
+var settingsAnimations string
+
+var settingsApplyCmd = &cobra.Command{
+	Use:   "apply",
+	Short: "Apply device settings",
+	Long:  `Apply device-level settings. Example: mobilecli device settings apply --animations=off`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ApplySettingsRequest{
+			DeviceID: deviceId,
+		}
+
+		if cmd.Flags().Changed("animations") {
+			req.Animations = &settingsAnimations
+		}
+
+		response := commands.ApplySettingsCommand(req)
+		printJson(response)
+		if response.Status == "error" {
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(deviceCmd)
 
@@ -139,10 +170,14 @@ func init() {
 	deviceCmd.AddCommand(deviceBootCmd)
 	deviceCmd.AddCommand(deviceShutdownCmd)
 	deviceCmd.AddCommand(orientationCmd)
+	deviceCmd.AddCommand(settingsCmd)
 
 	// add orientation subcommands
 	orientationCmd.AddCommand(orientationGetCmd)
 	orientationCmd.AddCommand(orientationSetCmd)
+
+	// add settings subcommands
+	settingsCmd.AddCommand(settingsApplyCmd)
 
 	// device command flags
 	deviceRebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
@@ -151,4 +186,6 @@ func init() {
 	deviceShutdownCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to shutdown")
 	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
+	settingsApplyCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to apply settings to")
+	settingsApplyCmd.Flags().StringVar(&settingsAnimations, "animations", "", "Toggle system animations: 'on' or 'off'")
 }
