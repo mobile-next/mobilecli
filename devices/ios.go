@@ -228,6 +228,14 @@ func (d *IOSDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return d.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
+func (d *IOSDevice) GetClipboard() (string, error) {
+	return d.deviceKitClient.GetClipboard()
+}
+
+func (d *IOSDevice) SetClipboard(text string) error {
+	return d.deviceKitClient.SetClipboard(text)
+}
+
 func (d *IOSDevice) Gesture(actions []devicekit.TapAction) error {
 	return d.deviceKitClient.Gesture(actions)
 }
@@ -954,6 +962,10 @@ func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
+// maxAvcControlMessageSize bounds the length-prefixed control messages sent to
+// the broadcast extension; real payloads are ~100 bytes.
+const maxAvcControlMessageSize = 1 << 20
+
 // sendAvcControl sends a live encoder control message to the broadcast
 // extension as length-prefixed JSON-RPC (4-byte big-endian length + payload)
 // on the running H.264 stream connection. Fire-and-forget: the extension
@@ -974,6 +986,11 @@ func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
 	})
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", method, err)
+	}
+
+	// bound the length before the allocation and uint32 conversion (CodeQL CWE-190)
+	if len(msg) > maxAvcControlMessageSize {
+		return fmt.Errorf("control message too large: %d bytes", len(msg))
 	}
 
 	buf := make([]byte, 4+len(msg))
@@ -1170,6 +1187,10 @@ func (d *IOSDevice) InstallApp(path string) error {
 	return nil
 }
 
+func (d *IOSDevice) ClearApp(bundleID string) error {
+	return fmt.Errorf("clearing app data is not supported on real iOS devices")
+}
+
 func (d *IOSDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	log.SetLevel(log.WarnLevel)
 
@@ -1269,7 +1290,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 				}
 				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
 				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
-				utils.Verbose("Tapping record button at %f,%f", centerX, centerY)
+				utils.Verbose("Tapping record button at %d,%d", centerX, centerY)
 				if err = d.Tap(centerX, centerY); err != nil {
 					return fmt.Errorf("failed to tap broadcast button: %w", err)
 				}

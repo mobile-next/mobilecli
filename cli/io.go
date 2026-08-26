@@ -12,7 +12,7 @@ import (
 var ioCmd = &cobra.Command{
 	Use:   "io",
 	Short: "Input/output operations with devices",
-	Long:  `Perform input/output operations like tapping, pressing buttons, and sending text to devices.`,
+	Long:  `Perform input/output operations like tapping, pressing buttons, sending text, and reading or writing the device clipboard.`,
 }
 
 var ioTapCmd = &cobra.Command{

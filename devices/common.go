@@ -130,6 +130,8 @@ type ControllableDevice interface {
 	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
+	GetClipboard() (string, error)
+	SetClipboard(text string) error
 	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
 	LaunchApp(bundleID string, opts LaunchOptions) error
@@ -139,6 +141,7 @@ type ControllableDevice interface {
 	GetForegroundApp() (*ForegroundAppInfo, error)
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
+	ClearApp(bundleID string) error
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
 	DumpSource() ([]ScreenElement, error)

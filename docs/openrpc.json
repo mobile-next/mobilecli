@@ -272,6 +272,64 @@
       }
     },
     {
+      "name": "device.clipboard.get",
+      "summary": "Read clipboard",
+      "description": "Reads the text currently on the device clipboard",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "clipboard",
+        "description": "Clipboard contents",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Text on the clipboard, empty when it holds no text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.clipboard.set",
+      "summary": "Write clipboard",
+      "description": "Replaces the text on the device clipboard, an empty string clears it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to place on the clipboard",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.io.keys",
       "summary": "Press keyboard keys",
       "description": "Presses one or more key combinations on the device, in order. Each combo is a key with optional modifiers joined by '+', e.g. \"cmd+a\", \"ctrl+shift+z\", \"backspace\". Modifiers: cmd/command/meta, ctrl/control, alt/opt/option, shift, fn. Keys are case-insensitive.",
@@ -1767,9 +1825,9 @@
             "type": "string",
             "description": "Provider type (e.g. 'mobilenext', 'local')"
           },
-          "sessionId": {
+          "allocationId": {
             "type": "string",
-            "description": "Session identifier for this device allocation"
+            "description": "Allocation identifier for this device"
           }
         },
         "required": [

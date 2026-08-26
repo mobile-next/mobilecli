@@ -586,6 +586,25 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return s.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
 }
 
+func (s SimulatorDevice) GetClipboard() (string, error) {
+	// #nosec G204 -- udid is controlled, no shell interpretation
+	output, err := exec.Command("xcrun", "simctl", "pbpaste", s.ID()).Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get clipboard: %w", err)
+	}
+	return string(output), nil
+}
+
+func (s SimulatorDevice) SetClipboard(text string) error {
+	// #nosec G204 -- udid is controlled, no shell interpretation
+	cmd := exec.Command("xcrun", "simctl", "pbcopy", s.ID())
+	cmd.Stdin = strings.NewReader(text)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to set clipboard: %w", err)
+	}
+	return nil
+}
+
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
 	return s.deviceKitClient.Gesture(actions)
 }
@@ -920,6 +939,39 @@ func (s SimulatorDevice) InstallApp(path string) error {
 	}
 
 	return InstallApp(s.UDID, path)
+}
+
+func (s SimulatorDevice) ClearApp(bundleID string) error {
+	output, err := runSimctl("get_app_container", s.UDID, bundleID, "data")
+	if err != nil {
+		return fmt.Errorf("failed to get data container for %s: %w", bundleID, err)
+	}
+
+	containerPath := filepath.Clean(strings.TrimSpace(string(output)))
+	if containerPath == "" {
+		return fmt.Errorf("no data container found for %s", bundleID)
+	}
+
+	// sanity check before recursive deletion: path must be inside this simulator's app-data containers
+	expectedSubpath := filepath.Join("CoreSimulator", "Devices", s.UDID, "data", "Containers", "Data", "Application") + string(os.PathSeparator)
+	if !filepath.IsAbs(containerPath) || !strings.Contains(containerPath, expectedSubpath) {
+		return fmt.Errorf("refusing to clear unexpected container path: %s", containerPath)
+	}
+
+	_ = s.TerminateApp(bundleID)
+
+	entries, err := os.ReadDir(containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to read data container: %w", err)
+	}
+
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(containerPath, entry.Name())); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
 }
 
 func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {

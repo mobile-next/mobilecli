@@ -432,6 +432,35 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return nil
 }
 
+func (d *AndroidDevice) clipboardCommand(args ...string) (string, error) {
+	out, err := d.runDexClass("com.mobilenext.mobilecli.Clipboard", args...)
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
+}
+
+func (d *AndroidDevice) GetClipboard() (string, error) {
+	out, err := d.clipboardCommand("get")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
+func (d *AndroidDevice) SetClipboard(text string) error {
+	if text == "" {
+		_, err := d.clipboardCommand("clear")
+		return err
+	}
+
+	// base64 keeps spaces, emoji and other UTF-8 intact across the shell.
+	_, err := d.clipboardCommand("set", "--base64", base64.StdEncoding.EncodeToString([]byte(text)))
+	return err
+}
+
 // Gesture performs a sequence of touch actions on the Android device
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
 
@@ -963,17 +992,24 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 // on the device via app_process, which returns name and versions for every package in one
 // call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
-		return nil, fmt.Errorf("push .dex: %w", err)
-	}
-
-	output, err := d.runAdbCommand("exec-out", "CLASSPATH="+tmpDEX, "app_process", "/", "com.mobilenext.mobilecli.PackageLister")
+	output, err := d.runDexClass("com.mobilenext.mobilecli.PackageLister")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list packages: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return parsePackageListerOutput(output)
+}
+
+// runDexClass pushes the embedded mobilecli.dex (agents/android) to the device
+// and runs the given class's main() via app_process.
+func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, error) {
+	const tmpDEX = "/data/local/tmp/mobilecli.dex"
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+		return nil, fmt.Errorf("push .dex: %w", err)
+	}
+
+	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + tmpDEX, "app_process", "/", className}, args...)
+	return d.runAdbCommand(cmdArgs...)
 }
 
 // parsePackageListerOutput decodes the JSON array printed by PackageLister.
@@ -1717,6 +1753,17 @@ func (d *AndroidDevice) InstallApp(path string) error {
 	}
 
 	return fmt.Errorf("installation failed: %s", string(output))
+}
+
+func (d *AndroidDevice) ClearApp(bundleID string) error {
+	output, err := d.runAdbCommand("shell", "pm", "clear", bundleID)
+	if err != nil {
+		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	if !strings.Contains(string(output), "Success") {
+		return fmt.Errorf("failed to clear app %s: %s", bundleID, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
