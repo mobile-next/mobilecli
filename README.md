@@ -186,7 +186,7 @@ mobilecli io clipboard get --device <device-id>
 # Write device clipboard
 mobilecli io clipboard set --device <device-id> 'hello world'
 
-# Send keys combination to paste (cmd+v for iOS)
+# Send keys combination to paste (cmd+v for iOS, ctrl+v for Android)
 mobilecli io keys --device <device-id> "cmd+v"
 ```
 

@@ -432,16 +432,8 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return nil
 }
 
-const devicekitClipboardClass = "com.mobilenext.devicekit.Clipboard"
-
 func (d *AndroidDevice) clipboardCommand(args ...string) (string, error) {
-	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
-	if err != nil || appPath == "" {
-		return "", fmt.Errorf("DeviceKit is not installed on device %s, it is required for clipboard access", d.ID())
-	}
-
-	cmdArgs := append([]string{"exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", devicekitClipboardClass}, args...)
-	out, err := d.runAdbCommand(cmdArgs...)
+	out, err := d.runDexClass("com.mobilenext.mobilecli.Clipboard", args...)
 	if err != nil {
 		return "", err
 	}
@@ -1000,17 +992,24 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 // on the device via app_process, which returns name and versions for every package in one
 // call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
-		return nil, fmt.Errorf("push .dex: %w", err)
-	}
-
-	output, err := d.runAdbCommand("exec-out", "CLASSPATH="+tmpDEX, "app_process", "/", "com.mobilenext.mobilecli.PackageLister")
+	output, err := d.runDexClass("com.mobilenext.mobilecli.PackageLister")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list packages: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return parsePackageListerOutput(output)
+}
+
+// runDexClass pushes the embedded mobilecli.dex (agents/android) to the device
+// and runs the given class's main() via app_process.
+func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, error) {
+	const tmpDEX = "/data/local/tmp/mobilecli.dex"
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+		return nil, fmt.Errorf("push .dex: %w", err)
+	}
+
+	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + tmpDEX, "app_process", "/", className}, args...)
+	return d.runAdbCommand(cmdArgs...)
 }
 
 // parsePackageListerOutput decodes the JSON array printed by PackageLister.
