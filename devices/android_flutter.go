@@ -102,17 +102,9 @@ func (d *AndroidDevice) dumpFlutterSource(uri string) ([]types.ScreenElement, er
 	}
 	defer d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", localPort))
 
+	// The device port is now reachable at the forwarded local port.
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/%s/ws", localPort, token)
-	vm, err := dialFlutterVM(wsURL)
-	if err != nil {
-		return nil, err
-	}
-	defer vm.close()
-
-	if err := vm.resolveIsolate(); err != nil {
-		return nil, err
-	}
-	return vm.dumpRenderTree(d.devicePixelRatio())
+	return dumpFlutterTreeOverWS(wsURL, d.devicePixelRatio())
 }
 
 // devicePixelRatio maps Flutter's logical pixels to the physical pixels that
