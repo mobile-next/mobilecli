@@ -1441,6 +1441,8 @@ type deviceKitNode struct {
 	Focused     bool            `json:"focused"`
 	Enabled     bool            `json:"enabled"`
 	Checked     bool            `json:"checked"`
+	Checkable   bool            `json:"checkable"`
+	Clickable   bool            `json:"clickable"`
 	Selected    bool            `json:"selected"`
 	Visible     bool            `json:"visible"`
 	Rect        deviceKitRect   `json:"rect"`
@@ -1563,7 +1565,9 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	for _, node := range nodes {
 		childElements := collectDeviceKitElements(node.Children)
 
-		if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
+		// keep interactable nodes even when unlabeled (e.g. Flutter icon-only
+		// buttons), mirroring the uiautomator XML path in collectElements
+		if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" && !node.Clickable && !node.Checkable {
 			elements = append(elements, childElements...)
 			continue
 		}
@@ -1723,6 +1727,14 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 }
 
 func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+	// Flutter apps render into an opaque native view, so the accessibility-based
+	// dumps below miss typed/unlabeled/non-semantic widgets. When the foreground
+	// app is a debuggable Flutter app, read its live render tree from the Dart VM
+	// service instead. Any failure falls through to the accessibility dump.
+	if elements, ok := d.tryDumpFlutterSource(); ok {
+		return elements, nil
+	}
+
 	if nodes, err := d.getDeviceKitNodes(); err == nil {
 		return collectDeviceKitElements(nodes), nil
 	} else {

@@ -547,3 +547,36 @@ func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
 		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
 	}
 }
+
+// Flutter icon-only controls (e.g. a "+" button) are clickable views with no
+// text, content-desc, hint, or resource-id. They must not be dropped from the
+// tree — see https://github.com/mobile-next/mobilewright/issues/234.
+func TestCollectDeviceKitElementsKeepsUnlabeledClickableNode(t *testing.T) {
+	nodes := []deviceKitNode{
+		{
+			Class:       "android.view.View",
+			ContentDesc: "Premium package (qty: 0)",
+			Clickable:   true,
+			Rect:        deviceKitRect{X: 48, Y: 1563, Width: 1184, Height: 120},
+			Children: []deviceKitNode{
+				{
+					Class:     "android.view.View",
+					Clickable: true,
+					Rect:      deviceKitRect{X: 1112, Y: 1563, Width: 120, Height: 120},
+				},
+			},
+		},
+	}
+
+	output := collectDeviceKitElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element, got %d: %+v", len(output), output)
+	}
+	if len(output[0].Children) != 1 {
+		t.Fatalf("expected the unlabeled clickable child to be kept, got %+v", output[0].Children)
+	}
+	if output[0].Children[0].Rect.X != 1112 {
+		t.Errorf("expected child rect x=1112, got %+v", output[0].Children[0].Rect)
+	}
+}

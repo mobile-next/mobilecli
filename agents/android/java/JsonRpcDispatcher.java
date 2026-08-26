@@ -46,6 +46,37 @@ class JsonRpcDispatcher {
 				case "device.dump.ui":
 					return result(id, WebViewAgent.dumpUi());
 
+				case "device.flutter.vmServiceUri": {
+					// Returns the running Flutter app's Dart VM service URI
+					// (including the auth token) by reflecting
+					// FlutterJNI.getVMServiceUri(). FlutterJNI lives in the host
+					// app's PathClassLoader — reached via Context.getClassLoader()
+					// on ActivityThread.currentApplication(); the agent dex's own
+					// loader (parented to the system loader) cannot see it, and
+					// app.getClass().getClassLoader() is the boot loader when the
+					// app uses the base Application class.
+					try {
+						Object app = Class.forName("android.app.ActivityThread")
+							.getMethod("currentApplication").invoke(null);
+						ClassLoader appLoader = app == null
+							? Thread.currentThread().getContextClassLoader()
+							: (ClassLoader) app.getClass().getMethod("getClassLoader").invoke(app);
+						Class<?> jni = Class.forName(
+							"io.flutter.embedding.engine.FlutterJNI", false, appLoader);
+						Object v;
+						try {
+							v = jni.getMethod("getVMServiceUri").invoke(null);
+						} catch (NoSuchMethodException e) {
+							v = jni.getMethod("getObservatoryUri").invoke(null); // pre-2022 engines
+						}
+						return result(id, new JSONObject().put("uri", v == null ? "" : v.toString()));
+					} catch (ClassNotFoundException e) {
+						throw new RpcException(RpcException.INVALID_PARAMS, "not a flutter app");
+					} catch (Exception e) {
+						throw new RpcException(RpcException.INTERNAL_ERROR, "vmServiceUri failed: " + e.getMessage());
+					}
+				}
+
 				case "device.webview.list":
 					return result(id, WebViewAgent.listWebViews());
 
