@@ -1,3 +1,10 @@
+## [1.0.5](https://github.com/mobile-next/mobilecli/releases/tag/1.0.5) (2026-08-26)
+* Feat: Clipboard get and set commands ([#345](https://github.com/mobile-next/mobilecli/pull/345)), thanks to [@hakanor](https://github.com/hakanor)
+* Feat: Add apps clear command ([#202](https://github.com/mobile-next/mobilecli/pull/202))
+* Fix(ios): Use simctl pbcopy/pbpaste for simulator clipboard ([#359](https://github.com/mobile-next/mobilecli/pull/359))
+* Fix(ios): Use pointer receivers on IOSDevice to stop copying its mutex ([#357](https://github.com/mobile-next/mobilecli/pull/357))
+* Fix: Correct format verb in tap log and rename sessionId to allocationId in openrpc schema ([#362](https://github.com/mobile-next/mobilecli/pull/362))
+
 ## [1.0.4](https://github.com/mobile-next/mobilecli/releases/tag/1.0.4) (2026-08-24)
 * Fix(ios): Start recording time limit and progress ticker when capture is live, not during setup ([#353](https://github.com/mobile-next/mobilecli/pull/353))
 * Fix(ios): Search nested element tree when waiting for broadcast picker buttons ([#352](https://github.com/mobile-next/mobilecli/pull/352))
