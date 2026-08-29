@@ -1152,6 +1152,13 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 }
 
 func (d *IOSDevice) DumpSource() ([]ScreenElement, error) {
+	// Flutter apps render into an opaque native view, so the accessibility dump
+	// misses typed/unlabeled/non-semantic widgets. When the foreground app is a
+	// Flutter app with a live Dart VM service, read its render tree instead. Any
+	// failure falls through to the accessibility dump.
+	if elements, ok := d.tryDumpFlutterSource(); ok {
+		return elements, nil
+	}
 	return d.deviceKitClient.GetSourceElements()
 }
 

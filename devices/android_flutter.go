@@ -404,7 +404,7 @@ func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) 
 	utils.Verbose("flutter: bootstrap (classes+root+offset.zero) took %s", time.Since(t0))
 
 	t1 := time.Now()
-	els, err := vm.visit(rootID, rootRenderClass)
+	els, err := vm.visit(rootID, rootRenderClass, nil)
 	utils.Verbose("flutter: tree walk took %s", time.Since(t1))
 	return els, err
 }
@@ -414,6 +414,34 @@ func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) 
 type renderChild struct {
 	id    string
 	class string
+}
+
+// flutterSemantics is the accessibility metadata read from a SemanticsNode. It
+// is threaded down the render walk from the nearest enclosing boundary and
+// attached to the content leaves it covers.
+type flutterSemantics struct {
+	label        string
+	value        string
+	identifier   string
+	hint         string
+	checked      *bool
+	selected     *bool
+	focused      *bool
+	enabled      *bool
+	isButton     bool
+	isTextField  bool
+	inRadioGroup bool // isInMutuallyExclusiveGroup — a radio, not a checkbox
+	// mergesDescendants is set when this boundary folds its whole subtree into one
+	// accessible node (e.g. a CheckboxListTile). Such a node is a single control,
+	// so it is emitted once and its content leaves are not emitted separately.
+	mergesDescendants bool
+}
+
+// hasContent reports whether the semantics carry anything worth attaching.
+func (s *flutterSemantics) hasContent() bool {
+	return s != nil && (s.label != "" || s.identifier != "" || s.value != "" ||
+		s.hint != "" || s.isButton || s.isTextField ||
+		s.checked != nil || s.selected != nil || s.focused != nil || s.enabled != nil)
 }
 
 func (vm *flutterVM) firstInstance(classID string) (string, error) {
@@ -481,7 +509,23 @@ func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
 // hoisted — only leaf render objects with a non-zero size are emitted, which is
 // exactly the visible content (paragraphs, images, custom-painted widgets like
 // charts), each with its real Flutter type and global bounds.
-func (vm *flutterVM) visit(nodeID, className string) ([]types.ScreenElement, error) {
+func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]types.ScreenElement, error) {
+	// A render object that forms a semantics boundary carries the label/flags on
+	// its own debugSemantics (only the owner does — ancestors and merged
+	// descendants read empty), regardless of the boundary class
+	// (RenderSemanticsAnnotations, RenderIndexedSemantics, RenderMergeSemantics…).
+	// Adopt it for this subtree so the content leaves beneath (where Flutter has
+	// merged the label away) inherit it.
+	if s := vm.readNodeSemantics(nodeID); s.hasContent() {
+		sem = s
+		// A merging boundary is one accessible control (label + its widgets folded
+		// together), so emit it once here and don't descend — otherwise each of its
+		// content leaves (e.g. a checkbox's label row and its box) emits separately.
+		if s.mergesDescendants {
+			return vm.emitLeaf(nodeID, className, sem), nil
+		}
+	}
+
 	kids := vm.childrenOf(nodeID)
 
 	// Wrapper node (has render children): visit children concurrently and hoist
@@ -493,7 +537,7 @@ func (vm *flutterVM) visit(nodeID, className string) ([]types.ScreenElement, err
 			wg.Add(1)
 			go func(i int, k renderChild) {
 				defer wg.Done()
-				results[i], _ = vm.visit(k.id, k.class)
+				results[i], _ = vm.visit(k.id, k.class, sem)
 			}(i, k)
 		}
 		wg.Wait()
@@ -504,12 +548,16 @@ func (vm *flutterVM) visit(nodeID, className string) ([]types.ScreenElement, err
 		return children, nil
 	}
 
-	// Leaf: emit it if it has a real, on-screen size.
+	return vm.emitLeaf(nodeID, className, sem), nil
+}
+
+// emitLeaf builds the ScreenElement for a single node (a render leaf, or a
+// merging semantics boundary), or returns nil if it has no on-screen size.
+func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics) []types.ScreenElement {
 	rect, ok := vm.globalRect(nodeID)
 	if !ok || rect.Width <= 0 || rect.Height <= 0 {
-		return nil, nil
+		return nil
 	}
-
 	el := types.ScreenElement{
 		Type: friendlyRenderType(className),
 		Rect: rect,
@@ -517,7 +565,147 @@ func (vm *flutterVM) visit(nodeID, className string) ([]types.ScreenElement, err
 	if text := vm.extractText(nodeID, className); text != "" {
 		el.Text = &text
 	}
-	return []types.ScreenElement{el}, nil
+	applySemantics(&el, sem)
+	return []types.ScreenElement{el}
+}
+
+// applySemantics attaches the nearest enclosing semantics to a leaf element:
+// label/value/identifier/placeholder and the checked/selected/focused/enabled
+// booleans, and refines the type for buttons and text fields.
+func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
+	if !sem.hasContent() {
+		return
+	}
+	if sem.label != "" {
+		label := sem.label
+		el.Label = &label
+	}
+	if sem.value != "" {
+		value := sem.value
+		el.Value = &value
+	}
+	if sem.identifier != "" {
+		identifier := sem.identifier
+		el.Identifier = &identifier
+	}
+	if sem.hint != "" {
+		hint := sem.hint
+		el.Placeholder = &hint
+	}
+	// A node with a checked-state is a checkbox/radio: always emit its state
+	// (true or false) so it is unambiguous. selected/focused stay true-only and
+	// enabled false-only, per the accessibility-dump conventions.
+	if sem.checked != nil {
+		c := *sem.checked
+		el.Checked = &c
+	}
+	if sem.selected != nil && *sem.selected {
+		t := true
+		el.Selected = &t
+	}
+	if sem.focused != nil && *sem.focused {
+		t := true
+		el.Focused = &t
+	}
+	if sem.enabled != nil && !*sem.enabled {
+		f := false
+		el.Enabled = &f
+	}
+	// Type refinement. sem.checked != nil means the node has a checked-state (a
+	// checkbox/radio) even when unchecked, so it stays identifiable as a control
+	// rather than looking like plain text.
+	switch {
+	case sem.isTextField:
+		el.Type = "TextField"
+	case sem.isButton:
+		el.Type = "Button"
+	case sem.checked != nil && sem.inRadioGroup:
+		el.Type = "Radio"
+	case sem.checked != nil:
+		el.Type = "Checkbox"
+	}
+}
+
+// readNodeSemantics reads the accessibility metadata attached to a render
+// object via its debugSemantics SemanticsNode (label/value/identifier/hint and
+// flags). Returns an empty (no-content) struct when the node has no semantics.
+func (vm *flutterVM) readNodeSemantics(renderNodeID string) *flutterSemantics {
+	sem := &flutterSemantics{}
+	sn, err := vm.invoke(renderNodeID, "get:debugSemantics", nil)
+	if err != nil || sn == nil || sn.ID == "" || sn.Kind == "Null" {
+		return sem
+	}
+	sem.label = vm.invokeString(sn.ID, "get:label")
+	sem.value = vm.invokeString(sn.ID, "get:value")
+	sem.identifier = vm.invokeString(sn.ID, "get:identifier")
+	sem.mergesDescendants = vm.invokeString(sn.ID, "get:mergeAllDescendantsIntoThisNode") == "true"
+
+	data, err := vm.invoke(sn.ID, "getSemanticsData", nil)
+	if err != nil || data == nil || data.ID == "" {
+		return sem
+	}
+	obj, err := vm.getObject(data.ID)
+	if err != nil {
+		return sem
+	}
+	if ah := obj.field("attributedHint"); ah != nil && ah.ID != "" {
+		sem.hint = vm.invokeString(ah.ID, "get:string")
+	}
+	if fc := obj.field("flagsCollection"); fc != nil && fc.ID != "" {
+		if fco, err := vm.getObject(fc.ID); err == nil {
+			sem.isButton = fieldIsTrue(fco, "isButton")
+			sem.isTextField = fieldIsTrue(fco, "isTextField")
+			sem.inRadioGroup = fieldIsTrue(fco, "isInMutuallyExclusiveGroup")
+			sem.checked = vm.triState(fco.field("isChecked"))
+			sem.selected = vm.triState(fco.field("isSelected"))
+			sem.focused = vm.triState(fco.field("isFocused"))
+			sem.enabled = vm.triState(fco.field("isEnabled"))
+		}
+	}
+	return sem
+}
+
+// invokeString invokes a no-arg selector expected to return a String and returns
+// its value (empty on error or non-string).
+func (vm *flutterVM) invokeString(target, selector string) string {
+	r, err := vm.invoke(target, selector, nil)
+	if err != nil || r == nil {
+		return ""
+	}
+	return r.ValueAsStr
+}
+
+func fieldIsTrue(o *vmInstance, name string) bool {
+	f := o.field(name)
+	return f != nil && f.ValueAsStr == "true"
+}
+
+// triState resolves a SemanticsFlags tri-state member to a *bool. In this Flutter
+// version these are enums (Tristate{true,false,none}, CheckedState{checked,
+// unchecked,mixed}); older versions expose plain bools. none/mixed → nil.
+func (vm *flutterVM) triState(ref *vmInstanceRef) *bool {
+	if ref == nil || ref.ID == "" || ref.Kind == "Null" {
+		return nil
+	}
+	if ref.ValueAsStr == "true" {
+		t := true
+		return &t
+	}
+	if ref.ValueAsStr == "false" {
+		f := false
+		return &f
+	}
+	// Tristate.{isTrue,isFalse,none} and CheckedState.{isTrue,isFalse,mixed};
+	// none/mixed fall through to nil.
+	switch s := vm.invokeString(ref.ID, "toString"); {
+	case strings.HasSuffix(s, ".isTrue"):
+		t := true
+		return &t
+	case strings.HasSuffix(s, ".isFalse"):
+		f := false
+		return &f
+	}
+	return nil
 }
 
 // childrenOf returns a render object's render children type-agnostically via
