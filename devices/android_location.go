@@ -12,7 +12,6 @@ import (
 const (
 	// mockLocationClass is the embedded agent that holds the test providers alive
 	mockLocationClass = "com.mobilenext.mobilecli.MockLocation"
-	mockLocationDEX   = "/data/local/tmp/mobilecli.dex"
 	mockLocationLog   = "/data/local/tmp/mobilecli-mocklocation.log"
 
 	// shellPackage is the package app_process is attributed to, and therefore the
@@ -77,14 +76,14 @@ func (d *AndroidDevice) startMockLocation(lat, lon float64) error {
 		return fmt.Errorf("grant mock_location appop: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, mockLocationDEX); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
 		return fmt.Errorf("push .dex: %w", err)
 	}
 
 	d.stopMockLocation()
 
 	launchCmd := fmt.Sprintf("rm -f %s; CLASSPATH=%s nohup app_process / %s %f %f >%s 2>&1 &",
-		mockLocationLog, mockLocationDEX, mockLocationClass, lat, lon, mockLocationLog)
+		mockLocationLog, androidDexPath, mockLocationClass, lat, lon, mockLocationLog)
 	if out, err := d.runAdbCommand("shell", launchCmd); err != nil {
 		return fmt.Errorf("launch mock location agent: %s: %w", strings.TrimSpace(string(out)), err)
 	}

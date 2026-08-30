@@ -90,7 +90,6 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	agentDir := dataDir + "/" + agentSubDir
 
 	const tmpSO = "/data/local/tmp/mobilecli.so"
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
 
 	if err := d.pushTempFile(agents.AndroidMobilecliSO, tmpSO); err != nil {
 		return "", fmt.Errorf("push .so: %w", err)
@@ -99,12 +98,12 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 		return "", fmt.Errorf("install .so: %w", err)
 	}
 
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
 		return "", fmt.Errorf("push .dex: %w", err)
 	}
 	// remove stale dex before copying (dex is immutable once loaded)
 	d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/mobilecli.dex")
-	if err := d.copyToAppDir(pkg, tmpDEX, agentDir+"/mobilecli.dex", "444"); err != nil {
+	if err := d.copyToAppDir(pkg, androidDexPath, agentDir+"/mobilecli.dex", "444"); err != nil {
 		return "", fmt.Errorf("install .dex: %w", err)
 	}
 

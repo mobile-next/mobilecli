@@ -686,10 +686,12 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+// Latitude and Longitude are pointers so an omitted coordinate is an error
+// rather than a silent 0, which is a real place off the coast of Africa
 type LocationSetParams struct {
-	DeviceID  string  `json:"deviceId"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
+	DeviceID  string   `json:"deviceId"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
 }
 
 type LocationClearParams struct {
@@ -916,10 +918,14 @@ func handleLocationSet(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, latitude, longitude", err)
 	}
 
+	if locationSetParams.Latitude == nil || locationSetParams.Longitude == nil {
+		return nil, fmt.Errorf("'latitude' and 'longitude' are required")
+	}
+
 	req := commands.LocationSetRequest{
 		DeviceID:  locationSetParams.DeviceID,
-		Latitude:  locationSetParams.Latitude,
-		Longitude: locationSetParams.Longitude,
+		Latitude:  *locationSetParams.Latitude,
+		Longitude: *locationSetParams.Longitude,
 	}
 
 	response := commands.LocationSetCommand(req)

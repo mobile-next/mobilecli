@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -44,19 +45,41 @@ func ParseLatLon(s string) (float64, float64, error) {
 		return 0, 0, fmt.Errorf("invalid longitude '%s'", strings.TrimSpace(parts[1]))
 	}
 
-	if lat < -90 || lat > 90 {
-		return 0, 0, fmt.Errorf("latitude %v out of range, must be between -90 and 90", lat)
-	}
-
-	if lon < -180 || lon > 180 {
-		return 0, 0, fmt.Errorf("longitude %v out of range, must be between -180 and 180", lon)
+	if err := validateCoordinates(lat, lon); err != nil {
+		return 0, 0, err
 	}
 
 	return lat, lon, nil
 }
 
+// validateCoordinates rejects coordinates no device can be placed at. Every
+// caller goes through here, the cli via ParseLatLon and json-rpc directly.
+func validateCoordinates(lat, lon float64) error {
+	if math.IsNaN(lat) || math.IsInf(lat, 0) {
+		return fmt.Errorf("latitude %v is not a valid number", lat)
+	}
+
+	if math.IsNaN(lon) || math.IsInf(lon, 0) {
+		return fmt.Errorf("longitude %v is not a valid number", lon)
+	}
+
+	if lat < -90 || lat > 90 {
+		return fmt.Errorf("latitude %v out of range, must be between -90 and 90", lat)
+	}
+
+	if lon < -180 || lon > 180 {
+		return fmt.Errorf("longitude %v out of range, must be between -180 and 180", lon)
+	}
+
+	return nil
+}
+
 // LocationSetCommand overrides the device location
 func LocationSetCommand(req LocationSetRequest) *CommandResponse {
+	if err := validateCoordinates(req.Latitude, req.Longitude); err != nil {
+		return NewErrorResponse(err)
+	}
+
 	settable, err := findLocationSettableDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)

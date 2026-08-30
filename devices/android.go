@@ -25,6 +25,10 @@ import (
 
 const androidDiscoveryGetpropTimeout = 5 * time.Second
 
+// androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
+// on the device, shared by every feature that runs a class out of it
+const androidDexPath = "/data/local/tmp/mobilecli.dex"
+
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
 	id          string
@@ -1003,12 +1007,11 @@ func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
 // runDexClass pushes the embedded mobilecli.dex (agents/android) to the device
 // and runs the given class's main() via app_process.
 func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, error) {
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
 		return nil, fmt.Errorf("push .dex: %w", err)
 	}
 
-	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + tmpDEX, "app_process", "/", className}, args...)
+	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + androidDexPath, "app_process", "/", className}, args...)
 	return d.runAdbCommand(cmdArgs...)
 }
 

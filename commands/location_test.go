@@ -21,6 +21,8 @@ func TestParseLatLon(t *testing.T) {
 		{name: "rejects a latitude out of range", input: "91,0", wantErr: true},
 		{name: "rejects a longitude out of range", input: "0,181", wantErr: true},
 		{name: "rejects an empty string", input: "", wantErr: true},
+		{name: "rejects not-a-number", input: "NaN,0", wantErr: true},
+		{name: "rejects infinity", input: "0,+Inf", wantErr: true},
 	}
 
 	for _, tt := range tests {
