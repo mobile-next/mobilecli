@@ -81,9 +81,10 @@ type IOSDevice struct {
 	deviceKitCancel             context.CancelFunc
 	portForwarderDeviceKitAgent *ios.PortForwarder
 	portForwarderMjpeg          *ios.PortForwarder
-	portForwarderDeviceKit      *ios.PortForwarder // devicekit http forwarder
-	portForwarderAvc            *ios.PortForwarder // devicekit h264 stream forwarder
-	avcStreamConn               net.Conn           // live h264 stream conn, doubles as the control channel
+	portForwarderDeviceKit      *ios.PortForwarder                     // devicekit http forwarder
+	portForwarderAvc            *ios.PortForwarder                     // devicekit h264 stream forwarder
+	avcStreamConn               net.Conn                               // live h264 stream conn, doubles as the control channel
+	locationSimulationService   *instruments.LocationSimulationService // open while an ios 17+ location override is held
 
 	avcWriteMu sync.Mutex // serializes control writes on avcStreamConn
 }

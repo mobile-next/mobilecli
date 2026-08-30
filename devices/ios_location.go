@@ -3,7 +3,6 @@ package devices
 import (
 	"fmt"
 	"strconv"
-	"sync"
 
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/instruments"
@@ -12,14 +11,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// locationSimulationServices holds the open DTX connections keyed by udid. On
-// iOS 17+ the simulated location only lasts as long as that connection, so it
-// has to outlive the call that started it (see --wait in the cli).
-var locationSimulationServices sync.Map
-
 // SetLocation overrides the device location. On iOS 16 and older the override
 // sticks on its own; on iOS 17+ it lasts only while this process keeps the
-// instruments connection open.
+// instruments connection open, which is why the service is held on the device.
 func (d *IOSDevice) SetLocation(lat, lon float64) error {
 	log.SetLevel(log.WarnLevel)
 
@@ -32,8 +26,18 @@ func (d *IOSDevice) SetLocation(lat, lon float64) error {
 		return simlocation.SetLocation(device, strconv.FormatFloat(lat, 'f', -1, 64), strconv.FormatFloat(lon, 'f', -1, 64))
 	}
 
-	if existing, ok := locationSimulationServices.Load(d.Udid); ok {
-		return existing.(*instruments.LocationSimulationService).StartSimulateLocation(lat, lon)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.locationSimulationService != nil {
+		if err := d.locationSimulationService.StartSimulateLocation(lat, lon); err == nil {
+			return nil
+		}
+
+		// the connection went away with the device, drop it and start over
+		utils.Verbose("location simulation connection for %s is stale, reconnecting", d.Udid)
+		d.locationSimulationService.Close()
+		d.locationSimulationService = nil
 	}
 
 	service, err := instruments.NewLocationSimulationService(device)
@@ -46,7 +50,7 @@ func (d *IOSDevice) SetLocation(lat, lon float64) error {
 		return err
 	}
 
-	locationSimulationServices.Store(d.Udid, service)
+	d.locationSimulationService = service
 	utils.Verbose("holding location simulation connection for %s, it ends when mobilecli exits", d.Udid)
 	return nil
 }
@@ -55,9 +59,8 @@ func (d *IOSDevice) SetLocation(lat, lon float64) error {
 func (d *IOSDevice) ClearLocation() error {
 	log.SetLevel(log.WarnLevel)
 
-	if service, ok := locationSimulationServices.LoadAndDelete(d.Udid); ok {
-		// StopSimulateLocation closes the connection on its way out
-		return service.(*instruments.LocationSimulationService).StopSimulateLocation()
+	if held, err := d.stopHeldLocationSimulation(); held || err != nil {
+		return err
 	}
 
 	device, err := d.locationDevice()
@@ -70,6 +73,27 @@ func (d *IOSDevice) ClearLocation() error {
 	}
 
 	return simlocation.ResetLocation(device)
+}
+
+// stopHeldLocationSimulation stops the iOS 17+ simulation this process is
+// holding, and reports whether there was one to stop.
+func (d *IOSDevice) stopHeldLocationSimulation() (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.locationSimulationService == nil {
+		return false, nil
+	}
+
+	// StopSimulateLocation closes the connection on its way out, but returns
+	// before that when the call itself fails, so the service is only dropped once
+	// the device confirmed it stopped
+	if err := d.locationSimulationService.StopSimulateLocation(); err != nil {
+		return true, err
+	}
+
+	d.locationSimulationService = nil
+	return true, nil
 }
 
 // locationDevice returns a device entry usable for location services, with the
