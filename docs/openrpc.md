@@ -1079,7 +1079,7 @@ Operation result
 
 **Clear device location override**
 
-Removes a location override, restoring the location the device reports on its own
+Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with
 
 #### Parameters
 

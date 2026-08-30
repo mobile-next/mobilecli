@@ -211,7 +211,7 @@ Caveats per platform:
 | iOS Simulator | Works out of the box, the override survives mobilecli exiting |
 | iOS Real Device (16 and older) | Requires the Developer Disk Image, the override survives mobilecli exiting |
 | iOS Real Device (17+) | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
-| Android Emulator | Uses the emulator console. There is no way to clear it, reboot the emulator to reset |
+| Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
 | Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
 ### Supported Hardware Buttons

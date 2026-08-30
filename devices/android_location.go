@@ -22,6 +22,15 @@ const (
 	mockLocationStartTimeout = 10 * time.Second
 )
 
+// emulatorDefaultLatitude/Longitude are the coordinates an emulator hands its
+// emulated gps at launch (the Googleplex). The console has no counterpart to
+// `geo fix`, and an emulator has no real location to go back to, so clearing an
+// override means putting those back.
+const (
+	emulatorDefaultLatitude  = 37.421998
+	emulatorDefaultLongitude = -122.084000
+)
+
 // SetLocation overrides the device location. Emulators go through the emulator
 // console; real devices need an on-device agent holding a test provider open.
 func (d *AndroidDevice) SetLocation(lat, lon float64) error {
@@ -40,12 +49,11 @@ func (d *AndroidDevice) SetLocation(lat, lon float64) error {
 	return d.startMockLocation(lat, lon)
 }
 
-// ClearLocation restores the real device location
+// ClearLocation restores the location the device reports on its own, which on
+// an emulator means the default it booted with.
 func (d *AndroidDevice) ClearLocation() error {
 	if d.DeviceType() == "emulator" {
-		// the emulator console has no counterpart to `geo fix`, the last fix
-		// stays until the avd is rebooted
-		return fmt.Errorf("clearing the location is not supported on Android emulators, reboot the emulator to reset it")
+		return d.SetLocation(emulatorDefaultLatitude, emulatorDefaultLongitude)
 	}
 
 	d.stopMockLocation()

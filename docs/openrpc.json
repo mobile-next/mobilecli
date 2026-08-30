@@ -641,7 +641,7 @@
     {
       "name": "device.location.clear",
       "summary": "Clear device location override",
-      "description": "Removes a location override, restoring the location the device reports on its own",
+      "description": "Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with",
       "params": [
         {
           "name": "deviceId",
