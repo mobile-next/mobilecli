@@ -35,6 +35,8 @@ JSON-RPC API for mobile device automation and control
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
+- [device.location.clear](#devicelocationclear)
+- [device.location.set](#devicelocationset)
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
@@ -1067,6 +1069,74 @@ Operation result
   "params": {
     "deviceId": "string",
     "text": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.clear
+
+**Clear device location override**
+
+Removes a location override, restoring the location the device reports on its own
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.clear",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.set
+
+**Override device location**
+
+Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `latitude` | `number` | ✓ | Latitude in degrees, between -90 and 90 |
+| `longitude` | `number` | ✓ | Longitude in degrees, between -180 and 180 |
+
+#### Response
+
+**Type:** `object`
+
+Simulated location
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.set",
+  "params": {
+    "deviceId": "string",
+    "latitude": 0,
+    "longitude": 0
   },
   "id": 1
 }

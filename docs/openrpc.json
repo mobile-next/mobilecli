@@ -593,6 +593,74 @@
       }
     },
     {
+      "name": "device.location.set",
+      "summary": "Override device location",
+      "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "latitude",
+          "description": "Latitude in degrees, between -90 and 90",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "longitude",
+          "description": "Longitude in degrees, between -180 and 180",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "name": "location",
+        "description": "Simulated location",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.location.clear",
+      "summary": "Clear device location override",
+      "description": "Removes a location override, restoring the location the device reports on its own",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.boot",
       "summary": "Boot a device",
       "description": "Boots the specified device (simulators/emulators only)",

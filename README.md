@@ -37,6 +37,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
+- **Location Override**: Fake the GPS location reported by a device
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 - **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
@@ -189,6 +190,29 @@ mobilecli io clipboard set --device <device-id> 'hello world'
 # Send keys combination to paste (cmd+v for iOS, ctrl+v for Android)
 mobilecli io keys --device <device-id> "cmd+v"
 ```
+
+### Location Override 📍
+
+```bash
+# Fake the device location (latitude,longitude)
+mobilecli device location set --device <device-id> 37.7749,-122.4194
+
+# Hold the override until Ctrl-C, then clear it automatically
+mobilecli device location set --device <device-id> 37.7749,-122.4194 --wait
+
+# Restore the real location
+mobilecli device location clear --device <device-id>
+```
+
+Caveats per platform:
+
+| Platform | Notes |
+|----------|-------|
+| iOS Simulator | Works out of the box, the override survives mobilecli exiting |
+| iOS Real Device (16 and older) | Requires the Developer Disk Image, the override survives mobilecli exiting |
+| iOS Real Device (17+) | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
+| Android Emulator | Uses the emulator console. There is no way to clear it, reboot the emulator to reset |
+| Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
 ### Supported Hardware Buttons
 
