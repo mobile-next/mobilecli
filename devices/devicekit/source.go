@@ -24,6 +24,9 @@ type sourceTreeElement struct {
 	Value            *string               `json:"value"`
 	PlaceholderValue *string               `json:"placeholderValue"`
 	RawIdentifier    *string               `json:"rawIdentifier"`
+	Enabled          *bool                 `json:"enabled"`
+	Selected         *bool                 `json:"selected"`
+	HasFocus         *bool                 `json:"hasFocus"`
 	Rect             sourceTreeElementRect `json:"rect"`
 	Children         []sourceTreeElement   `json:"children"`
 }
@@ -78,6 +81,9 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		Value:       source.Value,
 		Placeholder: source.PlaceholderValue,
 		Identifier:  source.RawIdentifier,
+		Enabled:     source.Enabled,
+		Selected:    source.Selected,
+		Focused:     source.HasFocus,
 		Rect: types.ScreenElementRect{
 			X:      int(source.Rect.X),
 			Y:      int(source.Rect.Y),

@@ -334,6 +334,63 @@ func TestFilterSourceElementsRejectsUntaggedContainersWithEmptyIdentifier(t *tes
 	}
 }
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestFilterSourceElementsPreservesStateAttributes(t *testing.T) {
+	// devicekit-ios emits enabled (only when false), selected and hasFocus
+	// (only when true); they must survive filtering onto the ScreenElement.
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeOther",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:    "XCUIElementTypeButton",
+				Label:   strPtr("Disabled Submit"),
+				Enabled: boolPtr(false),
+				Rect:    visibleRect(24, 538, 354, 52),
+			},
+			{
+				Type:     "XCUIElementTypeButton",
+				Label:    strPtr("Active Tab"),
+				Selected: boolPtr(true),
+				HasFocus: boolPtr(true),
+				Rect:     visibleRect(0, 800, 100, 50),
+			},
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Plain"),
+				Rect:  visibleRect(200, 800, 100, 50),
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 3 {
+		t.Fatalf("expected 3 elements, got %d: %+v", len(output), output)
+	}
+
+	disabled := output[0]
+	if disabled.Enabled == nil || *disabled.Enabled != false {
+		t.Errorf("expected 'Disabled Submit' to have Enabled=false, got %+v", disabled.Enabled)
+	}
+
+	active := output[1]
+	if active.Selected == nil || *active.Selected != true {
+		t.Errorf("expected 'Active Tab' to have Selected=true, got %+v", active.Selected)
+	}
+	if active.Focused == nil || *active.Focused != true {
+		t.Errorf("expected 'Active Tab' to have Focused=true, got %+v", active.Focused)
+	}
+
+	plain := output[2]
+	if plain.Enabled != nil || plain.Selected != nil || plain.Focused != nil {
+		t.Errorf("expected 'Plain' to have no state attributes, got %+v", plain)
+	}
+}
+
 func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 	// Leaf elements must not serialize an empty "children" array, so the
 	// JSON output stays unchanged for consumers that expect leaves.
