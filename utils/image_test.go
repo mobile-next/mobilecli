@@ -12,6 +12,109 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func makeTestPng(t *testing.T, width, height int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img), "Failed to encode test PNG")
+	return buf.Bytes()
+}
+
+func decodeDimensions(t *testing.T, data []byte) (int, int) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	require.NoError(t, err, "Output should be a decodable image")
+	return cfg.Width, cfg.Height
+}
+
+func TestResizeFactor(t *testing.T) {
+	tests := []struct {
+		name           string
+		width, height  int
+		scale          float64
+		maxSize        int
+		expectedFactor float64
+	}{
+		{"no scale and no max size means no resize", 100, 200, 1.0, 0, 1.0},
+		{"scale alone is used", 100, 200, 0.5, 0, 0.5},
+		{"max size wins over scale", 100, 200, 0.5, 100, 0.5},
+		{"max size is measured against the largest dimension", 100, 200, 1.0, 50, 0.25},
+		{"max size larger than the image never upscales", 100, 200, 1.0, 400, 1.0},
+		{"zero scale means no resize", 100, 200, 0, 0, 1.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expectedFactor, resizeFactor(tt.width, tt.height, tt.scale, tt.maxSize))
+		})
+	}
+}
+
+func TestProcessScreenshot_PngWithoutResizeIsReturnedUnchanged(t *testing.T) {
+	original := makeTestPng(t, 64, 32)
+
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, original, out, "PNG with no resize should be passed through untouched")
+}
+
+func TestProcessScreenshot_ScaleHalvesDimensions(t *testing.T) {
+	original := makeTestPng(t, 64, 32)
+
+	out, err := ProcessScreenshot(original, "png", 90, 0.5, 0)
+
+	require.NoError(t, err)
+	width, height := decodeDimensions(t, out)
+	assert.Equal(t, 32, width)
+	assert.Equal(t, 16, height)
+}
+
+func TestProcessScreenshot_MaxSizeCapsLargestDimension(t *testing.T) {
+	original := makeTestPng(t, 64, 32)
+
+	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 16)
+
+	require.NoError(t, err)
+	assert.True(t, IsJPEG(out), "Output should be a JPEG")
+	width, height := decodeDimensions(t, out)
+	assert.Equal(t, 16, width)
+	assert.Equal(t, 8, height)
+}
+
+func TestProcessScreenshot_JpegWithoutResizeIsConverted(t *testing.T) {
+	original := makeTestPng(t, 64, 32)
+
+	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 0)
+
+	require.NoError(t, err)
+	assert.True(t, IsJPEG(out), "Output should be a JPEG")
+	width, height := decodeDimensions(t, out)
+	assert.Equal(t, 64, width)
+	assert.Equal(t, 32, height)
+}
+
+func TestProcessScreenshot_InvalidPngReturnsError(t *testing.T) {
+	_, err := ProcessScreenshot([]byte("not a png"), "png", 90, 0.5, 0)
+	assert.Error(t, err)
+}
+
+func TestImageMagicByteDetection(t *testing.T) {
+	pngData := makeTestPng(t, 8, 8)
+	jpegData, err := ConvertPngToJpeg(pngData, 90)
+	require.NoError(t, err)
+
+	assert.True(t, IsPNG(pngData))
+	assert.False(t, IsPNG(jpegData))
+	assert.True(t, IsJPEG(jpegData))
+	assert.False(t, IsJPEG(pngData))
+	assert.False(t, IsPNG(nil))
+	assert.False(t, IsJPEG(nil))
+}
+
 func TestConvertPngToJpeg(t *testing.T) {
 	w := 32
 	h := 32

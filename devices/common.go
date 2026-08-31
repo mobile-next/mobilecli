@@ -73,6 +73,16 @@ func buildMjpegURL(port, fps int, scale float64) string {
 	return url
 }
 
+// ScreenshotOptions contains options for taking a screenshot.
+// MaxSize caps max(width, height) in pixels keeping aspect ratio and takes
+// precedence over Scale; neither ever upscales.
+type ScreenshotOptions struct {
+	Format  string  // "png" or "jpeg"
+	Quality int     // 1-100, only used for JPEG
+	Scale   float64 // 0.0-1.0, 1.0 means no scaling
+	MaxSize int     // 0 means no limit
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
@@ -120,7 +130,7 @@ type ControllableDevice interface {
 	Version() string    // OS version
 	State() string      // e.g., "online", "offline"
 
-	TakeScreenshot() ([]byte, error)
+	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
 	Reboot() error
 	Boot() error     // boot simulator/emulator
 	Shutdown() error // shutdown simulator/emulator

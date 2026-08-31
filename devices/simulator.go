@@ -82,8 +82,12 @@ func (s SimulatorDevice) State() string {
 	return "offline"
 }
 
-func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	return s.deviceKitClient.TakeScreenshot()
+func (s SimulatorDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	data, err := s.deviceKitClient.TakeScreenshot()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize)
 }
 
 // Reboot shuts down and then boots the iOS simulator.

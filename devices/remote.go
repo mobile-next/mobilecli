@@ -97,10 +97,23 @@ func (r *RemoteDevice) fireRPC(method string, extra params) error {
 	return err
 }
 
-func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
+func (r *RemoteDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	p := params{}
+	if opts.Format != "" {
+		p["format"] = opts.Format
+	}
+	if opts.Quality > 0 {
+		p["quality"] = opts.Quality
+	}
+	if opts.Scale > 0 && opts.Scale != 1.0 {
+		p["scale"] = opts.Scale
+	}
+	if opts.MaxSize > 0 {
+		p["maxSize"] = opts.MaxSize
+	}
 	resp, err := rpcCall[struct {
 		Data string `json:"data"`
-	}](r, "device.screenshot", params{})
+	}](r, "device.screenshot", p)
 	if err != nil {
 		return nil, err
 	}

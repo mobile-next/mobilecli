@@ -1226,6 +1226,8 @@ Captures a screenshot from the specified device and returns it as base64 data
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `png, jpeg` |  | Image format (png or jpeg) |
 | `quality` | `integer` |  | Image quality (1-100, only used for JPEG) |
+| `scale` | `number` |  | Scale factor for the screenshot (0.0-1.0, default 1.0) |
+| `maxSize` | `integer` |  | Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit) |
 | `clip` | [`Rect`](#rect) |  | Optional rectangle to crop the screenshot to, in screen coordinates |
 
 #### Response
@@ -1244,6 +1246,8 @@ Screenshot data
     "deviceId": "string",
     "format": "png",
     "quality": 1,
+    "scale": 1,
+    "maxSize": 0,
     "clip": {
       "x": 0,
       "y": 0,

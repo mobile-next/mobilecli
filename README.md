@@ -139,6 +139,12 @@ mobilecli screenshot --device <device-id>
 # Take a JPEG screenshot with custom quality
 mobilecli screenshot --device <device-id> --format jpeg --quality 80
 
+# Scale the screenshot down to half size
+mobilecli screenshot --device <device-id> --scale 0.5
+
+# Limit the largest dimension to 800 pixels, keeping aspect ratio
+mobilecli screenshot --device <device-id> --max-size 800
+
 # Save to specific path
 mobilecli screenshot --device <device-id> --output screenshot.png
 

@@ -72,6 +72,9 @@ SCREEN & MEDIA:
   # Take a JPEG screenshot with quality
   mobilecli screenshot --device <device-id> -o screen.jpg -f jpeg -q 85
 
+  # Take a scaled-down screenshot (--scale or --max-size)
+  mobilecli screenshot --device <device-id> -o screen.png --max-size 800
+
   # Stream screen capture (MJPEG)
   mobilecli screencapture --device <device-id> -f mjpeg | ffplay -
 

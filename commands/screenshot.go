@@ -3,21 +3,23 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/utils"
 )
 
 // ScreenshotRequest represents the parameters for taking a screenshot
 type ScreenshotRequest struct {
-	DeviceID   string `json:"deviceId"`
-	Format     string `json:"format,omitempty"`     // "png" or "jpeg"
-	Quality    int    `json:"quality,omitempty"`    // 1-100, only used for JPEG
-	OutputPath string `json:"outputPath,omitempty"` // file path, "-" for stdout, or empty for default naming
+	DeviceID   string  `json:"deviceId"`
+	Format     string  `json:"format,omitempty"`     // "png" or "jpeg"
+	Quality    int     `json:"quality,omitempty"`    // 1-100, only used for JPEG
+	Scale      float64 `json:"scale,omitempty"`      // 0.0-1.0, 0 or 1.0 means no scaling
+	MaxSize    int     `json:"maxSize,omitempty"`    // max(width, height) in pixels, takes precedence over Scale, 0 means no limit
+	OutputPath string  `json:"outputPath,omitempty"` // file path, "-" for stdout, or empty for default naming
 }
 
 // ScreenshotResponse represents the response for a screenshot command
@@ -25,6 +27,21 @@ type ScreenshotResponse struct {
 	Format   string `json:"format"`
 	Data     string `json:"data,omitempty"`     // base64 encoded image data
 	FilePath string `json:"filePath,omitempty"` // path where file was saved
+}
+
+// validateScreenshotResize validates scale and maxSize, defaulting a zero
+// scale to 1.0 (no scaling).
+func validateScreenshotResize(scale float64, maxSize int) (float64, error) {
+	if scale == 0 {
+		scale = 1.0
+	}
+	if math.IsNaN(scale) || scale < 0 || scale > 1.0 {
+		return 0, fmt.Errorf("scale must be between 0.0 and 1.0")
+	}
+	if maxSize < 0 {
+		return 0, fmt.Errorf("maxSize must be a positive number of pixels")
+	}
+	return scale, nil
 }
 
 // ScreenshotCommand takes a screenshot of the specified device
@@ -53,6 +70,13 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		}
 	}
 
+	// Validate scale and maxSize
+	scale, err := validateScreenshotResize(req.Scale, req.MaxSize)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	req.Scale = scale
+
 	// Start agent if needed
 	err = targetDevice.StartAgent(devices.StartAgentConfig{
 		Hook: GetShutdownHook(),
@@ -61,19 +85,15 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Take screenshot
-	imageBytes, err := targetDevice.TakeScreenshot()
+	// Take screenshot; the device is responsible for format, quality, and scaling
+	imageBytes, err := targetDevice.TakeScreenshot(devices.ScreenshotOptions{
+		Format:  req.Format,
+		Quality: req.Quality,
+		Scale:   req.Scale,
+		MaxSize: req.MaxSize,
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
-	}
-
-	// Convert to JPEG if requested
-	if req.Format == "jpeg" {
-		convertedBytes, err := utils.ConvertPngToJpeg(imageBytes, req.Quality)
-		if err != nil {
-			return NewErrorResponse(fmt.Errorf("error converting to JPEG: %v", err))
-		}
-		imageBytes = convertedBytes
 	}
 
 	response := ScreenshotResponse{

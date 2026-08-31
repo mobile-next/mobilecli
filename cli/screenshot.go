@@ -12,6 +12,8 @@ import (
 )
 
 var (
+	screenshotScale      float64
+	screenshotMaxSize    int
 	screencaptureScale   float64
 	screencaptureFPS     int
 	screencaptureBitrate int
@@ -31,6 +33,8 @@ var screenshotCmd = &cobra.Command{
 			DeviceID:   deviceId,
 			Format:     screenshotFormat,
 			Quality:    screenshotJpegQuality,
+			Scale:      screenshotScale,
+			MaxSize:    screenshotMaxSize,
 			OutputPath: screenshotOutputPath,
 		}
 
@@ -151,6 +155,8 @@ func init() {
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
+	screenshotCmd.Flags().Float64Var(&screenshotScale, "scale", 1.0, "Scale factor for screenshot (0.0-1.0)")
+	screenshotCmd.Flags().IntVar(&screenshotMaxSize, "max-size", 0, "Maximum of width/height in pixels, keeping aspect ratio (takes precedence over --scale, 0 for no limit)")
 
 	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")
