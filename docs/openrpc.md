@@ -37,6 +37,7 @@ JSON-RPC API for mobile device automation and control
 - [device.io.text](#deviceiotext)
 - [device.location.clear](#devicelocationclear)
 - [device.location.set](#devicelocationset)
+- [device.logs](#devicelogs)
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
@@ -1143,6 +1144,44 @@ Simulated location
 ```
 
 
+### device.logs
+
+**Start device log streaming**
+
+Creates a log streaming session for the specified device and returns the URL to connect to. Supported on iOS real devices, iOS simulators, and Android devices.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `limit` | `integer` |  | Stop the stream after this many log entries (0 or omitted for unlimited) |
+| `filters` | Array<`string`> |  | Filters applied to every entry, ANDed together. Each is 'key=value' to include or 'key!=value' to exclude, matched exactly. Valid keys: pid, process, tag, level, subsystem, category, message |
+
+#### Response
+
+**Type:** `object`
+
+Log streaming session. Connect to sessionUrl to receive application/x-ndjson, one JSON log entry per line. The session expires one minute after creation and accepts a single connection.
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.logs",
+  "params": {
+    "deviceId": "string",
+    "limit": 0,
+    "filters": [
+      "string"
+    ]
+  },
+  "id": 1
+}
+```
+
+
 ### device.reboot
 
 **Reboot a device**
@@ -1192,9 +1231,9 @@ Starts screen capture streaming for the specified device. Supports MJPEG (iOS an
 
 #### Response
 
-**Type:** `string`
+**Type:** `object`
 
-Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC
+Streaming session. Connect to sessionUrl to receive the stream (multipart/x-mixed-replace for MJPEG, video/h264 for AVC). The session expires one minute after creation and accepts a single connection.
 
 #### Example Request
 

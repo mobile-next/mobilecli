@@ -46,6 +46,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.apps.clear":                     handleAppsClear,
 		"device.screenrecord":                   handleScreenRecord,
 		"device.screenrecord.stop":              handleScreenRecordStop,
+		"device.logs":                           handleLogsSession,
 		"device.crashes.list":                   handleCrashesList,
 		"device.crashes.get":                    handleCrashesGet,
 		"device.webview.list":                   handleWebViewList,
