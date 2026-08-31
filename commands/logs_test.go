@@ -1,6 +1,11 @@
 package commands
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/devices"
@@ -89,5 +94,80 @@ func assertFiltersEqual(t *testing.T, got, want []LogFilter) {
 		if got[i] != want[i] {
 			t.Errorf("filter %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// failingWriter simulates a consumer that goes away mid-stream.
+type failingWriter struct {
+	failAfter int
+	writes    int
+}
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes > w.failAfter {
+		return 0, errors.New("connection reset by peer")
+	}
+	return len(p), nil
+}
+
+// fakeLogDevice feeds a fixed set of entries to LogsCommand via StreamLogs.
+type fakeLogDevice struct {
+	devices.ControllableDevice
+	entries []devices.LogEntry
+}
+
+func (d *fakeLogDevice) StreamLogs(ctx context.Context, onLog func(devices.LogEntry) bool) error {
+	for _, entry := range d.entries {
+		if !onLog(entry) {
+			return nil
+		}
+	}
+	return nil
+}
+
+func streamThreeEntriesInto(t *testing.T, ctx context.Context, writer io.Writer) *CommandResponse {
+	t.Helper()
+
+	device := &fakeLogDevice{entries: []devices.LogEntry{
+		{PID: 1, Message: "one"},
+		{PID: 2, Message: "two"},
+		{PID: 3, Message: "three"},
+	}}
+	return streamLogs(ctx, device, LogsRequest{Writer: writer})
+}
+
+func TestStreamLogsReportsAWriteFailure(t *testing.T) {
+	response := streamThreeEntriesInto(t, context.Background(), &failingWriter{failAfter: 1})
+
+	if response.Status != "error" {
+		t.Fatalf("expected an error response, got %q", response.Status)
+	}
+	if !strings.Contains(response.Error, "connection reset") {
+		t.Errorf("expected the underlying write error to surface, got %q", response.Error)
+	}
+}
+
+func TestStreamLogsTreatsAWriteFailureAfterCancellationAsACleanStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	response := streamThreeEntriesInto(t, ctx, &failingWriter{failAfter: 0})
+
+	if response.Status != "ok" {
+		t.Errorf("a client that hung up should not be an error, got %q: %s", response.Status, response.Error)
+	}
+}
+
+func TestStreamLogsSucceedsWhenEveryEntryIsWritten(t *testing.T) {
+	var buffer bytes.Buffer
+
+	response := streamThreeEntriesInto(t, context.Background(), &buffer)
+
+	if response.Status != "ok" {
+		t.Fatalf("expected success, got %q: %s", response.Status, response.Error)
+	}
+	if lines := strings.Count(buffer.String(), "\n"); lines != 3 {
+		t.Errorf("expected 3 log lines, got %d", lines)
 	}
 }

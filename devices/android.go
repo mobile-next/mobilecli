@@ -1910,6 +1910,11 @@ func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) str
 	utils.Verbose("resolving process name for pid %d", pid)
 	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil || len(out) == 0 {
+		// cache the miss too: a pid that already exited appears on many lines,
+		// and re-running adb for each one stalls the scanner and drops logs
+		c.mu.Lock()
+		c.names[pid] = ""
+		c.mu.Unlock()
 		return ""
 	}
 	// cmdline is null-delimited; first entry is the executable path

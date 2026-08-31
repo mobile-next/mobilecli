@@ -1069,11 +1069,17 @@ func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) b
 	if err != nil {
 		_ = cmd.Process.Kill()
 		waitErr := cmd.Wait()
+		if ctx.Err() != nil {
+			return nil
+		}
 		return fmt.Errorf("failed to read opening token: %w (process exit: %v)", err, waitErr)
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '[' {
 		_ = cmd.Process.Kill()
 		waitErr := cmd.Wait()
+		if ctx.Err() != nil {
+			return nil
+		}
 		return fmt.Errorf("expected '[', got %v (process exit: %v)", token, waitErr)
 	}
 
@@ -1087,6 +1093,9 @@ func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) b
 			}
 			_ = cmd.Process.Kill()
 			waitErr := cmd.Wait()
+			if ctx.Err() != nil {
+				return nil
+			}
 			return fmt.Errorf("failed to decode log entry: %w (process exit: %v)", err, waitErr)
 		}
 

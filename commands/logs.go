@@ -106,6 +106,10 @@ func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
+	return streamLogs(ctx, device, req)
+}
+
+func streamLogs(ctx context.Context, device devices.ControllableDevice, req LogsRequest) *CommandResponse {
 	out := req.Writer
 	if out == nil {
 		out = os.Stdout
@@ -113,9 +117,11 @@ func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 
 	encoder := json.NewEncoder(out)
 	count := 0
+	var encodeErr error
 
 	emit := func(entry devices.LogEntry) bool {
 		if err := encoder.Encode(entry); err != nil {
+			encodeErr = err
 			return false
 		}
 		count++
@@ -125,7 +131,7 @@ func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 		return true
 	}
 
-	err = device.StreamLogs(ctx, func(entry devices.LogEntry) bool {
+	err := device.StreamLogs(ctx, func(entry devices.LogEntry) bool {
 		if !matchesFilters(entry, req.Filters) {
 			return true
 		}
@@ -133,6 +139,12 @@ func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error streaming logs: %w", err))
+	}
+
+	// a client that hung up cancels the context, so its failed write is a
+	// normal end of stream rather than something to report
+	if encodeErr != nil && ctx.Err() == nil {
+		return NewErrorResponse(fmt.Errorf("error writing logs: %w", encodeErr))
 	}
 
 	return NewSuccessResponse("done")
