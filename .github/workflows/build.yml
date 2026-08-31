@@ -428,12 +428,16 @@ jobs:
         ls -l *.zip
         rm -rf dist
 
+    - name: Extract release notes from CHANGELOG.md
+      run: awk -v tag="$GITHUB_REF_NAME" '/^## \[/{f = ($0 ~ "^## \\[" tag "\\]")} f' CHANGELOG.md > release-notes.md
+
     - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
       with:
         name: Version ${{ github.ref_name }}
+        body_path: release-notes.md
         files: |
           mobilecli-*.zip
 
