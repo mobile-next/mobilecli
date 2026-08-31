@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/rpc"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -124,11 +124,31 @@ func (r *RemoteDevice) LongPress(x, y, duration int) error {
 	return r.fireRPC("device.io.longpress", params{"x": x, "y": y, "duration": duration})
 }
 
-func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
-	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	p := params{"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+	if duration > 0 {
+		p["duration"] = duration
+	}
+
+	return r.fireRPC("device.io.swipe", p)
 }
 
-func (r *RemoteDevice) Gesture(actions []wda.TapAction) error {
+func (r *RemoteDevice) GetClipboard() (string, error) {
+	resp, err := rpcCall[struct {
+		Text string `json:"text"`
+	}](r, "device.clipboard.get", params{})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Text, nil
+}
+
+func (r *RemoteDevice) SetClipboard(text string) error {
+	return r.fireRPC("device.clipboard.set", params{"text": text})
+}
+
+func (r *RemoteDevice) Gesture(actions []devicekit.TapAction) error {
 	return r.fireRPC("device.io.gesture", params{"actions": actions})
 }
 
@@ -381,6 +401,10 @@ func (r *RemoteDevice) InstallApp(path string) error {
 
 func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	return nil, fmt.Errorf("uninstall app is not supported on remote devices")
+}
+
+func (r *RemoteDevice) ClearApp(bundleID string) error {
+	return r.fireRPC("device.apps.clear", params{"bundleId": bundleID})
 }
 
 // ScreenRecordCallbacks provides optional progress callbacks for screen recording

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 )
 
 // TapRequest represents the parameters for a tap command
@@ -48,6 +48,7 @@ type SwipeRequest struct {
 	Y1       int    `json:"y1"`
 	X2       int    `json:"x2"`
 	Y2       int    `json:"y2"`
+	Duration int    `json:"duration"`
 }
 
 // TapCommand performs a tap operation on the specified device
@@ -180,15 +181,15 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	// Convert []any to []wda.TapAction
-	tapActions := make([]wda.TapAction, len(req.Actions))
+	// Convert []any to []devicekit.TapAction
+	tapActions := make([]devicekit.TapAction, len(req.Actions))
 	for i, action := range req.Actions {
 		actionBytes, err := json.Marshal(action)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to marshal action at index %d: %v", i, err))
 		}
 
-		var tapAction wda.TapAction
+		var tapAction devicekit.TapAction
 		if err := json.Unmarshal(actionBytes, &tapAction); err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to unmarshal action at index %d: %v", i, err))
 		}
@@ -219,7 +220,7 @@ func SwipeCommand(req SwipeRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2)
+	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2, req.Duration)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to swipe on device %s: %v", targetDevice.ID(), err))
 	}

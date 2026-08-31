@@ -4,12 +4,19 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import {
-	findSimulatorByName,
 	printAllLogsFromSimulator,
 	shutdownSimulator,
 } from './simctl';
 import {randomUUID} from "node:crypto";
-import {mkdirSync} from "fs";
+import {coverageEnv} from './coverage';
+import {
+	expectAppShape,
+	expectDeviceShape,
+	expectFsListingShape,
+	expectForegroundAppShape,
+	expectOkEnvelope,
+	expectUIDumpShape,
+} from './shapes';
 import type {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
 
 type Dimensions = {
@@ -25,12 +32,15 @@ test.describe('iOS Simulator Tests', () => {
 			let simulatorId: string;
 
 			test.beforeAll(() => {
-				const simulatorName = `Test-iOS-${iosVersion}`;
 				try {
-					simulatorId = findSimulatorByName(simulatorName);
+					simulatorId = findFirstSimulatorId() ?? '';
+					if (!simulatorId) {
+						console.log('No booted iOS simulator found. See test/README.md for setup instructions.');
+						return;
+					}
 					installDeviceKitAgent(simulatorId);
 				} catch (error) {
-					console.log(`Simulator "${simulatorName}" not found, skipping tests: ${error}`);
+					console.log(`Could not look up an iOS simulator, skipping tests: ${error}`);
 				}
 			});
 
@@ -207,6 +217,28 @@ test.describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
 
+			test('should set and read back clipboard text', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				const text = `mobilecli-${randomUUID()}`;
+				setClipboard(simulatorId, text);
+				expect(getClipboard(simulatorId)).toBe(text);
+			});
+
+			test('should clear the clipboard when set to an empty string', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				setClipboard(simulatorId, 'not empty');
+				setClipboard(simulatorId, '');
+				expect(getClipboard(simulatorId)).toBe('');
+			});
+
+			test('should reject clipboard set without a text argument', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				expect(() => mobilecli(['io', 'clipboard', 'set', '--device', simulatorId])).toThrow();
+			});
+
 			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
@@ -343,26 +375,31 @@ test.describe('iOS Simulator Tests', () => {
 	});
 });
 
-const createCoverageDirectory = (): string => {
-	const dir = path.join(__dirname, "coverage");
-	mkdirSync(dir, {recursive: true});
-	return dir;
-}
-
 function mobilecli(args: string[]): any {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
-	const coverdata = createCoverageDirectory();
 	const result = execFileSync(mobilecliBinary, [...args, '--verbose'], {
 		encoding: 'utf8',
 		timeout: 180000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: {
-			...process.env,
-			"GOCOVERDIR": coverdata,
-		}
+		env: coverageEnv(),
 	});
-	return JSON.parse(result);
+
+	// every command routed through here answers with a json envelope; asserting it
+	// centrally means a change to the output format fails these tests instead of
+	// slipping past whichever test only reads its own payload field
+	const parsed = JSON.parse(result);
+	expectOkEnvelope(parsed);
+	return parsed;
+}
+
+// asks mobilecli rather than simctl so the tests exercise the same discovery path
+// users do. `devices` omits offline entries unless --include-offline is passed, so
+// this is the first *booted* simulator; nothing booted means the tests skip rather
+// than fail partway through. --type simulator keeps a plugged-in iphone out of it.
+function findFirstSimulatorId(): string | null {
+	const response = mobilecli(['devices', '--platform', 'ios', '--type', 'simulator']);
+	return response.data.devices[0]?.id ?? null;
 }
 
 function installDeviceKitAgent(simulatorId: string): void {
@@ -400,8 +437,8 @@ function listDevices(includeOffline: boolean): any {
 }
 
 function verifyDeviceListContainsSimulator(response: any, simulatorId: string): void {
-	const jsonString = JSON.stringify(response);
-	expect(jsonString).toContain(simulatorId);
+	response.data.devices.forEach(expectDeviceShape);
+	expect(response.data.devices.map((d: any) => d.id)).toContain(simulatorId);
 }
 
 function getDeviceInfo(simulatorId: string): DeviceInfoResponse {
@@ -409,6 +446,7 @@ function getDeviceInfo(simulatorId: string): DeviceInfoResponse {
 }
 
 function verifyDeviceInfo(info: DeviceInfoResponse, simulatorId: string): void {
+	expectDeviceShape(info.data.device);
 	expect(info.data.device.id).toBe(simulatorId);
 	expect(info.data.device.platform).toBe('ios');
 	expect(info.data.device.type).toBe('simulator');
@@ -420,8 +458,8 @@ function listApps(simulatorId: string): any {
 }
 
 function verifyAppsListContainsSafari(response: any): void {
-	const jsonString = JSON.stringify(response);
-	expect(jsonString).toContain('com.apple.mobilesafari');
+	response.data.forEach(expectAppShape);
+	expect(response.data.map((a: any) => a.packageName)).toContain('com.apple.mobilesafari');
 }
 
 function launchApp(simulatorId: string, packageName: string): void {
@@ -437,22 +475,19 @@ function getForegroundApp(simulatorId: string): ForegroundAppResponse {
 }
 
 function verifySafariIsForeground(foregroundApp: ForegroundAppResponse): void {
+	expectForegroundAppShape(foregroundApp.data);
 	expect(foregroundApp.data.packageName).toBe('com.apple.mobilesafari');
 	expect(foregroundApp.data.appName).toBe('Safari');
 }
 
 function verifySpringBoardIsForeground(foregroundApp: ForegroundAppResponse): void {
+	expectForegroundAppShape(foregroundApp.data);
 	expect(foregroundApp.data.packageName).toBe('com.apple.springboard');
 }
 
 function dumpUI(simulatorId: string): UIDumpResponse {
 	const response = mobilecli(['dump', 'ui', '--device', simulatorId]);
-
-	// Debug: log the response if elements are missing
-	if (!response?.data?.elements) {
-		console.log('Unexpected dump UI response:', JSON.stringify(response, null, 2));
-	}
-
+	expectUIDumpShape(response.data.elements);
 	return response;
 }
 
@@ -537,6 +572,15 @@ function pressButton(simulatorId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', simulatorId]);
 }
 
+function setClipboard(simulatorId: string, text: string): void {
+	mobilecli(['io', 'clipboard', 'set', text, '--device', simulatorId]);
+}
+
+function getClipboard(simulatorId: string): string {
+	const response = mobilecli(['io', 'clipboard', 'get', '--device', simulatorId]);
+	return response.data.text;
+}
+
 function verifyElementExists(uiDump: UIDumpResponse, name: string): void {
 	const elements = uiDump?.data?.elements;
 
@@ -616,14 +660,12 @@ function verifyRawViewtreeDump(response: any): void {
 }
 
 function getAppContainerPath(simulatorId: string, packageName: string): string {
-	const response = mobilecli(['apps', 'path', packageName, '--device', simulatorId]);
-	expect(response.status).toBe('ok');
-	return response.data.path;
+	return mobilecli(['apps', 'path', packageName, '--device', simulatorId]).data.path;
 }
 
 function fsList(simulatorId: string, remotePath: string): any[] {
 	const response = mobilecli(['fs', 'ls', '--device', simulatorId, remotePath]);
-	expect(response.status).toBe('ok');
+	expectFsListingShape(response.data);
 	return response.data;
 }
 
@@ -654,12 +696,11 @@ function writeTempFile(content: string): string {
 // while keeping the GOCOVERDIR env so coverage data is still collected.
 function recordScreenWithTimeLimit(simulatorId: string, videoPath: string, timeLimitSeconds: number): void {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
-	const coverdata = createCoverageDirectory();
 	execFileSync(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--time-limit', String(timeLimitSeconds), '--output', videoPath], {
 		encoding: 'utf8',
 		timeout: 180000,
 		stdio: ['pipe', 'pipe', 'pipe'],
-		env: {...process.env, GOCOVERDIR: coverdata},
+		env: coverageEnv(),
 	});
 }
 
@@ -668,11 +709,10 @@ function recordScreenWithTimeLimit(simulatorId: string, videoPath: string, timeL
 // exit cleanly. resolves once the process has fully exited.
 function recordScreenThenInterruptWithCtrlC(simulatorId: string, videoPath: string, recordSeconds: number): Promise<void> {
 	const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
-	const coverdata = createCoverageDirectory();
 	return new Promise((resolve, reject) => {
 		const child = spawn(mobilecliBinary, ['screenrecord', '--device', simulatorId, '--output', videoPath], {
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: {...process.env, GOCOVERDIR: coverdata},
+			env: coverageEnv(),
 		});
 
 		child.on('error', reject);

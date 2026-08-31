@@ -12,7 +12,7 @@ import (
 var ioCmd = &cobra.Command{
 	Use:   "io",
 	Short: "Input/output operations with devices",
-	Long:  `Perform input/output operations like tapping, pressing buttons, and sending text to devices.`,
+	Long:  `Perform input/output operations like tapping, pressing buttons, sending text, and reading or writing the device clipboard.`,
 }
 
 var ioTapCmd = &cobra.Command{
@@ -54,6 +54,7 @@ var ioTapCmd = &cobra.Command{
 }
 
 var longPressDuration int
+var swipeDuration int
 
 var ioLongPressCmd = &cobra.Command{
 	Use:   "longpress [x,y]",
@@ -187,6 +188,7 @@ var ioSwipeCmd = &cobra.Command{
 			Y1:       y1,
 			X2:       x2,
 			Y2:       y2,
+			Duration: swipeDuration,
 		}
 
 		response := commands.SwipeCommand(req)
@@ -213,6 +215,7 @@ func init() {
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
 	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
 	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
+	ioSwipeCmd.Flags().IntVar(&swipeDuration, "duration", 0, "duration of the swipe in milliseconds (0 uses the platform default)")
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")

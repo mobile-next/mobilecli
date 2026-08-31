@@ -15,6 +15,8 @@ JSON-RPC API for mobile device automation and control
 - [device.apps.terminate](#deviceappsterminate)
 - [device.apps.uninstall](#deviceappsuninstall)
 - [device.boot](#deviceboot)
+- [device.clipboard.get](#deviceclipboardget)
+- [device.clipboard.set](#deviceclipboardset)
 - [device.crashes.get](#devicecrashesget)
 - [device.crashes.list](#devicecrasheslist)
 - [device.dump.ui](#devicedumpui)
@@ -33,6 +35,8 @@ JSON-RPC API for mobile device automation and control
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
+- [device.location.clear](#devicelocationclear)
+- [device.location.set](#devicelocationset)
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
@@ -363,6 +367,72 @@ Boot operation result
   "method": "device.boot",
   "params": {
     "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.clipboard.get
+
+**Read clipboard**
+
+Reads the text currently on the device clipboard
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** `object`
+
+Clipboard contents
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.get",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.clipboard.set
+
+**Write clipboard**
+
+Replaces the text on the device clipboard, an empty string clears it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `text` | `string` | ✓ | Text to place on the clipboard |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.set",
+  "params": {
+    "deviceId": "string",
+    "text": "string"
   },
   "id": 1
 }
@@ -908,6 +978,7 @@ Performs a swipe gesture from one coordinate to another on the device screen
 | `y1` | `integer` | ✓ | Starting Y coordinate |
 | `x2` | `integer` | ✓ | Ending X coordinate |
 | `y2` | `integer` | ✓ | Ending Y coordinate |
+| `duration` | `integer` |  | Duration of the swipe in milliseconds, omitted applies the platform default |
 
 #### Response
 
@@ -926,7 +997,8 @@ Operation result
     "x1": 0,
     "y1": 0,
     "x2": 0,
-    "y2": 0
+    "y2": 0,
+    "duration": 0
   },
   "id": 1
 }
@@ -997,6 +1069,74 @@ Operation result
   "params": {
     "deviceId": "string",
     "text": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.clear
+
+**Clear device location override**
+
+Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.clear",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.set
+
+**Override device location**
+
+Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `latitude` | `number` | ✓ | Latitude in degrees, between -90 and 90 |
+| `longitude` | `number` | ✓ | Longitude in degrees, between -180 and 180 |
+
+#### Response
+
+**Type:** `object`
+
+Simulated location
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.set",
+  "params": {
+    "deviceId": "string",
+    "latitude": 0,
+    "longitude": 0
   },
   "id": 1
 }
@@ -1698,7 +1838,7 @@ Describes where the device is provided from
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `type` | `string` | ✓ | Provider type (e.g. 'mobilenext', 'local') |
-| `sessionId` | `string` |  | Session identifier for this device allocation |
+| `allocationId` | `string` |  | Allocation identifier for this device |
 
 ### Rect
 

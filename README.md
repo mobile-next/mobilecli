@@ -35,8 +35,9 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
+- **Location Override**: Fake the GPS location reported by a device
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
 - **Device Logs**: Stream real-time device logs with filtering from iOS and Android devices
 - **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
@@ -180,7 +181,38 @@ mobilecli io button --device <device-id> POWER
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
+
+# Read device clipboard
+mobilecli io clipboard get --device <device-id>
+
+# Write device clipboard
+mobilecli io clipboard set --device <device-id> 'hello world'
+
+# Send keys combination to paste (cmd+v for iOS, ctrl+v for Android)
+mobilecli io keys --device <device-id> "cmd+v"
 ```
+
+### Location Override 📍
+
+```bash
+# Fake the device location (latitude,longitude)
+mobilecli device location set --device <device-id> 37.7749,-122.4194
+
+# Hold the override until Ctrl-C, then clear it automatically
+mobilecli device location set --device <device-id> 37.7749,-122.4194 --wait
+
+# Restore the real location
+mobilecli device location clear --device <device-id>
+```
+
+Caveats per platform:
+
+| Platform | Notes |
+|----------|-------|
+| iOS Simulator | Works out of the box, the override survives mobilecli exiting |
+| iOS Real Device | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
+| Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
+| Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
 ### Supported Hardware Buttons
 
@@ -210,6 +242,10 @@ mobilecli apps install <path> --device <device-id>
 
 # Uninstall an app
 mobilecli apps uninstall <bundle-id> --device <device-id>
+
+# Clear app data (cache, preferences, databases) without uninstalling
+# Supported on Android and iOS Simulator
+mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
 Example output for `apps foreground`:
@@ -468,6 +504,22 @@ mobilecli remote list-devices
 # Release an allocated remote device
 mobilecli remote release --device <device-id>
 ```
+
+## Claude Code Skill 🤖
+
+This repo includes an agent skill ([skills/mobilecli/SKILL.md](skills/mobilecli/SKILL.md)) that teaches Claude Code (or any SKILL.md-compatible agent) how to drive `mobilecli` — listing devices, tapping and typing, dumping UI trees, managing apps, and using the JSON-RPC server for fast automation.
+
+Install it with [skills](https://github.com/vercel-labs/skills):
+
+```bash
+# current project only
+npx skills add mobile-next/mobilecli
+
+# or globally, for all projects
+npx skills add mobile-next/mobilecli -g
+```
+
+Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
 
 ## HTTP API 🔌
 

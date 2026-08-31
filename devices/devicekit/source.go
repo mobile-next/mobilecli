@@ -1,0 +1,140 @@
+package devicekit
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/mobile-next/mobilecli/types"
+	"github.com/mobile-next/mobilecli/utils"
+)
+
+type sourceTreeElementRect struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+type sourceTreeElement struct {
+	Type             string                `json:"type"`
+	Label            *string               `json:"label"`
+	Name             *string               `json:"name"`
+	Value            *string               `json:"value"`
+	PlaceholderValue *string               `json:"placeholderValue"`
+	RawIdentifier    *string               `json:"rawIdentifier"`
+	Rect             sourceTreeElementRect `json:"rect"`
+	Children         []sourceTreeElement   `json:"children"`
+}
+
+func isVisible(rect sourceTreeElementRect) bool {
+	return rect.X >= 0 && rect.Y >= 0 && rect.Width > 0 && rect.Height > 0
+}
+
+// filterSourceElements converts a WDA source tree into ScreenElements,
+// preserving hierarchy: filtered descendants of an accepted element become its
+// Children, while descendants of rejected elements are hoisted to the nearest
+// accepted ancestor.
+func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
+	var childElements []types.ScreenElement
+	for _, child := range source.Children {
+		childElements = append(childElements, filterSourceElements(child)...)
+	}
+
+	acceptedTypes := []string{"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
+
+	// strip XCUIElementType prefix if present
+	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
+
+	typeAccepted := false
+	for _, acceptedType := range acceptedTypes {
+		if elementType == acceptedType {
+			typeAccepted = true
+			break
+		}
+	}
+
+	// elements explicitly tagged with accessibilityIdentifier are always
+	// included, regardless of type, see https://github.com/mobile-next/mobilecli/issues/341
+	if source.RawIdentifier != nil && *source.RawIdentifier != "" {
+		typeAccepted = true
+	}
+
+	if !typeAccepted || !isVisible(source.Rect) {
+		return childElements
+	}
+
+	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
+	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	if !hasIdentifier && !alwaysInclude {
+		return childElements
+	}
+
+	element := types.ScreenElement{
+		Type:        elementType,
+		Label:       source.Label,
+		Name:        source.Name,
+		Value:       source.Value,
+		Placeholder: source.PlaceholderValue,
+		Identifier:  source.RawIdentifier,
+		Rect: types.ScreenElementRect{
+			X:      int(source.Rect.X),
+			Y:      int(source.Rect.Y),
+			Width:  int(source.Rect.Width),
+			Height: int(source.Rect.Height),
+		},
+		Children: childElements,
+	}
+
+	// WKWebView reports as several nested same-rect WebView wrappers; collapse
+	// them so a single element represents a single webview. Children are
+	// already collapsed bottom-up, so one merge per level unwinds the chain.
+	if element.Type == "WebView" && len(element.Children) == 1 {
+		child := element.Children[0]
+		if child.Type == "WebView" && child.Rect == element.Rect {
+			element.Children = child.Children
+		}
+	}
+
+	return []types.ScreenElement{element}
+}
+
+func (c *DeviceKitClient) GetSourceRaw() (any, error) {
+	startTime := time.Now()
+
+	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "raw"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source: %w", err)
+	}
+
+	var value any
+	if err := json.Unmarshal(result, &value); err != nil {
+		return nil, fmt.Errorf("failed to parse source: %w", err)
+	}
+
+	elapsed := time.Since(startTime)
+	utils.Verbose("GetSourceRaw took %.2f seconds", elapsed.Seconds())
+
+	return value, nil
+}
+
+func (c *DeviceKitClient) GetSourceElements() ([]types.ScreenElement, error) {
+	startTime := time.Now()
+
+	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "json"})
+	if err != nil {
+		return nil, err
+	}
+
+	var sourceTree sourceTreeElement
+	if err := json.Unmarshal(result, &sourceTree); err != nil {
+		return nil, fmt.Errorf("failed to parse source tree: %w", err)
+	}
+
+	elapsed := time.Since(startTime)
+	utils.Verbose("GetSourceElements took %.2f seconds", elapsed.Seconds())
+
+	elements := filterSourceElements(sourceTree)
+	return elements, nil
+}

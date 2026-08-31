@@ -60,6 +60,7 @@ type StreamSession struct {
 	Format    string // "mjpeg" or "avc"
 	Quality   int
 	Scale     float64
+	FPS       int
 	CreatedAt time.Time
 	ExpiresAt time.Time // CreatedAt + 1 minute
 	InUse     bool      // prevents duplicate connections
@@ -288,6 +289,22 @@ func StartServer(addr string, enableCORS bool) error {
 	}
 }
 
+// extendedWriteDeadline reports how long the HTTP write deadline should be
+// extended for a given RPC method, and whether an extension applies at all.
+// Some methods perform slow device-side work (booting a device, installing or
+// uninstalling an app) that routinely exceeds the default WriteTimeout. Without
+// an extension the server closes the connection mid-response, which the caller
+// sees as an opaque EOF instead of the real result.
+func extendedWriteDeadline(method string) (time.Duration, bool) {
+	switch method {
+	case "device.boot", "device.apps.install", "device.apps.uninstall":
+		return 3 * time.Minute, true
+	case "device.screenrecord.stop":
+		return 35 * time.Second, true
+	}
+	return 0, false
+}
+
 func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -315,12 +332,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var result any
 	var err error
 
-	// HTTP-specific: extend timeout for long-running operations
-	switch req.Method {
-	case "device.boot":
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
-	case "device.screenrecord.stop":
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(35 * time.Second))
+	// HTTP-specific: extend the write deadline for long-running operations so a
+	// slow device-side call can't trip the default WriteTimeout and close the
+	// connection mid-response (which the caller sees as an EOF).
+	if d, ok := extendedWriteDeadline(req.Method); ok {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
 	}
 
 	// Use registry for all methods
@@ -432,6 +448,7 @@ type IoSwipeParams struct {
 	Y1       int    `json:"y1"`
 	X2       int    `json:"x2"`
 	Y2       int    `json:"y2"`
+	Duration int    `json:"duration"`
 }
 
 func handleIoTap(params json.RawMessage) (any, error) {
@@ -522,9 +539,62 @@ func handleIoSwipe(params json.RawMessage) (any, error) {
 		Y1:       ioSwipeParams.Y1,
 		X2:       ioSwipeParams.X2,
 		Y2:       ioSwipeParams.Y2,
+		Duration: ioSwipeParams.Duration,
 	}
 
 	response := commands.SwipeCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+type ClipboardGetParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type ClipboardSetParams struct {
+	DeviceID string  `json:"deviceId"`
+	Text     *string `json:"text"`
+}
+
+func handleClipboardGet(params json.RawMessage) (any, error) {
+	var clipboardParams ClipboardGetParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &clipboardParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	response := commands.ClipboardGetCommand(commands.ClipboardGetRequest{
+		DeviceID: clipboardParams.DeviceID,
+	})
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleClipboardSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
+	}
+
+	var clipboardParams ClipboardSetParams
+	if err := json.Unmarshal(params, &clipboardParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
+	}
+
+	if clipboardParams.Text == nil {
+		return nil, fmt.Errorf("'text' is required")
+	}
+
+	response := commands.ClipboardSetCommand(commands.ClipboardSetRequest{
+		DeviceID: clipboardParams.DeviceID,
+		Text:     *clipboardParams.Text,
+	})
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
@@ -616,6 +686,23 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+// Latitude and Longitude are pointers so an omitted coordinate is an error
+// rather than a silent 0, which is a real place off the coast of Africa
+type LocationSetParams struct {
+	DeviceID  string   `json:"deviceId"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
+}
+
+type LocationClearParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type DeviceSettingsApplyParams struct {
+	DeviceID   string  `json:"deviceId"`
+	Animations *string `json:"animations,omitempty"` // "on" or "off"
+}
+
 type DeviceBootParams struct {
 	DeviceID string `json:"deviceId"`
 }
@@ -634,9 +721,10 @@ type DumpUIParams struct {
 }
 
 type AppsLaunchParams struct {
-	DeviceID string `json:"deviceId"`
-	BundleID string `json:"bundleId"`
-	Activity string `json:"activity,omitempty"`
+	DeviceID string   `json:"deviceId"`
+	BundleID string   `json:"bundleId"`
+	Locales  []string `json:"locales,omitempty"`
+	Activity string   `json:"activity,omitempty"`
 }
 
 type AppsTerminateParams struct {
@@ -661,6 +749,11 @@ type AppsInstallParams struct {
 }
 
 type AppsUninstallParams struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+type AppsClearParams struct {
 	DeviceID string `json:"deviceId"`
 	BundleID string `json:"bundleId"`
 }
@@ -815,6 +908,79 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	return okResponse, nil
 }
 
+func handleLocationSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, latitude, longitude")
+	}
+
+	var locationSetParams LocationSetParams
+	if err := json.Unmarshal(params, &locationSetParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, latitude, longitude", err)
+	}
+
+	if locationSetParams.Latitude == nil || locationSetParams.Longitude == nil {
+		return nil, fmt.Errorf("'latitude' and 'longitude' are required")
+	}
+
+	req := commands.LocationSetRequest{
+		DeviceID:  locationSetParams.DeviceID,
+		Latitude:  *locationSetParams.Latitude,
+		Longitude: *locationSetParams.Longitude,
+	}
+
+	response := commands.LocationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleLocationClear(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var locationClearParams LocationClearParams
+	if err := json.Unmarshal(params, &locationClearParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+
+	req := commands.LocationClearRequest{
+		DeviceID: locationClearParams.DeviceID,
+	}
+
+	response := commands.LocationClearCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleSettingsApply(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var settingsParams DeviceSettingsApplyParams
+	if err := json.Unmarshal(params, &settingsParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, animations", err)
+	}
+
+	req := commands.ApplySettingsRequest{
+		DeviceID:   settingsParams.DeviceID,
+		Animations: settingsParams.Animations,
+	}
+
+	response := commands.ApplySettingsCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
 func handleDeviceBoot(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId")
@@ -917,6 +1083,7 @@ func handleAppsLaunch(params json.RawMessage) (any, error) {
 	req := commands.AppRequest{
 		DeviceID: appsLaunchParams.DeviceID,
 		BundleID: appsLaunchParams.BundleID,
+		Locales:  appsLaunchParams.Locales,
 		Activity: appsLaunchParams.Activity,
 	}
 
@@ -1021,6 +1188,33 @@ func handleAppsInstall(params json.RawMessage) (any, error) {
 	return response.Data, nil
 }
 
+func handleAppsClear(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
+	}
+
+	var p AppsClearParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, bundleId", err)
+	}
+
+	if p.BundleID == "" {
+		return nil, fmt.Errorf("'bundleId' is required")
+	}
+
+	req := commands.ClearAppRequest{
+		DeviceID: p.DeviceID,
+		BundleID: p.BundleID,
+	}
+
+	response := commands.ClearAppCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
 func handleAppsUninstall(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, bundleId")
@@ -1052,6 +1246,12 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 	return response.Data, nil
 }
 
+// screenRecordReadyTimeout bounds how long handleScreenRecord waits for the
+// recording to be confirmed live before giving up. Sized generously above a
+// worst-case cold DeviceKit start on real iOS devices (WDA/app launch +
+// two 10s broadcast-picker button polls + the 5s post-click TCP wait).
+const screenRecordReadyTimeout = 60 * time.Second
+
 func handleScreenRecord(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, output")
@@ -1076,6 +1276,7 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		OutputPath: p.Output,
 		TimeLimit:  p.TimeLimit,
 		StopChan:   session.StopChan,
+		Ready:      session.Ready,
 	}
 
 	go func() {
@@ -1083,10 +1284,40 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		session.Done <- resp
 	}()
 
-	return map[string]any{
-		"status": "recording",
-		"output": p.Output,
-	}, nil
+	// Don't ack until the recording is actually confirmed live. On real iOS
+	// devices this waits for the ReplayKit broadcast picker to be clicked, so
+	// callers never race a still-starting recording with device commands.
+	select {
+	case readyErr := <-session.Ready:
+		if readyErr != nil {
+			recorder.clear()
+			return nil, fmt.Errorf("failed to start recording: %w", readyErr)
+		}
+		return map[string]any{
+			"status": "recording",
+			"output": p.Output,
+		}, nil
+	case resp := <-session.Done:
+		// recording finished (or failed) before ever confirming it was live
+		recorder.clear()
+		if resp.Status == "error" {
+			return nil, fmt.Errorf("%s", resp.Error)
+		}
+		return nil, fmt.Errorf("recording ended before it was confirmed started")
+	case <-time.After(screenRecordReadyTimeout):
+		// the command goroutine may still be starting (or even recording);
+		// ask it to stop and wait for it to exit before freeing the session,
+		// so it cannot overlap a subsequent capture
+		if _, stopErr := recorder.stop(); stopErr == nil {
+			select {
+			case <-session.Done:
+			case <-time.After(30 * time.Second):
+			}
+		}
+
+		recorder.clear()
+		return nil, fmt.Errorf("timed out waiting for recording to start")
+	}
 }
 
 // ScreenRecordStopParams represents the parameters for stopping a screen recording
@@ -1238,6 +1469,12 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
 	}
 
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return nil, fmt.Errorf("fps must not be negative")
+	}
+
 	// validate device exists (early error detection)
 	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
 	if err != nil {
@@ -1267,6 +1504,11 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		scale = devices.DefaultScale
 	}
 
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
+	}
+
 	// generate session ID
 	sessionID := uuid.New().String()
 
@@ -1283,6 +1525,7 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
 		Scale:     scale,
+		FPS:       fps,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(1 * time.Minute),
 		InUse:     false,
@@ -1300,6 +1543,61 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	}
 
 	return result, nil
+}
+
+// screenCaptureSetConfigRequest are params for device.screencapture.setConfiguration.
+type screenCaptureSetConfigRequest struct {
+	DeviceID string `json:"deviceId"`
+	Bitrate  int    `json:"bitrate"`
+}
+
+// handleScreenCaptureSetConfiguration applies live encoder settings to an
+// in-flight AVC capture (currently only bitrate) without restarting the stream.
+func handleScreenCaptureSetConfiguration(params json.RawMessage) (any, error) {
+	var req screenCaptureSetConfigRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if req.Bitrate <= 0 {
+		return nil, fmt.Errorf("bitrate must be positive")
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	if err := devices.SetAvcBitrate(targetDevice, req.Bitrate); err != nil {
+		return nil, err
+	}
+
+	return map[string]any{"deviceId": targetDevice.ID(), "bitrate": req.Bitrate}, nil
+}
+
+// screenCaptureKeyFrameRequest are params for device.screencapture.requestKeyFrame.
+type screenCaptureKeyFrameRequest struct {
+	DeviceID string `json:"deviceId"`
+}
+
+// handleScreenCaptureRequestKeyFrame asks the in-flight AVC encoder for an
+// immediate sync frame, e.g. when the viewer reports a picture loss (PLI).
+func handleScreenCaptureRequestKeyFrame(params json.RawMessage) (any, error) {
+	var req screenCaptureKeyFrameRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	if err := devices.RequestAvcKeyFrame(targetDevice); err != nil {
+		return nil, err
+	}
+
+	return map[string]any{"deviceId": targetDevice.ID()}, nil
 }
 
 // handleStream handles the /stream endpoint for screen capture streaming
@@ -1381,6 +1679,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		Format:     session.Format,
 		Quality:    session.Quality,
 		Scale:      session.Scale,
+		FPS:        session.FPS,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
@@ -1415,12 +1714,6 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		return fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	// Find the target device
-	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
-	if err != nil {
-		return fmt.Errorf("error finding device: %w", err)
-	}
-
 	// Set default format if not provided
 	if screenCaptureParams.Format == "" {
 		screenCaptureParams.Format = "mjpeg"
@@ -1429,6 +1722,18 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	// Validate format
 	if screenCaptureParams.Format != "mjpeg" && screenCaptureParams.Format != "avc" {
 		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+
+	// validate fps before any device work — 0 means omitted (defaulted below),
+	// negative is never valid
+	if screenCaptureParams.FPS < 0 {
+		return fmt.Errorf("fps must not be negative")
+	}
+
+	// Find the target device
+	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
 	}
 
 	// avc format is supported on Android and iOS real devices (not simulators)
@@ -1447,6 +1752,11 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 	scale := screenCaptureParams.Scale
 	if scale == 0.0 {
 		scale = devices.DefaultScale
+	}
+
+	fps := screenCaptureParams.FPS
+	if fps == 0 {
+		fps = devices.DefaultFramerate
 	}
 
 	// Set headers for streaming response based on format
@@ -1492,6 +1802,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		Format:     screenCaptureParams.Format,
 		Quality:    quality,
 		Scale:      scale,
+		FPS:        fps,
 		OnProgress: progressCallback,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)

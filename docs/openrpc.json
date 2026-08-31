@@ -272,6 +272,64 @@
       }
     },
     {
+      "name": "device.clipboard.get",
+      "summary": "Read clipboard",
+      "description": "Reads the text currently on the device clipboard",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "clipboard",
+        "description": "Clipboard contents",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Text on the clipboard, empty when it holds no text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.clipboard.set",
+      "summary": "Write clipboard",
+      "description": "Replaces the text on the device clipboard, an empty string clears it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to place on the clipboard",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.io.keys",
       "summary": "Press keyboard keys",
       "description": "Presses one or more key combinations on the device, in order. Each combo is a key with optional modifiers joined by '+', e.g. \"cmd+a\", \"ctrl+shift+z\", \"backspace\". Modifiers: cmd/command/meta, ctrl/control, alt/opt/option, shift, fn. Keys are case-insensitive.",
@@ -442,6 +500,14 @@
           "schema": {
             "type": "integer"
           }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the swipe in milliseconds, omitted applies the platform default",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
         }
       ],
       "result": {
@@ -512,6 +578,74 @@
         {
           "name": "orientation",
           "description": "Desired orientation",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.location.set",
+      "summary": "Override device location",
+      "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "latitude",
+          "description": "Latitude in degrees, between -90 and 90",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "longitude",
+          "description": "Longitude in degrees, between -180 and 180",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "name": "location",
+        "description": "Simulated location",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.location.clear",
+      "summary": "Clear device location override",
+      "description": "Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
           "required": true,
           "schema": {
             "type": "string"
@@ -1759,9 +1893,9 @@
             "type": "string",
             "description": "Provider type (e.g. 'mobilenext', 'local')"
           },
-          "sessionId": {
+          "allocationId": {
             "type": "string",
-            "description": "Session identifier for this device allocation"
+            "description": "Allocation identifier for this device"
           }
         },
         "required": [

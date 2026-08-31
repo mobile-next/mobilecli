@@ -20,10 +20,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mobile-next/mobilecli/devices/wda"
+	"github.com/mobile-next/mobilecli/agents"
+	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+const androidDiscoveryGetpropTimeout = 5 * time.Second
+
+// androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
+// on the device, shared by every feature that runs a class out of it
+const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
@@ -415,9 +422,16 @@ func (d *AndroidDevice) LongPress(x, y, duration int) error {
 	return nil
 }
 
-// Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device with 1000ms duration.
-func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
-	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), "1000")
+const defaultSwipeDurationMs = 1000
+
+// Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device.
+// duration is in milliseconds; zero or less keeps the 1000ms this has always used.
+func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	if duration <= 0 {
+		duration = defaultSwipeDurationMs
+	}
+
+	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), fmt.Sprintf("%d", duration))
 	if err != nil {
 		return err
 	}
@@ -425,8 +439,37 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2 int) error {
 	return nil
 }
 
+func (d *AndroidDevice) clipboardCommand(args ...string) (string, error) {
+	out, err := d.runDexClass("com.mobilenext.mobilecli.Clipboard", args...)
+	if err != nil {
+		return "", err
+	}
+
+	return string(out), nil
+}
+
+func (d *AndroidDevice) GetClipboard() (string, error) {
+	out, err := d.clipboardCommand("get")
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSuffix(out, "\n"), nil
+}
+
+func (d *AndroidDevice) SetClipboard(text string) error {
+	if text == "" {
+		_, err := d.clipboardCommand("clear")
+		return err
+	}
+
+	// base64 keeps spaces, emoji and other UTF-8 intact across the shell.
+	_, err := d.clipboardCommand("set", "--base64", base64.StdEncoding.EncodeToString([]byte(text)))
+	return err
+}
+
 // Gesture performs a sequence of touch actions on the Android device
-func (d *AndroidDevice) Gesture(actions []wda.TapAction) error {
+func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
 
 	x := 0
 	y := 0
@@ -473,22 +516,37 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 			status := parts[1]
 			if status == "device" {
 				deviceID := transportID
+				avdName := ""
 
 				// for emulators, use AVD name as the consistent ID
 				if strings.HasPrefix(transportID, "emulator-") {
-					avdName := getAVDName(transportID)
+					var err error
+					avdName, err = getAVDName(transportID)
+					if err != nil {
+						continue
+					}
 					if avdName != "" {
 						deviceID = avdName
 					}
 				}
 
+				model, err := getAndroidDeviceModel(transportID)
+				if err != nil {
+					continue
+				}
+
+				version, err := getAndroidDeviceVersion(transportID)
+				if err != nil {
+					continue
+				}
+
 				devices = append(devices, &AndroidDevice{
 					id:          deviceID,
 					transportID: transportID,
-					name:        getAndroidDeviceName(transportID),
-					version:     getAndroidDeviceVersion(transportID),
+					name:        getAndroidDeviceName(transportID, avdName, model),
+					version:     version,
 					state:       "online",
-					model:       getAndroidDeviceModel(transportID),
+					model:       model,
 				})
 			}
 		}
@@ -497,24 +555,33 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 	return devices
 }
 
-// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
-func getAVDName(transportID string) string {
-	avdCmd := exec.Command(getAdbPath(), "-s", transportID, "shell", "getprop", "ro.boot.qemu.avd_name")
-	avdOutput, err := avdCmd.CombinedOutput()
-	if err == nil && len(avdOutput) > 0 {
-		avdName := strings.TrimSpace(string(avdOutput))
-		return avdName
+func getAndroidProperty(deviceID, property string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), androidDiscoveryGetpropTimeout)
+	defer cancel()
+
+	propertyCmd := exec.CommandContext(ctx, getAdbPath(), "-s", deviceID, "shell", "getprop", property)
+	propertyOutput, err := propertyCmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("getprop timed out after 5 seconds for Android device %s while reading %s; you probably want to run 'adb kill-server'", deviceID, property)
+		} else {
+			utils.Verbose("getprop failed for Android device %s while reading %s: %v; you probably want to run 'adb kill-server'", deviceID, property, err)
+		}
+		return "", err
 	}
-	return ""
+
+	return strings.TrimSpace(string(propertyOutput)), nil
 }
 
-func getAndroidDeviceName(deviceID string) string {
+// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
+func getAVDName(transportID string) (string, error) {
+	return getAndroidProperty(transportID, "ro.boot.qemu.avd_name")
+}
+
+func getAndroidDeviceName(deviceID, avdName, model string) string {
 	// for emulators, prioritize AVD name
-	if strings.HasPrefix(deviceID, "emulator-") {
-		avdName := getAVDName(deviceID)
-		if avdName != "" {
-			return strings.ReplaceAll(avdName, "_", " ")
-		}
+	if strings.HasPrefix(deviceID, "emulator-") && avdName != "" {
+		return strings.ReplaceAll(avdName, "_", " ")
 	}
 
 	// for real devices, try getting device name from settings
@@ -528,34 +595,20 @@ func getAndroidDeviceName(deviceID string) string {
 		}
 	}
 
-	// fall back to product model
-	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
-	modelOutput, err := modelCmd.CombinedOutput()
-	if err == nil && len(modelOutput) > 0 {
-		return strings.TrimSpace(string(modelOutput))
+	// fall back to the previously queried product model
+	if model != "" {
+		return model
 	}
 
 	return deviceID
 }
 
-func getAndroidDeviceModel(deviceID string) string {
-	modelCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.product.model")
-	modelOutput, err := modelCmd.CombinedOutput()
-	if err == nil && len(modelOutput) > 0 {
-		return strings.TrimSpace(string(modelOutput))
-	}
-
-	return ""
+func getAndroidDeviceModel(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.product.model")
 }
 
-func getAndroidDeviceVersion(deviceID string) string {
-	versionCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "ro.build.version.release")
-	versionOutput, err := versionCmd.CombinedOutput()
-	if err == nil && len(versionOutput) > 0 {
-		return strings.TrimSpace(string(versionOutput))
-	}
-
-	return ""
+func getAndroidDeviceVersion(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.build.version.release")
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
@@ -920,48 +973,72 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
 	}
 
-	lines := strings.Split(string(output), "\n")
-
-	var packageNames []string
-	seen := make(map[string]bool)
-
-	for _, line := range lines {
+	launchable := make(map[string]bool)
+	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "packageName=") {
-			packageName := strings.TrimPrefix(line, "packageName=")
-			if !seen[packageName] {
-				seen[packageName] = true
-				packageNames = append(packageNames, packageName)
-			}
+			launchable[strings.TrimPrefix(line, "packageName=")] = true
 		}
 	}
 
-	var apps []InstalledAppInfo
-	for _, packageName := range packageNames {
-		apps = append(apps, InstalledAppInfo{
-			PackageName: packageName,
-		})
+	all, err := d.listAllPackages()
+	if err != nil {
+		return nil, err
 	}
 
+	var apps []InstalledAppInfo
+	for _, app := range all {
+		if launchable[app.PackageName] {
+			apps = append(apps, app)
+		}
+	}
 	return apps, nil
 }
 
+// listAllPackages runs the embedded PackageLister (agents/android/java/PackageLister.java)
+// on the device via app_process, which returns name and versions for every package in one
+// call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
-	output, err := d.runAdbCommand("shell", "pm", "list", "packages")
+	output, err := d.runDexClass("com.mobilenext.mobilecli.PackageLister")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list packages: %w", err)
+		return nil, fmt.Errorf("failed to list packages: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
-	var apps []InstalledAppInfo
-	for _, line := range strings.Split(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "package:") {
-			apps = append(apps, InstalledAppInfo{
-				PackageName: strings.TrimPrefix(line, "package:"),
-			})
-		}
+	return parsePackageListerOutput(output)
+}
+
+// runDexClass pushes the embedded mobilecli.dex (agents/android) to the device
+// and runs the given class's main() via app_process.
+func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, error) {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
+		return nil, fmt.Errorf("push .dex: %w", err)
 	}
 
+	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + androidDexPath, "app_process", "/", className}, args...)
+	return d.runAdbCommand(cmdArgs...)
+}
+
+// parsePackageListerOutput decodes the JSON array printed by PackageLister.
+func parsePackageListerOutput(output []byte) ([]InstalledAppInfo, error) {
+	var listed []struct {
+		PackageName string `json:"packageName"`
+		AppName     string `json:"appName"`
+		Version     string `json:"version"`
+		VersionCode int64  `json:"versionCode"`
+	}
+	if err := json.Unmarshal(output, &listed); err != nil {
+		return nil, fmt.Errorf("failed to parse package list: %w: %s", err, string(output[:min(len(output), 200)]))
+	}
+
+	apps := make([]InstalledAppInfo, 0, len(listed))
+	for _, app := range listed {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: app.PackageName,
+			AppName:     app.AppName,
+			Version:     app.Version,
+			VersionCode: strconv.FormatInt(app.VersionCode, 10),
+		})
+	}
 	return apps, nil
 }
 
@@ -1146,7 +1223,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
-	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.2f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
 
 	// bitrate only applies to AvcServer
 	if config.Format == "avc" && config.Bitrate > 0 {
@@ -1329,6 +1406,9 @@ func (d *AndroidDevice) EnsureDeviceKitInstalled() error {
 	return nil
 }
 
+// attrTrue is the string value uiautomator uses for boolean node attributes.
+const attrTrue = "true"
+
 type uiAutomatorXmlNode struct {
 	XMLName     xml.Name             `xml:"node"`
 	Class       string               `xml:"class,attr"`
@@ -1338,6 +1418,11 @@ type uiAutomatorXmlNode struct {
 	Focused     string               `xml:"focused,attr"`
 	ContentDesc string               `xml:"content-desc,attr"`
 	ResourceID  string               `xml:"resource-id,attr"`
+	Clickable   string               `xml:"clickable,attr"`
+	Checkable   string               `xml:"checkable,attr"`
+	Checked     string               `xml:"checked,attr"`
+	Enabled     string               `xml:"enabled,attr"`
+	Selected    string               `xml:"selected,attr"`
 	Nodes       []uiAutomatorXmlNode `xml:"node"`
 }
 
@@ -1360,6 +1445,9 @@ type deviceKitNode struct {
 	ContentDesc string          `json:"content-desc"`
 	ResourceID  string          `json:"resource-id"`
 	Focused     bool            `json:"focused"`
+	Enabled     bool            `json:"enabled"`
+	Checked     bool            `json:"checked"`
+	Selected    bool            `json:"selected"`
 	Visible     bool            `json:"visible"`
 	Rect        deviceKitRect   `json:"rect"`
 	Children    []deviceKitNode `json:"children"`
@@ -1408,8 +1496,9 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		childElements = append(childElements, d.collectElements(childNode)...)
 	}
 
-	// only include the current node if it has text, content-desc, or hint
-	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" {
+	// only include the current node if it has text, content-desc, hint,
+	// resource-id, or is interactable (clickable or checkable)
+	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" && node.Clickable != attrTrue && node.Checkable != attrTrue {
 		return childElements
 	}
 
@@ -1435,9 +1524,28 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	}
 
 	// set focused if true
-	if node.Focused == "true" {
+	if node.Focused == attrTrue {
 		focused := true
 		element.Focused = &focused
+	}
+
+	// set enabled if false; uiautomator omits the attribute for some nodes,
+	// so treat "false" explicitly rather than "not true"
+	if node.Enabled == "false" {
+		enabled := false
+		element.Enabled = &enabled
+	}
+
+	// set checked if true
+	if node.Checked == attrTrue {
+		checked := true
+		element.Checked = &checked
+	}
+
+	// set selected if true (single-select controls: tabs, chips, radio-style pickers)
+	if node.Selected == attrTrue {
+		selected := true
+		element.Selected = &selected
 	}
 
 	// set identifier from resource-id
@@ -1492,6 +1600,18 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 			focused := true
 			element.Focused = &focused
 		}
+		if !node.Enabled {
+			enabled := false
+			element.Enabled = &enabled
+		}
+		if node.Checked {
+			checked := true
+			element.Checked = &checked
+		}
+		if node.Selected {
+			selected := true
+			element.Selected = &selected
+		}
 		if node.ResourceID != "" {
 			element.Identifier = &node.ResourceID
 		}
@@ -1505,7 +1625,20 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	return elements
 }
 
+// getDeviceKitNodes returns the UI hierarchy, preferring the persistent
+// DeviceKitServer (fast: no process fork per call) and falling back to the
+// one-shot ViewTreeDump instrumentation when the server isn't available.
 func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
+	if nodes, err := d.getDeviceKitServerNodes(); err == nil {
+		return nodes, nil
+	} else {
+		utils.Verbose("devicekit server dump unavailable, falling back to one-shot instrument: %v", err)
+	}
+
+	return d.getDeviceKitNodesOneShot()
+}
+
+func (d *AndroidDevice) getDeviceKitNodesOneShot() ([]deviceKitNode, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -1628,6 +1761,17 @@ func (d *AndroidDevice) InstallApp(path string) error {
 	return fmt.Errorf("installation failed: %s", string(output))
 }
 
+func (d *AndroidDevice) ClearApp(bundleID string) error {
+	output, err := d.runAdbCommand("shell", "pm", "clear", bundleID)
+	if err != nil {
+		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	if !strings.Contains(string(output), "Success") {
+		return fmt.Errorf("failed to clear app %s: %s", bundleID, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	appInfo := &InstalledAppInfo{
 		PackageName: packageName,
@@ -1693,6 +1837,30 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	_, err = d.runAdbCommand("shell", "content", "insert", "--uri", "content://settings/system", "--bind", "name:s:user_rotation", "--bind", fmt.Sprintf("value:i:%d", androidRotation))
 	if err != nil {
 		return fmt.Errorf("failed to set orientation: %v", err)
+	}
+
+	return nil
+}
+
+// SetAnimationsEnabled toggles the three global animation scales. Setting them
+// to 0 disables animations for stable screenshots; 1 restores the defaults.
+func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {
+	scale := "0"
+	if enabled {
+		scale = "1"
+	}
+
+	scaleSettings := []string{
+		"window_animation_scale",
+		"transition_animation_scale",
+		"animator_duration_scale",
+	}
+
+	for _, setting := range scaleSettings {
+		_, err := d.runAdbCommand("shell", "settings", "put", "global", setting, scale)
+		if err != nil {
+			return fmt.Errorf("failed to set %s: %v", setting, err)
+		}
 	}
 
 	return nil

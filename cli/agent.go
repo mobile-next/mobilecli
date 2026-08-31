@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -14,18 +15,18 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.19"
-	agentVersionAndroid = "1.2.2"
+	agentVersionIOS     = "0.0.25"
+	agentVersionAndroid = "1.2.6"
 	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	androidPackageName  = "com.mobilenext.devicekit"
 )
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "125ad3fd09284842f9ee038297e4da5e798a53caaa726f77ce4eef2864922041",
-	"devicekit-ios-Sim-x86_64.zip": "9c23379d96808f4ecf7c99009c66c047e5108e709bb572d3a4418e0ab21b12e2",
-	"devicekit-ios-runner.ipa":     "8057833c136911d9edcd559ad65578f595d3b8f48a399adc3389cdc8c2201bc0",
-	"mobilenext-devicekit.apk":     "c58484b40db6ab84c7445ccaa346ee0804e155e37507a42f1ac37b92a52bdd4f",
+	"devicekit-ios-Sim-arm64.zip":  "37d08baaca14bd31a739619571c5a7a80781827379b119a3f55c77692124f61b",
+	"devicekit-ios-Sim-x86_64.zip": "6e77a0c05830e950de1b2ffa2406933927f2df6bae849b4030be760e1b334d33",
+	"devicekit-ios-runner.ipa":     "3fea84ac75c3cdabc5479169742f54aaf198f213cdc1c778ef16c16aeb22431c",
+	"devicekit.apk":                "01d933a311dac113bb89f2cb3256482467c1e02b287a2fd5e412863b8f907c51",
 }
 
 type agentMessageResponse struct {
@@ -291,7 +292,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 }
 
 func installAgentOnAndroid(device devices.ControllableDevice) error {
-	filename := "mobilenext-devicekit.apk"
+	filename := "devicekit.apk"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
 
 	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
@@ -311,7 +312,7 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 		return nil
 	}
 	for _, app := range apps {
-		if app.PackageName == agentPackage {
+		if agentMatchesApp(device.Platform(), app.PackageName, agentPackage) {
 			if app.Version == "" {
 				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
 					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
@@ -323,6 +324,16 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 		}
 	}
 	return nil
+}
+
+// agentMatchesApp reports whether an installed app's bundle id identifies the agent.
+// On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
+// suffix match is used; other platforms require an exact match.
+func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
+	if platform == "ios" {
+		return strings.HasSuffix(installedPackage, agentPackage)
+	}
+	return installedPackage == agentPackage
 }
 
 func isAgentInstalled(device devices.ControllableDevice) bool {
