@@ -89,6 +89,27 @@
           }
         },
         {
+          "name": "scale",
+          "description": "Scale factor for the screenshot (0.0-1.0, default 1.0)",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "default": 1
+          }
+        },
+        {
+          "name": "maxSize",
+          "description": "Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit)",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
           "name": "clip",
           "description": "Optional rectangle to crop the screenshot to, in screen coordinates",
           "required": false,

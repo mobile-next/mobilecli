@@ -258,7 +258,60 @@ func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
 	return byteData, nil
 }
 
-func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
+func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	// prefer on-device capture+encode via the embedded dex: a downscaled jpeg
+	// crosses adb instead of screencap's full-size png
+	data, err := d.takeScreenshotWithDex(opts)
+	if err == nil {
+		return data, nil
+	}
+	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
+
+	data, err = d.takeScreenshotWithScreencap()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize)
+}
+
+// takeScreenshotWithDex captures, scales, and encodes on-device via the
+// embedded Screenshot dex class. The image goes through a temp file rather
+// than app_process stdout, which other libraries (e.g. the emulator's GL
+// layer) pollute with log text. Output is validated by magic bytes since
+// adb exec-out does not reliably propagate exit codes.
+func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, error) {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
+		return nil, fmt.Errorf("push .dex: %w", err)
+	}
+
+	format := opts.Format
+	if format == "" {
+		format = "png"
+	}
+
+	utils.Verbose("taking screenshot on-device via mobilecli.dex")
+
+	script := fmt.Sprintf(
+		"out=/data/local/tmp/mobilecli-screenshot-$$.img; "+
+			"CLASSPATH=%s app_process / com.mobilenext.mobilecli.Screenshot "+
+			"--format %s --quality %d --scale %s --max-size %d --out $out >/dev/null 2>&1; "+
+			"cat $out 2>/dev/null; rm -f $out",
+		androidDexPath, format, opts.Quality,
+		strconv.FormatFloat(opts.Scale, 'f', -1, 64), opts.MaxSize,
+	)
+
+	data, err := d.runAdbCommand("exec-out", script)
+	if err != nil {
+		return nil, err
+	}
+
+	if !utils.IsPNG(data) && !utils.IsJPEG(data) {
+		return nil, fmt.Errorf("unexpected output (%d bytes)", len(data))
+	}
+	return data, nil
+}
+
+func (d *AndroidDevice) takeScreenshotWithScreencap() ([]byte, error) {
 	displayCount := d.getDisplayCount()
 
 	if displayCount <= 1 {
@@ -1011,6 +1064,7 @@ func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, e
 		return nil, fmt.Errorf("push .dex: %w", err)
 	}
 
+	utils.Verbose("running %s via mobilecli.dex", className)
 	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + androidDexPath, "app_process", "/", className}, args...)
 	return d.runAdbCommand(cmdArgs...)
 }

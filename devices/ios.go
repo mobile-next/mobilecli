@@ -182,8 +182,12 @@ func ListIOSDevices() ([]*IOSDevice, error) {
 	return devices, nil
 }
 
-func (d *IOSDevice) TakeScreenshot() ([]byte, error) {
-	return d.deviceKitClient.TakeScreenshot()
+func (d *IOSDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	data, err := d.deviceKitClient.TakeScreenshot()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize)
 }
 
 func (d *IOSDevice) Reboot() error {
