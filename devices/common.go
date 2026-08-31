@@ -159,6 +159,13 @@ type ControllableDevice interface {
 	GetAppContainerPath(bundleID string) (string, error)
 }
 
+// LocationSettable is implemented by devices that can simulate a GPS location.
+// Devices that don't implement it report location override as unsupported.
+type LocationSettable interface {
+	SetLocation(lat, lon float64) error
+	ClearLocation() error
+}
+
 // AnimationConfigurable is implemented by devices that can toggle system
 // animations. Devices that don't implement it are treated as a no-op by callers.
 type AnimationConfigurable interface {
