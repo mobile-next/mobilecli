@@ -2,6 +2,8 @@ module github.com/mobile-next/mobilecli
 
 go 1.26.2
 
+toolchain go1.26.6
+
 require (
 	al.essio.dev/pkg/shellescape v1.5.1
 	github.com/danielpaulus/go-ios v1.0.211
