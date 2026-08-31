@@ -1,6 +1,10 @@
-## Unreleased
-* Feat: Device logs command and `device.logs` streaming session over the http api
-* Change: Screen capture `sessionUrl` moved from `/stream?s=<id>` to `/sessions/<id>/stream`
+## [1.0.6](https://github.com/mobile-next/mobilecli/releases/tag/1.0.6) (2026-08-31)
+* Feat: GPS location override ([#366](https://github.com/mobile-next/mobilecli/pull/366))
+* Feat: Device logs command and `device.logs` streaming session over the http api ([#195](https://github.com/mobile-next/mobilecli/pull/195))
+* Feat: Scale and max-size options for screenshots ([#368](https://github.com/mobile-next/mobilecli/pull/368))
+* Feat(ios): Surface enabled, selected and focused attributes in ui dump ([#369](https://github.com/mobile-next/mobilecli/pull/369), [devicekit-ios#69](https://github.com/mobile-next/devicekit-ios/pull/69))
+* Feat(android): Use on-device agent to grab screenshots for better performance ([#368](https://github.com/mobile-next/mobilecli/pull/368))
+* Refactor: Screen capture `sessionUrl` moved from `/stream?s=<id>` to `/sessions/<id>/stream`
 
 ## [1.0.5](https://github.com/mobile-next/mobilecli/releases/tag/1.0.5) (2026-08-26)
 * Feat: Clipboard get and set commands ([#345](https://github.com/mobile-next/mobilecli/pull/345)), thanks to [@hakanor](https://github.com/hakanor)
