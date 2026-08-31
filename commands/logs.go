@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,9 @@ type LogsRequest struct {
 	DeviceID string
 	Limit    int
 	Filters  []LogFilter
+
+	// Writer receives one JSON-encoded LogEntry per line. Defaults to os.Stdout.
+	Writer io.Writer
 }
 
 // ParseLogFilters parses filter strings like "key=value" or "key!=value"
@@ -102,7 +106,12 @@ func LogsCommand(ctx context.Context, req LogsRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	out := req.Writer
+	if out == nil {
+		out = os.Stdout
+	}
+
+	encoder := json.NewEncoder(out)
 	count := 0
 
 	emit := func(entry devices.LogEntry) bool {

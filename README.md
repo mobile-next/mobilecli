@@ -489,6 +489,20 @@ Each log entry is printed as a JSON line:
 {"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
 ```
 
+Logs are also available over the [HTTP API](#http-api-) via the `device.logs` method, which takes the same `limit` and `filters` and returns a URL to stream from:
+
+```bash
+curl -X POST http://localhost:12000/rpc -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "method": "device.logs", "id": 1,
+  "params": { "deviceId": "<device-id>", "limit": 100, "filters": ["level=Error", "process!=SpringBoard"] }
+}'
+# => {"jsonrpc":"2.0","id":1,"result":{"sessionUrl":"/sessions/<session-id>/logs"}}
+
+curl -N http://localhost:12000/sessions/<session-id>/logs
+```
+
+The session expires one minute after creation and accepts a single connection. Disconnecting stops the log stream on the device.
+
 ### Remote Devices ☁️
 
 ```bash

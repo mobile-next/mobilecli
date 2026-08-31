@@ -294,6 +294,15 @@ Access files on-device or inside debuggable app private directories (Android and
   # Get crash report content
   mobilecli device crashes get <crash-id> --device <device-id>
   ```
+* **Device Logs**:
+  ```bash
+  # Stream live logs, one json entry per line (ctrl+c to stop)
+  mobilecli device logs --device <device-id>
+
+  # Stop after 100 entries, filter with key=value / key!=value (repeatable, ANDed)
+  mobilecli device logs --device <device-id> --limit 100 --filter level=Error --filter process!=SpringBoard
+  ```
+  Filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
 
 ---
 

@@ -1,3 +1,7 @@
+## Unreleased
+* Feat: Device logs command and `device.logs` streaming session over the http api
+* Change: Screen capture `sessionUrl` moved from `/stream?s=<id>` to `/sessions/<id>/stream`
+
 ## [1.0.5](https://github.com/mobile-next/mobilecli/releases/tag/1.0.5) (2026-08-26)
 * Feat: Clipboard get and set commands ([#345](https://github.com/mobile-next/mobilecli/pull/345)), thanks to [@hakanor](https://github.com/hakanor)
 * Feat: Add apps clear command ([#202](https://github.com/mobile-next/mobilecli/pull/202))

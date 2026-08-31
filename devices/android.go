@@ -1907,7 +1907,7 @@ func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) str
 		return name
 	}
 
-	fmt.Fprintf(os.Stderr, "resolving pid %d\n", pid)
+	utils.Verbose("resolving process name for pid %d", pid)
 	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil || len(out) == 0 {
 		return ""
