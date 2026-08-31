@@ -1981,12 +1981,15 @@ func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) boo
 		}
 	}
 
-	_ = cmd.Wait()
+	waitErr := cmd.Wait()
 	if stoppedByCaller || ctx.Err() != nil {
 		return nil
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("logcat read error: %w", err)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("logcat ended with error: %w", waitErr)
 	}
 	return nil
 }
