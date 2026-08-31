@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func validateScreenshotResize(scale float64, maxSize int) (float64, error) {
 	if scale == 0 {
 		scale = 1.0
 	}
-	if scale < 0 || scale > 1.0 {
+	if math.IsNaN(scale) || scale < 0 || scale > 1.0 {
 		return 0, fmt.Errorf("scale must be between 0.0 and 1.0")
 	}
 	if maxSize < 0 {

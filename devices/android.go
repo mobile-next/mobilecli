@@ -284,9 +284,13 @@ func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, e
 		return nil, fmt.Errorf("push .dex: %w", err)
 	}
 
+	// whitelist the only string interpolated into the shell script below
 	format := opts.Format
 	if format == "" {
 		format = "png"
+	}
+	if format != "png" && format != "jpeg" {
+		return nil, fmt.Errorf("invalid format: %q", format)
 	}
 
 	utils.Verbose("taking screenshot on-device via mobilecli.dex")
