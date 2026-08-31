@@ -171,13 +171,24 @@ func ListIOSDevices() ([]*IOSDevice, error) {
 		return nil, fmt.Errorf("failed getting device list: %w", err)
 	}
 
-	devices := make([]*IOSDevice, len(deviceList.DeviceList))
-	for i, deviceEntry := range deviceList.DeviceList {
+	// go-ios returns one entry per connection (usb, network), dedupe by udid.
+	// a device that fails getDeviceInfo (untrusted, locked) is skipped so it
+	// does not hide the remaining devices.
+	devices := make([]*IOSDevice, 0, len(deviceList.DeviceList))
+	seen := make(map[string]bool)
+	for _, deviceEntry := range deviceList.DeviceList {
+		udid := deviceEntry.Properties.SerialNumber
+		if seen[udid] {
+			continue
+		}
+		seen[udid] = true
+
 		device, err := getDeviceInfo(deviceEntry)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get device info: %w", err)
+			utils.Verbose("Warning: skipping device %s: %v", udid, err)
+			continue
 		}
-		devices[i] = device
+		devices = append(devices, device)
 	}
 
 	return devices, nil
