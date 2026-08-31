@@ -1848,14 +1848,6 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
-	if agent, err := d.getAgent(); err == nil {
-		if jsonStr, err := agent.dumpRaw(); err == nil {
-			return jsonStr, nil
-		} else {
-			utils.Verbose("agent dump unavailable, falling back to devicekit: %v", err)
-		}
-	}
-
 	if jsonStr, err := d.getDeviceKitDump(); err == nil {
 		return jsonStr, nil
 	} else {
@@ -1871,14 +1863,6 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 }
 
 func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
-	if agent, err := d.getAgent(); err == nil {
-		if nodes, err := agent.dump(); err == nil {
-			return collectAgentElements(nodes), nil
-		} else {
-			utils.Verbose("agent dump unavailable, falling back to devicekit: %v", err)
-		}
-	}
-
 	if nodes, err := d.getDeviceKitNodes(); err == nil {
 		return collectDeviceKitElements(nodes), nil
 	} else {

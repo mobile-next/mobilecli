@@ -7,7 +7,6 @@ import android.os.SystemClock;
 import android.view.InputEvent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -25,7 +24,7 @@ import android.net.LocalSocket;
  * open for the lifetime of the process, and serves newline-delimited JSON
  * commands over a localabstract LocalServerSocket. Because the process and the
  * UiAutomation connection persist, there is no per-request instrumentation
- * spawn and no fixed waitForIdle, which is what makes hierarchy dumps and input
+ * spawn and no fixed waitForIdle, which is what makes screenshots and input
  * injection an order of magnitude faster than per-command adb.
  *
  * All framework-hidden APIs (UiAutomation, UiAutomationConnection, InputManager)
@@ -36,7 +35,6 @@ public final class Agent {
     static final String SOCKET_NAME = "mobilewright-agent";
 
     private Object uiAutomation;       // android.app.UiAutomation
-    private Method getRootInActiveWindow;
     private Method takeScreenshot;
     private Method waitForIdle;
     private Method setFlags;            // setServiceInfo path not needed; use setFlags
@@ -104,7 +102,6 @@ public final class Agent {
             connect.invoke(uiAutomation);
         }
 
-        getRootInActiveWindow = uaCls.getMethod("getRootInActiveWindow");
         try {
             takeScreenshot = uaCls.getMethod("takeScreenshot");
         } catch (NoSuchMethodException e) {
@@ -211,8 +208,6 @@ public final class Agent {
                     gesture(json);
                     return ok(id, "true");
                 }
-                case "dump":
-                    return ok(id, dumpHierarchy());
                 case "screenshot": {
                     String format = parts.length > 2 ? parts[2] : "png";
                     int quality = parts.length > 3 ? Integer.parseInt(parts[3]) : 90;
@@ -375,72 +370,6 @@ public final class Agent {
         return m.find() ? Float.parseFloat(m.group(1)) : 0f;
     }
 
-    // ─── Hierarchy ─────────────────────────────────────────────────────
-
-    private String dumpHierarchy() throws Exception {
-        // getRootInActiveWindow can transiently return null during window
-        // transitions; retry briefly rather than emit an empty tree.
-        AccessibilityNodeInfo root = null;
-        for (int i = 0; i < 5; i++) {
-            root = (AccessibilityNodeInfo) getRootInActiveWindow.invoke(uiAutomation);
-            if (root != null) break;
-            SystemClock.sleep(50);
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"elements\":[");
-        if (root != null) {
-            serializeNode(root, sb, true);
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    // recycle() is deprecated and a no-op on API 33+, but this agent is built
-    // with min-api 24 and runs long-lived with frequent dumps; recycling each
-    // node post-traversal returns it to the pool on API 24-32 to avoid
-    // allocation churn there. Harmless elsewhere.
-    @SuppressWarnings("deprecation")
-    private void serializeNode(AccessibilityNodeInfo node, StringBuilder sb, boolean first) {
-        if (node == null) return;
-        if (!first) sb.append(',');
-
-        try {
-            android.graphics.Rect r = new android.graphics.Rect();
-            node.getBoundsInScreen(r);
-
-            sb.append('{');
-            sb.append("\"type\":").append(jstr(text(node.getClassName())));
-            sb.append(",\"text\":").append(jstr(text(node.getText())));
-            sb.append(",\"label\":").append(jstr(text(node.getContentDescription())));
-            sb.append(",\"identifier\":").append(jstr(text(node.getViewIdResourceName())));
-            sb.append(",\"hint\":").append(jstr(hintText(node)));
-            sb.append(",\"enabled\":").append(node.isEnabled());
-            sb.append(",\"focused\":").append(node.isFocused());
-            sb.append(",\"checked\":").append(node.isChecked());
-            sb.append(",\"selected\":").append(node.isSelected());
-            sb.append(",\"visible\":").append(node.isVisibleToUser());
-            sb.append(",\"rect\":{\"x\":").append(r.left)
-              .append(",\"y\":").append(r.top)
-              .append(",\"width\":").append(r.width())
-              .append(",\"height\":").append(r.height()).append('}');
-
-            int n = node.getChildCount();
-            sb.append(",\"children\":[");
-            boolean childFirst = true;
-            for (int i = 0; i < n; i++) {
-                AccessibilityNodeInfo child = node.getChild(i);
-                if (child != null) {
-                    serializeNode(child, sb, childFirst);
-                    childFirst = false;
-                }
-            }
-            sb.append("]}");
-        } finally {
-            // post-order: node is fully consumed and not touched after this
-            node.recycle();
-        }
-    }
-
     // ─── Screenshot ────────────────────────────────────────────────────
 
     private String screenshot(String format, int quality) throws Exception {
@@ -457,17 +386,6 @@ public final class Agent {
     }
 
     // ─── JSON helpers ──────────────────────────────────────────────────
-
-    private static String text(CharSequence cs) {
-        return cs == null ? "" : cs.toString();
-    }
-
-    // getHintText() is API 26+; this agent targets min-api 24, so guard the
-    // call rather than risk a NoSuchMethodError on API 24-25.
-    private static String hintText(AccessibilityNodeInfo node) {
-        if (android.os.Build.VERSION.SDK_INT < 26) return "";
-        return text(node.getHintText());
-    }
 
     private static String jstr(String s) {
         StringBuilder sb = new StringBuilder("\"");

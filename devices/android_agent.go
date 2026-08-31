@@ -14,15 +14,13 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
-	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
 // mwAgentDex is the compiled on-device automation server (app_process server).
 // It holds a UiAutomation connection open for the process lifetime and serves
-// hierarchy dumps, screenshots, and input injection over a localabstract
-// socket — eliminating the per-command process/instrumentation spawn that makes
-// the adb paths slow.
+// screenshots and input injection over a localabstract socket — eliminating
+// the per-command process/instrumentation spawn that makes the adb paths slow.
 //
 //go:embed assets/mw-agent.dex
 var mwAgentDex []byte
@@ -376,107 +374,6 @@ func (a *androidAgent) screenshot() ([]byte, error) {
 		return nil, err
 	}
 	return base64.StdEncoding.DecodeString(payload.Data)
-}
-
-// agentNode mirrors the JSON node shape produced by the on-device agent.
-type agentNode struct {
-	Type       string        `json:"type"`
-	Text       string        `json:"text"`
-	Label      string        `json:"label"`
-	Identifier string        `json:"identifier"`
-	Hint       string        `json:"hint"`
-	Enabled    bool          `json:"enabled"`
-	Focused    bool          `json:"focused"`
-	Checked    bool          `json:"checked"`
-	Selected   bool          `json:"selected"`
-	Visible    bool          `json:"visible"`
-	Rect       deviceKitRect `json:"rect"`
-	Children   []agentNode   `json:"children"`
-}
-
-func (a *androidAgent) dump() ([]agentNode, error) {
-	res, err := a.rawCall("dump")
-	if err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Elements []agentNode `json:"elements"`
-	}
-	if err := json.Unmarshal(res, &payload); err != nil {
-		return nil, err
-	}
-	return payload.Elements, nil
-}
-
-func (a *androidAgent) dumpRaw() (string, error) {
-	res, err := a.rawCall("dump")
-	if err != nil {
-		return "", err
-	}
-	return string(res), nil
-}
-
-// collectAgentElements converts the agent node tree into ScreenElements,
-// matching the filtering, nesting and state reporting of collectDeviceKitElements
-// so the dump output is identical whichever path served it.
-func collectAgentElements(nodes []agentNode) []types.ScreenElement {
-	var elements []types.ScreenElement
-	for _, node := range nodes {
-		childElements := collectAgentElements(node.Children)
-
-		if node.Text == "" && node.Label == "" && node.Hint == "" && node.Identifier == "" {
-			elements = append(elements, childElements...)
-			continue
-		}
-		if node.Rect.Width <= 0 || node.Rect.Height <= 0 {
-			elements = append(elements, childElements...)
-			continue
-		}
-
-		text := node.Text
-		element := types.ScreenElement{
-			Type: node.Type,
-			Text: &text,
-			Rect: types.ScreenElementRect{
-				X:      node.Rect.X,
-				Y:      node.Rect.Y,
-				Width:  node.Rect.Width,
-				Height: node.Rect.Height,
-			},
-			Children: childElements,
-		}
-
-		setPlaceholderFromHint(&element, node.Hint)
-		if node.Label != "" {
-			label := node.Label
-			element.Label = &label
-		}
-		if node.Focused {
-			focused := true
-			element.Focused = &focused
-		}
-		if !node.Enabled {
-			enabled := false
-			element.Enabled = &enabled
-		}
-		if node.Checked {
-			checked := true
-			element.Checked = &checked
-		}
-		if node.Selected {
-			selected := true
-			element.Selected = &selected
-		}
-		if node.Identifier != "" {
-			id := node.Identifier
-			element.Identifier = &id
-		}
-		if element.Type == "" {
-			element.Type = "text"
-		}
-		elements = append(elements, element)
-	}
-	return elements
 }
 
 // ─── helpers ───────────────────────────────────────────────────────
