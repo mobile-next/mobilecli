@@ -2086,7 +2086,7 @@ func handleFsPull(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
 
-	data, err := os.ReadFile(tmpPath)
+	data, err := os.ReadFile(tmpPath) // #nosec G304 -- tmpPath comes from os.CreateTemp, not user input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pulled file: %w", err)
 	}
