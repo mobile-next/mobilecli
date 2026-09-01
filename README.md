@@ -2,25 +2,16 @@
 
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/).
 
-<p align="center">
+<p align="left">
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
-  </a>
-  <a href="https://github.com/mobile-next/mobilecli">
-    <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
   <a href="https://www.npmjs.com/package/mobilecli">
     <img src="https://img.shields.io/npm/dm/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
-  <a href="https://github.com/mobile-next/mobilecli/releases">
-    <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
-  </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-</p>
-
-<p align="center">
   <a href="http://mobilenext.ai/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
