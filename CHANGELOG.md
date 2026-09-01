@@ -1,3 +1,7 @@
+## [1.0.7](https://github.com/mobile-next/mobilecli/releases/tag/1.0.7) (2026-09-01)
+* Feat: Split npm package into per-platform optional dependencies, `npx mobilecli` now downloads only the binary for the current platform ([#134](https://github.com/mobile-next/mobilecli/pull/134))
+* Fix: Don't fail device listing when one iOS device is untrusted ([#373](https://github.com/mobile-next/mobilecli/pull/373))
+
 ## [1.0.6](https://github.com/mobile-next/mobilecli/releases/tag/1.0.6) (2026-08-31)
 * Feat: GPS location override ([#366](https://github.com/mobile-next/mobilecli/pull/366))
 * Feat: Device logs command and `device.logs` streaming session over the http api ([#195](https://github.com/mobile-next/mobilecli/pull/195))
