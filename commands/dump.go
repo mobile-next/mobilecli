@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 )
 
 // DumpUIRequest represents the parameters for dumping UI tree
@@ -52,6 +53,7 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
 		}
 
+		types.AttachRefs(elements)
 		response = DumpUIResponse{
 			Elements: elements,
 		}
