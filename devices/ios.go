@@ -181,13 +181,13 @@ func ListIOSDevices() ([]*IOSDevice, error) {
 		if seen[udid] {
 			continue
 		}
-		seen[udid] = true
 
 		device, err := getDeviceInfo(deviceEntry)
 		if err != nil {
 			utils.Verbose("Warning: skipping device %s: %v", udid, err)
 			continue
 		}
+		seen[udid] = true
 		devices = append(devices, device)
 	}
 
