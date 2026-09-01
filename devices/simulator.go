@@ -897,6 +897,13 @@ func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 }
 
 func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
+	// Flutter apps render into an opaque native view, so the accessibility dump
+	// misses typed/unlabeled/non-semantic widgets. When the foreground app is a
+	// Flutter app with a live Dart VM service, read its render tree instead. Any
+	// failure falls through to the accessibility dump.
+	if elements, ok := s.tryDumpFlutterSource(); ok {
+		return elements, nil
+	}
 	return s.deviceKitClient.GetSourceElements()
 }
 
