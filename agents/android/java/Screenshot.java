@@ -24,10 +24,13 @@ import java.lang.reflect.Method;
  * Usage:
  *   adb shell CLASSPATH=/data/local/tmp/mobilecli.dex app_process / \
  *     com.mobilenext.mobilecli.Screenshot [--format png|jpeg] [--quality 1-100] \
- *     [--scale 0.0-1.0] [--max-size N]
+ *     [--scale 0.0-1.0] [--max-size N] [--clip x,y,w,h --screen-width N]
  *
  * --max-size caps max(width, height) at N pixels keeping aspect ratio and
  * takes precedence over --scale. Neither ever upscales.
+ * --clip crops to the given rect (in screen points) before scaling;
+ * --screen-width (screen width in points) is required with it to map
+ * points to pixels of the captured bitmap.
  */
 public class Screenshot {
 
@@ -38,6 +41,8 @@ public class Screenshot {
 			double scale = 1.0;
 			int maxSize = 0;
 			String outPath = null;
+			int[] clip = null;
+			int screenWidth = 0;
 
 			for (int i = 0; i + 1 < args.length; i += 2) {
 				String flag = args[i];
@@ -50,6 +55,10 @@ public class Screenshot {
 					scale = Double.parseDouble(value);
 				} else if (flag.equals("--max-size")) {
 					maxSize = Integer.parseInt(value);
+				} else if (flag.equals("--clip")) {
+					clip = parseClip(value);
+				} else if (flag.equals("--screen-width")) {
+					screenWidth = Integer.parseInt(value);
 				} else if (flag.equals("--out")) {
 					outPath = value;
 				} else {
@@ -59,6 +68,9 @@ public class Screenshot {
 
 			exemptHiddenApis();
 			Bitmap bitmap = takeScreenshot();
+			if (clip != null) {
+				bitmap = clipBitmap(bitmap, clip, screenWidth);
+			}
 			bitmap = resize(bitmap, scale, maxSize);
 
 			Bitmap.CompressFormat compressFormat = format.equals("jpeg")
@@ -169,6 +181,42 @@ public class Screenshot {
 			Method connect = UiAutomation.class.getDeclaredMethod("connect", int.class);
 			connect.invoke(automation, 0);
 		}
+	}
+
+	private static int[] parseClip(String value) {
+		String[] parts = value.split(",", -1);
+		if (parts.length != 4) {
+			throw new IllegalArgumentException("invalid --clip, expected x,y,width,height");
+		}
+		int[] clip = new int[4];
+		for (int i = 0; i < 4; i++) {
+			clip[i] = Integer.parseInt(parts[i]);
+		}
+		return clip;
+	}
+
+	// Crops to clip {x, y, width, height} given in screen points, mapped to
+	// bitmap pixels via screenWidthPoints. Rects partially outside the bitmap
+	// are clamped (UI hierarchy bounds can overhang the screen); rects fully
+	// outside are an error. Mirrors cropRectInPixels in utils/image.go.
+	private static Bitmap clipBitmap(Bitmap bitmap, int[] clip, int screenWidthPoints) {
+		if (clip[2] <= 0 || clip[3] <= 0) {
+			throw new IllegalArgumentException("clip width and height must be positive");
+		}
+		if (screenWidthPoints <= 0) {
+			throw new IllegalArgumentException("--screen-width is required with --clip");
+		}
+
+		double factor = (double) bitmap.getWidth() / screenWidthPoints;
+		int left = Math.max(0, (int) Math.round(clip[0] * factor));
+		int top = Math.max(0, (int) Math.round(clip[1] * factor));
+		int right = Math.min(bitmap.getWidth(), (int) Math.round((clip[0] + clip[2]) * factor));
+		int bottom = Math.min(bitmap.getHeight(), (int) Math.round((clip[1] + clip[3]) * factor));
+
+		if (right <= left || bottom <= top) {
+			throw new IllegalArgumentException("clip rect is outside the screenshot bounds");
+		}
+		return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top);
 	}
 
 	// maxSize caps max(width, height) and wins over scale; never upscales.

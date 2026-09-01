@@ -262,18 +262,15 @@ func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
 }
 
 func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
-	// prefer on-device capture+encode via the embedded dex: a downscaled jpeg
-	// crosses adb instead of screencap's full-size png. The dex has no crop
-	// support, so clipping always goes through screencap + ProcessScreenshot.
-	if opts.Clip == nil {
-		data, err := d.takeScreenshotWithDex(opts)
-		if err == nil {
-			return data, nil
-		}
-		utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
+	// prefer on-device capture+encode via the embedded dex: a cropped and/or
+	// downscaled image crosses adb instead of screencap's full-size png
+	data, err := d.takeScreenshotWithDex(opts)
+	if err == nil {
+		return data, nil
 	}
+	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
 
-	data, err := d.takeScreenshotWithScreencap()
+	data, err = d.takeScreenshotWithScreencap()
 	if err != nil {
 		return nil, err
 	}
@@ -301,13 +298,20 @@ func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, e
 
 	utils.Verbose("taking screenshot on-device via mobilecli.dex")
 
+	// all clip values are integers formatted with %d, safe to interpolate
+	clipArgs := ""
+	if opts.Clip != nil {
+		clipArgs = fmt.Sprintf(" --clip %d,%d,%d,%d --screen-width %d",
+			opts.Clip.X, opts.Clip.Y, opts.Clip.Width, opts.Clip.Height, opts.ScreenWidthPoints)
+	}
+
 	script := fmt.Sprintf(
 		"out=/data/local/tmp/mobilecli-screenshot-$$.img; "+
 			"CLASSPATH=%s app_process / com.mobilenext.mobilecli.Screenshot "+
-			"--format %s --quality %d --scale %s --max-size %d --out $out >/dev/null 2>&1; "+
+			"--format %s --quality %d --scale %s --max-size %d%s --out $out >/dev/null 2>&1; "+
 			"cat $out 2>/dev/null; rm -f $out",
 		androidDexPath, format, opts.Quality,
-		strconv.FormatFloat(opts.Scale, 'f', -1, 64), opts.MaxSize,
+		strconv.FormatFloat(opts.Scale, 'f', -1, 64), opts.MaxSize, clipArgs,
 	)
 
 	data, err := d.runAdbCommand("exec-out", script)
