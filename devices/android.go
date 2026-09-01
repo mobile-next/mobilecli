@@ -263,14 +263,17 @@ func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
 
 func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 	// prefer on-device capture+encode via the embedded dex: a downscaled jpeg
-	// crosses adb instead of screencap's full-size png
-	data, err := d.takeScreenshotWithDex(opts)
-	if err == nil {
-		return data, nil
+	// crosses adb instead of screencap's full-size png. The dex has no crop
+	// support, so clipping always goes through screencap + ProcessScreenshot.
+	if opts.Clip == nil {
+		data, err := d.takeScreenshotWithDex(opts)
+		if err == nil {
+			return data, nil
+		}
+		utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
 	}
-	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
 
-	data, err = d.takeScreenshotWithScreencap()
+	data, err := d.takeScreenshotWithScreencap()
 	if err != nil {
 		return nil, err
 	}

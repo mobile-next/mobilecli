@@ -22,7 +22,7 @@ func TestParseScreenshotClip(t *testing.T) {
 	})
 
 	t.Run("rejects malformed values", func(t *testing.T) {
-		for _, value := range []string{"10,20,30", "a,b,c,d", "10 20 30 40"} {
+		for _, value := range []string{"10,20,30", "a,b,c,d", "10 20 30 40", "10,20,30,40,50", "10,20,30,40x", "10,20,30,40,"} {
 			_, err := parseScreenshotClip(value)
 			assert.Error(t, err, "value %q should be rejected", value)
 		}

@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
@@ -32,12 +34,22 @@ func parseScreenshotClip(value string) (*types.ScreenElementRect, error) {
 	if value == "" {
 		return nil, nil
 	}
-	var rect types.ScreenElementRect
-	n, err := fmt.Sscanf(value, "%d,%d,%d,%d", &rect.X, &rect.Y, &rect.Width, &rect.Height)
-	if err != nil || n != 4 {
+
+	parts := strings.Split(value, ",")
+	if len(parts) != 4 {
 		return nil, fmt.Errorf("invalid --clip %q, expected x,y,width,height", value)
 	}
-	return &rect, nil
+
+	numbers := make([]int, 4)
+	for i, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --clip %q, expected x,y,width,height", value)
+		}
+		numbers[i] = number
+	}
+
+	return &types.ScreenElementRect{X: numbers[0], Y: numbers[1], Width: numbers[2], Height: numbers[3]}, nil
 }
 
 var screenshotCmd = &cobra.Command{
