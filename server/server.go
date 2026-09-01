@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -101,11 +102,12 @@ type JSONRPCResponse struct {
 
 // ScreenshotParams represents the parameters for the screenshot request
 type ScreenshotParams struct {
-	DeviceID string  `json:"deviceId"`
-	Format   string  `json:"format,omitempty"`  // "png" or "jpeg"
-	Quality  int     `json:"quality,omitempty"` // 1-100, only used for JPEG
-	Scale    float64 `json:"scale,omitempty"`   // 0.0-1.0, 0 or 1.0 means no scaling
-	MaxSize  int     `json:"maxSize,omitempty"` // max(width, height) in pixels, takes precedence over scale, 0 means no limit
+	DeviceID string                   `json:"deviceId"`
+	Format   string                   `json:"format,omitempty"`  // "png" or "jpeg"
+	Quality  int                      `json:"quality,omitempty"` // 1-100, only used for JPEG
+	Scale    float64                  `json:"scale,omitempty"`   // 0.0-1.0, 0 or 1.0 means no scaling
+	MaxSize  int                      `json:"maxSize,omitempty"` // max(width, height) in pixels, takes precedence over scale, 0 means no limit
+	Clip     *types.ScreenElementRect `json:"clip,omitempty"`    // crop rect in screen points, applied before scale/maxSize
 }
 
 // DevicesParams represents the parameters for the devices request
@@ -420,6 +422,7 @@ func handleScreenshot(params json.RawMessage) (any, error) {
 		Quality:    screenshotParams.Quality,
 		Scale:      screenshotParams.Scale,
 		MaxSize:    screenshotParams.MaxSize,
+		Clip:       screenshotParams.Clip,
 		OutputPath: "-", // Always return base64 data for server
 	}
 

@@ -98,11 +98,16 @@ func buildMjpegURL(port, fps int, scale float64) string {
 // ScreenshotOptions contains options for taking a screenshot.
 // MaxSize caps max(width, height) in pixels keeping aspect ratio and takes
 // precedence over Scale; neither ever upscales.
+// Rect crops before Scale/MaxSize apply; it is expressed in screen points
+// (the same units as dump.ui bounds) and mapped to pixels via
+// ScreenWidthPoints, which is required when Rect is set.
 type ScreenshotOptions struct {
-	Format  string  // "png" or "jpeg"
-	Quality int     // 1-100, only used for JPEG
-	Scale   float64 // 0.0-1.0, 1.0 means no scaling
-	MaxSize int     // 0 means no limit
+	Format            string                   // "png" or "jpeg"
+	Quality           int                      // 1-100, only used for JPEG
+	Scale             float64                  // 0.0-1.0, 1.0 means no scaling
+	MaxSize           int                      // 0 means no limit
+	Clip              *types.ScreenElementRect // nil means no cropping
+	ScreenWidthPoints int                      // screen width in points, required when Rect is set
 }
 
 // ScreenCaptureConfig contains configuration for screen capture operations

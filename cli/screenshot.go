@@ -7,6 +7,7 @@ import (
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
@@ -14,6 +15,7 @@ import (
 var (
 	screenshotScale      float64
 	screenshotMaxSize    int
+	screenshotClip       string
 	screencaptureScale   float64
 	screencaptureFPS     int
 	screencaptureBitrate int
@@ -24,17 +26,37 @@ const (
 	maxScreencaptureBitrate = 10_000_000
 )
 
+// parseScreenshotClip parses an "x,y,width,height" flag value (in screen
+// points); an empty value means no cropping.
+func parseScreenshotClip(value string) (*types.ScreenElementRect, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var rect types.ScreenElementRect
+	n, err := fmt.Sscanf(value, "%d,%d,%d,%d", &rect.X, &rect.Y, &rect.Width, &rect.Height)
+	if err != nil || n != 4 {
+		return nil, fmt.Errorf("invalid --clip %q, expected x,y,width,height", value)
+	}
+	return &rect, nil
+}
+
 var screenshotCmd = &cobra.Command{
 	Use:   "screenshot",
 	Short: "Take a screenshot of a connected device",
 	Long:  `Takes a screenshot of a specified device (using its ID) and saves it locally as a PNG file. Supports iOS (real/simulator) and Android (real/emulator).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		rect, err := parseScreenshotClip(screenshotClip)
+		if err != nil {
+			return err
+		}
+
 		req := commands.ScreenshotRequest{
 			DeviceID:   deviceId,
 			Format:     screenshotFormat,
 			Quality:    screenshotJpegQuality,
 			Scale:      screenshotScale,
 			MaxSize:    screenshotMaxSize,
+			Clip:       rect,
 			OutputPath: screenshotOutputPath,
 		}
 
@@ -157,6 +179,7 @@ func init() {
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
 	screenshotCmd.Flags().Float64Var(&screenshotScale, "scale", 1.0, "Scale factor for screenshot (0.0-1.0)")
 	screenshotCmd.Flags().IntVar(&screenshotMaxSize, "max-size", 0, "Maximum of width/height in pixels, keeping aspect ratio (takes precedence over --scale, 0 for no limit)")
+	screenshotCmd.Flags().StringVar(&screenshotClip, "clip", "", "Crop to x,y,width,height in screen points, applied before --scale/--max-size")
 
 	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")

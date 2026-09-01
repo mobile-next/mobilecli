@@ -112,6 +112,9 @@ func (r *RemoteDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 	if opts.MaxSize > 0 {
 		p["maxSize"] = opts.MaxSize
 	}
+	if opts.Clip != nil {
+		p["clip"] = opts.Clip
+	}
 	resp, err := rpcCall[struct {
 		Data string `json:"data"`
 	}](r, "device.screenshot", p)
