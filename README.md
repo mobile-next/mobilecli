@@ -137,6 +137,9 @@ mobilecli screenshot --device <device-id> --scale 0.5
 # Limit the largest dimension to 800 pixels, keeping aspect ratio
 mobilecli screenshot --device <device-id> --max-size 800
 
+# Crop to a region (x,y,width,height in screen points), applied before scaling
+mobilecli screenshot --device <device-id> --clip 10,80,300,200
+
 # Save to specific path
 mobilecli screenshot --device <device-id> --output screenshot.png
 

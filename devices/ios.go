@@ -199,7 +199,7 @@ func (d *IOSDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize)
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
 }
 
 func (d *IOSDevice) Reboot() error {
