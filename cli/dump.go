@@ -26,6 +26,14 @@ var dumpUICmd = &cobra.Command{
 		}
 
 		response := commands.DumpUICommand(req)
+
+		// Printing text through the JSON envelope would escape every newline,
+		// which defeats the point of the format.
+		if dumpResponse, ok := response.Data.(commands.DumpUIResponse); ok && dumpResponse.Text != "" {
+			fmt.Print(dumpResponse.Text)
+			return nil
+		}
+
 		printJson(response)
 		if response.Status == "error" {
 			return fmt.Errorf("%s", response.Error)
@@ -43,5 +51,5 @@ func init() {
 
 	// dump ui command flags
 	dumpUICmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
-	dumpUICmd.Flags().StringVar(&dumpUIFormat, "format", "", "Output format: 'raw' for unprocessed tree from agent (Default: json)")
+	dumpUICmd.Flags().StringVar(&dumpUIFormat, "format", "", "Output format: 'text' for indented element lines, 'raw' for unprocessed tree from agent (Default: json)")
 }
