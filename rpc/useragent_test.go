@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 func restCallAgainstServerCapturingUserAgent(t *testing.T) string {
@@ -13,7 +15,9 @@ func restCallAgainstServerCapturingUserAgent(t *testing.T) string {
 	var seen string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r.Header.Get("User-Agent")
-		_, _ = w.Write([]byte(`{}`))
+		if _, err := w.Write([]byte(`{}`)); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -28,7 +32,8 @@ func restCallAgainstServerCapturingUserAgent(t *testing.T) string {
 
 func TestRESTCallIdentifiesItselfAsMobilecli(t *testing.T) {
 	got := restCallAgainstServerCapturingUserAgent(t)
-	if !strings.HasPrefix(got, "mobilecli/") {
-		t.Errorf("expected a mobilecli User-Agent, got %q", got)
+	want := "mobilecli/" + utils.Version
+	if got != want {
+		t.Errorf("expected User-Agent %q, got %q", want, got)
 	}
 }

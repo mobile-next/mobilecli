@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ var authLoginCmd = &cobra.Command{
 // postJSON posts a JSON body to the auth server with mobilecli's User-Agent, so
 // device-login traffic is attributable to the CLI in the server access logs.
 func postJSON(url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
