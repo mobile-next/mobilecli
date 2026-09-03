@@ -67,6 +67,33 @@ func resolveScreenWidthForClip(device devices.ControllableDevice, clip *types.Sc
 	return info.ScreenSize.Width, nil
 }
 
+// resolveScreenshotPath turns the requested output into an absolute file path.
+// A path ending in a separator (or an empty path, meaning the current
+// directory) gets a generated screenshot-<device>-<timestamp> filename.
+func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) {
+	isDir := outputPath == "" || strings.HasSuffix(outputPath, string(filepath.Separator))
+	if !isDir {
+		abs, err := filepath.Abs(outputPath)
+		if err != nil {
+			return "", fmt.Errorf("invalid output path: %v", err)
+		}
+		return abs, nil
+	}
+
+	timestamp := time.Now().Format("20060102150405")
+	safeDeviceID := strings.ReplaceAll(deviceID, ":", "_")
+	extension := "png"
+	if format == "jpeg" {
+		extension = "jpg"
+	}
+	fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
+	abs, err := filepath.Abs(filepath.Join(outputPath, fileName))
+	if err != nil {
+		return "", fmt.Errorf("error creating default path: %v", err)
+	}
+	return abs, nil
+}
+
 // ScreenshotCommand takes a screenshot of the specified device
 func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 	// Find the target device
@@ -135,26 +162,9 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		// Return as base64 data for stdout
 		response.Data = base64.StdEncoding.EncodeToString(imageBytes)
 	} else {
-		// Save to file
-		var finalPath string
-		if req.OutputPath != "" {
-			finalPath, err = filepath.Abs(req.OutputPath)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("invalid output path: %v", err))
-			}
-		} else {
-			// Default filename generation
-			timestamp := time.Now().Format("20060102150405")
-			safeDeviceID := strings.ReplaceAll(targetDevice.ID(), ":", "_")
-			extension := "png"
-			if req.Format == "jpeg" {
-				extension = "jpg"
-			}
-			fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
-			finalPath, err = filepath.Abs("./" + fileName)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("error creating default path: %v", err))
-			}
+		finalPath, err := resolveScreenshotPath(req.OutputPath, targetDevice.ID(), req.Format)
+		if err != nil {
+			return NewErrorResponse(err)
 		}
 
 		// Write file

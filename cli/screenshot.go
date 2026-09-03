@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/daemon"
+	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/types"
-	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +62,13 @@ var screenshotCmd = &cobra.Command{
 			return err
 		}
 
+		// the daemon's cwd is not ours: send an absolute path, or our cwd as the
+		// directory for the generated default filename
+		outputPath := absLocalPath(screenshotOutputPath)
+		if outputPath == "" {
+			outputPath = cwdWithSeparator()
+		}
+
 		req := commands.ScreenshotRequest{
 			DeviceID:   deviceId,
 			Format:     screenshotFormat,
@@ -69,31 +76,33 @@ var screenshotCmd = &cobra.Command{
 			Scale:      screenshotScale,
 			MaxSize:    screenshotMaxSize,
 			Clip:       rect,
-			OutputPath: screenshotOutputPath,
+			OutputPath: outputPath,
 		}
 
-		response := commands.ScreenshotCommand(req)
-
-		// Handle stdout output for binary data
-		if screenshotOutputPath == "-" && response.Status == "ok" {
-			if screenshotResp, ok := response.Data.(commands.ScreenshotResponse); ok && screenshotResp.Data != "" {
-				// Write binary data to stdout
-				imageBytes, err := base64.StdEncoding.DecodeString(screenshotResp.Data)
-				if err != nil {
-					return fmt.Errorf("failed to decode image data: %v", err)
-				}
-				_, err = os.Stdout.Write(imageBytes)
-				if err != nil {
-					return fmt.Errorf("failed to write to stdout: %v", err)
-				}
-				return nil
-			}
+		if outputPath != "-" {
+			return runViaDaemon("cli.screenshot", req)
 		}
 
-		// Print JSON response
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
+		raw, err := callDaemon("cli.screenshot", req, daemon.NoTimeout)
+		if err != nil {
+			printJson(errorEnvelope(err))
+			return err
+		}
+
+		var screenshotResp commands.ScreenshotResponse
+		if err := decodeEnvelope(raw, &screenshotResp); err != nil {
+			out, _ := indentedJSON(raw)
+			fmt.Println(out)
+			return err
+		}
+
+		// Write binary data to stdout
+		imageBytes, err := base64.StdEncoding.DecodeString(screenshotResp.Data)
+		if err != nil {
+			return fmt.Errorf("failed to decode image data: %v", err)
+		}
+		if _, err := os.Stdout.Write(imageBytes); err != nil {
+			return fmt.Errorf("failed to write to stdout: %v", err)
 		}
 		return nil
 	},
@@ -118,65 +127,13 @@ var screencaptureCmd = &cobra.Command{
 			return fmt.Errorf("%s", response.Error)
 		}
 
-		// Find the target device
-		targetDevice, err := commands.FindDeviceOrAutoSelect(deviceId)
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		// Start agent
-		err = targetDevice.StartAgent(devices.StartAgentConfig{
-			OnProgress: func(message string) {
-				utils.Verbose(message)
-			},
-			Hook: commands.GetShutdownHook(),
+		return streamViaDaemon("cli.screencapture", server.ScreenCaptureStreamRequest{
+			DeviceID: deviceId,
+			Format:   screencaptureFormat,
+			Scale:    screencaptureScale,
+			FPS:      screencaptureFPS,
+			Bitrate:  screencaptureBitrate,
 		})
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		// set defaults if not provided
-		scale := screencaptureScale
-		if scale == 0.0 {
-			scale = devices.DefaultScale
-		}
-
-		fps := screencaptureFPS
-		if fps == 0 {
-			fps = devices.DefaultFramerate
-		}
-
-		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-			Format:  screencaptureFormat,
-			Quality: devices.DefaultQuality,
-			Scale:   scale,
-			FPS:     fps,
-			Bitrate: screencaptureBitrate,
-			OnProgress: func(message string) {
-				utils.Verbose(message)
-			},
-			OnData: func(data []byte) bool {
-				_, writeErr := os.Stdout.Write(data)
-				if writeErr != nil {
-					fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
-					return false
-				}
-				return true
-			},
-		})
-
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error starting screen capture: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
 	},
 }
 

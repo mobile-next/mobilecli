@@ -13,6 +13,7 @@ type HandlerFunc func(params json.RawMessage) (any, error)
 func GetMethodRegistry() map[string]HandlerFunc {
 	return map[string]HandlerFunc{
 		"devices.list":                          handleDevicesList,
+		"device.resolve":                        handleDeviceResolve,
 		"device.screenshot":                     handleScreenshot,
 		"device.screencapture":                  handleScreenCaptureSession,
 		"device.screencapture.setConfiguration": handleScreenCaptureSetConfiguration,

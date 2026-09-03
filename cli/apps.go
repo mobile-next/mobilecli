@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -37,12 +36,7 @@ var appsLaunchCmd = &cobra.Command{
 			Activity: activity,
 		}
 
-		response := commands.LaunchAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.launch", req)
 	},
 }
 
@@ -57,12 +51,7 @@ var appsTerminateCmd = &cobra.Command{
 			BundleID: args[0],
 		}
 
-		response := commands.TerminateAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.terminate", req)
 	},
 }
 
@@ -75,12 +64,7 @@ var appsListCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.ListAppsCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.list", req)
 	},
 }
 
@@ -98,18 +82,13 @@ var appsInstallCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.InstallAppRequest{
 			DeviceID:            deviceId,
-			Path:                args[0],
+			Path:                absLocalPath(args[0]),
 			ForceResign:         forceResign,
 			ProvisioningProfile: provisioningProfile,
 			SigningIdentity:     signingIdentity,
 		}
 
-		response := commands.InstallAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.install", req)
 	},
 }
 
@@ -124,12 +103,7 @@ var appsUninstallCmd = &cobra.Command{
 			PackageName: args[0],
 		}
 
-		response := commands.UninstallAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.uninstall", req)
 	},
 }
 
@@ -144,12 +118,7 @@ var appsClearCmd = &cobra.Command{
 			BundleID: args[0],
 		}
 
-		response := commands.ClearAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.clear", req)
 	},
 }
 
@@ -163,12 +132,7 @@ var appsPathCmd = &cobra.Command{
 			BundleID: args[0],
 		}
 
-		response := commands.AppPathCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.path", req)
 	},
 }
 
@@ -181,12 +145,7 @@ var appsForegroundCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.ForegroundAppCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.apps.foreground", req)
 	},
 }
 

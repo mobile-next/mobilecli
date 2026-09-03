@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -25,21 +26,26 @@ var dumpUICmd = &cobra.Command{
 			Format:   dumpUIFormat,
 		}
 
-		response := commands.DumpUICommand(req)
+		raw, err := callDaemon("cli.dump.ui", req, daemon.NoTimeout)
+		if err != nil {
+			printJson(errorEnvelope(err))
+			return err
+		}
 
 		// Printing text through the JSON envelope would escape every newline,
 		// which defeats the point of the format.
-		if dumpResponse, ok := response.Data.(commands.DumpUIResponse); ok && dumpResponse.Text != "" {
+		var dumpResponse commands.DumpUIResponse
+		if err := decodeEnvelope(raw, &dumpResponse); err == nil && dumpResponse.Text != "" {
 			fmt.Print(dumpResponse.Text)
 			return nil
 		}
 
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
+		out, err := indentedJSON(raw)
+		if err != nil {
+			return err
 		}
-
-		return nil
+		fmt.Println(out)
+		return envelopeError(raw)
 	},
 }
 

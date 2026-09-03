@@ -187,6 +187,8 @@ func runAuthLogin() error {
 	if err := storeToken(token); err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
+	// the daemon caches the fleet token at startup; make it pick up the new one
+	stopDaemonIfRunning()
 
 	fmt.Println("Successfully logged in")
 	return nil
@@ -197,6 +199,7 @@ var authLogoutCmd = &cobra.Command{
 	Short: "Log out of your account",
 	Long:  `Logs out of your current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		stopDaemonIfRunning()
 		if err := deleteToken(); err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				fmt.Println("mobilecli is not logged in")

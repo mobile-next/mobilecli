@@ -26,6 +26,7 @@ test-e2e: build-cover
 	mkdir -p test/coverage
 	go test ./... -v -race -covermode=atomic -args -test.gocoverdir=$(CURDIR)/test/coverage
 	(cd test && npm run test:server)
+	(cd test && npm run test:daemon)
 	# (cd test && npm run test:ios)
 	(cd test && npm run test:simulator)
 	(cd test && npm run test:android)

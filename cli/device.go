@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -22,13 +20,7 @@ var deviceRebootCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.RebootCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.reboot", req)
 	},
 }
 
@@ -37,12 +29,7 @@ var deviceInfoCmd = &cobra.Command{
 	Short: "Get device info",
 	Long:  `Get detailed information about a connected device, such as OS, version, and screen size.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.InfoCommand(deviceId)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.device.info", commands.DeviceIDRequest{DeviceID: deviceId})
 	},
 }
 
@@ -61,13 +48,7 @@ var orientationGetCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.OrientationGetCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.orientation.get", req)
 	},
 }
 
@@ -82,13 +63,7 @@ var orientationSetCmd = &cobra.Command{
 			Orientation: args[0],
 		}
 
-		response := commands.OrientationSetCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.orientation.set", req)
 	},
 }
 
@@ -101,13 +76,7 @@ var deviceBootCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.BootCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.boot", req)
 	},
 }
 
@@ -120,13 +89,7 @@ var deviceShutdownCmd = &cobra.Command{
 			DeviceID: deviceId,
 		}
 
-		response := commands.ShutdownCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.shutdown", req)
 	},
 }
 
@@ -151,13 +114,7 @@ var settingsApplyCmd = &cobra.Command{
 			req.Animations = &settingsAnimations
 		}
 
-		response := commands.ApplySettingsCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		return runViaDaemon("cli.device.settings.apply", req)
 	},
 }
 

@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -17,15 +15,9 @@ var clipboardGetCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Read the clipboard of a device",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.ClipboardGetCommand(commands.ClipboardGetRequest{
+		return runViaDaemon("cli.io.clipboard.get", commands.ClipboardGetRequest{
 			DeviceID: deviceId,
 		})
-
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -34,16 +26,10 @@ var clipboardSetCmd = &cobra.Command{
 	Short: "Replace the clipboard of a device",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.ClipboardSetCommand(commands.ClipboardSetRequest{
+		return runViaDaemon("cli.io.clipboard.set", commands.ClipboardSetRequest{
 			DeviceID: deviceId,
 			Text:     args[0],
 		})
-
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 

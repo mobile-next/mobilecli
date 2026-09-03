@@ -535,10 +535,24 @@ npx skills add mobile-next/mobilecli -g
 
 Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
 
+## Daemon ⚙️
+
+Every device command talks to a per-user background daemon that keeps discovered devices, iOS tunnels and on-device agents alive between invocations, so only the first command pays the discovery cost. The daemon starts automatically on the first device command (`mobilecli --help` and `--version` never start it) and exits after 30 minutes without requests.
+
+```bash
+# Inspect or control it explicitly
+mobilecli daemon status
+mobilecli daemon stop
+
+# Run it in the foreground (e.g. under a service manager), with a custom idle timeout
+mobilecli daemon start --idle-timeout 0
+```
+
+The CLI and daemon talk JSON-RPC over a unix domain socket in `~/.mobilecli/` (override with `MOBILECLI_HOME`); the daemon's log is `~/.mobilecli/daemon.log`. A daemon left over from an older mobilecli version is restarted automatically. `auth login` and `auth logout` stop a running daemon so it picks up the new credentials.
+
 ## HTTP API 🔌
 
-***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
-use mobilecli as a webserver, so it can cache and keep tunnels alive, speeding up your interactions with the mobile device or simulator/emulator.
+***mobilecli*** provides an http interface for all the functionality that is available through command line. The server is a thin front for the daemon above, so HTTP clients and the CLI share one set of devices and tunnels.
 
 For the full list of available JSON-RPC methods and their parameters, see the [OpenRPC specification](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md).
 

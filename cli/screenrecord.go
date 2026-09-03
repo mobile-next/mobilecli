@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/server"
 	"github.com/spf13/cobra"
 )
 
@@ -22,20 +22,12 @@ var screenrecordCmd = &cobra.Command{
 			return fmt.Errorf("--output is required")
 		}
 
-		req := commands.ScreenRecordRequest{
+		return streamViaDaemon("cli.screenrecord", server.ScreenRecordStreamRequest{
 			DeviceID:   deviceId,
-			OutputPath: screenrecordOutput,
+			OutputPath: absLocalPath(screenrecordOutput),
 			TimeLimit:  screenrecordTimeLimit,
 			Silent:     screenrecordSilent,
-		}
-
-		response := commands.ScreenRecordCommand(req)
-
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
+		})
 	},
 }
 
