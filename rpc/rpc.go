@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 type Request struct {
@@ -62,6 +63,7 @@ func Dial(token string) (*websocket.Conn, error) {
 	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+token)
+	header.Set("User-Agent", utils.UserAgent())
 	conn, _, err := fleetDialer.Dial(u.String(), header)
 	return conn, err
 }

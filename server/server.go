@@ -50,8 +50,6 @@ const (
 	IdleTimeout  = 120 * time.Second
 )
 
-var Version = "dev"
-
 var okResponse = map[string]any{"status": "ok"}
 
 // StreamSession represents a screen capture streaming session
@@ -1416,7 +1414,7 @@ func handleCrashesGet(params json.RawMessage) (any, error) {
 func handleServerInfo(params json.RawMessage) (any, error) {
 	return map[string]string{
 		"name":    "mobilecli",
-		"version": Version,
+		"version": utils.Version,
 	}, nil
 }
 

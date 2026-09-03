@@ -191,7 +191,7 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
+        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
       run: |
@@ -250,7 +250,7 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
+        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
       run: |
@@ -304,7 +304,7 @@ jobs:
           Write-Error "Invalid release tag format: $env:GITHUB_REF_NAME"
           exit 1
         }
-        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') server/server.go
+        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') utils/version.go
 
     - name: Build
       run: |
