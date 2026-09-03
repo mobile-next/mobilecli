@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
@@ -208,7 +207,7 @@ COMMON FLAGS:
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
-	Version:       server.Version,
+	Version:       utils.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

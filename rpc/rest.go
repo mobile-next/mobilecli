@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // RESTTimeout is the deadline for a single REST call to the fleet server.
@@ -59,6 +61,7 @@ func RESTCall(token, method, path string, body any, result any) error {
 		return fmt.Errorf("failed to build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", utils.UserAgent())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
