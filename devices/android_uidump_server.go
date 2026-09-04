@@ -7,38 +7,43 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mobile-next/mobilecli/agents"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
-// deviceKitServerTarget is the localabstract socket DeviceKitServer binds once
-// launched. Reusing one persistent instrumentation avoids paying process-fork
-// and UiAutomation-connect cost on every dump ui call.
-const deviceKitServerTarget = "localabstract:devicekit"
+// deviceKitServerTarget is the localabstract socket UiDumpServer
+// (agents/android/java/UiDumpServer.java) binds once launched. Reusing one
+// persistent process avoids paying process-fork and UiAutomation-connect cost
+// on every dump ui call.
+const deviceKitServerTarget = "localabstract:mobilecli-uidump"
 
-// deviceKitServerWaitUntilIdleMs matches the idle wait used by the legacy
-// one-shot ViewTreeDump instrumentation, so dumps settle the same way.
+// deviceKitServerWaitUntilIdleMs is how long a dump waits for the UI to settle.
 const deviceKitServerWaitUntilIdleMs = 2000
 
-// ensureDeviceKitServerReady makes sure the persistent DeviceKitServer
-// instrumentation is running and forwarded, reusing an existing forward when
-// possible. It's launched detached (nohup + &) on the device shell so it
-// outlives this CLI invocation and keeps serving fast dumps for subsequent
-// mobilecli calls.
+// ensureDeviceKitServerReady makes sure the persistent UiDumpServer is running
+// and forwarded, reusing an existing forward when possible. It's launched
+// detached (nohup + &) on the device shell so it outlives this CLI invocation
+// and keeps serving fast dumps for subsequent mobilecli calls.
 func (d *AndroidDevice) ensureDeviceKitServerReady() (int, error) {
 	if port := d.findForward(deviceKitServerTarget); port != 0 && isAgentReady(port) {
 		return port, nil
 	}
 
-	if err := d.EnsureDeviceKitInstalled(); err != nil {
-		return 0, fmt.Errorf("ensure devicekit installed: %w", err)
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
+		return 0, fmt.Errorf("push .dex: %w", err)
 	}
 
-	// -w keeps `am` blocked (and its UiAutomationConnection alive) for as long as
-	// DeviceKitServer runs; nohup+& detaches it from this adb shell session so it
-	// survives after this command returns.
-	launchCmd := "nohup am instrument -w com.mobilenext.devicekit/.DeviceKitServer >/dev/null 2>&1 &"
+	// Only one UiAutomation may be registered system-wide: a stale server (or the
+	// legacy devicekit instrumentation from older mobilecli versions) would block
+	// the new one from connecting, so clear both first. This runs as its own adb
+	// shell so pkill -f can't match the launch command line below (or itself).
+	_, _ = d.runAdbCommand("shell", "pkill -f '[U]iDumpServer'; pkill -f 'com.mobilenext.[d]evicekit'; true")
+
+	// nohup+& detaches the server from this adb shell session so it survives
+	// after this command returns.
+	launchCmd := fmt.Sprintf("CLASSPATH=%s nohup app_process / com.mobilenext.mobilecli.UiDumpServer >/dev/null 2>&1 &", androidDexPath)
 	if out, err := d.runAdbCommand("shell", launchCmd); err != nil {
-		return 0, fmt.Errorf("launch devicekit server: %s: %w", strings.TrimSpace(string(out)), err)
+		return 0, fmt.Errorf("launch ui dump server: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	port, err := d.addForward(deviceKitServerTarget)

@@ -15,25 +15,10 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 /**
- * Standalone entry point for listing installed packages via app_process
- * (port of devicekit-android PackageLister.kt).
- *
- * Usage:
- *   adb shell CLASSPATH=/data/local/tmp/mobilecli.dex app_process / com.mobilenext.mobilecli.PackageLister
- *
- * Prints a JSON array of {packageName, appName, version, versionCode} to stdout.
+ * Lists installed packages through IPackageManager, no Context needed.
+ * Served by UiDumpServer as a JSON array of {packageName, appName, version, versionCode}.
  */
 public class PackageLister {
-
-	public static void main(String[] args) {
-		try {
-			System.out.println(listPackages().toString());
-		} catch (Exception e) {
-			System.err.println("Error: " + e.getMessage());
-			e.printStackTrace(System.err);
-			System.exit(1);
-		}
-	}
 
 	@SuppressWarnings("unchecked")
 	static JSONArray listPackages() throws Exception {
@@ -80,6 +65,7 @@ public class PackageLister {
 		}
 	}
 
+	@SuppressWarnings("deprecation") // no Context here, so the raw Resources constructor is the only option
 	private static String displayName(PackageInfo pkg) {
 		ApplicationInfo appInfo = pkg.applicationInfo;
 		if (appInfo == null) {

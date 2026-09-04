@@ -10,18 +10,14 @@ import android.os.SystemClock;
 import java.lang.reflect.Constructor;
 
 /**
- * Standalone entry point that fakes the device location via LocationManager
- * test providers, for real devices where there is no adb-level way to do it.
+ * Fakes the device location via LocationManager test providers, for real
+ * devices where there is no adb-level way to do it. Served by UiDumpServer.
  *
- * The test providers only live as long as this process does, so setting a
- * location means staying alive and re-publishing it on a loop. mobilecli
- * launches this detached (nohup) and kills it to stop the override.
+ * The test providers only live as long as the hosting process does, so
+ * setting a location starts a thread that re-publishes it on a loop; clear()
+ * stops it and removes the providers.
  *
  * Requires: adb shell appops set com.android.shell android:mock_location allow
- *
- * Usage:
- *   app_process / com.mobilenext.mobilecli.MockLocation <lat> <lon>
- *   app_process / com.mobilenext.mobilecli.MockLocation --clear
  */
 public class MockLocation {
 
@@ -37,54 +33,50 @@ public class MockLocation {
 	private static final String SHELL_PACKAGE = "com.android.shell";
 	private static final long PUBLISH_INTERVAL_MS = 1000;
 
-	public static void main(String[] args) {
-		try {
-			LocationManager locationManager = createLocationManager();
+	private static Thread publisher;
 
-			if (args.length == 1 && "--clear".equals(args[0])) {
-				removeTestProviders(locationManager);
-				return;
-			}
-
-			if (args.length != 2) {
-				System.err.println("usage: MockLocation <lat> <lon> | --clear");
-				System.exit(2);
-			}
-
-			double latitude = Double.parseDouble(args[0]);
-			double longitude = Double.parseDouble(args[1]);
-
-			publishForever(locationManager, latitude, longitude);
-		} catch (Exception e) {
-			System.err.println("Error: " + e);
-			e.printStackTrace(System.err);
-			System.exit(1);
-		}
-	}
-
-	private static void publishForever(LocationManager locationManager, double latitude, double longitude) throws Exception {
-		int added = addTestProviders(locationManager);
-		if (added == 0) {
+	/** Registers the test providers and starts publishing lat/lon until clear(). */
+	static synchronized void start(double latitude, double longitude) throws Exception {
+		stopPublisher();
+		LocationManager locationManager = createLocationManager();
+		if (addTestProviders(locationManager) == 0) {
 			throw new IllegalStateException("no test provider could be added, is 'appops set " + SHELL_PACKAGE + " android:mock_location allow' in effect?");
 		}
 
-		// ready marker: mobilecli tails stdout to tell a working override from a
-		// process that died on startup
-		System.out.println("ok");
-		System.out.flush();
-
-		while (true) {
-			for (String provider : PROVIDERS) {
+		publisher = new Thread(() -> {
+			while (!Thread.currentThread().isInterrupted()) {
+				for (String provider : PROVIDERS) {
+					try {
+						locationManager.setTestProviderLocation(provider, newLocation(provider, latitude, longitude));
+					} catch (Exception ignored) {
+						// provider not registered on this device
+					}
+				}
 				try {
-					locationManager.setTestProviderLocation(provider, newLocation(provider, latitude, longitude));
-				} catch (Exception ignored) {
-					// provider not registered on this device
+					Thread.sleep(PUBLISH_INTERVAL_MS);
+				} catch (InterruptedException e) {
+					return;
 				}
 			}
-			Thread.sleep(PUBLISH_INTERVAL_MS);
+		}, "mock-location");
+		publisher.setDaemon(true);
+		publisher.start();
+	}
+
+	/** Stops publishing and removes the test providers. */
+	static synchronized void clear() throws Exception {
+		stopPublisher();
+		removeTestProviders(createLocationManager());
+	}
+
+	private static void stopPublisher() {
+		if (publisher != null) {
+			publisher.interrupt();
+			publisher = null;
 		}
 	}
 
+	@SuppressWarnings("deprecation") // Criteria is what LocationManager still expects for test providers
 	private static int addTestProviders(LocationManager locationManager) {
 		int added = 0;
 		for (String provider : PROVIDERS) {

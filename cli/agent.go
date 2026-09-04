@@ -15,10 +15,9 @@ import (
 )
 
 const (
-	agentVersionIOS     = "0.0.26"
-	agentVersionAndroid = "1.2.6"
-	iosRunnerBundleID   = "com.mobilenext.devicekit-iosUITests.xctrunner"
-	androidPackageName  = "com.mobilenext.devicekit"
+	agentVersionIOS   = "0.0.26"
+	iosRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+	noAgentForAndroid = "no agent needed for android devices"
 )
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
@@ -26,7 +25,6 @@ var agentChecksums = map[string]string{
 	"devicekit-ios-Sim-arm64.zip":  "c20c890e811e4f019a60807bdaefb724dba417cf1ac97197119cac738e32f24f",
 	"devicekit-ios-Sim-x86_64.zip": "fc803e3518c6478091773161103fe8170abfe2a900764d10591fb7bb90c8fddc",
 	"devicekit-ios-runner.ipa":     "a5d4a2a9a353fb9c0d25c6e52a64cc6729cdc9f3a8f80c874b25d4599731ecb9",
-	"devicekit.apk":                "01d933a311dac113bb89f2cb3256482467c1e02b287a2fd5e412863b8f907c51",
 }
 
 type agentMessageResponse struct {
@@ -56,6 +54,11 @@ var agentStatusCmd = &cobra.Command{
 		device, err := commands.FindDeviceOrAutoSelect(deviceId)
 		if err != nil {
 			return err
+		}
+
+		if device.Platform() == "android" {
+			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+			return nil
 		}
 
 		agent := findInstalledAgent(device)
@@ -88,6 +91,11 @@ var agentInstallCmd = &cobra.Command{
 		device, err := commands.FindDeviceOrAutoSelect(deviceId)
 		if err != nil {
 			return err
+		}
+
+		if device.Platform() == "android" {
+			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+			return nil
 		}
 
 		utils.Verbose("device: %s (%s)", device.Name(), device.ID())
@@ -130,8 +138,6 @@ var agentInstallCmd = &cobra.Command{
 			default:
 				return fmt.Errorf("unsupported device type: %s", device.DeviceType())
 			}
-		case "android":
-			installErr = installAgentOnAndroid(device)
 		default:
 			return fmt.Errorf("unsupported platform: %s", device.Platform())
 		}
@@ -166,6 +172,11 @@ var agentUninstallCmd = &cobra.Command{
 			return err
 		}
 
+		if device.Platform() == "android" {
+			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+			return nil
+		}
+
 		agent := findInstalledAgent(device)
 		if agent == nil {
 			printJson(&commands.CommandResponse{
@@ -190,25 +201,17 @@ var agentUninstallCmd = &cobra.Command{
 }
 
 func agentPackageForPlatform(platform string) string {
-	switch platform {
-	case "android":
-		return androidPackageName
-	case "ios":
+	if platform == "ios" {
 		return iosRunnerBundleID
-	default:
-		return ""
 	}
+	return ""
 }
 
 func agentVersionForPlatform(platform string) string {
-	switch platform {
-	case "android":
-		return agentVersionAndroid
-	case "ios":
+	if platform == "ios" {
 		return agentVersionIOS
-	default:
-		return ""
 	}
+	return ""
 }
 
 func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
@@ -291,19 +294,6 @@ func installAgentOnRealIOS(device devices.ControllableDevice) error {
 	})
 }
 
-func installAgentOnAndroid(device devices.ControllableDevice) error {
-	filename := "devicekit.apk"
-	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-android/releases/download/%s/%s", agentVersionAndroid, filename)
-
-	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
-}
-
 func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledAppInfo {
 	agentPackage := agentPackageForPlatform(device.Platform())
 
@@ -313,13 +303,6 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 	}
 	for _, app := range apps {
 		if agentMatchesApp(device.Platform(), app.PackageName, agentPackage) {
-			if app.Version == "" {
-				if androidDevice, ok := device.(*devices.AndroidDevice); ok {
-					if v, err := androidDevice.GetAppVersion(agentPackage); err == nil {
-						app.Version = v
-					}
-				}
-			}
 			return &app
 		}
 	}
