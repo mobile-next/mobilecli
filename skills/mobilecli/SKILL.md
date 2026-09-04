@@ -48,7 +48,7 @@ Before using this skill, ensure the environment has the necessary prerequisites 
 
 - **Android SDK**: `adb` must be available in the system `PATH`.
 - **Xcode Command Line Tools**: Required for iOS Simulator control (on macOS).
-- **On-Device Agent**: Required for iOS input gestures, screenshots, and UI dumping, and for Android non-ASCII text input.
+- **On-Device Agent**: Required for iOS input gestures, screenshots, and UI dumping. Android needs no agent; its helpers ship embedded in the CLI.
 
 ### Starting and Stopping the JSON-RPC Daemon (Recommended)
 Starting the HTTP server is highly recommended for automated scripts and fast interactions. It caches device information, keeps connections/tunnels alive, and eliminates command-line startup overhead.

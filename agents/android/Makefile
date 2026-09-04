@@ -36,7 +36,7 @@ endif
 
 JAVA_SRCS := $(wildcard java/*.java)
 
-.PHONY: all clean
+.PHONY: all clean lint
 
 all: mobilecli.so mobilecli.dex
 
@@ -47,10 +47,14 @@ mobilecli.so: jvmti_agent.c
 
 mobilecli.dex: $(JAVA_SRCS)
 	mkdir -p .dex_build
-	$(JAVAC) --release 8 -cp $(ANDROID_JAR) -d .dex_build $(JAVA_SRCS)
+	$(JAVAC) --release 8 -Xlint:all,-options -Werror -cp $(ANDROID_JAR) -d .dex_build $(JAVA_SRCS)
 	$(D8) --min-api 26 --output .dex_build $$(find .dex_build -name "*.class")
 	mv .dex_build/classes.dex mobilecli.dex
 	rm -rf .dex_build
+
+# compile-only pass with -Xlint -Werror; no dex, no NDK needed
+lint:
+	$(JAVAC) --release 8 -Xlint:all,-options -Werror -cp $(ANDROID_JAR) -d $(shell mktemp -d) $(JAVA_SRCS)
 
 clean:
 	rm -f mobilecli.so mobilecli.dex
