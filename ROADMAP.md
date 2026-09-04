@@ -20,6 +20,13 @@ This is a living document of planned and in-progress features. Items are roughly
 | ✅ WebView inspection | `mobilecli webview list`, `query`, `goto`, `eval`, `content`, `back`, `forward` |
 | ✅ Server mode | `mobilecli server start`, JSON-RPC over HTTP + WebSocket |
 | ✅ Remote device allocation | `mobilecli remote allocate`, `mobilecli auth login` |
+| ✅ Device logs | `mobilecli device logs` (iOS `os_log`, Android `logcat`) |
+| ✅ Split npm release | Per-platform npm packages, smaller install |
+| ✅ Clipboard | `mobilecli io clipboard get`, `io clipboard set` |
+| ✅ GPS location override | `mobilecli device location set <lat,lon>`, `device location clear` |
+| ✅ Screenshot scaling & clipping | `mobilecli screenshot --scale`, `--max-size`, `--clip x,y,w,h` |
+| ✅ Flutter UI dump | `mobilecli dump ui` reads Flutter widget trees via the Dart VM service |
+| ✅ Element references | `mobilecli dump ui` assigns `@ref` ids, `io tap @ref` acts on elements without coordinates |
 
 ## What's coming
 
@@ -28,7 +35,5 @@ This is a living document of planned and in-progress features. Items are roughly
 | **Keyboard dismiss** | Check visibility of on-screen keyboard and dismiss upon request | Planned |
 | **Clear app storage** | Clear app cache and documents | Planned |
 | **Simulate Shake** | Simulate a shake on the device | Planned |
-| **Split npm release** | Smaller npm released based on plantform | Planned |
 | **Windows ARM64** | First-class Windows ARM64 builds and support | Planned |
-| **Device logs** | Read device system logs iOS `os_log`, Android `logcat` from the CLI and JSON-RPC. | Planned |
 
