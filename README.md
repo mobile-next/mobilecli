@@ -346,7 +346,7 @@ Example output for `fs ls`:
 
 On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
 
-On **Android**, most features work without the agent, but installing it enables non-ASCII text input (e.g. Japanese, Chinese, Korean, emoji) which is not possible through `adb` alone.
+On **Android**, no agent is needed. Running `mobilecli agent status` on an Android device simply reports that.
 
 ```bash
 # Check if the agent is installed on a device

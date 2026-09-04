@@ -18,6 +18,6 @@ func TestAgentCommandsFailCleanlyForUnknownDevice(t *testing.T) {
 
 func TestAgentMatchesAppUsesSuffixOnIOSOnly(t *testing.T) {
 	assert.True(t, agentMatchesApp("ios", "TEAM123.com.mobilenext.devicekit-iosUITests.xctrunner", iosRunnerBundleID))
-	assert.False(t, agentMatchesApp("android", "x.com.mobilenext.devicekit", androidPackageName))
-	assert.True(t, agentMatchesApp("android", androidPackageName, androidPackageName))
+	assert.False(t, agentMatchesApp("android", "x.com.example.app", "com.example.app"))
+	assert.True(t, agentMatchesApp("android", "com.example.app", "com.example.app"))
 }

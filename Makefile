@@ -36,6 +36,7 @@ test-e2e: build-cover
 	go tool cover -func=coverage.out
 
 lint:
+	$(MAKE) -C agents/android lint
 	$(shell go env GOPATH)/bin/golangci-lint run
 
 vulncheck:

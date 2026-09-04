@@ -129,25 +129,25 @@ func TestCollectElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
 	}
 }
 
-func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class: "android.widget.FrameLayout",
-			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 2400},
-			Children: []deviceKitNode{
+			Rect:  uiRect{X: 0, Y: 0, Width: 1080, Height: 2400},
+			Children: []uiNode{
 				{
 					Class:      "android.webkit.WebView",
 					ResourceID: "com.mobilenext.playground:id/webview",
-					Rect:       deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
-					Children: []deviceKitNode{
+					Rect:       uiRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+					Children: []uiNode{
 						{
 							Class: "android.view.View",
-							Rect:  deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
-							Children: []deviceKitNode{
+							Rect:  uiRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+							Children: []uiNode{
 								{
 									Class: "android.widget.TextView",
 									Text:  "Sample Login",
-									Rect:  deviceKitRect{X: 60, Y: 900, Width: 430, Height: 90},
+									Rect:  uiRect{X: 60, Y: 900, Width: 430, Height: 90},
 								},
 							},
 						},
@@ -157,7 +157,7 @@ func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 top-level element (WebView), got %d: %+v", len(output), output)
@@ -173,27 +173,27 @@ func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T
 	}
 }
 
-func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class: "android.widget.LinearLayout",
-			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 1200},
-			Children: []deviceKitNode{
+			Rect:  uiRect{X: 0, Y: 0, Width: 1080, Height: 1200},
+			Children: []uiNode{
 				{
 					Class: "android.widget.Button",
 					Text:  "First",
-					Rect:  deviceKitRect{X: 0, Y: 0, Width: 200, Height: 100},
+					Rect:  uiRect{X: 0, Y: 0, Width: 200, Height: 100},
 				},
 			},
 		},
 		{
 			Class: "android.widget.Button",
 			Text:  "Second",
-			Rect:  deviceKitRect{X: 0, Y: 1300, Width: 200, Height: 100},
+			Rect:  uiRect{X: 0, Y: 1300, Width: 200, Height: 100},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 2 {
 		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
@@ -314,19 +314,19 @@ func TestCollectElementsDropsUnlabeledNonInteractableNodes(t *testing.T) {
 
 // devicekit sends a separate hint field; it becomes the placeholder, and the
 // masked password text is preserved.
-func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsHintBecomesPlaceholder(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.widget.EditText",
 			Text:        "•",
 			Hint:        "Password",
 			ContentDesc: "password_field",
 			ResourceID:  "com.mobilenext.playground:id/password_field",
-			Rect:        deviceKitRect{X: 48, Y: 607, Width: 1184, Height: 149},
+			Rect:        uiRect{X: 48, Y: 607, Width: 1184, Height: 149},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -387,18 +387,18 @@ func TestCollectElementsLeavesEnabledNodeUnset(t *testing.T) {
 
 // devicekit reports enabled as a real bool; a disabled node must surface
 // Enabled=false the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksDisabledNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksDisabledNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:      "android.widget.Button",
 			Text:       "DISABLED BUTTON",
 			ResourceID: "com.mobilenext.playground:id/disabled_button",
 			Enabled:    false,
-			Rect:       deviceKitRect{X: 48, Y: 1666, Width: 1184, Height: 168},
+			Rect:       uiRect{X: 48, Y: 1666, Width: 1184, Height: 168},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -457,18 +457,18 @@ func TestCollectElementsLeavesUncheckedSwitchUnset(t *testing.T) {
 
 // devicekit reports checked as a real bool; a checked node must surface
 // Checked=true the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksCheckedNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksCheckedNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.widget.Switch",
 			ContentDesc: "toggle",
 			ResourceID:  "com.mobilenext.playground:id/toggle",
 			Checked:     true,
-			Rect:        deviceKitRect{X: 1050, Y: 1196, Width: 140, Height: 81},
+			Rect:        uiRect{X: 1050, Y: 1196, Width: 140, Height: 81},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -527,18 +527,18 @@ func TestCollectElementsLeavesUnselectedNodeUnset(t *testing.T) {
 
 // devicekit reports selected as a real bool; a selected node must surface
 // Selected=true the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksSelectedNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.view.View",
 			ContentDesc: "9:16",
 			ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
 			Selected:    true,
-			Rect:        deviceKitRect{X: 0, Y: 0, Width: 140, Height: 140},
+			Rect:        uiRect{X: 0, Y: 0, Width: 140, Height: 140},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -551,24 +551,24 @@ func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
 // Flutter icon-only controls (e.g. a "+" button) are clickable views with no
 // text, content-desc, hint, or resource-id. They must not be dropped from the
 // tree — see https://github.com/mobile-next/mobilewright/issues/234.
-func TestCollectDeviceKitElementsKeepsUnlabeledClickableNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsKeepsUnlabeledClickableNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.view.View",
 			ContentDesc: "Premium package (qty: 0)",
 			Clickable:   true,
-			Rect:        deviceKitRect{X: 48, Y: 1563, Width: 1184, Height: 120},
-			Children: []deviceKitNode{
+			Rect:        uiRect{X: 48, Y: 1563, Width: 1184, Height: 120},
+			Children: []uiNode{
 				{
 					Class:     "android.view.View",
 					Clickable: true,
-					Rect:      deviceKitRect{X: 1112, Y: 1563, Width: 120, Height: 120},
+					Rect:      uiRect{X: 1112, Y: 1563, Width: 120, Height: 120},
 				},
 			},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 top-level element, got %d: %+v", len(output), output)
