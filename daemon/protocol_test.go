@@ -62,3 +62,14 @@ func TestDecodeStreamChunkClassifiesBinaryProgressAndOther(t *testing.T) {
 	_, err = DecodeStreamChunk(json.RawMessage(`{"data":"%%%"}`))
 	require.Error(t, err)
 }
+
+func TestReadResponseReturnsErrorFrameThatHasNoID(t *testing.T) {
+	// parse errors are answered without an id; they must not be mistaken for notifications
+	frame := `{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error","data":"bad json"}}` + "\n"
+
+	_, err := readResponse(bufio.NewReader(strings.NewReader(frame)), nil)
+
+	var rpcErr *RPCError
+	require.ErrorAs(t, err, &rpcErr)
+	assert.Equal(t, -32700, rpcErr.Code)
+}

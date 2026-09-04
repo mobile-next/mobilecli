@@ -9,7 +9,9 @@ const BINARY = path.join(__dirname, '..', 'mobilecli');
 
 // a short, private state dir per run: unix socket paths are length-limited and
 // the suite must never touch the developer's real ~/.mobilecli
-const home = mkdtempSync(path.join('/tmp', 'mcli-e2e-'));
+// (macOS's os.tmpdir() is too long for a unix socket path)
+const tempRoot = process.platform === 'darwin' ? '/tmp' : os.tmpdir();
+const home = mkdtempSync(path.join(tempRoot, 'mcli-e2e-'));
 const env = {...coverageEnv(), MOBILECLI_HOME: home};
 
 function mobilecli(args: string): string {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,7 +13,12 @@ import (
 // TestMain runs an in-process daemon for the whole package: the HTTP front
 // forwards every device method to it, so tests need one listening.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("/tmp", "mcli-srv")
+	// macOS's $TMPDIR is too long for a unix socket path; elsewhere use the platform default
+	root := ""
+	if runtime.GOOS == "darwin" {
+		root = "/tmp"
+	}
+	dir, err := os.MkdirTemp(root, "mcli-srv")
 	if err != nil {
 		panic(err)
 	}

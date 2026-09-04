@@ -50,12 +50,11 @@ func startedByAnotherClient(paths FilePaths, version string) bool {
 	return err == nil && info.Version == version && processExists(info.PID)
 }
 
-// cleanStale removes leftovers of a daemon that is no longer listening,
-// killing its process first if it is somehow still alive.
+// cleanStale removes leftovers of a daemon that is no longer listening. The
+// recorded pid is never signalled: after a crash or reboot the OS may have
+// handed it to an unrelated process, and a daemon that lost its socket is
+// harmless anyway (it idles out on its own).
 func cleanStale(paths FilePaths) {
-	if info, err := readPidFile(paths.Pid); err == nil && processExists(info.PID) {
-		_ = killProcess(info.PID)
-	}
 	_ = os.Remove(paths.Pid)
 	_ = os.Remove(paths.Socket)
 }

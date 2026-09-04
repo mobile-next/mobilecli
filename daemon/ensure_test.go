@@ -140,3 +140,18 @@ func TestConcurrentEnsureRunningStartsExactlyOneDaemon(t *testing.T) {
 	_, err = Status()
 	assert.ErrorIs(t, err, ErrNotRunning)
 }
+
+func TestCleanStaleRemovesFilesWithoutKillingTheRecordedPid(t *testing.T) {
+	t.Setenv(HomeEnv, shortTempDir(t))
+	paths, err := Paths()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+	// a recycled pid may belong to anything, here: this very test process
+	require.NoError(t, writePidFile(paths.Pid, pidInfo{PID: os.Getpid(), Version: "v1"}))
+	require.NoError(t, os.WriteFile(paths.Socket, nil, 0o600))
+
+	cleanStale(paths)
+
+	assert.NoFileExists(t, paths.Pid)
+	assert.NoFileExists(t, paths.Socket)
+}

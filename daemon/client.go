@@ -99,7 +99,8 @@ func readResponse(reader *bufio.Reader, onData func(json.RawMessage) error) (jso
 			return nil, fmt.Errorf("invalid daemon response: %w", err)
 		}
 
-		if resp.ID == nil {
+		// notifications carry a method; error replies to unparseable requests carry no id
+		if resp.Method != "" {
 			if resp.Method == StreamMethod && onData != nil {
 				if err := onData(resp.Params); err != nil {
 					return nil, err

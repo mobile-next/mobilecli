@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -87,13 +88,21 @@ func startTestDaemon(t *testing.T, idle time.Duration, busy func() bool) *runnin
 	return rd
 }
 
-// shortTempDir avoids macOS's long $TMPDIR blowing the socket path limit.
+// shortTempDir avoids macOS's long $TMPDIR blowing the socket path limit;
+// elsewhere the platform temp dir is short enough.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "mcli")
+	dir, err := os.MkdirTemp(shortTempRoot(), "mcli")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+func shortTempRoot() string {
+	if runtime.GOOS == "darwin" {
+		return "/tmp"
+	}
+	return ""
 }
 
 func TestCallRoundTripsResult(t *testing.T) {

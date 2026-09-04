@@ -71,7 +71,7 @@ func resolveScreenWidthForClip(device devices.ControllableDevice, clip *types.Sc
 // A path ending in a separator (or an empty path, meaning the current
 // directory) gets a generated screenshot-<device>-<timestamp> filename.
 func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) {
-	isDir := outputPath == "" || strings.HasSuffix(outputPath, string(filepath.Separator))
+	isDir := outputPath == "" || os.IsPathSeparator(outputPath[len(outputPath)-1])
 	if !isDir {
 		abs, err := filepath.Abs(outputPath)
 		if err != nil {
@@ -91,7 +91,24 @@ func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("error creating default path: %v", err)
 	}
-	return abs, nil
+	return uniquePath(abs), nil
+}
+
+// uniquePath appends -1, -2, ... before the extension until the name is free,
+// so two screenshots of one device within the same second do not overwrite
+// each other.
+func uniquePath(path string) string {
+	if _, err := os.Stat(path); err != nil {
+		return path
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, err := os.Stat(candidate); err != nil {
+			return candidate
+		}
+	}
 }
 
 // ScreenshotCommand takes a screenshot of the specified device

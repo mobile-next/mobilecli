@@ -199,8 +199,10 @@ var authLogoutCmd = &cobra.Command{
 	Short: "Log out of your account",
 	Long:  `Logs out of your current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// delete first: a daemon started in between must not find a valid token
+		err := deleteToken()
 		stopDaemonIfRunning()
-		if err := deleteToken(); err != nil {
+		if err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				fmt.Println("mobilecli is not logged in")
 				return nil

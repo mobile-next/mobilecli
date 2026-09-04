@@ -26,3 +26,11 @@ func TestEvictDevicesNotInDropsUnpluggedDevicesOnly(t *testing.T) {
 	assert.True(t, kept)
 	assert.False(t, unplugged)
 }
+
+func TestShouldEvictAfterListingOnlyForUnfilteredSuccessfulScans(t *testing.T) {
+	all := devices.DeviceListOptions{}
+	assert.True(t, shouldEvictAfterListing(all, false))
+	assert.False(t, shouldEvictAfterListing(all, true), "a failed remote fetch must not evict remote devices")
+	assert.False(t, shouldEvictAfterListing(devices.DeviceListOptions{Platform: "ios"}, false))
+	assert.False(t, shouldEvictAfterListing(devices.DeviceListOptions{DeviceType: "simulator"}, false))
+}

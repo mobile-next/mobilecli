@@ -84,7 +84,7 @@ var appsInstallCmd = &cobra.Command{
 			DeviceID:            deviceId,
 			Path:                absLocalPath(args[0]),
 			ForceResign:         forceResign,
-			ProvisioningProfile: provisioningProfile,
+			ProvisioningProfile: absLocalPath(provisioningProfile),
 			SigningIdentity:     signingIdentity,
 		}
 
