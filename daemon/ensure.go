@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -12,6 +13,11 @@ import (
 const (
 	startTimeout = 5 * time.Second
 	logTailBytes = 4096
+
+	// spawnLockStale is how old a spawn lock may be before it is treated as
+	// abandoned by a client that died mid-spawn (a spawn is bounded by startTimeout)
+	spawnLockStale = 2 * startTimeout
+	spawnLockPoll  = 20 * time.Millisecond
 )
 
 // EnsureRunning makes sure a daemon of exactly `version` is listening. It
@@ -22,6 +28,18 @@ func EnsureRunning(version string, spawnArgs []string) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
+		return fmt.Errorf("create daemon dir: %w", err)
+	}
+
+	// the check below and the spawn it may lead to must not interleave across
+	// clients: one client's stale-file cleanup would otherwise unlink the pid
+	// file another client just claimed, and both would start a daemon
+	release, err := acquireSpawnLock(paths)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	if conn, err := dial(paths.Socket); err == nil {
 		_ = conn.Close()
@@ -41,6 +59,31 @@ func EnsureRunning(version string, spawnArgs []string) error {
 	}
 
 	return spawn(paths, version, spawnArgs)
+}
+
+// acquireSpawnLock serializes EnsureRunning across processes with an atomic
+// mkdir. A lock older than spawnLockStale belongs to a client that died while
+// holding it and is broken.
+func acquireSpawnLock(paths FilePaths) (release func(), err error) {
+	lock := filepath.Join(paths.Dir, "spawn.lock")
+	deadline := time.Now().Add(spawnLockStale)
+	for {
+		err := os.Mkdir(lock, 0o700)
+		if err == nil {
+			return func() { _ = os.Remove(lock) }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("claim spawn lock: %w", err)
+		}
+		if st, err := os.Stat(lock); err == nil && time.Since(st.ModTime()) > spawnLockStale {
+			_ = os.Remove(lock)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for another mobilecli to start the daemon (%s)", lock)
+		}
+		time.Sleep(spawnLockPoll)
+	}
 }
 
 // startedByAnotherClient reports whether the pid file names a live daemon of
@@ -64,25 +107,11 @@ func spawn(paths FilePaths, version string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
-	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
-		return fmt.Errorf("create daemon dir: %w", err)
-	}
 	logFile, err := os.OpenFile(paths.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open daemon log: %w", err)
 	}
 	defer func() { _ = logFile.Close() }()
-
-	// claim the pid file exclusively: whoever loses the race waits for the
-	// winner's daemon instead of spawning a second one
-	claim, err := os.OpenFile(paths.Pid, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return WaitForSocket(paths.Socket, startTimeout)
-		}
-		return fmt.Errorf("claim pid file: %w", err)
-	}
-	_ = claim.Close()
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdin = nil
@@ -92,7 +121,6 @@ func spawn(paths FilePaths, version string, args []string) error {
 	detach(cmd)
 
 	if err := cmd.Start(); err != nil {
-		_ = os.Remove(paths.Pid)
 		return fmt.Errorf("start daemon: %w", err)
 	}
 	// the child outlives us; reap it in the background so a quick death is not a zombie
