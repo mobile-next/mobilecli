@@ -7,7 +7,7 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
-// shellPackage is the package the on-device server (app_process) is attributed
+// shellPackage is the package the DeviceServer (app_process) is attributed
 // to, and therefore the one the mock_location appop has to be granted to
 const shellPackage = "com.android.shell"
 
@@ -67,7 +67,7 @@ func (d *AndroidDevice) ClearLocation() error {
 	return removeErr
 }
 
-// startMockLocation asks the persistent on-device server to register test
+// startMockLocation asks the DeviceServer to register test
 // providers and keep publishing the location, so it outlives this mobilecli
 // invocation. Nothing is left behind when it fails: the appop is revoked, so a
 // failed call never leaves the device with a fake location.

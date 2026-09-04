@@ -56,8 +56,7 @@ var agentStatusCmd = &cobra.Command{
 			return err
 		}
 
-		if device.Platform() == "android" {
-			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+		if replyIfNoAgentNeeded(device) {
 			return nil
 		}
 
@@ -93,8 +92,7 @@ var agentInstallCmd = &cobra.Command{
 			return err
 		}
 
-		if device.Platform() == "android" {
-			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+		if replyIfNoAgentNeeded(device) {
 			return nil
 		}
 
@@ -172,8 +170,7 @@ var agentUninstallCmd = &cobra.Command{
 			return err
 		}
 
-		if device.Platform() == "android" {
-			printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+		if replyIfNoAgentNeeded(device) {
 			return nil
 		}
 
@@ -198,6 +195,16 @@ var agentUninstallCmd = &cobra.Command{
 		}))
 		return nil
 	},
+}
+
+// replyIfNoAgentNeeded prints the ok response for platforms whose helpers ship
+// embedded in mobilecli (Android) and reports whether it did so.
+func replyIfNoAgentNeeded(device devices.ControllableDevice) bool {
+	if device.Platform() != "android" {
+		return false
+	}
+	printJson(commands.NewSuccessResponse(agentMessageResponse{Message: noAgentForAndroid}))
+	return true
 }
 
 func agentPackageForPlatform(platform string) string {

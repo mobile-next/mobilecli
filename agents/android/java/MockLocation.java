@@ -11,7 +11,7 @@ import java.lang.reflect.Constructor;
 
 /**
  * Fakes the device location via LocationManager test providers, for real
- * devices where there is no adb-level way to do it. Served by UiDumpServer.
+ * devices where there is no adb-level way to do it. Served by DeviceServer.
  *
  * The test providers only live as long as the hosting process does, so
  * setting a location starts a thread that re-publishes it on a loop; clear()

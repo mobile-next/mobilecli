@@ -16,7 +16,7 @@ import java.util.List;
 
 /**
  * Lists installed packages through IPackageManager, no Context needed.
- * Served by UiDumpServer as a JSON array of {packageName, appName, version, versionCode}.
+ * Served by DeviceServer as a JSON array of {packageName, appName, version, versionCode}.
  */
 public class PackageLister {
 

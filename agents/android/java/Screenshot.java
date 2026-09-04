@@ -9,7 +9,7 @@ import java.io.ByteArrayOutputStream;
  * Captures the default display through the server's UiAutomation (the same
  * path the platform's own "uiautomator" shell tool uses), optionally crops and
  * downscales, and encodes PNG or JPEG on-device so a small JPEG crosses adb
- * instead of screencap's PNG. Served by UiDumpServer as "device.screenshot".
+ * instead of screencap's PNG. Served by DeviceServer as "device.screenshot".
  *
  * maxSize caps max(width, height) keeping aspect ratio and takes precedence
  * over scale. Neither ever upscales. clip {x, y, width, height} is in screen

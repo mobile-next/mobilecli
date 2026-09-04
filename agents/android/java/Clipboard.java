@@ -7,7 +7,7 @@ import java.lang.reflect.Method;
 
 /**
  * System clipboard via the IClipboard binder service, so it works from an
- * app_process (shell uid) with no Context. Served by UiDumpServer.
+ * app_process (shell uid) with no Context. Served by DeviceServer.
  *
  * IClipboard's methods have gained parameters across Android versions
  * (attributionTag, userId, deviceId), always appended in a stable order.

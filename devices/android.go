@@ -271,7 +271,7 @@ func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 }
 
 // takeScreenshotWithDex captures, scales, and encodes on-device via the
-// persistent server (Screenshot.java), which returns the image base64-encoded.
+// DeviceServer (Screenshot.java), which returns the image base64-encoded.
 // Output is validated by magic bytes.
 func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, error) {
 	format := opts.Format
@@ -495,16 +495,6 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	}
 
 	return nil
-}
-
-// serverRequest sends a JSON-RPC call to the persistent on-device server
-// (agents/android/java/UiDumpServer.java), starting it if needed.
-func (d *AndroidDevice) serverRequest(method string, params map[string]any) (json.RawMessage, error) {
-	port, err := d.ensureDeviceKitServerReady()
-	if err != nil {
-		return nil, err
-	}
-	return agentRequest(port, method, params)
 }
 
 func (d *AndroidDevice) GetClipboard() (string, error) {
@@ -984,7 +974,11 @@ func (d *AndroidDevice) SendKeys(text string) error {
 	if err := d.SetClipboard(text); err != nil {
 		return fmt.Errorf("failed to set clipboard: %w", err)
 	}
-	defer func() { _ = d.SetClipboard("") }()
+	defer func() {
+		if err := d.SetClipboard(""); err != nil {
+			utils.Verbose("failed to clear clipboard after paste: %v", err)
+		}
+	}()
 
 	if _, err := d.runAdbCommand("shell", "input", "keyevent", "KEYCODE_PASTE"); err != nil {
 		return fmt.Errorf("failed to paste: %w", err)
@@ -1036,7 +1030,7 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-// listAllPackages asks the on-device server (PackageLister.java) for name and
+// listAllPackages asks the DeviceServer (PackageLister.java) for name and
 // versions of every package in one call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
 	raw, err := d.serverRequest("device.apps.list", nil)
@@ -1383,32 +1377,32 @@ type uiAutomatorXml struct {
 	RootNode uiAutomatorXmlNode `xml:"node"`
 }
 
-type deviceKitRect struct {
+type uiRect struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
 	Width  int `json:"width"`
 	Height int `json:"height"`
 }
 
-type deviceKitNode struct {
-	Class       string          `json:"class"`
-	Text        string          `json:"text"`
-	Hint        string          `json:"hint"`
-	ContentDesc string          `json:"content-desc"`
-	ResourceID  string          `json:"resource-id"`
-	Focused     bool            `json:"focused"`
-	Enabled     bool            `json:"enabled"`
-	Checked     bool            `json:"checked"`
-	Checkable   bool            `json:"checkable"`
-	Clickable   bool            `json:"clickable"`
-	Selected    bool            `json:"selected"`
-	Visible     bool            `json:"visible"`
-	Rect        deviceKitRect   `json:"rect"`
-	Children    []deviceKitNode `json:"children"`
+type uiNode struct {
+	Class       string   `json:"class"`
+	Text        string   `json:"text"`
+	Hint        string   `json:"hint"`
+	ContentDesc string   `json:"content-desc"`
+	ResourceID  string   `json:"resource-id"`
+	Focused     bool     `json:"focused"`
+	Enabled     bool     `json:"enabled"`
+	Checked     bool     `json:"checked"`
+	Checkable   bool     `json:"checkable"`
+	Clickable   bool     `json:"clickable"`
+	Selected    bool     `json:"selected"`
+	Visible     bool     `json:"visible"`
+	Rect        uiRect   `json:"rect"`
+	Children    []uiNode `json:"children"`
 }
 
-type deviceKitHierarchy struct {
-	Hierarchy []deviceKitNode `json:"hierarchy"`
+type uiHierarchy struct {
+	Hierarchy []uiNode `json:"hierarchy"`
 }
 
 func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
@@ -1515,13 +1509,13 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	return []types.ScreenElement{element}
 }
 
-// collectDeviceKitElements converts a devicekit node tree into ScreenElements,
+// collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
 // preserving hierarchy the same way collectElements does.
-func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
+func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 	var elements []types.ScreenElement
 
 	for _, node := range nodes {
-		childElements := collectDeviceKitElements(node.Children)
+		childElements := collectUiNodeElements(node.Children)
 
 		// keep interactable nodes even when unlabeled (e.g. Flutter icon-only
 		// buttons), mirroring the uiautomator XML path in collectElements
@@ -1581,18 +1575,13 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	return elements
 }
 
-// getDeviceKitNodes returns the UI hierarchy from the persistent UiDumpServer.
-func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
-	return d.getDeviceKitServerNodes()
-}
-
-func (d *AndroidDevice) getDeviceKitDump() (string, error) {
-	nodes, err := d.getDeviceKitNodes()
+func (d *AndroidDevice) getDeviceServerDump() (string, error) {
+	nodes, err := d.dumpUiNodes()
 	if err != nil {
 		return "", err
 	}
 
-	jsonBytes, err := json.Marshal(deviceKitHierarchy{Hierarchy: nodes})
+	jsonBytes, err := json.Marshal(uiHierarchy{Hierarchy: nodes})
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize devicekit hierarchy: %w", err)
 	}
@@ -1627,10 +1616,10 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
-	if jsonStr, err := d.getDeviceKitDump(); err == nil {
+	if jsonStr, err := d.getDeviceServerDump(); err == nil {
 		return jsonStr, nil
 	} else {
-		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
@@ -1650,10 +1639,10 @@ func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 		return elements, nil
 	}
 
-	if nodes, err := d.getDeviceKitNodes(); err == nil {
-		return collectDeviceKitElements(nodes), nil
+	if nodes, err := d.dumpUiNodes(); err == nil {
+		return collectUiNodeElements(nodes), nil
 	} else {
-		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
