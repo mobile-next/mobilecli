@@ -26,6 +26,18 @@ class JsonRpcSocketServer {
 	}
 
 	private static final String TAG = "JsonRpcSocketServer";
+
+	/** A non-empty string param, or INVALID_PARAMS. */
+	static String requireParam(JSONObject params, String key) throws RpcException {
+		if (params == null) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params");
+		}
+		String v = params.optString(key, null);
+		if (v == null || v.isEmpty()) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params." + key);
+		}
+		return v;
+	}
 	private static final String JSONRPC_VERSION = "2.0";
 	private static final String CONTENT_LENGTH_PREFIX = "content-length:";
 

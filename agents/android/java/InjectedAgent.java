@@ -5,18 +5,23 @@ import android.webkit.WebView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** JSON-RPC methods served by the in-app webview agent (injected via JVMTI). */
-class JsonRpcDispatcher implements JsonRpcSocketServer.Dispatcher {
+/**
+ * The agent injected into a target app by mobilecli.so (JVMTI). Runs inside
+ * the app's process, so it can reach its WebView instances and Flutter engine;
+ * everything device-wide lives in DeviceServer instead. Serves JSON-RPC on
+ * localabstract:mobilecli.<package>.
+ */
+public class InjectedAgent implements JsonRpcSocketServer.Dispatcher {
 
-	static String requireParam(JSONObject params, String key) throws RpcException {
-		if (params == null) {
-			throw new RpcException(RpcException.INVALID_PARAMS, "missing params");
-		}
-		String v = params.optString(key, null);
-		if (v == null || v.isEmpty()) {
-			throw new RpcException(RpcException.INVALID_PARAMS, "missing params." + key);
-		}
-		return v;
+	// entry point called by jvmti_agent.c once the app's main looper is up
+	public static void start() {
+		AndroidBridge.init();
+		AndroidBridge.sMainHandler.postDelayed(InjectedAgent::startRpcServer, 500);
+	}
+
+	private static void startRpcServer() {
+		String socket = "mobilecli." + AndroidBridge.getPackageName();
+		new JsonRpcSocketServer(socket, new InjectedAgent()).startDaemon();
 	}
 
 	@Override
@@ -24,19 +29,19 @@ class JsonRpcDispatcher implements JsonRpcSocketServer.Dispatcher {
 		switch (method) {
 
 			case "device.dump.ui":
-				return WebViewAgent.dumpUi();
+				return WebViews.dumpUi();
 
 			case "device.flutter.vmServiceUri":
 				return flutterVmServiceUri();
 
 			case "device.webview.list":
-				return WebViewAgent.listWebViews();
+				return WebViews.listWebViews();
 
 			case "device.webview.goto": {
-				String wvId = requireParam(params, "id");
-				String url = requireParam(params, "url");
+				String wvId = JsonRpcSocketServer.requireParam(params, "id");
+				String url = JsonRpcSocketServer.requireParam(params, "url");
 				AndroidBridge.runOnMainThread(() -> {
-					WebViewAgent.lookupWebView(wvId).loadUrl(url);
+					WebViews.lookupWebView(wvId).loadUrl(url);
 					return null;
 				});
 				return new JSONObject().put("status", "ok");
@@ -45,24 +50,24 @@ class JsonRpcDispatcher implements JsonRpcSocketServer.Dispatcher {
 			case "device.webview.reload":
 			case "device.webview.goBack":
 			case "device.webview.goForward": {
-				WebViewAgent.webViewAction(requireParam(params, "id"), WebViewAgent.navAction(method));
+				WebViews.webViewAction(JsonRpcSocketServer.requireParam(params, "id"), WebViews.navAction(method));
 				return new JSONObject().put("status", "ok");
 			}
 
 			case "device.webview.waitForLoadState": {
-				String wvId = requireParam(params, "id");
+				String wvId = JsonRpcSocketServer.requireParam(params, "id");
 				String state = params.optString("state", "load");
 				int timeout = params.optInt("timeout", 30_000);
-				WebView wv = WebViewAgent.findWebViewById(wvId);
-				WebViewAgent.waitForLoadState(wv, state, timeout);
+				WebView wv = WebViews.findWebViewById(wvId);
+				WebViews.waitForLoadState(wv, state, timeout);
 				return new JSONObject().put("status", "ok");
 			}
 
 			case "device.webview.evaluate": {
-				String wvId = requireParam(params, "id");
-				String expression = requireParam(params, "expression");
+				String wvId = JsonRpcSocketServer.requireParam(params, "id");
+				String expression = JsonRpcSocketServer.requireParam(params, "expression");
 				JSONArray args = params.optJSONArray("args");
-				return WebViewAgent.evaluateExpression(WebViewAgent.findWebViewById(wvId), expression, args);
+				return WebViews.evaluateExpression(WebViews.findWebViewById(wvId), expression, args);
 			}
 
 			default:

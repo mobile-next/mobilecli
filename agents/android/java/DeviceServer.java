@@ -65,7 +65,7 @@ public class DeviceServer {
 			case "device.clipboard.get":
 				return new JSONObject().put("text", orEmpty(Clipboard.getText()));
 			case "device.clipboard.set":
-				Clipboard.setText(JsonRpcDispatcher.requireParam(params, "text"));
+				Clipboard.setText(JsonRpcSocketServer.requireParam(params, "text"));
 				return ok();
 			case "device.clipboard.clear":
 				Clipboard.clear();
