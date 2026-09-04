@@ -25,21 +25,34 @@ public class Screenshot {
 		}
 		// Hardware bitmaps (API 31+) cannot be scaled; copy to software.
 		if (bitmap.getConfig() == Bitmap.Config.HARDWARE) {
-			bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+			bitmap = replace(bitmap, bitmap.copy(Bitmap.Config.ARGB_8888, false));
 		}
 		if (clip != null) {
-			bitmap = clipBitmap(bitmap, clip, screenWidthPoints);
+			bitmap = replace(bitmap, clipBitmap(bitmap, clip, screenWidthPoints));
 		}
-		bitmap = resize(bitmap, scale, maxSize);
+		bitmap = replace(bitmap, resize(bitmap, scale, maxSize));
 
 		Bitmap.CompressFormat compressFormat = format.equals("jpeg")
 				? Bitmap.CompressFormat.JPEG
 				: Bitmap.CompressFormat.PNG;
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		if (!bitmap.compress(compressFormat, quality, out)) {
-			throw new IllegalStateException("Bitmap.compress failed");
+		try {
+			if (!bitmap.compress(compressFormat, quality, out)) {
+				throw new IllegalStateException("Bitmap.compress failed");
+			}
+		} finally {
+			bitmap.recycle();
 		}
 		return out.toByteArray();
+	}
+
+	// The server process lives on between screenshots, so full-screen bitmaps
+	// superseded along the way are recycled instead of waiting for GC.
+	private static Bitmap replace(Bitmap old, Bitmap next) {
+		if (next != old) {
+			old.recycle();
+		}
+		return next;
 	}
 
 	// Crops to clip {x, y, width, height} given in screen points, mapped to
@@ -89,9 +102,18 @@ public class Screenshot {
 		// bilinear filtering only samples 4 pixels, so a single large
 		// downscale undersamples and looks like nearest neighbor; halve
 		// stepwise (mipmap-style) until within 2x of the target first
-		while (bitmap.getWidth() >= newWidth * 2 && bitmap.getHeight() >= newHeight * 2) {
-			bitmap = Bitmap.createScaledBitmap(bitmap, bitmap.getWidth() / 2, bitmap.getHeight() / 2, true);
+		Bitmap current = bitmap;
+		while (current.getWidth() >= newWidth * 2 && current.getHeight() >= newHeight * 2) {
+			Bitmap halved = Bitmap.createScaledBitmap(current, current.getWidth() / 2, current.getHeight() / 2, true);
+			if (current != bitmap) {
+				current.recycle(); // the caller still owns the original
+			}
+			current = halved;
 		}
-		return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true);
+		Bitmap result = Bitmap.createScaledBitmap(current, newWidth, newHeight, true);
+		if (current != bitmap && current != result) {
+			current.recycle();
+		}
+		return result;
 	}
 }

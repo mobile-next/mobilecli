@@ -161,7 +161,7 @@ public class AvcServer {
 		}
 
 		VirtualDisplay virtualDisplay = DisplayUtils.createVirtualDisplay(
-				"avc.screen.capture", width, height, display.dpi, codec.createInputSurface());
+				"avc.screen.capture", width, height, codec.createInputSurface());
 		if (virtualDisplay == null) {
 			codec.release();
 			throw new IllegalStateException("Failed to create virtual display");

@@ -49,12 +49,13 @@ class DisplayUtils {
 	}
 
 	/** Mirrors the default display into surface without MediaProjection; null on failure. */
-	static VirtualDisplay createVirtualDisplay(String name, int width, int height, int dpi, Surface surface) {
+	static VirtualDisplay createVirtualDisplay(String name, int width, int height, Surface surface) {
 		try {
-			// hidden static DisplayManager.createVirtualDisplay(String, int, int, int, Surface)
+			// hidden static DisplayManager.createVirtualDisplay(String name, int width,
+			// int height, int displayIdToMirror, Surface surface)
 			return (VirtualDisplay) DisplayManager.class
 					.getMethod("createVirtualDisplay", String.class, int.class, int.class, int.class, Surface.class)
-					.invoke(null, name, width, height, dpi, surface);
+					.invoke(null, name, width, height, Display.DEFAULT_DISPLAY, surface);
 		} catch (Exception e) {
 			Log.e(TAG, "Failed to create virtual display", e);
 			return null;

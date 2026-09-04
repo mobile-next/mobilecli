@@ -43,20 +43,17 @@ public class MockLocation {
 			throw new IllegalStateException("no test provider could be added, is 'appops set " + SHELL_PACKAGE + " android:mock_location allow' in effect?");
 		}
 
+		// publish once before returning so the next command already sees the
+		// new location; the thread only keeps it fresh
+		publish(locationManager, latitude, longitude);
 		publisher = new Thread(() -> {
 			while (!Thread.currentThread().isInterrupted()) {
-				for (String provider : PROVIDERS) {
-					try {
-						locationManager.setTestProviderLocation(provider, newLocation(provider, latitude, longitude));
-					} catch (Exception ignored) {
-						// provider not registered on this device
-					}
-				}
 				try {
 					Thread.sleep(PUBLISH_INTERVAL_MS);
 				} catch (InterruptedException e) {
 					return;
 				}
+				publish(locationManager, latitude, longitude);
 			}
 		}, "mock-location");
 		publisher.setDaemon(true);
@@ -67,6 +64,16 @@ public class MockLocation {
 	static synchronized void clear() throws Exception {
 		stopPublisher();
 		removeTestProviders(createLocationManager());
+	}
+
+	private static void publish(LocationManager locationManager, double latitude, double longitude) {
+		for (String provider : PROVIDERS) {
+			try {
+				locationManager.setTestProviderLocation(provider, newLocation(provider, latitude, longitude));
+			} catch (Exception ignored) {
+				// provider not registered on this device
+			}
+		}
 	}
 
 	private static void stopPublisher() {

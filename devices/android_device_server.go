@@ -45,7 +45,10 @@ func (d *AndroidDevice) ensureDeviceServerReady() (int, error) {
 	// legacy devicekit instrumentation from older mobilecli versions) would block
 	// the new one from connecting, so clear both first. This runs as its own adb
 	// shell so pkill -f can't match the launch command line below (or itself).
-	_, _ = d.runAdbCommand("shell", "pkill -f '[D]eviceServer'; pkill -f '[U]iDumpServer'; pkill -f 'com.mobilenext.[d]evicekit'; true")
+	// Killing the server also drops any mock-location test providers it held,
+	// so the mock_location appop granted for them goes back too.
+	_, _ = d.runAdbCommand("shell", "pkill -f '[D]eviceServer'; pkill -f '[U]iDumpServer'; pkill -f 'com.mobilenext.[d]evicekit'; "+
+		"appops set "+shellPackage+" android:mock_location default; true")
 
 	// nohup+& detaches the server from this adb shell session so it survives
 	// after this command returns.

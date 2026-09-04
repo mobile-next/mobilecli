@@ -39,9 +39,16 @@ func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
 	}
 	tmp.Close()
 
-	out, err := d.runAdbCommand("push", tmp.Name(), remotePath)
+	// push to a sibling then rename: a process that has the old file mapped
+	// (a running DeviceServer or capture stream) keeps its inode instead of
+	// seeing the bytes change underneath it
+	staging := remotePath + ".tmp"
+	out, err := d.runAdbCommand("push", tmp.Name(), staging)
 	if err != nil {
-		return fmt.Errorf("adb push to %s: %s: %w", remotePath, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("adb push to %s: %s: %w", staging, strings.TrimSpace(string(out)), err)
+	}
+	if out, err := d.runAdbCommand("shell", "mv", "-f", staging, remotePath); err != nil {
+		return fmt.Errorf("move %s into place: %s: %w", remotePath, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
