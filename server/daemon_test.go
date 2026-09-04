@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mobile-next/mobilecli/daemon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,5 +79,5 @@ func TestMessageNotifierWrapsWritesAsMessages(t *testing.T) {
 	_, err := w.Write([]byte("\rRecording 00:01"))
 	require.NoError(t, err)
 
-	assert.Equal(t, []any{map[string]string{"progress": "\rRecording 00:01"}}, got)
+	assert.Equal(t, []any{daemon.StreamProgress{Progress: "\rRecording 00:01"}}, got)
 }

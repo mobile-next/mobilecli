@@ -9,7 +9,6 @@ import (
 
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/daemon"
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/spf13/cobra"
 )
@@ -127,7 +126,7 @@ var screencaptureCmd = &cobra.Command{
 			return fmt.Errorf("%s", response.Error)
 		}
 
-		return streamViaDaemon("cli.screencapture", server.ScreenCaptureStreamRequest{
+		return streamViaDaemon("cli.screencapture", commands.ScreenCaptureStreamRequest{
 			DeviceID: deviceId,
 			Format:   screencaptureFormat,
 			Scale:    screencaptureScale,

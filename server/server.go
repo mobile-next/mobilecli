@@ -1652,7 +1652,9 @@ func handleLogsSession(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("limit must not be negative")
 	}
 
-	// filters use the same key=value / key!=value syntax as the cli
+	// filters use the same key=value / key!=value syntax as the cli. validated
+	// here so a bad filter fails at ticket time; the daemon parses them again
+	// when the stream starts, so only the raw strings are kept on the session.
 	if _, err := commands.ParseLogFilters(req.Filters); err != nil {
 		return nil, err
 	}
@@ -1710,7 +1712,7 @@ func handleLogsStream(w http.ResponseWriter, r *http.Request) {
 
 	// r.Context() is cancelled when the client disconnects, which closes the
 	// daemon connection and stops the underlying log process on the device
-	err = streamFromDaemon(r.Context(), "cli.device.logs", LogsStreamRequest{
+	err = streamFromDaemon(r.Context(), "cli.device.logs", commands.LogsStreamRequest{
 		DeviceID: session.DeviceID,
 		Limit:    session.Limit,
 		Filters:  session.Filters,
@@ -1759,7 +1761,7 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = streamFromDaemon(r.Context(), "cli.screencapture", ScreenCaptureStreamRequest{
+	err = streamFromDaemon(r.Context(), "cli.screencapture", commands.ScreenCaptureStreamRequest{
 		DeviceID: session.DeviceID,
 		Format:   session.Format,
 		Quality:  session.Quality,

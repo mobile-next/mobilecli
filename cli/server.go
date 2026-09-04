@@ -31,6 +31,8 @@ var serverStartCmd = &cobra.Command{
 		if err := ensureDaemon(); err != nil {
 			return err
 		}
+		// the daemon may exit on idle while the server keeps running
+		server.SetDaemonEnsurer(ensureDaemon)
 		return server.StartServer(listenAddr, enableCORS)
 	},
 }

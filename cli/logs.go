@@ -2,7 +2,6 @@ package cli
 
 import (
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +26,7 @@ Examples:
 		if _, err := commands.ParseLogFilters(logsFilters); err != nil {
 			return err
 		}
-		return streamViaDaemon("cli.device.logs", server.LogsStreamRequest{
+		return streamViaDaemon("cli.device.logs", commands.LogsStreamRequest{
 			DeviceID: deviceId,
 			Limit:    logsLimit,
 			Filters:  logsFilters,

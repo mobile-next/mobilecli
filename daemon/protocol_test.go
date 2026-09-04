@@ -43,3 +43,22 @@ func TestResponseErrorUnmarshalsIntoRPCError(t *testing.T) {
 	assert.Equal(t, -32000, resp.Error.Code)
 	assert.Equal(t, "device not found", resp.Error.Error())
 }
+
+func TestDecodeStreamChunkClassifiesBinaryProgressAndOther(t *testing.T) {
+	chunk, err := DecodeStreamChunk(json.RawMessage(`{"data":"aGk="}`))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("hi"), chunk.Bytes)
+
+	chunk, err = DecodeStreamChunk(json.RawMessage(`{"progress":"\r50%"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "\r50%", chunk.Progress)
+
+	chunk, err = DecodeStreamChunk(json.RawMessage(`{"level":"Error","message":"x"}`))
+	require.NoError(t, err)
+	assert.Nil(t, chunk.Bytes)
+	assert.Empty(t, chunk.Progress)
+	assert.Equal(t, `{"level":"Error","message":"x"}`, string(chunk.Line))
+
+	_, err = DecodeStreamChunk(json.RawMessage(`{"data":"%%%"}`))
+	require.Error(t, err)
+}

@@ -26,6 +26,7 @@ type Options struct {
 	IdleTimeout time.Duration // 0 disables idle shutdown
 	Dispatch    Dispatcher
 	Busy        func() bool // optional: true blocks idle shutdown (e.g. recording in progress)
+	OnShutdown  func()      // optional: runs after the listener closes and in-flight requests drain
 }
 
 // StatusResult is returned by daemon.status.
@@ -101,6 +102,9 @@ func Run(ctx context.Context, opts Options) error {
 
 	_ = ln.Close()
 	s.waitInflight()
+	if opts.OnShutdown != nil {
+		opts.OnShutdown()
+	}
 	_ = os.Remove(opts.Paths.Socket)
 	_ = os.Remove(opts.Paths.Pid)
 	return nil

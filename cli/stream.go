@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,28 +39,21 @@ func streamViaDaemon(method string, params any) error {
 }
 
 func isUserCancellation(err error) bool {
-	return err != nil && (err.Error() == "context canceled" || err.Error() == "context deadline exceeded")
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func writeStreamPayload(payload json.RawMessage, stdout, stderr io.Writer) error {
-	var chunk struct {
-		Data     *string `json:"data"`
-		Progress *string `json:"progress"`
+	chunk, err := daemon.DecodeStreamChunk(payload)
+	if err != nil {
+		return err
 	}
-	if err := json.Unmarshal(payload, &chunk); err == nil {
-		if chunk.Data != nil {
-			bytes, err := base64.StdEncoding.DecodeString(*chunk.Data)
-			if err != nil {
-				return fmt.Errorf("invalid stream chunk: %w", err)
-			}
-			_, err = stdout.Write(bytes)
-			return err
-		}
-		if chunk.Progress != nil {
-			_, err := io.WriteString(stderr, *chunk.Progress)
-			return err
-		}
+	switch {
+	case chunk.Bytes != nil:
+		_, err = stdout.Write(chunk.Bytes)
+	case chunk.Progress != "":
+		_, err = io.WriteString(stderr, chunk.Progress)
+	default:
+		_, err = fmt.Fprintf(stdout, "%s\n", chunk.Line)
 	}
-	_, err := fmt.Fprintf(stdout, "%s\n", payload)
 	return err
 }

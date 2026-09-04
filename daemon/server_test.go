@@ -201,3 +201,25 @@ func TestRunRefusesToStartWhenAnotherDaemonIsListening(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test-1", st.Version, "the original daemon must be untouched")
 }
+
+func TestOnShutdownRunsAfterRunStopsServing(t *testing.T) {
+	t.Setenv(HomeEnv, shortTempDir(t))
+	paths, err := Paths()
+	require.NoError(t, err)
+	ran := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Paths: paths, Version: "t", OnShutdown: func() { close(ran) }})
+	}()
+	require.NoError(t, WaitForSocket(paths.Socket, 5*time.Second))
+
+	cancel()
+
+	require.NoError(t, <-done)
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("OnShutdown was not called")
+	}
+}

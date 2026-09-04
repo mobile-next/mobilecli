@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,4 +68,46 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("read frame: %w", err)
 	}
 	return line, nil
+}
+
+// StreamChunk is one decoded stream.data payload: exactly one of Bytes
+// (binary data), Progress (human-readable progress text) or Line (any other
+// JSON object, e.g. a log entry) is set.
+type StreamChunk struct {
+	Bytes    []byte
+	Progress string
+	Line     json.RawMessage
+}
+
+// StreamData is the wire shape for binary stream payloads.
+type StreamData struct {
+	Data string `json:"data"` // base64
+}
+
+// StreamProgress is the wire shape for progress text.
+type StreamProgress struct {
+	Progress string `json:"progress"`
+}
+
+// DecodeStreamChunk classifies a stream.data payload for consumers.
+func DecodeStreamChunk(payload json.RawMessage) (StreamChunk, error) {
+	var wire struct {
+		Data     *string `json:"data"`
+		Progress *string `json:"progress"`
+	}
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		return StreamChunk{Line: payload}, nil
+	}
+	switch {
+	case wire.Data != nil:
+		b, err := base64.StdEncoding.DecodeString(*wire.Data)
+		if err != nil {
+			return StreamChunk{}, fmt.Errorf("invalid stream chunk: %w", err)
+		}
+		return StreamChunk{Bytes: b}, nil
+	case wire.Progress != nil:
+		return StreamChunk{Progress: *wire.Progress}, nil
+	default:
+		return StreamChunk{Line: payload}, nil
+	}
 }

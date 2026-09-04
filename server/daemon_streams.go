@@ -8,43 +8,9 @@ import (
 	"fmt"
 
 	"github.com/mobile-next/mobilecli/commands"
+	"github.com/mobile-next/mobilecli/daemon"
 	"github.com/mobile-next/mobilecli/devices"
 )
-
-// LogsStreamRequest are the params for cli.device.logs.
-type LogsStreamRequest struct {
-	DeviceID string   `json:"deviceId"`
-	Limit    int      `json:"limit,omitempty"`
-	Filters  []string `json:"filters,omitempty"`
-}
-
-// ScreenCaptureStreamRequest are the params for cli.screencapture.
-type ScreenCaptureStreamRequest struct {
-	DeviceID string  `json:"deviceId"`
-	Format   string  `json:"format"`
-	Quality  int     `json:"quality,omitempty"`
-	Scale    float64 `json:"scale,omitempty"`
-	FPS      int     `json:"fps,omitempty"`
-	Bitrate  int     `json:"bitrate,omitempty"`
-}
-
-// ScreenRecordStreamRequest are the params for cli.screenrecord.
-type ScreenRecordStreamRequest struct {
-	DeviceID   string `json:"deviceId"`
-	OutputPath string `json:"output"`
-	TimeLimit  int    `json:"timeLimit,omitempty"`
-	Silent     bool   `json:"silent,omitempty"`
-}
-
-// StreamChunk is the notification payload for binary stream data.
-type StreamChunk struct {
-	Data string `json:"data"` // base64
-}
-
-// StreamMessage is the notification payload for progress text.
-type StreamMessage struct {
-	Message string `json:"progress"`
-}
 
 // lineNotifier turns newline-delimited JSON written to it into one
 // notification per line, passing each line through untouched.
@@ -78,14 +44,14 @@ type messageNotifier struct {
 }
 
 func (w *messageNotifier) Write(p []byte) (int, error) {
-	if err := w.notify(map[string]string{"progress": string(p)}); err != nil {
+	if err := w.notify(daemon.StreamProgress{Progress: string(p)}); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
 func streamLogs(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error) {
-	var req LogsStreamRequest
+	var req commands.LogsStreamRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("invalid parameters: %w", err)), nil
 	}
@@ -102,7 +68,7 @@ func streamLogs(ctx context.Context, params json.RawMessage, notify func(any) er
 }
 
 func streamScreenCapture(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error) {
-	var req ScreenCaptureStreamRequest
+	var req commands.ScreenCaptureStreamRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("invalid parameters: %w", err)), nil
 	}
@@ -112,7 +78,7 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 		return commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err)), nil
 	}
 
-	onProgress := func(message string) { _ = notify(StreamMessage{Message: message}) }
+	onProgress := func(message string) { _ = notify(daemon.StreamProgress{Progress: message}) }
 	err = targetDevice.StartAgent(devices.StartAgentConfig{OnProgress: onProgress, Hook: commands.GetShutdownHook()})
 	if err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err)), nil
@@ -142,7 +108,7 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 			if ctx.Err() != nil {
 				return false
 			}
-			return notify(StreamChunk{Data: base64.StdEncoding.EncodeToString(data)}) == nil
+			return notify(daemon.StreamData{Data: base64.StdEncoding.EncodeToString(data)}) == nil
 		},
 	})
 	if err != nil {
@@ -152,7 +118,7 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 }
 
 func streamScreenRecord(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error) {
-	var req ScreenRecordStreamRequest
+	var req commands.ScreenRecordStreamRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("invalid parameters: %w", err)), nil
 	}

@@ -21,6 +21,16 @@ func DevicesCommand(opts devices.DeviceListOptions, token string) *CommandRespon
 		}
 	}
 
+	// an unfiltered listing is the one moment we know which cached devices are
+	// gone (offline devices are re-found on the next lookup miss anyway)
+	if opts.Platform == "" && opts.DeviceType == "" {
+		ids := make([]string, 0, len(deviceInfoList))
+		for _, d := range deviceInfoList {
+			ids = append(ids, d.ID)
+		}
+		EvictDevicesNotIn(ids)
+	}
+
 	return NewSuccessResponse(map[string]any{
 		"devices": deviceInfoList,
 	})

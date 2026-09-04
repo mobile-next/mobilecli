@@ -46,3 +46,18 @@ func TestDispatchRPCForwardsMissingParamsAsMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "'params' is required with fields: deviceId", err.Error())
 }
+
+func TestDispatchRPCEnsuresDaemonBeforeForwarding(t *testing.T) {
+	calls := 0
+	SetDaemonEnsurer(func() error { calls++; return nil })
+	t.Cleanup(func() { SetDaemonEnsurer(nil) })
+
+	_, err := dispatchRPC("devices.list", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+
+	// http-only methods never need the daemon
+	_, err = dispatchRPC("server.info", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+}

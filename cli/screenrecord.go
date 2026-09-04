@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"github.com/mobile-next/mobilecli/commands"
 
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var screenrecordCmd = &cobra.Command{
 			return fmt.Errorf("--output is required")
 		}
 
-		return streamViaDaemon("cli.screenrecord", server.ScreenRecordStreamRequest{
+		return streamViaDaemon("cli.screenrecord", commands.ScreenRecordStreamRequest{
 			DeviceID:   deviceId,
 			OutputPath: absLocalPath(screenrecordOutput),
 			TimeLimit:  screenrecordTimeLimit,

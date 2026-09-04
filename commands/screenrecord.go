@@ -19,7 +19,7 @@ type ScreenRecordRequest struct {
 	DeviceID   string
 	OutputPath string
 	TimeLimit  int             // max recording duration in seconds, 0 = no limit
-	StopChan   <-chan struct{} // when non-nil, stops recording when closed (server mode)
+	StopChan   <-chan struct{} // when non-nil, stops recording when closed (server mode; such callers also set Silent or Progress, since there is no terminal)
 	Ready      chan<- error    // optional (server mode): signaled once, with nil once recording is confirmed live or with an error if it failed to start
 	Silent     bool
 	Progress   io.Writer // receives progress text unless Silent; defaults to os.Stderr

@@ -103,12 +103,13 @@ func runDaemon() error {
 		IdleTimeout: daemonIdleTimeout,
 		Dispatch:    server.DaemonDispatch,
 		Busy:        server.DaemonBusy,
+		OnShutdown: func() {
+			server.StopRecordingForShutdown()
+			if hookErr := hook.Shutdown(); hookErr != nil {
+				utils.Info("shutdown hook error: %v", hookErr)
+			}
+		},
 	})
-
-	server.StopRecordingForShutdown()
-	if hookErr := hook.Shutdown(); hookErr != nil {
-		utils.Info("shutdown hook error: %v", hookErr)
-	}
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
 	}

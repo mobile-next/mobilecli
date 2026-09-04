@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,22 @@ import (
 )
 
 var errMethodNotFound = errors.New("method not found")
+
+// daemonEnsurer restarts the daemon if it exited (e.g. on idle) while this HTTP
+// front is still serving. Set by the CLI, which knows how to spawn the binary.
+var daemonEnsurer func() error
+
+// SetDaemonEnsurer installs the function called before every forwarded request.
+func SetDaemonEnsurer(ensure func() error) {
+	daemonEnsurer = ensure
+}
+
+func ensureDaemon() error {
+	if daemonEnsurer == nil {
+		return nil
+	}
+	return daemonEnsurer()
+}
 
 // rpcTimeout bounds a forwarded call, reusing the HTTP write-deadline table
 // for methods known to be slow.
@@ -36,6 +51,9 @@ func dispatchRPC(method string, params json.RawMessage) (any, error) {
 	if httpOnlyMethods[method] {
 		return handler(params)
 	}
+	if err := ensureDaemon(); err != nil {
+		return nil, err
+	}
 	// a nil RawMessage would be sent as JSON null, which handlers read as
 	// present-but-invalid instead of missing
 	var forwarded any
@@ -52,29 +70,25 @@ func dispatchRPC(method string, params json.RawMessage) (any, error) {
 // streamFromDaemon runs a cli.* streaming method and hands each payload to
 // onChunk (decoded bytes) or onProgress (text). It returns the envelope error, if any.
 func streamFromDaemon(ctx context.Context, method string, params any, onChunk func([]byte) error, onProgress func(string)) error {
+	if err := ensureDaemon(); err != nil {
+		return err
+	}
 	raw, err := daemon.CallStream(ctx, method, params, func(payload json.RawMessage) error {
-		var msg struct {
-			Data     *string `json:"data"`
-			Progress *string `json:"progress"`
-		}
-		if err := json.Unmarshal(payload, &msg); err != nil {
+		chunk, err := daemon.DecodeStreamChunk(payload)
+		if err != nil {
 			return err
 		}
 		switch {
-		case msg.Data != nil:
-			bytes, err := base64.StdEncoding.DecodeString(*msg.Data)
-			if err != nil {
-				return err
-			}
-			return onChunk(bytes)
-		case msg.Progress != nil:
+		case chunk.Bytes != nil:
+			return onChunk(chunk.Bytes)
+		case chunk.Progress != "":
 			if onProgress != nil {
-				onProgress(*msg.Progress)
+				onProgress(chunk.Progress)
 			}
 			return nil
 		default:
 			// ndjson line (log entry): forward with its newline
-			return onChunk(append([]byte(payload), '\n'))
+			return onChunk(append([]byte(chunk.Line), '\n'))
 		}
 	})
 	if err != nil {
@@ -132,6 +146,9 @@ func handleDeviceResolve(params json.RawMessage) (any, error) {
 
 // resolveDevice asks the daemon which device an id refers to.
 func resolveDevice(deviceID string) (ResolvedDevice, error) {
+	if err := ensureDaemon(); err != nil {
+		return ResolvedDevice{}, err
+	}
 	raw, err := daemon.Call("device.resolve", map[string]string{"deviceId": deviceID})
 	if err != nil {
 		return ResolvedDevice{}, err
