@@ -203,6 +203,22 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	return device, nil
 }
 
+// EvictDevicesNotIn drops cached devices that a fresh scan no longer reports,
+// so a long-lived daemon does not keep handing out unplugged devices.
+func EvictDevicesNotIn(presentIDs []string) {
+	present := make(map[string]bool, len(presentIDs))
+	for _, id := range presentIDs {
+		present[id] = true
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for id := range deviceCache {
+		if !present[id] {
+			delete(deviceCache, id)
+		}
+	}
+}
+
 // getDeviceIDList returns a comma-separated list of device IDs for error messages
 func getDeviceIDList(devices []devices.ControllableDevice) string {
 	var ids []string

@@ -15,10 +15,13 @@ A universal automation and management skill for iOS and Android devices, simulat
 A typical command sequence for testing an application on a simulator or emulator:
 
 ```bash
-# 1. Start the server daemon (speeds up subsequent runs)
-mobilecli server start --daemon
+# 1. List devices and note the device id (serial/udid).
+#    this starts the mobilecli daemon in the background, which keeps devices,
+#    tunnels and agents alive so every following command is fast
+mobilecli devices
 
-# 2. List devices and note the device id (serial/udid)
+# 2. Check the daemon is up (optional)
+mobilecli daemon status
 mobilecli devices
 
 # 3. Boot the target device (if offline)
@@ -36,8 +39,8 @@ mobilecli io tap --device <device-id> 180,320
 # 7. Verify result with a screenshot
 mobilecli screenshot --device <device-id> --output screenshot.png
 
-# 8. Clean up by stopping the server daemon
-mobilecli server kill
+# 8. Optional: stop the daemon (it exits by itself after 30 idle minutes)
+mobilecli daemon stop
 ```
 
 ---
@@ -50,18 +53,16 @@ Before using this skill, ensure the environment has the necessary prerequisites 
 - **Xcode Command Line Tools**: Required for iOS Simulator control (on macOS).
 - **On-Device Agent**: Required for iOS input gestures, screenshots, and UI dumping. Android needs no agent; its helpers ship embedded in the CLI.
 
-### Starting and Stopping the JSON-RPC Daemon (Recommended)
-Starting the HTTP server is highly recommended for automated scripts and fast interactions. It caches device information, keeps connections/tunnels alive, and eliminates command-line startup overhead.
+### The Daemon and the JSON-RPC Server
+Every device command talks to a background daemon that caches device information and keeps connections/tunnels alive. It starts automatically on the first device command, so no setup is needed for fast CLI usage.
 
 ```bash
-# Start server in the foreground (defaults to localhost:12000)
+# Inspect or stop the daemon
+mobilecli daemon status
+mobilecli daemon stop
+
+# Optional: expose the same daemon over HTTP/WebSocket JSON-RPC (defaults to localhost:12000)
 mobilecli server start --listen localhost:12000 --cors
-
-# Start server in the background (daemon mode)
-mobilecli server start --listen localhost:12000 --cors --daemon
-
-# Stop a background daemon server
-mobilecli server kill --listen localhost:12000
 ```
 
 ---

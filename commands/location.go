@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mobile-next/mobilecli/devices"
 )
@@ -88,6 +89,7 @@ func LocationSetCommand(req LocationSetRequest) *CommandResponse {
 	if err := settable.SetLocation(req.Latitude, req.Longitude); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to set location: %v", err))
 	}
+	heldLocationOverrides.Store(req.DeviceID, struct{}{})
 
 	return NewSuccessResponse(LocationResponse{
 		Latitude:  req.Latitude,
@@ -105,8 +107,24 @@ func LocationClearCommand(req LocationClearRequest) *CommandResponse {
 	if err := settable.ClearLocation(); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to clear location: %v", err))
 	}
+	heldLocationOverrides.Delete(req.DeviceID)
 
 	return NewSuccessResponse(OK)
+}
+
+// heldLocationOverrides tracks devices with an override set and not yet
+// cleared. an iOS 17+ override only lives as long as the process (the daemon)
+// that set it, so the daemon must not idle out while any is held.
+// ponytail: keyed by request device id, so it also counts android/simulator
+// overrides that would survive a daemon restart. harmless: they keep the
+// daemon alive until 'location clear'.
+var heldLocationOverrides sync.Map
+
+// HoldingLocationOverride reports whether any device has an uncleared override.
+func HoldingLocationOverride() bool {
+	held := false
+	heldLocationOverrides.Range(func(_, _ any) bool { held = true; return false })
+	return held
 }
 
 // findLocationSettableDevice resolves a device and asserts it can simulate a location

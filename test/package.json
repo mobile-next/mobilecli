@@ -6,6 +6,7 @@
 	"scripts": {
 		"test": "playwright test",
 		"test:server": "playwright test --project=server",
+		"test:daemon": "playwright test --project=daemon",
 		"test:ios": "playwright test --project=simulator",
 		"test:simulator": "playwright test --project=simulator",
 		"test:emulator": "playwright test --project=emulator",

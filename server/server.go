@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -67,7 +68,7 @@ type StreamSession struct {
 
 	// logs sessions only
 	Limit   int
-	Filters []commands.LogFilter
+	Filters []string // raw key=value / key!=value strings, validated at ticket time
 }
 
 // SessionManager manages screen capture streaming sessions
@@ -198,11 +199,9 @@ func (sm *SessionManager) RemoveSession(id string) {
 	delete(sm.sessions, id)
 }
 
+// StartServer serves the HTTP/WebSocket front. Device work is forwarded to the
+// daemon, which the caller must have started (see daemon.EnsureRunning).
 func StartServer(addr string, enableCORS bool) error {
-	// create shutdown hook for cleanup tracking
-	hook := devices.NewShutdownHook()
-	commands.SetShutdownHook(hook)
-
 	// initialize session manager
 	sessionManager = &SessionManager{
 		sessions: make(map[string]*StreamSession),
@@ -259,20 +258,6 @@ func StartServer(addr string, enableCORS bool) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	performShutdown := func() error {
-		// stop any active recording
-		if session, err := recorder.stop(); err == nil {
-			select {
-			case <-session.Done:
-			case <-time.After(10 * time.Second):
-				utils.Info("timeout waiting for recording to stop during shutdown")
-			}
-			recorder.clear()
-		}
-
-		if err := hook.Shutdown(); err != nil {
-			utils.Info("hook shutdown error: %v", err)
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
@@ -347,15 +332,11 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
 	}
 
-	// Use registry for all methods
 	if req.Method == "" {
 		err = fmt.Errorf("'method' is required")
 	} else {
-		registry := GetMethodRegistry()
-		handler, exists := registry[req.Method]
-		if exists {
-			result, err = handler(req.Params)
-		} else {
+		result, err = dispatchRPC(req.Method, req.Params)
+		if errors.Is(err, errMethodNotFound) {
 			sendJSONRPCError(w, req.ID, ErrCodeMethodNotFound, "Method not found", fmt.Sprintf("Method '%s' not found", req.Method))
 			return
 		}
@@ -1288,6 +1269,7 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 		TimeLimit:  p.TimeLimit,
 		StopChan:   session.StopChan,
 		Ready:      session.Ready,
+		Silent:     true,
 	}
 
 	go func() {
@@ -1487,14 +1469,14 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	}
 
 	// validate device exists (early error detection)
-	targetDevice, err := commands.FindDeviceOrAutoSelect(screenCaptureParams.DeviceID)
+	target, err := resolveDevice(screenCaptureParams.DeviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding device: %w", err)
+		return nil, err
 	}
 
 	// avc format validation based on device type
 	if screenCaptureParams.Format == "avc" {
-		if targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator" {
+		if target.Platform == "ios" && target.Type == "simulator" {
 			return nil, fmt.Errorf("avc format is not supported on iOS simulators")
 		}
 	}
@@ -1523,16 +1505,10 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	// generate session ID
 	sessionID := uuid.New().String()
 
-	// pin resolved device ID (handles auto-select)
-	resolvedDeviceID := screenCaptureParams.DeviceID
-	if resolvedDeviceID == "" {
-		resolvedDeviceID = targetDevice.ID()
-	}
-
 	// create session entry
 	session := &StreamSession{
 		ID:        sessionID,
-		DeviceID:  resolvedDeviceID,
+		DeviceID:  target.ID,
 		Type:      sessionTypeStream,
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
@@ -1676,16 +1652,17 @@ func handleLogsSession(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("limit must not be negative")
 	}
 
-	// filters use the same key=value / key!=value syntax as the cli
-	filters, err := commands.ParseLogFilters(req.Filters)
-	if err != nil {
+	// filters use the same key=value / key!=value syntax as the cli. validated
+	// here so a bad filter fails at ticket time; the daemon parses them again
+	// when the stream starts, so only the raw strings are kept on the session.
+	if _, err := commands.ParseLogFilters(req.Filters); err != nil {
 		return nil, err
 	}
 
 	// validate device exists (early error detection)
-	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	resolvedDeviceID, err := resolveDeviceID(req.DeviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding device: %w", err)
+		return nil, err
 	}
 
 	// ensure session manager is initialized for non-server Execute usage
@@ -1695,12 +1672,6 @@ func handleLogsSession(params json.RawMessage) (any, error) {
 
 	sessionID := uuid.New().String()
 
-	// pin resolved device ID (handles auto-select)
-	resolvedDeviceID := req.DeviceID
-	if resolvedDeviceID == "" {
-		resolvedDeviceID = targetDevice.ID()
-	}
-
 	session := &StreamSession{
 		ID:        sessionID,
 		DeviceID:  resolvedDeviceID,
@@ -1709,7 +1680,7 @@ func handleLogsSession(params json.RawMessage) (any, error) {
 		ExpiresAt: time.Now().Add(1 * time.Minute),
 		InUse:     false,
 		Limit:     req.Limit,
-		Filters:   filters,
+		Filters:   req.Filters,
 	}
 
 	if err := sessionManager.AddSession(session); err != nil {
@@ -1739,17 +1710,16 @@ func handleLogsStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// r.Context() is cancelled when the client disconnects, which stops the
-	// underlying log process on the device
-	response := commands.LogsCommand(r.Context(), commands.LogsRequest{
+	// r.Context() is cancelled when the client disconnects, which closes the
+	// daemon connection and stops the underlying log process on the device
+	err = streamFromDaemon(r.Context(), "cli.device.logs", commands.LogsStreamRequest{
 		DeviceID: session.DeviceID,
 		Limit:    session.Limit,
 		Filters:  session.Filters,
-		Writer:   flushWriter{w: w},
-	})
-	if response.Status == "error" {
+	}, writeFlusher(w), nil)
+	if err != nil {
 		// can't send an http error after streaming started, just log
-		log.Printf("Error streaming logs: %v", response.Error)
+		log.Printf("Error streaming logs: %v", err)
 	}
 }
 
@@ -1766,13 +1736,6 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	// set extended write deadline for long-running stream
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
 
-	// find device
-	targetDevice, err := commands.FindDeviceOrAutoSelect(session.DeviceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Device not found: %v", err), http.StatusNotFound)
-		return
-	}
-
 	// set streaming headers based on format
 	if session.Format == "mjpeg" {
 		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=BoundaryString")
@@ -1784,60 +1747,30 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	// setup progress callback for MJPEG format
-	var progressCallback func(string)
+	// progress messages are only representable inside the MJPEG multipart stream
+	var onProgress func(string)
 	if session.Format == "mjpeg" {
-		progressCallback = func(message string) {
-			notification := newJsonRpcNotification(message)
-			statusJSON, err := json.Marshal(notification)
+		onProgress = func(message string) {
+			statusJSON, err := json.Marshal(newJsonRpcNotification(message))
 			if err != nil {
 				log.Printf("Failed to marshal progress message: %v", err)
 				return
 			}
 			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
-			_, _ = w.Write([]byte(mimeMessage))
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			}
+			_, _ = flushWriter{w: w}.Write([]byte(mimeMessage))
 		}
 	}
 
-	// start agent
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		OnProgress: progressCallback,
-		Hook:       commands.GetShutdownHook(),
-	})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error starting agent: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// start screen capture and stream
-	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-		Format:     session.Format,
-		Quality:    session.Quality,
-		Scale:      session.Scale,
-		FPS:        session.FPS,
-		OnProgress: progressCallback,
-		OnData: func(data []byte) bool {
-			_, writeErr := w.Write(data)
-			if writeErr != nil {
-				fmt.Println("Error writing data:", writeErr)
-				return false
-			}
-
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			}
-
-			return true
-		},
-	})
-
+	err = streamFromDaemon(r.Context(), "cli.screencapture", commands.ScreenCaptureStreamRequest{
+		DeviceID: session.DeviceID,
+		Format:   session.Format,
+		Quality:  session.Quality,
+		Scale:    session.Scale,
+		FPS:      session.FPS,
+	}, writeFlusher(w), onProgress)
 	if err != nil {
 		// can't send HTTP error after streaming started, just log
-		log.Printf("Error starting screen capture: %v", err)
-		return
+		log.Printf("Error streaming screen capture: %v", err)
 	}
 
 	// session cleaned up by defer

@@ -208,9 +208,7 @@ func handleWSMessage(wsConn *wsConnection, message []byte) {
 }
 
 func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
-	registry := GetMethodRegistry()
-	handler, exists := registry[req.Method]
-	if !exists {
+	if _, exists := GetMethodRegistry()[req.Method]; !exists {
 		wsConn.sendError(req.ID, ErrCodeMethodNotFound, "Method not found", req.Method+" not found")
 		return
 	}
@@ -234,7 +232,7 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 				wsConn.sendError(req.ID, ErrCodeServerError, "Server error", fmt.Sprintf("panic: %v", r))
 			}
 		}()
-		result, err := handler(req.Params)
+		result, err := dispatchRPC(req.Method, req.Params)
 		if err != nil {
 			log.Printf("Error executing method %s: %v", req.Method, err)
 			wsConn.sendError(req.ID, ErrCodeServerError, "Server error", err.Error())

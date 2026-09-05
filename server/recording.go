@@ -67,3 +67,23 @@ func (rm *recordingManager) clear() {
 	defer rm.mu.Unlock()
 	rm.session = nil
 }
+
+func (rm *recordingManager) active() bool {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	return rm.session != nil
+}
+
+// StopRecordingForShutdown stops an in-progress recording and waits briefly
+// for it to finish writing, so the daemon never exits mid-file.
+func StopRecordingForShutdown() {
+	session, err := recorder.stop()
+	if err != nil {
+		return
+	}
+	select {
+	case <-session.Done:
+	case <-time.After(10 * time.Second):
+	}
+	recorder.clear()
+}

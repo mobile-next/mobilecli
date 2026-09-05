@@ -23,9 +23,9 @@ var locationSetCmd = &cobra.Command{
 	Short: "Override the device location",
 	Long: `Overrides the GPS location reported by the device, for example 37.7749,-122.4194.
 
-With --wait, mobilecli keeps running and clears the override when interrupted
-with Ctrl-C. This is required on iOS 17+ physical devices, where the simulated
-location only lasts as long as the mobilecli process that set it.`,
+The override is held by the background mobilecli daemon, which stays alive
+until the override is cleared. With --wait, mobilecli also keeps running in the
+foreground and clears the override when interrupted with Ctrl-C.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		lat, lon, err := commands.ParseLatLon(args[0])
@@ -33,15 +33,13 @@ location only lasts as long as the mobilecli process that set it.`,
 			return err
 		}
 
-		response := commands.LocationSetCommand(commands.LocationSetRequest{
+		err = runViaDaemon("cli.device.location.set", commands.LocationSetRequest{
 			DeviceID:  deviceId,
 			Latitude:  lat,
 			Longitude: lon,
 		})
-
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
+		if err != nil {
+			return err
 		}
 
 		if locationWait {
@@ -58,16 +56,9 @@ var locationClearCmd = &cobra.Command{
 	Short: "Clear a location override",
 	Long:  `Removes a location override, restoring the location the device reports on its own.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.LocationClearCommand(commands.LocationClearRequest{
+		return runViaDaemon("cli.device.location.clear", commands.LocationClearRequest{
 			DeviceID: deviceId,
 		})
-
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
 	},
 }
 
@@ -85,16 +76,9 @@ func waitForInterrupt() {
 // clearLocationOnExit clears the override we are holding, reporting a failure
 // as a warning: we are on our way out either way.
 func clearLocationOnExit() {
-	response := commands.LocationClearCommand(commands.LocationClearRequest{
-		DeviceID: deviceId,
-	})
-
-	if response.Status == "error" {
-		fmt.Fprintf(os.Stderr, "Warning: failed to clear location: %s\n", response.Error)
-		return
+	if err := runViaDaemon("cli.device.location.clear", commands.LocationClearRequest{DeviceID: deviceId}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to clear location: %s\n", err)
 	}
-
-	printJson(response)
 }
 
 func init() {

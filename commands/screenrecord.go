@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -18,9 +19,10 @@ type ScreenRecordRequest struct {
 	DeviceID   string
 	OutputPath string
 	TimeLimit  int             // max recording duration in seconds, 0 = no limit
-	StopChan   <-chan struct{} // when non-nil, stops recording when closed (server mode)
+	StopChan   <-chan struct{} // when non-nil, stops recording when closed (server mode; such callers also set Silent or Progress, since there is no terminal)
 	Ready      chan<- error    // optional (server mode): signaled once, with nil once recording is confirmed live or with an error if it failed to start
 	Silent     bool
+	Progress   io.Writer // receives progress text unless Silent; defaults to os.Stderr
 }
 
 // signalReady notifies req.Ready, if present, that the recording is confirmed
@@ -116,6 +118,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 // screenRecordProgress manages progress output during screen recording
 type screenRecordProgress struct {
 	silent      bool
+	out         io.Writer
 	timeLimit   int
 	stopOnce    sync.Once
 	tickerDone  chan struct{}
@@ -124,8 +127,13 @@ type screenRecordProgress struct {
 }
 
 func newScreenRecordProgress(req ScreenRecordRequest) *screenRecordProgress {
+	out := req.Progress
+	if out == nil {
+		out = os.Stderr
+	}
 	return &screenRecordProgress{
-		silent:     req.Silent || req.StopChan != nil,
+		silent:     req.Silent,
+		out:        out,
 		timeLimit:  req.TimeLimit,
 		tickerDone: make(chan struct{}),
 	}
@@ -136,7 +144,7 @@ func (p *screenRecordProgress) started() {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Screen recording has started\n")
+	fmt.Fprintf(p.out, "Screen recording has started\n")
 }
 
 func (p *screenRecordProgress) startTicker() {
@@ -156,9 +164,9 @@ func (p *screenRecordProgress) startTicker() {
 				em, es := elapsed/60, elapsed%60
 				if p.timeLimit > 0 {
 					lm, ls := p.timeLimit/60, p.timeLimit%60
-					fmt.Fprintf(os.Stderr, "\rScreen recording for %02d:%02d seconds (time limit %02d:%02d)", em, es, lm, ls)
+					fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds (time limit %02d:%02d)", em, es, lm, ls)
 				} else {
-					fmt.Fprintf(os.Stderr, "\rScreen recording for %02d:%02d seconds", em, es)
+					fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds", em, es)
 				}
 			}
 		}
@@ -180,21 +188,21 @@ func (p *screenRecordProgress) recordingEnded() {
 	if !p.wasStarted {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\nScreen recording ended, please wait while finalizing video\n")
+	fmt.Fprintf(p.out, "\nScreen recording ended, please wait while finalizing video\n")
 }
 
 func (p *screenRecordProgress) downloadProgress(downloadedMB, totalMB float64) {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\rDownloading %.3f / %.3f MB", downloadedMB, totalMB)
+	fmt.Fprintf(p.out, "\rDownloading %.3f / %.3f MB", downloadedMB, totalMB)
 }
 
 func (p *screenRecordProgress) downloaded(speedMBps float64) {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\nDownloading done, %.3f MB/sec\n", speedMBps)
+	fmt.Fprintf(p.out, "\nDownloading done, %.3f MB/sec\n", speedMBps)
 }
 
 func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {

@@ -10,6 +10,7 @@ export default defineConfig<{}, DeviceTypeOptions>({
 	reporter: 'list',
 	projects: [
 		{name: 'server', testMatch: /server\.spec\.ts/},
+		{name: 'daemon', testMatch: /daemon\.spec\.ts/},
 		{name: 'simulator', testMatch: /simulator\.spec\.ts/},
 		{name: 'emulator', testMatch: /android\.spec\.ts/, use: {deviceType: 'emulator'}},
 		{name: 'android', testMatch: /android\.spec\.ts/, use: {deviceType: 'real'}},

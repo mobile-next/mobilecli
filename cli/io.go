@@ -23,15 +23,10 @@ var ioTapCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		coordsStr := args[0]
 		if strings.HasPrefix(coordsStr, "@") {
-			response := commands.TapCommand(commands.TapRequest{
+			return runViaDaemon("cli.io.tap", commands.TapRequest{
 				DeviceID: deviceId,
 				Ref:      coordsStr,
 			})
-			printJson(response)
-			if response.Status == "error" {
-				return fmt.Errorf("%s", response.Error)
-			}
-			return nil
 		}
 
 		parts := strings.Split(coordsStr, ",")
@@ -56,12 +51,7 @@ var ioTapCmd = &cobra.Command{
 			Y:        y,
 		}
 
-		response := commands.TapCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.tap", req)
 	},
 }
 
@@ -98,12 +88,7 @@ var ioLongPressCmd = &cobra.Command{
 			Duration: longPressDuration,
 		}
 
-		response := commands.LongPressCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.longpress", req)
 	},
 }
 
@@ -118,12 +103,7 @@ var ioButtonCmd = &cobra.Command{
 			Button:   args[0],
 		}
 
-		response := commands.ButtonCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.button", req)
 	},
 }
 
@@ -138,12 +118,7 @@ var ioTextCmd = &cobra.Command{
 			Text:     args[0],
 		}
 
-		response := commands.TextCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.text", req)
 	},
 }
 
@@ -160,12 +135,7 @@ Keys name physical keys and are case-insensitive: "cmd+A" is the same as "cmd+a"
 			Keys:     args,
 		}
 
-		response := commands.KeysCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.keys", req)
 	},
 }
 
@@ -203,12 +173,7 @@ var ioSwipeCmd = &cobra.Command{
 			Duration: swipeDuration,
 		}
 
-		response := commands.SwipeCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.io.swipe", req)
 	},
 }
 

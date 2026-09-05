@@ -67,6 +67,50 @@ func resolveScreenWidthForClip(device devices.ControllableDevice, clip *types.Sc
 	return info.ScreenSize.Width, nil
 }
 
+// resolveScreenshotPath turns the requested output into an absolute file path.
+// A path ending in a separator (or an empty path, meaning the current
+// directory) gets a generated screenshot-<device>-<timestamp> filename.
+func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) {
+	isDir := outputPath == "" || os.IsPathSeparator(outputPath[len(outputPath)-1])
+	if !isDir {
+		abs, err := filepath.Abs(outputPath)
+		if err != nil {
+			return "", fmt.Errorf("invalid output path: %v", err)
+		}
+		return abs, nil
+	}
+
+	timestamp := time.Now().Format("20060102150405")
+	safeDeviceID := strings.ReplaceAll(deviceID, ":", "_")
+	extension := "png"
+	if format == "jpeg" {
+		extension = "jpg"
+	}
+	fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
+	abs, err := filepath.Abs(filepath.Join(outputPath, fileName))
+	if err != nil {
+		return "", fmt.Errorf("error creating default path: %v", err)
+	}
+	return uniquePath(abs), nil
+}
+
+// uniquePath appends -1, -2, ... before the extension until the name is free,
+// so two screenshots of one device within the same second do not overwrite
+// each other.
+func uniquePath(path string) string {
+	if _, err := os.Stat(path); err != nil {
+		return path
+	}
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if _, err := os.Stat(candidate); err != nil {
+			return candidate
+		}
+	}
+}
+
 // ScreenshotCommand takes a screenshot of the specified device
 func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 	// Find the target device
@@ -135,26 +179,9 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		// Return as base64 data for stdout
 		response.Data = base64.StdEncoding.EncodeToString(imageBytes)
 	} else {
-		// Save to file
-		var finalPath string
-		if req.OutputPath != "" {
-			finalPath, err = filepath.Abs(req.OutputPath)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("invalid output path: %v", err))
-			}
-		} else {
-			// Default filename generation
-			timestamp := time.Now().Format("20060102150405")
-			safeDeviceID := strings.ReplaceAll(targetDevice.ID(), ":", "_")
-			extension := "png"
-			if req.Format == "jpeg" {
-				extension = "jpg"
-			}
-			fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
-			finalPath, err = filepath.Abs("./" + fileName)
-			if err != nil {
-				return NewErrorResponse(fmt.Errorf("error creating default path: %v", err))
-			}
+		finalPath, err := resolveScreenshotPath(req.OutputPath, targetDevice.ID(), req.Format)
+		if err != nil {
+			return NewErrorResponse(err)
 		}
 
 		// Write file

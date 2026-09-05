@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -18,14 +16,9 @@ var webviewListCmd = &cobra.Command{
 	Short: "List embedded webviews on a device",
 	Long:  `Returns all embedded webviews currently visible in the foreground app. Browser apps (Safari, Chrome) are not included.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewListCommand(commands.WebViewListRequest{
+		return runViaDaemon("cli.webview.list", commands.WebViewListRequest{
 			DeviceID: deviceId,
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -35,16 +28,11 @@ var webviewGotoCmd = &cobra.Command{
 	Long:  `Navigates the specified webview to the given URL. The webview id comes from 'webview list'.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewGotoCommand(commands.WebViewGotoRequest{
+		return runViaDaemon("cli.webview.goto", commands.WebViewGotoRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 			URL:       args[1],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -54,15 +42,10 @@ var webviewReloadCmd = &cobra.Command{
 	Long:  `Reloads the page currently loaded in the specified webview.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewReloadCommand(commands.WebViewReloadRequest{
+		return runViaDaemon("cli.webview.reload", commands.WebViewReloadRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -72,15 +55,10 @@ var webviewBackCmd = &cobra.Command{
 	Long:  `Navigates the webview back in its history, equivalent to pressing the browser back button.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewGoBackCommand(commands.WebViewRequest{
+		return runViaDaemon("cli.webview.back", commands.WebViewRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -90,15 +68,10 @@ var webviewForwardCmd = &cobra.Command{
 	Long:  `Navigates the webview forward in its history, equivalent to pressing the browser forward button.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewGoForwardCommand(commands.WebViewRequest{
+		return runViaDaemon("cli.webview.forward", commands.WebViewRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -108,16 +81,11 @@ var webviewEvalCmd = &cobra.Command{
 	Long:  `Evaluates a JavaScript expression in the context of the specified webview and returns the result.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
+		return runViaDaemon("cli.webview.eval", commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
 			Expression: args[1],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -127,17 +95,12 @@ var webviewWaitCmd = &cobra.Command{
 	Long:  `Waits for the webview to reach the specified load state before returning.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewWaitForLoadStateCommand(commands.WebViewWaitForLoadStateRequest{
+		return runViaDaemon("cli.webview.wait", commands.WebViewWaitForLoadStateRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 			State:     webviewWaitState,
 			Timeout:   webviewWaitTimeout,
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -149,16 +112,11 @@ var webviewURLCmd = &cobra.Command{
 	Long:  `Prints the current URL loaded in the specified webview.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
+		return runViaDaemon("cli.webview.eval", commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
 			Expression: "return location.href",
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -168,16 +126,11 @@ var webviewTitleCmd = &cobra.Command{
 	Long:  `Prints the document title of the page currently loaded in the specified webview.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewEvaluateCommand(commands.WebViewEvaluateRequest{
+		return runViaDaemon("cli.webview.eval", commands.WebViewEvaluateRequest{
 			DeviceID:   deviceId,
 			WebViewID:  args[0],
 			Expression: "return document.title",
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -187,15 +140,10 @@ var webviewContentCmd = &cobra.Command{
 	Long:  `Returns the full outer HTML of the page currently loaded in the specified webview.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewContentCommand(commands.WebViewRequest{
+		return runViaDaemon("cli.webview.content", commands.WebViewRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
@@ -205,16 +153,11 @@ var webviewQueryCmd = &cobra.Command{
 	Long:  `Finds elements matching a CSS selector and returns their tag, text, id, and value. Useful for inspecting webview content.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.WebViewQueryCommand(commands.WebViewQueryRequest{
+		return runViaDaemon("cli.webview.query", commands.WebViewQueryRequest{
 			DeviceID:  deviceId,
 			WebViewID: args[0],
 			Selector:  args[1],
 		})
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 

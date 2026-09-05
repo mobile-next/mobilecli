@@ -1,12 +1,6 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -29,23 +23,14 @@ Examples:
   mobilecli device logs --filter process!=SpringBoard
   mobilecli device logs --filter level=Error --filter process=backboardd`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer cancel()
-
-		filters, err := commands.ParseLogFilters(logsFilters)
-		if err != nil {
+		if _, err := commands.ParseLogFilters(logsFilters); err != nil {
 			return err
 		}
-		response := commands.LogsCommand(ctx, commands.LogsRequest{
+		return streamViaDaemon("cli.device.logs", commands.LogsStreamRequest{
 			DeviceID: deviceId,
 			Limit:    logsLimit,
-			Filters:  filters,
+			Filters:  logsFilters,
 		})
-		if response.Status == "error" {
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
 	},
 }
 
