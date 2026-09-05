@@ -131,6 +131,7 @@ type flutterVM struct {
 	mu           sync.Mutex
 	seq          int
 	pending      map[int]chan vmResp
+	fatal        error // connection-level failure that ended the read loop
 	isolateID    string
 	dpr          float64
 	zeroOffsetID string        // objectId of Offset.zero, the localToGlobal argument
@@ -203,13 +204,31 @@ func (vm *flutterVM) readLoop() {
 func (vm *flutterVM) failAll(err error) {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
+	if vm.fatal == nil {
+		vm.fatal = err
+	}
 	for id, ch := range vm.pending {
 		ch <- vmResp{err: err}
 		delete(vm.pending, id)
 	}
 }
 
+// fatalErr reports the connection-level failure that ended the read loop, if
+// any. Once the socket is gone every later call is doomed, so callers use this
+// to abort instead of reporting a half-walked tree as a complete dump.
+func (vm *flutterVM) fatalErr() error {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	return vm.fatal
+}
+
 func (vm *flutterVM) call(method string, params map[string]any) (json.RawMessage, error) {
+	// The read loop is gone, so nothing would ever answer this — fail now rather
+	// than block for the full timeout on every remaining node of the walk.
+	if err := vm.fatalErr(); err != nil {
+		return nil, err
+	}
+
 	vm.callSem <- struct{}{}
 	defer func() { <-vm.callSem }()
 
@@ -444,7 +463,18 @@ func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) 
 	t1 := time.Now()
 	els, err := vm.visit(rootID, rootRenderClass, nil)
 	utils.Verbose("flutter: tree walk took %s", time.Since(t1))
-	return els, err
+	if err != nil {
+		return nil, err
+	}
+	// A walk whose goroutines were all past their entry check when the socket
+	// died returns no error, just a thin tree — catch that here.
+	if err := vm.fatalErr(); err != nil {
+		return nil, fmt.Errorf("vm service connection lost during the walk: %w", err)
+	}
+	if len(els) == 0 {
+		return nil, fmt.Errorf("render-tree walk produced no elements")
+	}
+	return els, nil
 }
 
 // renderChild is a child render object plus its class name (both come from the
@@ -560,7 +590,14 @@ func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
 // hoisted — only leaf render objects with a non-zero size are emitted, which is
 // exactly the visible content (paragraphs, images, custom-painted widgets like
 // charts), each with its real Flutter type and global bounds.
+// A per-node RPC failure is not an error here — plenty of render objects
+// legitimately refuse localToGlobal or describe no children — but a dead
+// connection is, and it must not masquerade as an empty subtree.
 func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]types.ScreenElement, error) {
+	if err := vm.fatalErr(); err != nil {
+		return nil, err
+	}
+
 	// A render object that forms a semantics boundary carries the label/flags on
 	// its own debugSemantics (only the owner does — ancestors and merged
 	// descendants read empty), regardless of the boundary class
@@ -584,15 +621,21 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]t
 	// their results to our level, preserving order.
 	if len(kids) > 0 {
 		results := make([][]types.ScreenElement, len(kids))
+		errs := make([]error, len(kids))
 		var wg sync.WaitGroup
 		for i, k := range kids {
 			wg.Add(1)
 			go func(i int, k renderChild) {
 				defer wg.Done()
-				results[i], _ = vm.visit(k.id, k.class, sem)
+				results[i], errs[i] = vm.visit(k.id, k.class, sem)
 			}(i, k)
 		}
 		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return nil, err
+			}
+		}
 		var children []types.ScreenElement
 		for _, r := range results {
 			children = append(children, r...)

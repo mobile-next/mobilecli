@@ -89,6 +89,27 @@
           }
         },
         {
+          "name": "scale",
+          "description": "Scale factor for the screenshot (0.0-1.0, default 1.0)",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "default": 1
+          }
+        },
+        {
+          "name": "maxSize",
+          "description": "Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit)",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
           "name": "clip",
           "description": "Optional rectangle to crop the screenshot to, in screen coordinates",
           "required": false,
@@ -149,10 +170,15 @@
         }
       ],
       "result": {
-        "name": "stream",
-        "description": "Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC",
+        "name": "session",
+        "description": "Streaming session. Connect to sessionUrl to receive the stream (multipart/x-mixed-replace for MJPEG, video/h264 for AVC). The session expires one minute after creation and accepts a single connection.",
         "schema": {
-          "type": "string"
+          "type": "object",
+          "properties": {
+            "format": { "type": "string", "description": "Video format of the stream" },
+            "sessionUrl": { "type": "string", "description": "Path to connect to for the stream, e.g. /sessions/<session-id>/stream" }
+          },
+          "required": ["format", "sessionUrl"]
         }
       }
     },
@@ -578,6 +604,74 @@
         {
           "name": "orientation",
           "description": "Desired orientation",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.location.set",
+      "summary": "Override device location",
+      "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "latitude",
+          "description": "Latitude in degrees, between -90 and 90",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "longitude",
+          "description": "Longitude in degrees, between -180 and 180",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "name": "location",
+        "description": "Simulated location",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.location.clear",
+      "summary": "Clear device location override",
+      "description": "Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
           "required": true,
           "schema": {
             "type": "string"
@@ -1149,6 +1243,42 @@
         "name": "success",
         "description": "Operation result",
         "schema": { "$ref": "#/components/schemas/SuccessResult" }
+      }
+    },
+    {
+      "name": "device.logs",
+      "summary": "Start device log streaming",
+      "description": "Creates a log streaming session for the specified device and returns the URL to connect to. Supported on iOS real devices, iOS simulators, and Android devices.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "limit",
+          "description": "Stop the stream after this many log entries (0 or omitted for unlimited)",
+          "required": false,
+          "schema": { "type": "integer", "default": 0 }
+        },
+        {
+          "name": "filters",
+          "description": "Filters applied to every entry, ANDed together. Each is 'key=value' to include or 'key!=value' to exclude, matched exactly. Valid keys: pid, process, tag, level, subsystem, category, message",
+          "required": false,
+          "schema": { "type": "array", "items": { "type": "string" } }
+        }
+      ],
+      "result": {
+        "name": "session",
+        "description": "Log streaming session. Connect to sessionUrl to receive application/x-ndjson, one JSON log entry per line. The session expires one minute after creation and accepts a single connection.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "sessionUrl": { "type": "string", "description": "Path to connect to for the log stream, e.g. /sessions/<session-id>/logs" }
+          },
+          "required": ["sessionUrl"]
+        }
       }
     },
     {

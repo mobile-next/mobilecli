@@ -22,6 +22,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"github.com/danielpaulus/go-ios/ios/instruments"
+	"github.com/danielpaulus/go-ios/ios/ostrace"
 	"github.com/danielpaulus/go-ios/ios/testmanagerd"
 	"github.com/danielpaulus/go-ios/ios/tunnel"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
@@ -81,9 +82,10 @@ type IOSDevice struct {
 	deviceKitCancel             context.CancelFunc
 	portForwarderDeviceKitAgent *ios.PortForwarder
 	portForwarderMjpeg          *ios.PortForwarder
-	portForwarderDeviceKit      *ios.PortForwarder // devicekit http forwarder
-	portForwarderAvc            *ios.PortForwarder // devicekit h264 stream forwarder
-	avcStreamConn               net.Conn           // live h264 stream conn, doubles as the control channel
+	portForwarderDeviceKit      *ios.PortForwarder                     // devicekit http forwarder
+	portForwarderAvc            *ios.PortForwarder                     // devicekit h264 stream forwarder
+	avcStreamConn               net.Conn                               // live h264 stream conn, doubles as the control channel
+	locationSimulationService   *instruments.LocationSimulationService // open while an ios 17+ location override is held
 
 	avcWriteMu sync.Mutex // serializes control writes on avcStreamConn
 }
@@ -169,20 +171,35 @@ func ListIOSDevices() ([]*IOSDevice, error) {
 		return nil, fmt.Errorf("failed getting device list: %w", err)
 	}
 
-	devices := make([]*IOSDevice, len(deviceList.DeviceList))
-	for i, deviceEntry := range deviceList.DeviceList {
+	// go-ios returns one entry per connection (usb, network), dedupe by udid.
+	// a device that fails getDeviceInfo (untrusted, locked) is skipped so it
+	// does not hide the remaining devices.
+	devices := make([]*IOSDevice, 0, len(deviceList.DeviceList))
+	seen := make(map[string]bool)
+	for _, deviceEntry := range deviceList.DeviceList {
+		udid := deviceEntry.Properties.SerialNumber
+		if seen[udid] {
+			continue
+		}
+
 		device, err := getDeviceInfo(deviceEntry)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get device info: %w", err)
+			utils.Verbose("Warning: skipping device %s: %v", udid, err)
+			continue
 		}
-		devices[i] = device
+		seen[udid] = true
+		devices = append(devices, device)
 	}
 
 	return devices, nil
 }
 
-func (d *IOSDevice) TakeScreenshot() ([]byte, error) {
-	return d.deviceKitClient.TakeScreenshot()
+func (d *IOSDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	data, err := d.deviceKitClient.TakeScreenshot()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
 }
 
 func (d *IOSDevice) Reboot() error {
@@ -1762,6 +1779,86 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+func (d *IOSDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	// ensure tunnel is running for iOS 17+
+	err := d.startTunnel()
+	if err != nil {
+		return fmt.Errorf("failed to start tunnel: %w", err)
+	}
+
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return fmt.Errorf("failed to get device: %w", err)
+	}
+
+	spec := ostrace.DefaultLevelFilter()
+	conn, err := ostrace.New(device, -1, spec.MessageFilter, spec.StreamFlags)
+	if err != nil {
+		return fmt.Errorf("failed to connect to os_trace_relay: %w", err)
+	}
+
+	type readResult struct {
+		entry LogEntry
+		err   error
+	}
+
+	ch := make(chan readResult, 1)
+	done := make(chan struct{})
+	var closeOnce sync.Once
+	stopStreaming := func() {
+		closeOnce.Do(func() {
+			close(done)
+			_ = conn.Close()
+		})
+	}
+	defer stopStreaming()
+
+	go func() {
+		for {
+			raw, err := conn.ReadEntry()
+			result := readResult{err: err}
+			if err == nil {
+				result.entry = LogEntry{
+					Timestamp: raw.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
+					Message:   raw.Message,
+					Level:     raw.LevelName,
+					PID:       int(raw.PID),
+					Process:   processNameFromPath(raw.Filename),
+				}
+				if raw.Label != nil {
+					result.entry.Subsystem = raw.Label.Subsystem
+					result.entry.Category = raw.Label.Category
+				}
+			}
+			select {
+			case <-done:
+				return
+			case ch <- result:
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case r := <-ch:
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("os_trace read error: %w", r.err)
+			}
+			if !onLog(r.entry) {
+				return nil
+			}
+		}
+	}
 }
 
 // stringValue returns v as a string when it is one, else "".

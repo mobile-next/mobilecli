@@ -1,16 +1,38 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+// LogEntry represents a single parsed log entry from a device
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem,omitempty"`
+	Category  string `json:"category,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+}
+
+// processNameFromPath extracts the binary name from a full image path
+func processNameFromPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		return path[idx+1:]
+	}
+	return path
+}
 
 type CrashReport struct {
 	ProcessName string `json:"processName"`
@@ -73,6 +95,21 @@ func buildMjpegURL(port, fps int, scale float64) string {
 	return url
 }
 
+// ScreenshotOptions contains options for taking a screenshot.
+// MaxSize caps max(width, height) in pixels keeping aspect ratio and takes
+// precedence over Scale; neither ever upscales.
+// Rect crops before Scale/MaxSize apply; it is expressed in screen points
+// (the same units as dump.ui bounds) and mapped to pixels via
+// ScreenWidthPoints, which is required when Rect is set.
+type ScreenshotOptions struct {
+	Format            string                   // "png" or "jpeg"
+	Quality           int                      // 1-100, only used for JPEG
+	Scale             float64                  // 0.0-1.0, 1.0 means no scaling
+	MaxSize           int                      // 0 means no limit
+	Clip              *types.ScreenElementRect // nil means no cropping
+	ScreenWidthPoints int                      // screen width in points, required when Rect is set
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
@@ -120,7 +157,7 @@ type ControllableDevice interface {
 	Version() string    // OS version
 	State() string      // e.g., "online", "offline"
 
-	TakeScreenshot() ([]byte, error)
+	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
 	Reboot() error
 	Boot() error     // boot simulator/emulator
 	Shutdown() error // shutdown simulator/emulator
@@ -150,6 +187,7 @@ type ControllableDevice interface {
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
 
 	PushFile(localPath, remotePath string) error
 	PullFile(remotePath, localPath string) error
@@ -157,6 +195,13 @@ type ControllableDevice interface {
 	Mkdir(bundleID, remotePath string, parents bool) error
 	Rm(bundleID, remotePath string, recursive bool) error
 	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// LocationSettable is implemented by devices that can simulate a GPS location.
+// Devices that don't implement it report location override as unsupported.
+type LocationSettable interface {
+	SetLocation(lat, lon float64) error
+	ClearLocation() error
 }
 
 // AnimationConfigurable is implemented by devices that can toggle system

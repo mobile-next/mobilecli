@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,6 +27,10 @@ import (
 )
 
 const androidDiscoveryGetpropTimeout = 5 * time.Second
+
+// androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
+// on the device, shared by every feature that runs a class out of it
+const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
 type AndroidDevice struct {
@@ -151,13 +158,6 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
-	deviceID := d.getAdbIdentifier()
-	cmdArgs := append([]string{"-s", deviceID}, args...)
-	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
-	return cmd.CombinedOutput()
-}
-
 // getDisplayCount counts the number of displays on the device
 func (d *AndroidDevice) getDisplayCount() int {
 	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
@@ -254,7 +254,72 @@ func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
 	return byteData, nil
 }
 
-func (d *AndroidDevice) TakeScreenshot() ([]byte, error) {
+func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	// prefer on-device capture+encode via the embedded dex: a cropped and/or
+	// downscaled image crosses adb instead of screencap's full-size png
+	data, err := d.takeScreenshotWithDex(opts)
+	if err == nil {
+		return data, nil
+	}
+	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
+
+	data, err = d.takeScreenshotWithScreencap()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
+}
+
+// takeScreenshotWithDex captures, scales, and encodes on-device via the
+// DeviceServer (Screenshot.java), which returns the image base64-encoded.
+// Output is validated by magic bytes.
+func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, error) {
+	format := opts.Format
+	if format == "" {
+		format = "png"
+	}
+	if format != "png" && format != "jpeg" {
+		return nil, fmt.Errorf("invalid format: %q", format)
+	}
+
+	utils.Verbose("taking screenshot on-device via mobilecli.dex")
+
+	params := map[string]any{
+		"format":  format,
+		"quality": opts.Quality,
+		"scale":   opts.Scale,
+		"maxSize": opts.MaxSize,
+	}
+	if opts.Clip != nil {
+		params["clip"] = map[string]any{
+			"x": opts.Clip.X, "y": opts.Clip.Y, "width": opts.Clip.Width, "height": opts.Clip.Height,
+		}
+		params["screenWidth"] = opts.ScreenWidthPoints
+	}
+
+	raw, err := d.serverRequest("device.screenshot", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse screenshot response: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(result.Data)
+	if err != nil {
+		return nil, fmt.Errorf("decode screenshot: %w", err)
+	}
+
+	if !utils.IsPNG(data) && !utils.IsJPEG(data) {
+		return nil, fmt.Errorf("unexpected output (%d bytes)", len(data))
+	}
+	return data, nil
+}
+
+func (d *AndroidDevice) takeScreenshotWithScreencap() ([]byte, error) {
 	displayCount := d.getDisplayCount()
 
 	if displayCount <= 1 {
@@ -432,32 +497,26 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return nil
 }
 
-func (d *AndroidDevice) clipboardCommand(args ...string) (string, error) {
-	out, err := d.runDexClass("com.mobilenext.mobilecli.Clipboard", args...)
-	if err != nil {
-		return "", err
-	}
-
-	return string(out), nil
-}
-
 func (d *AndroidDevice) GetClipboard() (string, error) {
-	out, err := d.clipboardCommand("get")
+	raw, err := d.serverRequest("device.clipboard.get", nil)
 	if err != nil {
 		return "", err
 	}
-
-	return strings.TrimSuffix(out, "\n"), nil
+	var result struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", fmt.Errorf("parse clipboard response: %w", err)
+	}
+	return result.Text, nil
 }
 
 func (d *AndroidDevice) SetClipboard(text string) error {
 	if text == "" {
-		_, err := d.clipboardCommand("clear")
+		_, err := d.serverRequest("device.clipboard.clear", nil)
 		return err
 	}
-
-	// base64 keeps spaces, emoji and other UTF-8 intact across the shell.
-	_, err := d.clipboardCommand("set", "--base64", base64.StdEncoding.EncodeToString([]byte(text)))
+	_, err := d.serverRequest("device.clipboard.set", map[string]any{"text": text})
 	return err
 }
 
@@ -864,12 +923,6 @@ func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
 	return nil
 }
 
-// isDeviceKitInstalled checks if DeviceKit is installed on the device
-func (d *AndroidDevice) isDeviceKitInstalled() bool {
-	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
-	return err == nil && appPath != ""
-}
-
 // isAscii checks if text contains only ASCII characters
 func isAscii(text string) bool {
 	for _, char := range text {
@@ -917,31 +970,20 @@ func (d *AndroidDevice) SendKeys(text string) error {
 		return err
 	}
 
-	// try sending over clipboard if DeviceKit is installed
-	if d.isDeviceKitInstalled() {
-		// ensure clipboard is always cleared, even on failure
-		defer func() {
-			_, _ = d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.clear", "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
-		}()
-
-		// encode text as base64
-		base64Text := base64.StdEncoding.EncodeToString([]byte(text))
-
-		// send clipboard over and immediately paste it
-		_, err := d.runAdbCommand("shell", "am", "broadcast", "-a", "devicekit.clipboard.set", "-e", "encoding", "base64", "-e", "text", base64Text, "-n", "com.mobilenext.devicekit/.ClipboardBroadcastReceiver")
-		if err != nil {
-			return fmt.Errorf("failed to set clipboard: %w", err)
-		}
-
-		_, err = d.runAdbCommand("shell", "input", "keyevent", "KEYCODE_PASTE")
-		if err != nil {
-			return fmt.Errorf("failed to paste: %w", err)
-		}
-
-		return nil
+	// adb shell input can't carry non-ASCII; put it on the clipboard and paste
+	if err := d.SetClipboard(text); err != nil {
+		return fmt.Errorf("failed to set clipboard: %w", err)
 	}
+	defer func() {
+		if err := d.SetClipboard(""); err != nil {
+			utils.Verbose("failed to clear clipboard after paste: %v", err)
+		}
+	}()
 
-	return fmt.Errorf("non-ASCII text is not supported on Android, please install mobilenext devicekit, see https://github.com/mobile-next/devicekit-android")
+	if _, err := d.runAdbCommand("shell", "input", "keyevent", "KEYCODE_PASTE"); err != nil {
+		return fmt.Errorf("failed to paste: %w", err)
+	}
+	return nil
 }
 
 func (d *AndroidDevice) OpenURL(url string) error {
@@ -988,28 +1030,15 @@ func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-// listAllPackages runs the embedded PackageLister (agents/android/java/PackageLister.java)
-// on the device via app_process, which returns name and versions for every package in one
-// call instead of one dumpsys per package.
+// listAllPackages asks the DeviceServer (PackageLister.java) for name and
+// versions of every package in one call instead of one dumpsys per package.
 func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
-	output, err := d.runDexClass("com.mobilenext.mobilecli.PackageLister")
+	raw, err := d.serverRequest("device.apps.list", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list packages: %w: %s", err, strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("failed to list packages: %w", err)
 	}
 
-	return parsePackageListerOutput(output)
-}
-
-// runDexClass pushes the embedded mobilecli.dex (agents/android) to the device
-// and runs the given class's main() via app_process.
-func (d *AndroidDevice) runDexClass(className string, args ...string) ([]byte, error) {
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
-		return nil, fmt.Errorf("push .dex: %w", err)
-	}
-
-	cmdArgs := append([]string{"exec-out", "CLASSPATH=" + tmpDEX, "app_process", "/", className}, args...)
-	return d.runAdbCommand(cmdArgs...)
+	return parsePackageListerOutput(raw)
 }
 
 // parsePackageListerOutput decodes the JSON array printed by PackageLister.
@@ -1190,34 +1219,21 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
 	}
 
-	if config.OnProgress != nil {
-		config.OnProgress("Installing Agent")
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
+		return fmt.Errorf("push .dex: %w", err)
 	}
 
-	utils.Verbose("Ensuring DeviceKit is installed...")
-	err := d.EnsureDeviceKitInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to ensure DeviceKit is installed: %v", err)
-	}
-
-	appPath, err := d.GetAppPath("com.mobilenext.devicekit")
-	if err != nil {
-		return fmt.Errorf("failed to get app path: %v", err)
-	}
-
-	var serverClass string
-	if config.Format == "mjpeg" {
-		serverClass = "com.mobilenext.devicekit.MjpegServer"
-	} else {
-		serverClass = "com.mobilenext.devicekit.AvcServer"
+	serverClass := "com.mobilenext.mobilecli.MjpegServer"
+	if config.Format == "avc" {
+		serverClass = "com.mobilenext.mobilecli.AvcServer"
 	}
 
 	if config.OnProgress != nil {
 		config.OnProgress("Starting Agent")
 	}
 
-	utils.Verbose("Starting %s with app path: %s", serverClass, appPath)
-	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", fmt.Sprintf("CLASSPATH=%s", appPath), "app_process", "/system/bin", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
+	utils.Verbose("Starting %s via mobilecli.dex", serverClass)
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", "CLASSPATH="+androidDexPath, "app_process", "/", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
 
 	// bitrate only applies to AvcServer
 	if config.Format == "avc" && config.Bitrate > 0 {
@@ -1336,70 +1352,6 @@ func (d *AndroidDevice) signalRemoteScreenRecord(remotePath string) {
 	}
 }
 
-func (d *AndroidDevice) installPackage(apkPath string) error {
-	output, err := d.runAdbCommand("install", apkPath)
-	if err != nil {
-		return fmt.Errorf("failed to install package: %v\nOutput: %s", err, string(output))
-	}
-
-	if strings.Contains(string(output), "Success") {
-		return nil
-	}
-
-	return fmt.Errorf("installation failed: %s", string(output))
-}
-
-func (d *AndroidDevice) EnsureDeviceKitInstalled() error {
-	packageName := "com.mobilenext.devicekit"
-
-	appPath, err := d.GetAppPath(packageName)
-	if err != nil {
-		return fmt.Errorf("failed to check if %s is installed: %v", packageName, err)
-	}
-
-	if appPath != "" {
-		// already installed, we have a path to .apk
-		return nil
-	}
-
-	utils.Verbose("DeviceKit not installed, downloading and installing...")
-
-	downloadURL, err := utils.GetLatestReleaseDownloadURL("mobile-next/devicekit-android")
-	if err != nil {
-		return fmt.Errorf("failed to get download URL: %v", err)
-	}
-	utils.Verbose("Downloading APK from: %s", downloadURL)
-
-	tempDir, err := os.MkdirTemp("", "devicekit-android-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	apkPath := filepath.Join(tempDir, "devicekit.apk")
-
-	if err := utils.DownloadFile(downloadURL, apkPath); err != nil {
-		return fmt.Errorf("failed to download APK: %v", err)
-	}
-
-	utils.Verbose("Installing APK...")
-	if err := d.installPackage(apkPath); err != nil {
-		return fmt.Errorf("failed to install APK: %v", err)
-	}
-
-	appPath, err = d.GetAppPath(packageName)
-	if err != nil {
-		return fmt.Errorf("failed to verify installation: %v", err)
-	}
-
-	if appPath == "" {
-		return fmt.Errorf("package %s was not installed successfully", packageName)
-	}
-
-	utils.Verbose("DeviceKit successfully installed")
-	return nil
-}
-
 // attrTrue is the string value uiautomator uses for boolean node attributes.
 const attrTrue = "true"
 
@@ -1425,32 +1377,32 @@ type uiAutomatorXml struct {
 	RootNode uiAutomatorXmlNode `xml:"node"`
 }
 
-type deviceKitRect struct {
+type uiRect struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
 	Width  int `json:"width"`
 	Height int `json:"height"`
 }
 
-type deviceKitNode struct {
-	Class       string          `json:"class"`
-	Text        string          `json:"text"`
-	Hint        string          `json:"hint"`
-	ContentDesc string          `json:"content-desc"`
-	ResourceID  string          `json:"resource-id"`
-	Focused     bool            `json:"focused"`
-	Enabled     bool            `json:"enabled"`
-	Checked     bool            `json:"checked"`
-	Checkable   bool            `json:"checkable"`
-	Clickable   bool            `json:"clickable"`
-	Selected    bool            `json:"selected"`
-	Visible     bool            `json:"visible"`
-	Rect        deviceKitRect   `json:"rect"`
-	Children    []deviceKitNode `json:"children"`
+type uiNode struct {
+	Class       string   `json:"class"`
+	Text        string   `json:"text"`
+	Hint        string   `json:"hint"`
+	ContentDesc string   `json:"content-desc"`
+	ResourceID  string   `json:"resource-id"`
+	Focused     bool     `json:"focused"`
+	Enabled     bool     `json:"enabled"`
+	Checked     bool     `json:"checked"`
+	Checkable   bool     `json:"checkable"`
+	Clickable   bool     `json:"clickable"`
+	Selected    bool     `json:"selected"`
+	Visible     bool     `json:"visible"`
+	Rect        uiRect   `json:"rect"`
+	Children    []uiNode `json:"children"`
 }
 
-type deviceKitHierarchy struct {
-	Hierarchy []deviceKitNode `json:"hierarchy"`
+type uiHierarchy struct {
+	Hierarchy []uiNode `json:"hierarchy"`
 }
 
 func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
@@ -1557,13 +1509,13 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	return []types.ScreenElement{element}
 }
 
-// collectDeviceKitElements converts a devicekit node tree into ScreenElements,
+// collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
 // preserving hierarchy the same way collectElements does.
-func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
+func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 	var elements []types.ScreenElement
 
 	for _, node := range nodes {
-		childElements := collectDeviceKitElements(node.Children)
+		childElements := collectUiNodeElements(node.Children)
 
 		// keep interactable nodes even when unlabeled (e.g. Flutter icon-only
 		// buttons), mirroring the uiautomator XML path in collectElements
@@ -1623,61 +1575,13 @@ func collectDeviceKitElements(nodes []deviceKitNode) []types.ScreenElement {
 	return elements
 }
 
-// getDeviceKitNodes returns the UI hierarchy, preferring the persistent
-// DeviceKitServer (fast: no process fork per call) and falling back to the
-// one-shot ViewTreeDump instrumentation when the server isn't available.
-func (d *AndroidDevice) getDeviceKitNodes() ([]deviceKitNode, error) {
-	if nodes, err := d.getDeviceKitServerNodes(); err == nil {
-		return nodes, nil
-	} else {
-		utils.Verbose("devicekit server dump unavailable, falling back to one-shot instrument: %v", err)
-	}
-
-	return d.getDeviceKitNodesOneShot()
-}
-
-func (d *AndroidDevice) getDeviceKitNodesOneShot() ([]deviceKitNode, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	output, err := d.runAdbCommandContext(ctx, "shell", "am", "instrument", "-w", "-e", "waitUntilIdle", "2000", "com.mobilenext.devicekit/.ViewTreeDump")
-	if err != nil {
-		return nil, fmt.Errorf("devicekit instrument failed: %w", err)
-	}
-
-	dump := string(output)
-	if strings.Contains(dump, "INSTRUMENTATION_ABORTED") || strings.Contains(dump, "does not have a signature matching") {
-		return nil, fmt.Errorf("devicekit instrument aborted")
-	}
-
-	const prefix = "INSTRUMENTATION_STATUS: json="
-	var allNodes []deviceKitNode
-	for _, line := range strings.Split(dump, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if !strings.HasPrefix(line, prefix) {
-			continue
-		}
-		var h deviceKitHierarchy
-		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &h); err != nil {
-			return nil, fmt.Errorf("failed to parse devicekit JSON: %w", err)
-		}
-		allNodes = append(allNodes, h.Hierarchy...)
-	}
-
-	if len(allNodes) == 0 {
-		return nil, fmt.Errorf("no hierarchy found in devicekit dump")
-	}
-
-	return allNodes, nil
-}
-
-func (d *AndroidDevice) getDeviceKitDump() (string, error) {
-	nodes, err := d.getDeviceKitNodes()
+func (d *AndroidDevice) getDeviceServerDump() (string, error) {
+	nodes, err := d.dumpUiNodes()
 	if err != nil {
 		return "", err
 	}
 
-	jsonBytes, err := json.Marshal(deviceKitHierarchy{Hierarchy: nodes})
+	jsonBytes, err := json.Marshal(uiHierarchy{Hierarchy: nodes})
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize devicekit hierarchy: %w", err)
 	}
@@ -1712,10 +1616,10 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw() (any, error) {
-	if jsonStr, err := d.getDeviceKitDump(); err == nil {
+	if jsonStr, err := d.getDeviceServerDump(); err == nil {
 		return jsonStr, nil
 	} else {
-		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
@@ -1735,10 +1639,10 @@ func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 		return elements, nil
 	}
 
-	if nodes, err := d.getDeviceKitNodes(); err == nil {
-		return collectDeviceKitElements(nodes), nil
+	if nodes, err := d.dumpUiNodes(); err == nil {
+		return collectUiNodeElements(nodes), nil
 	} else {
-		utils.Verbose("devicekit dump unavailable, falling back to uiautomator: %v", err)
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
@@ -1898,4 +1802,109 @@ func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(content), nil
+}
+
+type androidPidCache struct {
+	mu    sync.Mutex
+	names map[int]string
+}
+
+func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) string {
+	c.mu.Lock()
+	name, ok := c.names[pid]
+	c.mu.Unlock()
+	if ok {
+		return name
+	}
+
+	utils.Verbose("resolving process name for pid %d", pid)
+	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || len(out) == 0 {
+		// cache the miss too: a pid that already exited appears on many lines,
+		// and re-running adb for each one stalls the scanner and drops logs
+		c.mu.Lock()
+		c.names[pid] = ""
+		c.mu.Unlock()
+		return ""
+	}
+	// cmdline is null-delimited; first entry is the executable path
+	first, _, _ := bytes.Cut(out, []byte{0})
+	name = processNameFromPath(string(first))
+
+	c.mu.Lock()
+	c.names[pid] = name
+	c.mu.Unlock()
+	return name
+}
+
+var logcatLevelMap = map[string]string{
+	"V": "Verbose",
+	"D": "Debug",
+	"I": "Info",
+	"W": "Warning",
+	"E": "Error",
+	"F": "Fatal",
+	"A": "Assert",
+}
+
+func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	pidCache := &androidPidCache{names: make(map[int]string)}
+
+	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start logcat: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	stoppedByCaller := false
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		parsed := parseLogcatLine(line)
+		if parsed == nil {
+			continue
+		}
+
+		pid, _ := strconv.Atoi(parsed.PID)
+		level := logcatLevelMap[parsed.Level]
+		if level == "" {
+			level = parsed.Level
+		}
+
+		entry := LogEntry{
+			Timestamp: parsed.Date + " " + parsed.Time,
+			PID:       pid,
+			Level:     level,
+			Tag:       parsed.Tag,
+			Message:   parsed.Message,
+			Process:   pidCache.resolveProcessNameByPid(d, pid),
+		}
+
+		if !onLog(entry) {
+			_ = cmd.Process.Kill()
+			stoppedByCaller = true
+			break
+		}
+	}
+
+	waitErr := cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("logcat read error: %w", err)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("logcat ended with error: %w", waitErr)
+	}
+	return nil
 }

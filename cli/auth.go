@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 const (
@@ -73,9 +76,21 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
+// postJSON posts a JSON body to the auth server with mobilecli's User-Agent, so
+// device-login traffic is attributable to the CLI in the server access logs.
+func postJSON(url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", utils.UserAgent())
+	return authHTTPClient.Do(req)
+}
+
 func requestDeviceCode() (*deviceCodeResponse, error) {
 	reqBody, _ := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
-	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", bytes.NewReader(reqBody))
+	resp, err := postJSON(deviceCodeURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
@@ -117,7 +132,7 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 			DeviceCode: deviceCode,
 			GrantType:  deviceGrantType,
 		})
-		resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", bytes.NewReader(reqBody))
+		resp, err := postJSON(deviceTokenURL, reqBody)
 		if err != nil {
 			return "", fmt.Errorf("failed to poll for token: %w", err)
 		}

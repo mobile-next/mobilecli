@@ -3,9 +3,12 @@ package commands
 import (
 	"fmt"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 )
 
-// DumpUIRequest represents the parameters for dumping UI tree
+// DumpUIRequest represents the parameters for dumping UI tree.
+// Format is "json" (default), "text" for indented one-line-per-element output,
+// or "raw" for the unprocessed agent tree.
 type DumpUIRequest struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format"`
@@ -15,6 +18,7 @@ type DumpUIRequest struct {
 type DumpUIResponse struct {
 	Elements []devices.ScreenElement `json:"elements,omitempty"`
 	RawData  any                     `json:"rawData,omitempty"`
+	Text     string                  `json:"text,omitempty"`
 }
 
 // DumpUICommand starts an agent and dumps the UI tree from the specified device
@@ -52,8 +56,15 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
 		}
 
-		response = DumpUIResponse{
-			Elements: elements,
+		types.AttachRefs(elements)
+		if req.Format == "text" {
+			response = DumpUIResponse{
+				Text: types.FormatText(elements),
+			}
+		} else {
+			response = DumpUIResponse{
+				Elements: elements,
+			}
 		}
 	}
 

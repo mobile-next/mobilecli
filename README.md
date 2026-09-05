@@ -2,25 +2,16 @@
 
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/).
 
-<p align="center">
+<p align="left">
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
-  </a>
-  <a href="https://github.com/mobile-next/mobilecli">
-    <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
   <a href="https://www.npmjs.com/package/mobilecli">
     <img src="https://img.shields.io/npm/dm/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
-  <a href="https://github.com/mobile-next/mobilecli/releases">
-    <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
-  </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-</p>
-
-<p align="center">
   <a href="http://mobilenext.ai/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
@@ -37,7 +28,9 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
+- **Location Override**: Fake the GPS location reported by a device
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
+- **Device Logs**: Stream real-time device logs with filtering from iOS and Android devices
 - **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
 ### 🎯 Platform Support
@@ -138,6 +131,15 @@ mobilecli screenshot --device <device-id>
 # Take a JPEG screenshot with custom quality
 mobilecli screenshot --device <device-id> --format jpeg --quality 80
 
+# Scale the screenshot down to half size
+mobilecli screenshot --device <device-id> --scale 0.5
+
+# Limit the largest dimension to 800 pixels, keeping aspect ratio
+mobilecli screenshot --device <device-id> --max-size 800
+
+# Crop to a region (x,y,width,height in screen points), applied before scaling
+mobilecli screenshot --device <device-id> --clip 10,80,300,200
+
 # Save to specific path
 mobilecli screenshot --device <device-id> --output screenshot.png
 
@@ -189,6 +191,28 @@ mobilecli io clipboard set --device <device-id> 'hello world'
 # Send keys combination to paste (cmd+v for iOS, ctrl+v for Android)
 mobilecli io keys --device <device-id> "cmd+v"
 ```
+
+### Location Override 📍
+
+```bash
+# Fake the device location (latitude,longitude)
+mobilecli device location set --device <device-id> 37.7749,-122.4194
+
+# Hold the override until Ctrl-C, then clear it automatically
+mobilecli device location set --device <device-id> 37.7749,-122.4194 --wait
+
+# Restore the real location
+mobilecli device location clear --device <device-id>
+```
+
+Caveats per platform:
+
+| Platform | Notes |
+|----------|-------|
+| iOS Simulator | Works out of the box, the override survives mobilecli exiting |
+| iOS Real Device | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
+| Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
+| Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
 ### Supported Hardware Buttons
 
@@ -322,7 +346,7 @@ Example output for `fs ls`:
 
 On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
 
-On **Android**, most features work without the agent, but installing it enables non-ASCII text input (e.g. Japanese, Chinese, Korean, emoji) which is not possible through `adb` alone.
+On **Android**, no agent is needed. Running `mobilecli agent status` on an Android device simply reports that.
 
 ```bash
 # Check if the agent is installed on a device
@@ -437,6 +461,47 @@ Example output for `crashes list`:
 ```
 
 **Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
+
+### Device Logs 📋
+
+```bash
+# Stream logs from a device (Ctrl+C to stop)
+mobilecli device logs --device <device-id>
+
+# Stop after 100 entries
+mobilecli device logs --device <device-id> --limit 100
+
+# Filter by field (exact match)
+mobilecli device logs --filter process=SpringBoard
+mobilecli device logs --filter tag=ActivityManager
+
+# Exclude by field
+mobilecli device logs --filter process!=SpringBoard
+
+# Combine filters (AND logic)
+mobilecli device logs --filter level=Error --filter process!=SpringBoard
+```
+
+Supported filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
+
+Each log entry is printed as a JSON line:
+```json
+{"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
+```
+
+Logs are also available over the [HTTP API](#http-api-) via the `device.logs` method, which takes the same `limit` and `filters` and returns a URL to stream from:
+
+```bash
+curl -X POST http://localhost:12000/rpc -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "method": "device.logs", "id": 1,
+  "params": { "deviceId": "<device-id>", "limit": 100, "filters": ["level=Error", "process!=SpringBoard"] }
+}'
+# => {"jsonrpc":"2.0","id":1,"result":{"sessionUrl":"/sessions/<session-id>/logs"}}
+
+curl -N http://localhost:12000/sessions/<session-id>/logs
+```
+
+The session expires one minute after creation and accepts a single connection. Disconnecting stops the log stream on the device.
 
 ### Remote Devices ☁️
 

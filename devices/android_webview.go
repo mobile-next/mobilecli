@@ -1,18 +1,14 @@
 package devices
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
-	"github.com/mobile-next/mobilecli/utils"
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -43,9 +39,16 @@ func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
 	}
 	tmp.Close()
 
-	out, err := d.runAdbCommand("push", tmp.Name(), remotePath)
+	// push to a sibling then rename: a process that has the old file mapped
+	// (a running DeviceServer or capture stream) keeps its inode instead of
+	// seeing the bytes change underneath it
+	staging := remotePath + ".tmp"
+	out, err := d.runAdbCommand("push", tmp.Name(), staging)
 	if err != nil {
-		return fmt.Errorf("adb push to %s: %s: %w", remotePath, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("adb push to %s: %s: %w", staging, strings.TrimSpace(string(out)), err)
+	}
+	if out, err := d.runAdbCommand("shell", "mv", "-f", staging, remotePath); err != nil {
+		return fmt.Errorf("move %s into place: %s: %w", remotePath, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
@@ -90,7 +93,6 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	agentDir := dataDir + "/" + agentSubDir
 
 	const tmpSO = "/data/local/tmp/mobilecli.so"
-	const tmpDEX = "/data/local/tmp/mobilecli.dex"
 
 	if err := d.pushTempFile(agents.AndroidMobilecliSO, tmpSO); err != nil {
 		return "", fmt.Errorf("push .so: %w", err)
@@ -99,12 +101,12 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 		return "", fmt.Errorf("install .so: %w", err)
 	}
 
-	if err := d.pushTempFile(agents.AndroidMobilecliDEX, tmpDEX); err != nil {
+	if err := d.pushTempFile(agents.AndroidMobilecliDEX, androidDexPath); err != nil {
 		return "", fmt.Errorf("push .dex: %w", err)
 	}
 	// remove stale dex before copying (dex is immutable once loaded)
 	d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/mobilecli.dex")
-	if err := d.copyToAppDir(pkg, tmpDEX, agentDir+"/mobilecli.dex", "444"); err != nil {
+	if err := d.copyToAppDir(pkg, androidDexPath, agentDir+"/mobilecli.dex", "444"); err != nil {
 		return "", fmt.Errorf("install .dex: %w", err)
 	}
 
@@ -147,77 +149,6 @@ func (d *AndroidDevice) attachJVMTIAgent(pid, soPath, dexPath string) error {
 		return fmt.Errorf("am attach-agent: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
-}
-
-const defaultAgentTimeout = 10 * time.Second
-
-// agentRequest sends a JSON-RPC 2.0 request to the agent over HTTP and returns
-// the result field from the response.
-func agentRequest(port int, method string, params map[string]any) (json.RawMessage, error) {
-	return agentRequestWithTimeout(port, method, params, defaultAgentTimeout)
-}
-
-func agentRequestWithTimeout(port int, method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
-	body := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "1",
-		"method":  method,
-	}
-	if len(params) > 0 {
-		body["params"] = params
-	}
-
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	start := time.Now()
-	defer func() {
-		utils.Verbose("agentRequest method=%s payloadBytes=%d elapsed=%s", method, len(payload), time.Since(start))
-	}()
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Post(
-		fmt.Sprintf("http://localhost:%d/", port),
-		"application/json",
-		bytes.NewReader(payload),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("connect to agent on port %d: %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read agent response: %w", err)
-	}
-
-	var rpc struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(data, &rpc); err != nil {
-		return nil, fmt.Errorf("parse agent response: %w", err)
-	}
-	if rpc.Error != nil {
-		return nil, fmt.Errorf("agent error %d: %s", rpc.Error.Code, rpc.Error.Message)
-	}
-	return rpc.Result, nil
-}
-
-// isAgentReady checks whether the agent socket is already accepting connections.
-func isAgentReady(port int) bool {
-	client := &http.Client{Timeout: 300 * time.Millisecond}
-	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/", port), "application/json", bytes.NewReader([]byte("{}")))
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return true
 }
 
 // isAppDebuggable returns true when run-as can execute commands as the app user.

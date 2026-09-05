@@ -3,16 +3,20 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
+	"github.com/mobile-next/mobilecli/types"
 )
 
-// TapRequest represents the parameters for a tap command
+// TapRequest represents the parameters for a tap command. Either X,Y or Ref
+// ("@e5", from the latest dump) must be set; Ref wins when both are set.
 type TapRequest struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
+	Ref      string `json:"ref,omitempty"`
 }
 
 // LongPressRequest represents the parameters for a long press command
@@ -53,7 +57,7 @@ type SwipeRequest struct {
 
 // TapCommand performs a tap operation on the specified device
 func TapCommand(req TapRequest) *CommandResponse {
-	if req.X < 0 || req.Y < 0 {
+	if req.Ref == "" && (req.X < 0 || req.Y < 0) {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
@@ -69,14 +73,52 @@ func TapCommand(req TapRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.Tap(req.X, req.Y)
+	x, y := req.X, req.Y
+	if req.Ref != "" {
+		x, y, err = resolveRefTapPoint(targetDevice, req.Ref)
+		if err != nil {
+			return NewErrorResponse(err)
+		}
+	}
+
+	err = targetDevice.Tap(x, y)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to tap on device %s: %v", targetDevice.ID(), err))
 	}
 
 	return NewSuccessResponse(MessageResult{
-		Message: fmt.Sprintf("Tapped on device %s at (%d,%d)", targetDevice.ID(), req.X, req.Y),
+		Message: fmt.Sprintf("Tapped on device %s at (%d,%d)", targetDevice.ID(), x, y),
 	})
+}
+
+// resolveRefTapPoint re-dumps the UI tree, numbers it exactly like "dump ui"
+// does, and returns the center of the element matching ref ("@e5" or "e5").
+// Refs are positional against a fresh dump; there is no staleness tracking.
+func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int, error) {
+	elements, err := device.DumpSource()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to dump UI to resolve ref %s: %w", ref, err)
+	}
+
+	types.AttachRefs(elements)
+	element := findElementByRef(elements, strings.TrimPrefix(ref, "@"))
+	if element == nil {
+		return 0, 0, fmt.Errorf("ref %s not found on current screen; refs come from the latest 'dump ui'", ref)
+	}
+
+	return element.Rect.X + element.Rect.Width/2, element.Rect.Y + element.Rect.Height/2, nil
+}
+
+func findElementByRef(elements []types.ScreenElement, ref string) *types.ScreenElement {
+	for i := range elements {
+		if elements[i].Ref == ref {
+			return &elements[i]
+		}
+		if found := findElementByRef(elements[i].Children, ref); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // LongPressCommand performs a long press operation on the specified device

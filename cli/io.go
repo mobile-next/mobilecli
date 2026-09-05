@@ -16,15 +16,27 @@ var ioCmd = &cobra.Command{
 }
 
 var ioTapCmd = &cobra.Command{
-	Use:   "tap [x,y]",
-	Short: "Tap on a device screen at the given coordinates",
-	Long:  `Sends a tap event to the specified device at the given x,y coordinates. Coordinates should be provided as a single string "x,y".`,
+	Use:   "tap [x,y | @ref]",
+	Short: "Tap on a device screen at the given coordinates or element ref",
+	Long:  `Sends a tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		coordsStr := args[0]
+		if strings.HasPrefix(coordsStr, "@") {
+			response := commands.TapCommand(commands.TapRequest{
+				DeviceID: deviceId,
+				Ref:      coordsStr,
+			})
+			printJson(response)
+			if response.Status == "error" {
+				return fmt.Errorf("%s", response.Error)
+			}
+			return nil
+		}
+
 		parts := strings.Split(coordsStr, ",")
 		if len(parts) != 2 {
-			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
+			response := commands.NewErrorResponse(fmt.Errorf("invalid target format. Expected 'x,y' coordinates or an element ref like '@e15', got '%s'", coordsStr))
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}

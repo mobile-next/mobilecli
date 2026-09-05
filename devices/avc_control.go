@@ -7,13 +7,13 @@ import (
 )
 
 // avcControlSocket is the localabstract name AvcServer binds for its live
-// encoder control channel. Must match devicekit AvcServer's CONTROL_SOCKET.
+// encoder control channel. Must match CONTROL_SOCKET in agents/android/java/AvcServer.java.
 //
 // The channel is a JSON-RPC socket in the capture process (shell uid), reached
 // via `adb forward` + POST — the same transport as the webview agent. Stdin
 // can't be used: AvcServer is launched with `adb exec-out`, which does not
 // forward host stdin to the device process.
-const avcControlSocket = "devicekit-avc"
+const avcControlSocket = "mobilecli-avc"
 
 // SetAvcBitrate changes the bitrate of an in-flight AVC capture without
 // restarting the stream. Both platforms accept the same payload
@@ -77,7 +77,7 @@ func (d *AndroidDevice) ensureControlForward() (int, error) {
 }
 
 // findForward returns the host TCP port of an existing adb forward for this
-// device to target (e.g. "localabstract:devicekit-avc"), or 0 if none.
+// device to target (e.g. "localabstract:mobilecli-avc"), or 0 if none.
 func (d *AndroidDevice) findForward(target string) int {
 	out, err := d.runAdbCommand("forward", "--list")
 	if err != nil {

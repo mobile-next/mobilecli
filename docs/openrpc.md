@@ -35,6 +35,9 @@ JSON-RPC API for mobile device automation and control
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
+- [device.location.clear](#devicelocationclear)
+- [device.location.set](#devicelocationset)
+- [device.logs](#devicelogs)
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
@@ -1073,6 +1076,112 @@ Operation result
 ```
 
 
+### device.location.clear
+
+**Clear device location override**
+
+Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.clear",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.set
+
+**Override device location**
+
+Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `latitude` | `number` | ✓ | Latitude in degrees, between -90 and 90 |
+| `longitude` | `number` | ✓ | Longitude in degrees, between -180 and 180 |
+
+#### Response
+
+**Type:** `object`
+
+Simulated location
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.set",
+  "params": {
+    "deviceId": "string",
+    "latitude": 0,
+    "longitude": 0
+  },
+  "id": 1
+}
+```
+
+
+### device.logs
+
+**Start device log streaming**
+
+Creates a log streaming session for the specified device and returns the URL to connect to. Supported on iOS real devices, iOS simulators, and Android devices.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `limit` | `integer` |  | Stop the stream after this many log entries (0 or omitted for unlimited) |
+| `filters` | Array<`string`> |  | Filters applied to every entry, ANDed together. Each is 'key=value' to include or 'key!=value' to exclude, matched exactly. Valid keys: pid, process, tag, level, subsystem, category, message |
+
+#### Response
+
+**Type:** `object`
+
+Log streaming session. Connect to sessionUrl to receive application/x-ndjson, one JSON log entry per line. The session expires one minute after creation and accepts a single connection.
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.logs",
+  "params": {
+    "deviceId": "string",
+    "limit": 0,
+    "filters": [
+      "string"
+    ]
+  },
+  "id": 1
+}
+```
+
+
 ### device.reboot
 
 **Reboot a device**
@@ -1122,9 +1231,9 @@ Starts screen capture streaming for the specified device. Supports MJPEG (iOS an
 
 #### Response
 
-**Type:** `string`
+**Type:** `object`
 
-Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC
+Streaming session. Connect to sessionUrl to receive the stream (multipart/x-mixed-replace for MJPEG, video/h264 for AVC). The session expires one minute after creation and accepts a single connection.
 
 #### Example Request
 
@@ -1156,6 +1265,8 @@ Captures a screenshot from the specified device and returns it as base64 data
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `png, jpeg` |  | Image format (png or jpeg) |
 | `quality` | `integer` |  | Image quality (1-100, only used for JPEG) |
+| `scale` | `number` |  | Scale factor for the screenshot (0.0-1.0, default 1.0) |
+| `maxSize` | `integer` |  | Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit) |
 | `clip` | [`Rect`](#rect) |  | Optional rectangle to crop the screenshot to, in screen coordinates |
 
 #### Response
@@ -1174,6 +1285,8 @@ Screenshot data
     "deviceId": "string",
     "format": "png",
     "quality": 1,
+    "scale": 1,
+    "maxSize": 0,
     "clip": {
       "x": 0,
       "y": 0,

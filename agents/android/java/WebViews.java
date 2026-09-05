@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-class WebViewAgent {
+class WebViews {
 
 	private static final int MAX_DEPTH = 50;
 

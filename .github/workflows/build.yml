@@ -7,13 +7,11 @@ on:
     tags:
       - "*.*.*"
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+      - '*.md'
   pull_request:
     branches: [ "main" ]
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+      - '*.md'
 
 jobs:
 
@@ -127,7 +125,7 @@ jobs:
       run: touch agents/android/mobilecli.so agents/android/mobilecli.dex agents/ios/agent-sim.dylib
 
     - name: Lint
-      uses: golangci/golangci-lint-action@v8
+      uses: golangci/golangci-lint-action@v9
       with:
         version: v2.13.1
         verify: false
@@ -191,7 +189,7 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
+        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
       run: |
@@ -250,7 +248,7 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
+        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
       run: |
@@ -304,7 +302,7 @@ jobs:
           Write-Error "Invalid release tag format: $env:GITHUB_REF_NAME"
           exit 1
         }
-        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') server/server.go
+        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') utils/version.go
 
     - name: Build
       run: |
@@ -428,29 +426,41 @@ jobs:
         ls -l *.zip
         rm -rf dist
 
+    - name: Extract release notes from CHANGELOG.md
+      run: awk -v tag="$GITHUB_REF_NAME" '/^## \[/{f = ($0 ~ "^## \\[" tag "\\]")} f' CHANGELOG.md > release-notes.md
+
     - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
       with:
         name: Version ${{ github.ref_name }}
+        body_path: release-notes.md
         files: |
           mobilecli-*.zip
 
     - name: Publish
       run: |
-        # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
-        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-arm64.exe publish/npm/bin
-        chmod +x publish/npm/bin/*
-        # copy README.md
+        # publish platform-specific packages
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          os="${platform%-*}"
+          binary="mobilecli-$platform"
+          if [ "$os" = "windows" ]; then
+            binary="$binary.exe"
+          fi
+          cp "mobilecli-$os/$binary" "publish/npm-$platform/"
+          chmod +x "publish/npm-$platform/$binary"
+          cd "publish/npm-$platform"
+          npm version "$GITHUB_REF_NAME" --no-git-tag-version
+          npm publish --access public --provenance
+          cd ../..
+        done
+
+        # publish main package (wrapper)
         cp README.md publish/npm
-        # publish to npm
         cd publish/npm
         npm version "$GITHUB_REF_NAME" --no-git-tag-version
-        npm install --ignore-scripts
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          npm pkg set "optionalDependencies.@mobilenext/mobilecli-$platform=$GITHUB_REF_NAME"
+        done
         npm publish --access public --provenance

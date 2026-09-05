@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
 
@@ -49,14 +50,13 @@ const (
 	IdleTimeout  = 120 * time.Second
 )
 
-var Version = "dev"
-
 var okResponse = map[string]any{"status": "ok"}
 
 // StreamSession represents a screen capture streaming session
 type StreamSession struct {
 	ID        string
 	DeviceID  string
+	Type      string // "stream" (screen capture) or "logs"
 	Format    string // "mjpeg" or "avc"
 	Quality   int
 	Scale     float64
@@ -64,6 +64,10 @@ type StreamSession struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time // CreatedAt + 1 minute
 	InUse     bool      // prevents duplicate connections
+
+	// logs sessions only
+	Limit   int
+	Filters []commands.LogFilter
 }
 
 // SessionManager manages screen capture streaming sessions
@@ -96,9 +100,12 @@ type JSONRPCResponse struct {
 
 // ScreenshotParams represents the parameters for the screenshot request
 type ScreenshotParams struct {
-	DeviceID string `json:"deviceId"`
-	Format   string `json:"format,omitempty"`  // "png" or "jpeg"
-	Quality  int    `json:"quality,omitempty"` // 1-100, only used for JPEG
+	DeviceID string                   `json:"deviceId"`
+	Format   string                   `json:"format,omitempty"`  // "png" or "jpeg"
+	Quality  int                      `json:"quality,omitempty"` // 1-100, only used for JPEG
+	Scale    float64                  `json:"scale,omitempty"`   // 0.0-1.0, 0 or 1.0 means no scaling
+	MaxSize  int                      `json:"maxSize,omitempty"` // max(width, height) in pixels, takes precedence over scale, 0 means no limit
+	Clip     *types.ScreenElementRect `json:"clip,omitempty"`    // crop rect in screen points, applied before scale/maxSize
 }
 
 // DevicesParams represents the parameters for the devices request
@@ -209,7 +216,8 @@ func StartServer(addr string, enableCORS bool) error {
 	mux.HandleFunc("/", sendBanner)
 	mux.HandleFunc("/rpc", handleJSONRPC)
 	mux.HandleFunc("/ws", NewWebSocketHandler(enableCORS))
-	mux.HandleFunc("/stream", handleStream)
+	mux.HandleFunc("/sessions/{id}/stream", handleStream)
+	mux.HandleFunc("/sessions/{id}/logs", handleLogsStream)
 
 	// if host is missing, default to localhost
 	if !strings.Contains(addr, ":") {
@@ -410,6 +418,9 @@ func handleScreenshot(params json.RawMessage) (any, error) {
 		DeviceID:   screenshotParams.DeviceID,
 		Format:     screenshotParams.Format,
 		Quality:    screenshotParams.Quality,
+		Scale:      screenshotParams.Scale,
+		MaxSize:    screenshotParams.MaxSize,
+		Clip:       screenshotParams.Clip,
 		OutputPath: "-", // Always return base64 data for server
 	}
 
@@ -686,6 +697,18 @@ type IoOrientationSetParams struct {
 	Orientation string `json:"orientation"`
 }
 
+// Latitude and Longitude are pointers so an omitted coordinate is an error
+// rather than a silent 0, which is a real place off the coast of Africa
+type LocationSetParams struct {
+	DeviceID  string   `json:"deviceId"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
+}
+
+type LocationClearParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
 type DeviceSettingsApplyParams struct {
 	DeviceID   string  `json:"deviceId"`
 	Animations *string `json:"animations,omitempty"` // "on" or "off"
@@ -889,6 +912,56 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.OrientationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleLocationSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, latitude, longitude")
+	}
+
+	var locationSetParams LocationSetParams
+	if err := json.Unmarshal(params, &locationSetParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, latitude, longitude", err)
+	}
+
+	if locationSetParams.Latitude == nil || locationSetParams.Longitude == nil {
+		return nil, fmt.Errorf("'latitude' and 'longitude' are required")
+	}
+
+	req := commands.LocationSetRequest{
+		DeviceID:  locationSetParams.DeviceID,
+		Latitude:  *locationSetParams.Latitude,
+		Longitude: *locationSetParams.Longitude,
+	}
+
+	response := commands.LocationSetCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return response.Data, nil
+}
+
+func handleLocationClear(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var locationClearParams LocationClearParams
+	if err := json.Unmarshal(params, &locationClearParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+
+	req := commands.LocationClearRequest{
+		DeviceID: locationClearParams.DeviceID,
+	}
+
+	response := commands.LocationClearCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
@@ -1341,7 +1414,7 @@ func handleCrashesGet(params json.RawMessage) (any, error) {
 func handleServerInfo(params json.RawMessage) (any, error) {
 	return map[string]string{
 		"name":    "mobilecli",
-		"version": Version,
+		"version": utils.Version,
 	}, nil
 }
 
@@ -1460,6 +1533,7 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	session := &StreamSession{
 		ID:        sessionID,
 		DeviceID:  resolvedDeviceID,
+		Type:      sessionTypeStream,
 		Format:    screenCaptureParams.Format,
 		Quality:   quality,
 		Scale:     scale,
@@ -1477,7 +1551,7 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 	// return response with format and sessionUrl
 	result := map[string]any{
 		"format":     screenCaptureParams.Format,
-		"sessionUrl": fmt.Sprintf("/stream?s=%s", sessionID),
+		"sessionUrl": fmt.Sprintf("/sessions/%s/stream", sessionID),
 	}
 
 	return result, nil
@@ -1538,29 +1612,155 @@ func handleScreenCaptureRequestKeyFrame(params json.RawMessage) (any, error) {
 	return map[string]any{"deviceId": targetDevice.ID()}, nil
 }
 
-// handleStream handles the /stream endpoint for screen capture streaming
-func handleStream(w http.ResponseWriter, r *http.Request) {
-	// extract session ID from query parameter
-	sessionID := r.URL.Query().Get("s")
+// session types, used to keep a ticket minted for one endpoint from being
+// redeemed at the other.
+const (
+	sessionTypeStream = "stream"
+	sessionTypeLogs   = "logs"
+)
+
+// claimSession looks up the session named in the request path, verifies it is of
+// the expected type, and marks it in use. On failure it writes the HTTP error and
+// returns a non-nil error; callers must defer sessionManager.RemoveSession.
+func claimSession(w http.ResponseWriter, r *http.Request, sessionType string) (*StreamSession, error) {
+	sessionID := r.PathValue("id")
 	if sessionID == "" {
 		http.Error(w, "Missing session ID", http.StatusBadRequest)
-		return
+		return nil, fmt.Errorf("missing session id")
 	}
 
-	// look up session
 	session, err := sessionManager.GetSession(sessionID)
-	if err != nil {
+	if err != nil || session.Type != sessionType {
 		http.Error(w, "Invalid or expired session", http.StatusNotFound)
-		return
+		return nil, fmt.Errorf("invalid session")
 	}
 
 	// mark session as in use (prevents duplicate connections)
 	if err := sessionManager.MarkInUse(sessionID); err != nil {
 		http.Error(w, "Session already in use", http.StatusConflict)
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// flushWriter flushes the underlying ResponseWriter after every write, so each
+// log line reaches the client immediately instead of sitting in the buffer.
+type flushWriter struct {
+	w http.ResponseWriter
+}
+
+func (fw flushWriter) Write(p []byte) (int, error) {
+	n, err := fw.w.Write(p)
+	if flusher, ok := fw.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return n, err
+}
+
+// logsSessionRequest are params for device.logs.
+type logsSessionRequest struct {
+	DeviceID string   `json:"deviceId"`
+	Limit    int      `json:"limit"`
+	Filters  []string `json:"filters"`
+}
+
+// handleLogsSession creates a log streaming session and returns sessionUrl
+func handleLogsSession(params json.RawMessage) (any, error) {
+	var req logsSessionRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	if req.Limit < 0 {
+		return nil, fmt.Errorf("limit must not be negative")
+	}
+
+	// filters use the same key=value / key!=value syntax as the cli
+	filters, err := commands.ParseLogFilters(req.Filters)
+	if err != nil {
+		return nil, err
+	}
+
+	// validate device exists (early error detection)
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	// ensure session manager is initialized for non-server Execute usage
+	if sessionManager == nil {
+		sessionManager = &SessionManager{sessions: make(map[string]*StreamSession)}
+	}
+
+	sessionID := uuid.New().String()
+
+	// pin resolved device ID (handles auto-select)
+	resolvedDeviceID := req.DeviceID
+	if resolvedDeviceID == "" {
+		resolvedDeviceID = targetDevice.ID()
+	}
+
+	session := &StreamSession{
+		ID:        sessionID,
+		DeviceID:  resolvedDeviceID,
+		Type:      sessionTypeLogs,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(1 * time.Minute),
+		InUse:     false,
+		Limit:     req.Limit,
+		Filters:   filters,
+	}
+
+	if err := sessionManager.AddSession(session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	return map[string]any{
+		"sessionUrl": fmt.Sprintf("/sessions/%s/logs", sessionID),
+	}, nil
+}
+
+// handleLogsStream handles the /sessions/{id}/logs endpoint, streaming one
+// JSON-encoded log entry per line until the client disconnects or the limit is hit.
+func handleLogsStream(w http.ResponseWriter, r *http.Request) {
+	session, err := claimSession(w, r, sessionTypeLogs)
+	if err != nil {
 		return
 	}
 
-	// ensure cleanup on exit
+	defer sessionManager.RemoveSession(session.ID)
+
+	// set extended write deadline for long-running stream
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	// r.Context() is cancelled when the client disconnects, which stops the
+	// underlying log process on the device
+	response := commands.LogsCommand(r.Context(), commands.LogsRequest{
+		DeviceID: session.DeviceID,
+		Limit:    session.Limit,
+		Filters:  session.Filters,
+		Writer:   flushWriter{w: w},
+	})
+	if response.Status == "error" {
+		// can't send an http error after streaming started, just log
+		log.Printf("Error streaming logs: %v", response.Error)
+	}
+}
+
+// handleStream handles the /sessions/{id}/stream endpoint for screen capture streaming
+func handleStream(w http.ResponseWriter, r *http.Request) {
+	session, err := claimSession(w, r, sessionTypeStream)
+	if err != nil {
+		return
+	}
+	sessionID := session.ID
+
 	defer sessionManager.RemoveSession(sessionID)
 
 	// set extended write deadline for long-running stream
@@ -1887,7 +2087,7 @@ func handleFsPull(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
 
-	data, err := os.ReadFile(tmpPath)
+	data, err := os.ReadFile(tmpPath) // #nosec G304 -- tmpPath comes from os.CreateTemp, not user input
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pulled file: %w", err)
 	}

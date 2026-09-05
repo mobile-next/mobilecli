@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -97,10 +98,26 @@ func (r *RemoteDevice) fireRPC(method string, extra params) error {
 	return err
 }
 
-func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
+func (r *RemoteDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	p := params{}
+	if opts.Format != "" {
+		p["format"] = opts.Format
+	}
+	if opts.Quality > 0 {
+		p["quality"] = opts.Quality
+	}
+	if opts.Scale > 0 && opts.Scale != 1.0 {
+		p["scale"] = opts.Scale
+	}
+	if opts.MaxSize > 0 {
+		p["maxSize"] = opts.MaxSize
+	}
+	if opts.Clip != nil {
+		p["clip"] = opts.Clip
+	}
 	resp, err := rpcCall[struct {
 		Data string `json:"data"`
-	}](r, "device.screenshot", params{})
+	}](r, "device.screenshot", p)
 	if err != nil {
 		return nil, err
 	}
@@ -538,4 +555,8 @@ func (r *RemoteDevice) GetCrashReport(id string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(result.Content), nil
+}
+
+func (r *RemoteDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	return fmt.Errorf("device logs not yet supported for remote devices")
 }

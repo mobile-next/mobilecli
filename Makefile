@@ -1,4 +1,4 @@
-.PHONY: all build agents test test-cover lint fmt clean docs
+.PHONY: all build agents test test-cover lint fmt clean docs vulncheck
 
 all: build
 
@@ -35,7 +35,11 @@ test-e2e: build-cover
 	go tool cover -func=coverage.out
 
 lint:
+	$(MAKE) -C agents/android lint
 	$(shell go env GOPATH)/bin/golangci-lint run
+
+vulncheck:
+	$(shell go env GOPATH)/bin/govulncheck ./...
 
 docs:
 	npx https://github.com/gmegidish/jagger -f markdown -o docs/openrpc.md docs/openrpc.json

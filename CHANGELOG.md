@@ -1,3 +1,22 @@
+## [1.0.8](https://github.com/mobile-next/mobilecli/releases/tag/1.0.8) (2026-09-05)
+* Feat(android): Device Kit agent for Android is now embedded in mobilecli, no APK install required ([#387](https://github.com/mobile-next/mobilecli/pull/387))
+* Feat: Element refs in `dump ui` and tap by `@ref` ([#378](https://github.com/mobile-next/mobilecli/pull/378))
+* Feat: Clip option for screenshots to crop to a region without sips or imagemagick ([#379](https://github.com/mobile-next/mobilecli/pull/379))
+* Feat: Dump Flutter UI via the Dart VM service on Android and iOS simulator ([#365](https://github.com/mobile-next/mobilecli/pull/365))
+* Feat: `--format text` for `dump ui` command ([#382](https://github.com/mobile-next/mobilecli/pull/382))
+
+## [1.0.7](https://github.com/mobile-next/mobilecli/releases/tag/1.0.7) (2026-09-01)
+* Feat: Split npm package into per-platform optional dependencies, `npx mobilecli` now downloads only the binary for the current platform ([#134](https://github.com/mobile-next/mobilecli/pull/134))
+* Fix: Don't fail device listing when one iOS device is untrusted ([#373](https://github.com/mobile-next/mobilecli/pull/373))
+
+## [1.0.6](https://github.com/mobile-next/mobilecli/releases/tag/1.0.6) (2026-08-31)
+* Feat: GPS location override ([#366](https://github.com/mobile-next/mobilecli/pull/366))
+* Feat: Device logs command and `device.logs` streaming session over the http api ([#195](https://github.com/mobile-next/mobilecli/pull/195))
+* Feat: Scale and max-size options for screenshots ([#368](https://github.com/mobile-next/mobilecli/pull/368))
+* Feat(ios): Surface enabled, selected and focused attributes in ui dump ([#369](https://github.com/mobile-next/mobilecli/pull/369), [devicekit-ios#69](https://github.com/mobile-next/devicekit-ios/pull/69))
+* Feat(android): Use on-device agent to grab screenshots for better performance ([#368](https://github.com/mobile-next/mobilecli/pull/368))
+* Refactor: Screen capture `sessionUrl` moved from `/stream?s=<id>` to `/sessions/<id>/stream`
+
 ## [1.0.5](https://github.com/mobile-next/mobilecli/releases/tag/1.0.5) (2026-08-26)
 * Feat: Clipboard get and set commands ([#345](https://github.com/mobile-next/mobilecli/pull/345)), thanks to [@hakanor](https://github.com/hakanor)
 * Feat: Add apps clear command ([#202](https://github.com/mobile-next/mobilecli/pull/202))

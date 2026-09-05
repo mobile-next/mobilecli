@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
@@ -71,6 +70,9 @@ SCREEN & MEDIA:
 
   # Take a JPEG screenshot with quality
   mobilecli screenshot --device <device-id> -o screen.jpg -f jpeg -q 85
+
+  # Take a scaled-down screenshot (--scale or --max-size)
+  mobilecli screenshot --device <device-id> -o screen.png --max-size 800
 
   # Stream screen capture (MJPEG)
   mobilecli screencapture --device <device-id> -f mjpeg | ffplay -
@@ -175,6 +177,19 @@ FILESYSTEM:
   # Remove a file or directory
   mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 
+DEVICE LOGS:
+  # Stream logs from a device (Ctrl+C to stop)
+  mobilecli device logs --device <device-id>
+
+  # Stop after N entries
+  mobilecli device logs --device <device-id> --limit 100
+
+  # Filter (key=value to include, key!=value to exclude; --filter is repeatable)
+  mobilecli device logs --device <device-id> --filter process=SpringBoard
+  mobilecli device logs --device <device-id> --filter level=Error --filter process!=SpringBoard
+
+  # Filter keys: pid, process, tag, level, subsystem, category, message
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com
@@ -192,7 +207,7 @@ COMMON FLAGS:
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
-	Version:       server.Version,
+	Version:       utils.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
