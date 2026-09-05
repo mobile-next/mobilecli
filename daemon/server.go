@@ -226,13 +226,16 @@ func (s *server) handleConn(conn net.Conn) {
 	_ = writeFrame(conn, response{JSONRPC: jsonrpcVersion, ID: req.ID, Result: data})
 }
 
-// cancelOnDisconnect blocks reading the (otherwise idle) connection; a read
-// error means the client went away.
+// cancelOnDisconnect blocks reading the (otherwise idle) connection: a read
+// error means the client went away, and anything the client sends mid-call is
+// a cancel request (see CancelMethod). either way the handler's context is
+// cancelled; the connection stays open so the final result can still be sent.
 func cancelOnDisconnect(conn net.Conn, cancel context.CancelFunc) {
-	buf := make([]byte, 1)
+	buf := make([]byte, 64)
 	for {
-		if _, err := conn.Read(buf); err != nil {
-			cancel()
+		_, err := conn.Read(buf)
+		cancel()
+		if err != nil {
 			return
 		}
 	}

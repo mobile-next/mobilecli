@@ -16,6 +16,10 @@ const jsonrpcVersion = "2.0"
 // StreamMethod is the notification method used for stream payloads.
 const StreamMethod = "stream.data"
 
+// CancelMethod is the notification a client sends mid-call to cancel the
+// handler's context while keeping the connection open for the final result.
+const CancelMethod = "cancel"
+
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      any             `json:"id,omitempty"`

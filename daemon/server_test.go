@@ -33,6 +33,10 @@ func echoDispatcher(blocked chan struct{}) Dispatcher {
 			<-ctx.Done()
 			close(blocked)
 			return nil, ctx.Err()
+		case "finalize":
+			// a recording-style handler: stops on cancel, then still produces a result
+			<-ctx.Done()
+			return map[string]string{"finalized": "yes"}, nil
 		}
 		return nil, errors.New("unknown method " + method)
 	}
@@ -152,6 +156,19 @@ func TestClientDisconnectCancelsHandlerContext(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("handler context was not cancelled after client went away")
 	}
+}
+
+func TestCancelledStreamCallStillReturnsHandlerResult(t *testing.T) {
+	startTestDaemon(t, 0, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	result, err := CallStream(ctx, "finalize", nil, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"finalized":"yes"}`, string(result))
 }
 
 func TestDaemonStatusReportsVersionAndPid(t *testing.T) {

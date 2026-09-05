@@ -33,9 +33,13 @@ func CallWithTimeout(ctx context.Context, method string, params any, timeout tim
 	return call(ctx, method, params, timeout, nil)
 }
 
+// cancelGrace bounds how long a cancelled call waits for the daemon's final
+// result (a screen recording still has to be finalized and pulled).
+const cancelGrace = 60 * time.Second
+
 // CallStream is Call for streaming methods: onData receives every stream.data
-// notification payload before the final result arrives. Cancelling ctx closes
-// the connection, which cancels the handler on the daemon side.
+// notification payload before the final result arrives. Cancelling ctx cancels
+// the handler on the daemon side and waits for its final result.
 func CallStream(ctx context.Context, method string, params any, onData func(json.RawMessage) error) (json.RawMessage, error) {
 	return call(ctx, method, params, 0, onData)
 }
@@ -52,9 +56,13 @@ func call(ctx context.Context, method string, params any, timeout time.Duration,
 	}
 	defer func() { _ = conn.Close() }()
 
-	// cancelling ctx closes the connection, which unblocks the read below and
-	// cancels the handler on the daemon side
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	// cancelling ctx asks the daemon to cancel the handler but keeps the
+	// connection open so the handler's final result (e.g. a finalized
+	// recording) still arrives. the deadline is the safety net if it never does.
+	stop := context.AfterFunc(ctx, func() {
+		_ = writeFrame(conn, request{JSONRPC: jsonrpcVersion, Method: CancelMethod})
+		_ = conn.SetReadDeadline(time.Now().Add(cancelGrace))
+	})
 	defer stop()
 
 	if err := sendRequest(conn, method, params); err != nil {
