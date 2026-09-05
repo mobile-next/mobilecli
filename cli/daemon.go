@@ -15,6 +15,7 @@ import (
 	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
+	"github.com/zalando/go-keyring"
 )
 
 var daemonIdleTimeout time.Duration
@@ -89,8 +90,12 @@ func runDaemon() error {
 
 	hook := devices.NewShutdownHook()
 	commands.SetShutdownHook(hook)
-	if token, _ := getRemoteToken(); token != "" {
+	// not being logged in is normal; anything else (unreadable keyring) is
+	// worth a line in the daemon log since remote devices silently vanish
+	if token, err := loadToken(); err == nil {
 		commands.SetFleetConfig(token)
+	} else if !errors.Is(err, keyring.ErrNotFound) {
+		utils.Info("fleet token unavailable, remote devices disabled: %v", err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

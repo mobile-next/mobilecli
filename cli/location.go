@@ -23,9 +23,9 @@ var locationSetCmd = &cobra.Command{
 	Short: "Override the device location",
 	Long: `Overrides the GPS location reported by the device, for example 37.7749,-122.4194.
 
-With --wait, mobilecli keeps running and clears the override when interrupted
-with Ctrl-C. This is required on iOS 17+ physical devices, where the simulated
-location only lasts as long as the mobilecli process that set it.`,
+The override is held by the background mobilecli daemon, which stays alive
+until the override is cleared. With --wait, mobilecli also keeps running in the
+foreground and clears the override when interrupted with Ctrl-C.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		lat, lon, err := commands.ParseLatLon(args[0])

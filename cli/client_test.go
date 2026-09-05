@@ -22,6 +22,12 @@ func TestEnvelopeErrorReturnsTheErrorMessageForErrorStatus(t *testing.T) {
 	assert.Equal(t, "device not found", err.Error())
 }
 
+func TestEnvelopeErrorReturnsTheDataMessageForFailStatus(t *testing.T) {
+	err := envelopeError(json.RawMessage(`{"status":"fail","data":{"message":"Agent is not installed on the device"}}`))
+	require.Error(t, err)
+	assert.Equal(t, "Agent is not installed on the device", err.Error())
+}
+
 func TestIndentedJSONPreservesKeyOrderOfRawResult(t *testing.T) {
 	out, err := indentedJSON(json.RawMessage(`{"status":"ok","data":{"b":1,"a":2}}`))
 	require.NoError(t, err)

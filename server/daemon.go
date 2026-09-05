@@ -36,7 +36,7 @@ func DaemonDispatch(ctx context.Context, method string, params json.RawMessage, 
 
 // DaemonBusy reports work that must keep the daemon alive past its idle timeout.
 func DaemonBusy() bool {
-	return recorder.active()
+	return recorder.active() || commands.HoldingLocationOverride()
 }
 
 type cliStreamHandler func(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error)
