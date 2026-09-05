@@ -3,6 +3,9 @@
 * Feat: Element refs in `dump ui` and tap by `@ref` ([#378](https://github.com/mobile-next/mobilecli/pull/378))
 * Feat: Clip option for screenshots to crop to a region without sips or imagemagick ([#379](https://github.com/mobile-next/mobilecli/pull/379))
 * Feat: Dump Flutter UI via the Dart VM service on Android and iOS simulator ([#365](https://github.com/mobile-next/mobilecli/pull/365))
+* Feat: Dump Flutter UI via the Dart VM service on real iOS devices ([#389](https://github.com/mobile-next/mobilecli/pull/389))
+* Feat: Flutter `dump ui` now reports semantics (label, value, identifier, checked/selected/focused/enabled) and element types (`TextField`, `Button`, `Checkbox`, `Radio`, `Switch`, `Slider`, `Link`, `Header`) ([#389](https://github.com/mobile-next/mobilecli/pull/389))
+* Feat: Run device commands through a background daemon over a unix socket ([#384](https://github.com/mobile-next/mobilecli/pull/384))
 * Feat: `--format text` for `dump ui` command ([#382](https://github.com/mobile-next/mobilecli/pull/382))
 
 ## [1.0.7](https://github.com/mobile-next/mobilecli/releases/tag/1.0.7) (2026-09-01)
