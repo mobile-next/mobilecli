@@ -1,3 +1,10 @@
+## [1.0.8](https://github.com/mobile-next/mobilecli/releases/tag/1.0.8) (2026-09-05)
+* Feat(android): Device Kit agent for Android is now embedded in mobilecli, no APK install required ([#387](https://github.com/mobile-next/mobilecli/pull/387))
+* Feat: Element refs in `dump ui` and tap by `@ref` ([#378](https://github.com/mobile-next/mobilecli/pull/378))
+* Feat: Clip option for screenshots to crop to a region without sips or imagemagick ([#379](https://github.com/mobile-next/mobilecli/pull/379))
+* Feat: Dump Flutter UI via the Dart VM service on Android and iOS simulator ([#365](https://github.com/mobile-next/mobilecli/pull/365))
+* Feat: `--format text` for `dump ui` command ([#382](https://github.com/mobile-next/mobilecli/pull/382))
+
 ## [1.0.7](https://github.com/mobile-next/mobilecli/releases/tag/1.0.7) (2026-09-01)
 * Feat: Split npm package into per-platform optional dependencies, `npx mobilecli` now downloads only the binary for the current platform ([#134](https://github.com/mobile-next/mobilecli/pull/134))
 * Fix: Don't fail device listing when one iOS device is untrusted ([#373](https://github.com/mobile-next/mobilecli/pull/373))
