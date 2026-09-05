@@ -377,19 +377,57 @@ func (vm *flutterVM) findClassIDs(names map[string]string) error {
 const (
 	rootRenderClass = "_ReusableRenderView"
 	offsetClass     = "Offset"
+	bindingClass    = "WidgetsFlutterBinding"
 )
+
+// enableSemantics turns on Flutter's semantics generation when it is off, so the
+// render walk can read labels/roles. Returns a SemanticsHandle objectId to
+// dispose afterwards, or "" if semantics were already on or the binding wasn't
+// found. When it enables semantics it waits briefly for the tree to build.
+func (vm *flutterVM) enableSemantics(bindingClassID string) string {
+	if bindingClassID == "" {
+		return ""
+	}
+	binding, err := vm.firstInstance(bindingClassID)
+	if err != nil {
+		return ""
+	}
+	if vm.invokeString(binding, "get:semanticsEnabled") == "true" {
+		return "" // already on (e.g. iOS with an active a11y client)
+	}
+	handle, err := vm.invoke(binding, "ensureSemantics", nil)
+	if err != nil || handle == nil || handle.ID == "" {
+		return ""
+	}
+	// The semantics tree builds over the next frame(s); give it a moment.
+	time.Sleep(500 * time.Millisecond)
+	return handle.ID
+}
+
+// disposeSemantics releases a SemanticsHandle from enableSemantics, restoring the
+// prior semantics-enabled state.
+func (vm *flutterVM) disposeSemantics(handleID string) {
+	_, _ = vm.invoke(handleID, "dispose", nil)
+}
 
 var offsetSizePattern = regexp.MustCompile(`\(([-\d.]+),\s*([-\d.]+)\)`)
 
 func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) {
 	vm.dpr = dpr
 	t0 := time.Now()
-	classes := map[string]string{rootRenderClass: "", offsetClass: ""}
+	classes := map[string]string{rootRenderClass: "", offsetClass: "", bindingClass: ""}
 	if err := vm.findClassIDs(classes); err != nil {
 		return nil, err
 	}
 	if classes[rootRenderClass] == "" {
 		return nil, fmt.Errorf("could not locate the Flutter root render object (%s)", rootRenderClass)
+	}
+
+	// Ensure Flutter is generating its semantics tree. With no accessibility client
+	// active (the default on Android) debugSemantics is null, so labels/roles would
+	// be missing; ensureSemantics turns it on for the duration of this dump.
+	if handle := vm.enableSemantics(classes[bindingClass]); handle != "" {
+		defer vm.disposeSemantics(handle)
 	}
 
 	rootID, err := vm.firstInstance(classes[rootRenderClass])
@@ -428,20 +466,33 @@ type flutterSemantics struct {
 	selected     *bool
 	focused      *bool
 	enabled      *bool
+	toggled      *bool // isToggled — a switch's on/off state
 	isButton     bool
 	isTextField  bool
 	inRadioGroup bool // isInMutuallyExclusiveGroup — a radio, not a checkbox
+	isSlider     bool
+	isLink       bool
+	isHeader     bool
 	// mergesDescendants is set when this boundary folds its whole subtree into one
 	// accessible node (e.g. a CheckboxListTile). Such a node is a single control,
 	// so it is emitted once and its content leaves are not emitted separately.
 	mergesDescendants bool
 }
 
+// isControl reports whether the semantics describe a single interactive control
+// (text field, button, checkbox/radio/switch, slider). Such a node is one
+// accessible element, so it is emitted once and its content render leaves are
+// not emitted separately.
+func (s *flutterSemantics) isControl() bool {
+	return s != nil && (s.isButton || s.isTextField || s.checked != nil ||
+		s.toggled != nil || s.isSlider)
+}
+
 // hasContent reports whether the semantics carry anything worth attaching.
 func (s *flutterSemantics) hasContent() bool {
 	return s != nil && (s.label != "" || s.identifier != "" || s.value != "" ||
-		s.hint != "" || s.isButton || s.isTextField ||
-		s.checked != nil || s.selected != nil || s.focused != nil || s.enabled != nil)
+		s.hint != "" || s.isButton || s.isTextField || s.isSlider || s.isLink || s.isHeader ||
+		s.checked != nil || s.toggled != nil || s.selected != nil || s.focused != nil || s.enabled != nil)
 }
 
 func (vm *flutterVM) firstInstance(classID string) (string, error) {
@@ -518,10 +569,11 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]t
 	// merged the label away) inherit it.
 	if s := vm.readNodeSemantics(nodeID); s.hasContent() {
 		sem = s
-		// A merging boundary is one accessible control (label + its widgets folded
-		// together), so emit it once here and don't descend — otherwise each of its
-		// content leaves (e.g. a checkbox's label row and its box) emits separately.
-		if s.mergesDescendants {
+		// A control or a merging boundary is one accessible element (its label and
+		// widgets belong together), so emit it once here and don't descend —
+		// otherwise its content leaves (a text field's label row, editable area and
+		// container; a checkbox's label and box) each emit separately.
+		if s.isControl() || s.mergesDescendants {
 			return vm.emitLeaf(nodeID, className, sem), nil
 		}
 	}
@@ -592,14 +644,19 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 		hint := sem.hint
 		el.Placeholder = &hint
 	}
-	// A node with a checked-state is a checkbox/radio: always emit its state
-	// (true or false) so it is unambiguous. selected/focused stay true-only and
-	// enabled false-only, per the accessibility-dump conventions.
-	if sem.checked != nil {
-		c := *sem.checked
+	// Checkable state: checkbox/radio use isChecked, switches use isToggled. Always
+	// emit it (true or false) so a control's state is unambiguous.
+	if state := sem.checked; state != nil {
+		c := *state
+		el.Checked = &c
+	} else if state := sem.toggled; state != nil {
+		c := *state
 		el.Checked = &c
 	}
-	if sem.selected != nil && *sem.selected {
+	// `selected` marks the active item of a group (a tab/list row) — it is
+	// redundant on a checkbox/radio/switch, where `checked` is the state, so only
+	// emit it for non-checkable elements.
+	if sem.selected != nil && *sem.selected && sem.checked == nil && sem.toggled == nil {
 		t := true
 		el.Selected = &t
 	}
@@ -611,9 +668,8 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 		f := false
 		el.Enabled = &f
 	}
-	// Type refinement. sem.checked != nil means the node has a checked-state (a
-	// checkbox/radio) even when unchecked, so it stays identifiable as a control
-	// rather than looking like plain text.
+	// Type refinement to roles mobilewright's getByRole understands. A checked- or
+	// toggled-state keeps the node identifiable as a control even when off.
 	switch {
 	case sem.isTextField:
 		el.Type = "TextField"
@@ -623,6 +679,14 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 		el.Type = "Radio"
 	case sem.checked != nil:
 		el.Type = "Checkbox"
+	case sem.toggled != nil:
+		el.Type = "Switch"
+	case sem.isSlider:
+		el.Type = "Slider"
+	case sem.isLink:
+		el.Type = "Link"
+	case sem.isHeader:
+		el.Type = "Header"
 	}
 }
 
@@ -656,7 +720,11 @@ func (vm *flutterVM) readNodeSemantics(renderNodeID string) *flutterSemantics {
 			sem.isButton = fieldIsTrue(fco, "isButton")
 			sem.isTextField = fieldIsTrue(fco, "isTextField")
 			sem.inRadioGroup = fieldIsTrue(fco, "isInMutuallyExclusiveGroup")
+			sem.isSlider = fieldIsTrue(fco, "isSlider")
+			sem.isLink = fieldIsTrue(fco, "isLink")
+			sem.isHeader = fieldIsTrue(fco, "isHeader")
 			sem.checked = vm.triState(fco.field("isChecked"))
+			sem.toggled = vm.triState(fco.field("isToggled"))
 			sem.selected = vm.triState(fco.field("isSelected"))
 			sem.focused = vm.triState(fco.field("isFocused"))
 			sem.enabled = vm.triState(fco.field("isEnabled"))
@@ -808,5 +876,16 @@ func friendlyRenderType(name string) string {
 	if name == "" {
 		return "FlutterWidget"
 	}
+	// Map render-object names to the widget/role name callers expect. Paragraph is
+	// the render object behind a Text widget; "Text" is what getByRole("text")
+	// (ROLE_TYPE_MAP.text) and getByType match.
+	if widget, ok := renderTypeAliases[name]; ok {
+		return widget
+	}
 	return name
+}
+
+// renderTypeAliases maps render-object class names to the friendlier widget name.
+var renderTypeAliases = map[string]string{
+	"Paragraph": "Text",
 }

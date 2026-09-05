@@ -4,7 +4,7 @@ import "testing"
 
 func TestFriendlyRenderTypeStripsRenderAndUnderscorePrefixes(t *testing.T) {
 	cases := map[string]string{
-		"RenderParagraph":   "Paragraph",
+		"RenderParagraph":   "Text",
 		"RenderCustomPaint": "CustomPaint",
 		"RenderImage":       "Image",
 		"_RenderColoredBox": "ColoredBox",
