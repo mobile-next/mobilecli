@@ -22,6 +22,10 @@ func TestEnvelopeErrorReturnsTheErrorMessageForErrorStatus(t *testing.T) {
 	assert.Equal(t, "device not found", err.Error())
 }
 
+func TestEnvelopeErrorAcceptsArrayDataForOkStatus(t *testing.T) {
+	assert.NoError(t, envelopeError(json.RawMessage(`{"status":"ok","data":[{"packageName":"a"}]}`)))
+}
+
 func TestEnvelopeErrorReturnsTheDataMessageForFailStatus(t *testing.T) {
 	err := envelopeError(json.RawMessage(`{"status":"fail","data":{"message":"Agent is not installed on the device"}}`))
 	require.Error(t, err)

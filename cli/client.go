@@ -81,11 +81,9 @@ func decodeEnvelope(raw json.RawMessage, out any) error {
 
 func envelopeError(raw json.RawMessage) error {
 	var env struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-		Data   struct {
-			Message string `json:"message"`
-		} `json:"data"`
+		Status string          `json:"status"`
+		Error  string          `json:"error"`
+		Data   json.RawMessage `json:"data"` // any shape: object, array, or absent
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return fmt.Errorf("invalid response from daemon: %w", err)
@@ -96,8 +94,11 @@ func envelopeError(raw json.RawMessage) error {
 	case "fail":
 		// e.g. agent status/uninstall with no agent installed: the envelope
 		// carries the reason in data.message, and the exit code must be non-zero
-		if env.Data.Message != "" {
-			return errors.New(env.Data.Message)
+		var data struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(env.Data, &data) == nil && data.Message != "" {
+			return errors.New(data.Message)
 		}
 		return errors.New("command failed")
 	}
