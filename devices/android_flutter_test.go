@@ -11,7 +11,7 @@ import (
 func TestVisitFailsOnceTheConnectionIsGone(t *testing.T) {
 	vm := newVMWithDeadConnection()
 
-	if _, err := vm.visit("someRenderObject", "RenderParagraph"); err == nil {
+	if _, err := vm.visit("someRenderObject", "RenderParagraph", nil); err == nil {
 		t.Error("expected visit to fail after the connection died, got nil error")
 	}
 }
@@ -38,7 +38,7 @@ func newVMWithDeadConnection() *flutterVM {
 
 func TestFriendlyRenderTypeStripsRenderAndUnderscorePrefixes(t *testing.T) {
 	cases := map[string]string{
-		"RenderParagraph":   "Paragraph",
+		"RenderParagraph":   "Text",
 		"RenderCustomPaint": "CustomPaint",
 		"RenderImage":       "Image",
 		"_RenderColoredBox": "ColoredBox",
