@@ -90,7 +90,11 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("write pid file: %w", err)
 	}
 
-	go s.acceptLoop(ln)
+	accepting := make(chan struct{})
+	go func() {
+		defer close(accepting)
+		s.acceptLoop(ln)
+	}()
 	if opts.IdleTimeout > 0 {
 		go s.watchIdle()
 	}
@@ -101,6 +105,9 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	_ = ln.Close()
+	// join the accept loop first: once it has returned no more wg.Add calls
+	// can race with the wg.Wait inside waitInflight
+	<-accepting
 	s.waitInflight()
 	if opts.OnShutdown != nil {
 		opts.OnShutdown()
