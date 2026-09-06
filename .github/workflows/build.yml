@@ -45,7 +45,7 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
     - name: Upload Android agent binaries
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: android-agents
         path: |
@@ -65,7 +65,7 @@ jobs:
       run: make -C agents/ios all
 
     - name: Upload iOS agent binaries
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: ios-agents
         path: |
@@ -87,13 +87,13 @@ jobs:
         go-version-file: go.mod
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
@@ -167,13 +167,13 @@ jobs:
         go-version-file: go.mod
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
@@ -198,7 +198,7 @@ jobs:
         ./mobilecli-darwin-arm64 --version
 
     - name: Upload macos build artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: macos-build
         path: |
@@ -225,13 +225,13 @@ jobs:
         go-version-file: go.mod
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
@@ -257,7 +257,7 @@ jobs:
         ./mobilecli-linux-amd64 --version
 
     - name: Upload macos build artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: linux-build
         path: |
@@ -279,13 +279,13 @@ jobs:
         persist-credentials: false
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
@@ -310,7 +310,7 @@ jobs:
         $env:GOARCH="arm64"; go build -ldflags="-s -w" -o mobilecli-windows-arm64.exe
 
     - name: Upload build artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: windows-build
         path: |
@@ -328,7 +328,7 @@ jobs:
         persist-credentials: false
 
     - name: Download macos build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: macos-build
         path: .
@@ -366,19 +366,19 @@ jobs:
         registry-url: 'https://registry.npmjs.org'
 
     - name: Download darwin build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: macos-build
         path: mobilecli-darwin
 
     - name: Download linux build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: linux-build
         path: mobilecli-linux
 
     - name: Download windows build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: windows-build
         path: mobilecli-windows
