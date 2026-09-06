@@ -26,7 +26,7 @@ type ScreenElement struct {
 	Children    []ScreenElement   `json:"children,omitempty"`
 }
 
-// AttachRefs assigns each element a ref ("e1".."eN") in depth-first pre-order,
+// AttachRefs assigns each element a ref ("@e1".."@eN") in depth-first pre-order,
 // so a ref is the element's position in the tree as printed. Refs are only
 // valid against the dump that produced them.
 func AttachRefs(elements []ScreenElement) {
@@ -37,7 +37,7 @@ func AttachRefs(elements []ScreenElement) {
 func attachRefs(elements []ScreenElement, counter *int) {
 	for i := range elements {
 		*counter++
-		elements[i].Ref = fmt.Sprintf("e%d", *counter)
+		elements[i].Ref = fmt.Sprintf("@e%d", *counter)
 		attachRefs(elements[i].Children, counter)
 	}
 }

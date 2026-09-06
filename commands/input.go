@@ -101,7 +101,7 @@ func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int
 	}
 
 	types.AttachRefs(elements)
-	element := findElementByRef(elements, strings.TrimPrefix(ref, "@"))
+	element := findElementByRef(elements, "@"+strings.TrimPrefix(ref, "@"))
 	if element == nil {
 		return 0, 0, fmt.Errorf("ref %s not found on current screen; refs come from the latest 'dump ui'", ref)
 	}

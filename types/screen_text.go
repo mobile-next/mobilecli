@@ -25,7 +25,7 @@ func writeElementLines(builder *strings.Builder, elements []ScreenElement, depth
 }
 
 func formatElementLine(element ScreenElement) string {
-	parts := []string{fmt.Sprintf("@%s [%s]", element.Ref, element.Type)}
+	parts := []string{fmt.Sprintf("%s [%s]", element.Ref, element.Type)}
 
 	if description := elementDescription(element); description != "" {
 		parts = append(parts, fmt.Sprintf("%q", description))
