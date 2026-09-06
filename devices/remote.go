@@ -299,7 +299,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 
 	start := time.Now()
 
-	req, err := http.NewRequest(http.MethodPut, u.String(), f)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, u.String(), f)
 	if err != nil {
 		return fmt.Errorf("failed to create upload request: %w", err)
 	}
@@ -323,6 +323,14 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	return nil
 }
 
+func httpGet(u string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
+}
+
 func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) error {
 	parsed, err := url.Parse(downloadURL)
 	if err != nil {
@@ -334,7 +342,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	}
 
 	utils.Verbose("downloading from %v", parsed)
-	resp, err := http.Get(parsed.String())
+	resp, err := httpGet(parsed.String())
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}
