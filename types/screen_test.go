@@ -23,7 +23,7 @@ func TestAttachRefsNumbersDepthFirstPreOrder(t *testing.T) {
 		elements[0].Children[1].Children[0].Ref,
 		elements[1].Ref,
 	}
-	want := []string{"e1", "e2", "e3", "e4", "e5"}
+	want := []string{"@e1", "@e2", "@e3", "@e4", "@e5"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("ref %d: got %q, want %q", i, got[i], want[i])

@@ -17,15 +17,15 @@ func TestFindElementByRefSearchesNestedChildren(t *testing.T) {
 	}
 	types.AttachRefs(elements)
 
-	element := findElementByRef(elements, "e2")
+	element := findElementByRef(elements, "@e2")
 	if element == nil {
-		t.Fatal("expected to find e2")
+		t.Fatal("expected to find @e2")
 	}
 	if element.Type != "button" {
 		t.Fatalf("expected button, got %s", element.Type)
 	}
 
-	if findElementByRef(elements, "e99") != nil {
-		t.Fatal("expected e99 to be missing")
+	if findElementByRef(elements, "@e99") != nil {
+		t.Fatal("expected @e99 to be missing")
 	}
 }

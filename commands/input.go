@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
@@ -92,7 +91,7 @@ func TapCommand(req TapRequest) *CommandResponse {
 }
 
 // resolveRefTapPoint re-dumps the UI tree, numbers it exactly like "dump ui"
-// does, and returns the center of the element matching ref ("@e5" or "e5").
+// does, and returns the center of the element matching ref ("@e5").
 // Refs are positional against a fresh dump; there is no staleness tracking.
 func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int, error) {
 	elements, err := device.DumpSource()
@@ -101,7 +100,7 @@ func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int
 	}
 
 	types.AttachRefs(elements)
-	element := findElementByRef(elements, strings.TrimPrefix(ref, "@"))
+	element := findElementByRef(elements, ref)
 	if element == nil {
 		return 0, 0, fmt.Errorf("ref %s not found on current screen; refs come from the latest 'dump ui'", ref)
 	}
