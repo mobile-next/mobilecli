@@ -110,7 +110,7 @@ func writeMp4(units []accessUnit, output io.WriteSeeker) error {
 		ptsMs := (au.timestampUs - firstTs) / 1000
 		dtsMs := ptsMs // baseline profile, no B-frames
 
-		err := muxer.Write(trackID, annexB, uint64(ptsMs), uint64(dtsMs))
+		err := muxer.Write(trackID, annexB, ptsMs, dtsMs)
 		if err != nil {
 			return fmt.Errorf("writing frame: %w", err)
 		}

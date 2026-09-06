@@ -301,10 +301,6 @@ func (d *IOSDevice) StartTunnelWithCallback(onProcessDied func(error)) error {
 	return d.tunnelManager.StartTunnelWithCallback(onProcessDied)
 }
 
-func (d *IOSDevice) stopTunnel() error {
-	return d.tunnelManager.StopTunnel()
-}
-
 // Cleanup gracefully cleans up all device resources
 func (d *IOSDevice) Cleanup() error {
 	if !d.hasResourcesToCleanup() {
