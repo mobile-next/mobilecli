@@ -429,8 +429,6 @@ func (vm *flutterVM) disposeSemantics(handleID string) {
 	_, _ = vm.invoke(handleID, "dispose", nil)
 }
 
-var offsetSizePattern = regexp.MustCompile(`\(([-\d.]+),\s*([-\d.]+)\)`)
-
 func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) {
 	vm.dpr = dpr
 	t0 := time.Now()
