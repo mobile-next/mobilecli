@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -56,7 +57,7 @@ func RESTCall(token, method, path string, body any, result any) error {
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, base+path, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, base+path, reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to build request: %w", err)
 	}

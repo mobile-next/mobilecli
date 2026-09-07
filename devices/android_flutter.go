@@ -580,7 +580,7 @@ func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
 			return id, nil
 		}
 	}
-	return "", fmt.Errorf("Offset.zero not found among live instances")
+	return "", fmt.Errorf("offset.zero not found among live instances")
 }
 
 // visit walks a render object subtree, returning the meaningful ScreenElements

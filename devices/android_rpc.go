@@ -2,6 +2,7 @@ package devices
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,11 +45,7 @@ func agentRequestWithTimeout(port int, method string, params map[string]any, tim
 	}()
 
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Post(
-		fmt.Sprintf("http://localhost:%d/", port),
-		"application/json",
-		bytes.NewReader(payload),
-	)
+	resp, err := postJSON(client, port, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("connect to agent on port %d: %w", port, err)
 	}
@@ -78,10 +75,19 @@ func agentRequestWithTimeout(port int, method string, params map[string]any, tim
 // isAgentReady checks whether the agent socket is already accepting connections.
 func isAgentReady(port int) bool {
 	client := &http.Client{Timeout: 300 * time.Millisecond}
-	resp, err := client.Post(fmt.Sprintf("http://localhost:%d/", port), "application/json", bytes.NewReader([]byte("{}")))
+	resp, err := postJSON(client, port, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return false
 	}
 	resp.Body.Close()
 	return true
+}
+
+func postJSON(client *http.Client, port int, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("http://localhost:%d/", port), body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return client.Do(req)
 }
