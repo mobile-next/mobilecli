@@ -1,69 +1,72 @@
 ---
 name: mobilecli
-description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, or get crash reports, even if they don't explicitly name "mobilecli".
+description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, get crash reports, install mobilecli, or allocate and release remote real devices on Mobile Next cloud, even if they don't explicitly name "mobilecli". Requires the mobilecli npm package; the skill installs it if missing.
 allowed-tools: Bash(mobilecli:*)
 ---
 
 # Mobile CLI
 
-A universal automation and management skill for iOS and Android devices, simulators, emulators, and mobile apps. This skill guides you through interacting with devices, automating applications, performing gestures, capturing screen states, inspecting webviews, and interacting with the `mobilecli` command-line interface and background JSON-RPC server.
+A universal automation and management skill for iOS and Android devices, simulators, emulators, and mobile apps. This skill guides you through interacting with devices, automating applications, performing gestures, capturing screen states, inspecting webviews, using the `mobilecli` command-line interface.
+
+---
+
+## Install
+
+Before the first device command, make sure the `mobilecli` binary exists. If it is missing, install it globally with npm. No need to ask the user first; installing is expected.
+
+```bash
+command -v mobilecli >/dev/null || npm install -g mobilecli@latest
+mobilecli --version
+```
+
+If `npm install -g` fails with a permissions error, retry with `sudo npm install -g mobilecli@latest` or ask the user. If `mobilecli` is not on the agent's PATH but the user says it is installed, run `npm bin -g` (or `npm prefix -g`) and use the binary from there.
+
+Do not run `npx mobilecli@latest` for every command; it re-resolves the package each time and makes automation slow.
+
+Every device command talks to a background daemon (auto-started, exits after 30 idle minutes; `mobilecli daemon status|stop`). Nothing to set up.
+
+Platform prerequisites (already covered if the user has been using devices on this machine):
+- Android: `adb` on PATH (`brew install --cask android-platform-tools`).
+- iOS simulators: Xcode with a booted simulator.
 
 ---
 
 ## Quick Start (TL;DR)
 
-A typical command sequence for testing an application on a simulator or emulator:
+Start working immediately. Do not probe with `--help` or `--version` first.
 
 ```bash
-# 1. List devices and note the device id (serial/udid).
-#    this starts the mobilecli daemon in the background, which keeps devices,
-#    tunnels and agents alive so every following command is fast
+# 1. List devices and note the device id. This starts the background daemon,
+#    which keeps devices, tunnels and agents alive so following commands are fast.
 mobilecli devices
 
-# 2. Check the daemon is up (optional)
-mobilecli daemon status
-mobilecli devices
-
-# 3. Boot the target device (if offline)
+# 2. Boot the target device (only if offline)
 mobilecli device boot --device <device-id>
 
-# 4. Launch your app
-mobilecli apps launch "com.example.myapp" --device <device-id>
+# 3. Launch the app and dump the UI in one go. Every element gets a ref like @e5.
+mobilecli apps launch com.example.myapp --device <device-id> && \
+  mobilecli dump ui --device <device-id> --format text
 
-# 5. Inspect the UI tree to find coordinates
-mobilecli dump ui --device <device-id>
+# 4. Act on a ref, then re-dump to verify. Chain with && so one bash call does both.
+mobilecli io tap @e5 --device <device-id> && \
+  mobilecli dump ui --device <device-id> --format text
 
-# 6. Tap the center of the target element
-mobilecli io tap --device <device-id> 180,320
-
-# 7. Verify result with a screenshot
+# 5. Confirm visually when needed
 mobilecli screenshot --device <device-id> --output screenshot.png
-
-# 8. Optional: stop the daemon (it exits by itself after 30 idle minutes)
-mobilecli daemon stop
 ```
 
----
+### Chaining commands
 
-## Prerequisites & Server Setup
-
-Before using this skill, ensure the environment has the necessary prerequisites installed and configured:
-
-- **Android SDK**: `adb` must be available in the system `PATH`.
-- **Xcode Command Line Tools**: Required for iOS Simulator control (on macOS).
-- **On-Device Agent**: Required for iOS input gestures, screenshots, and UI dumping. Android needs no agent; its helpers ship embedded in the CLI.
-
-### The Daemon and the JSON-RPC Server
-Every device command talks to a background daemon that caches device information and keeps connections/tunnels alive. It starts automatically on the first device command, so no setup is needed for fast CLI usage.
+Each `mobilecli` invocation is a separate process, so chain related steps with `&&` in a single bash call. `&&` stops the chain on the first failure, which is what you want in automation:
 
 ```bash
-# Inspect or stop the daemon
-mobilecli daemon status
-mobilecli daemon stop
-
-# Optional: expose the same daemon over HTTP/WebSocket JSON-RPC (defaults to localhost:12000)
-mobilecli server start --listen localhost:12000 --cors
+# fill a login form and check the result with one bash call
+mobilecli io tap @e3 --device <id> && mobilecli io text "user@example.com" --device <id> && \
+mobilecli io tap @e4 --device <id> && mobilecli io text "secret" --device <id> && \
+mobilecli io tap @e7 --device <id> && sleep 1 && mobilecli dump ui --device <id> --format text
 ```
+
+Refs (`@e1`, `@e2`, ...) are numbered by the most recent `dump ui`. Any tap, text entry, or navigation can change the tree, so re-dump before reusing a ref. Prefer `--format text` for reading, and the default JSON when you need `rect` coordinates or need to script over the output.
 
 ---
 
@@ -89,324 +92,24 @@ graph TD
 3. **Capture State**:
    - Dump the UI tree: `mobilecli dump ui` to locate elements programmatically.
    - Take a screenshot: `mobilecli screenshot` to visually confirm what is displayed.
-4. **Interact**: Locate your target element in the UI dump, calculate its center coordinates, and trigger inputs (e.g. `mobilecli io tap`, `mobilecli io text`).
+4. **Interact**: Tap the element's ref from the dump (`mobilecli io tap @e5`), or compute the center of its `rect` and tap `x,y`. Then `mobilecli io text` for input.
 5. **Repeat or Debug**: Verify the changes in a new UI dump or screenshot, handle popups, and check crash reports if the app terminates.
-
----
-
-## Quick Interaction Reference
-
-Here is a quick reference table mapping standard user actions to their `mobilecli` CLI commands and corresponding JSON-RPC methods:
-
-| User Action | CLI Command | JSON-RPC Method | Description |
-| :--- | :--- | :--- | :--- |
-| **Tap** | `mobilecli io tap <x,y>` | `device.io.tap` | Single touch at coordinates |
-| **Long Press** | `mobilecli io longpress <x,y> --duration <ms>` | `device.io.longpress` | Press and hold for a duration |
-| **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | `device.io.swipe` | Drag from start to end coordinates |
-| **Type Text** | `mobilecli io text "<text>"` | `device.io.text` | Send raw text to the focused field |
-| **Key Press** | `mobilecli io button <BUTTON_NAME>` | `device.io.button` | Press hardware buttons (e.g. HOME, POWER) |
-| **Read Clipboard** | `mobilecli io clipboard get` | `device.clipboard.get` | Read text from the device clipboard |
-| **Write Clipboard** | `mobilecli io clipboard set "<text>"` | `device.clipboard.set` | Replace text on the device clipboard |
-
----
-
-## Command Reference (CLI)
-
-All commands support the global `--device <id>` flag to specify the target device, and `-v` / `--verbose` for logging.
-
-### 1. Device Lifecycle & Info
-* **List Devices**:
-  ```bash
-  # List online devices
-  mobilecli devices
-  
-  # List all devices including offline ones
-  mobilecli devices --include-offline
-  ```
-* **Boot Device** (start an offline simulator or emulator):
-  ```bash
-  mobilecli device boot --device <device-id>
-  ```
-* **Shutdown / Reboot**:
-  ```bash
-  mobilecli device shutdown --device <device-id>
-  mobilecli device reboot --device <device-id>
-  ```
-* **Device Information**:
-  ```bash
-  mobilecli device info --device <device-id>
-  ```
-* **Orientation Control**:
-  ```bash
-  # Get current orientation (portrait/landscape)
-  mobilecli device orientation get --device <device-id>
-  
-  # Set orientation
-  mobilecli device orientation set --device <device-id> landscape
-  ```
-
-### 2. App Management
-* **List Apps**:
-  ```bash
-  mobilecli apps list --device <device-id>
-  ```
-* **Foreground App**:
-  ```bash
-  mobilecli apps foreground --device <device-id>
-  ```
-* **Launch / Terminate**:
-  ```bash
-  mobilecli apps launch <bundle-id> --device <device-id>
-  mobilecli apps terminate <bundle-id> --device <device-id>
-  ```
-* **Install / Uninstall**:
-  ```bash
-  # Installs .apk (Android), .ipa (iOS Real), or .zip (iOS Simulator)
-  mobilecli apps install /path/to/app.apk --device <device-id>
-  
-  # Uninstall
-  mobilecli apps uninstall <bundle-id> --device <device-id>
-  ```
-
-### 3. Screen & Media
-* **Take Screenshot**:
-  ```bash
-  # PNG format (default)
-  mobilecli screenshot --device <device-id> --output screenshot.png
-  
-  # JPEG with quality control
-  mobilecli screenshot --device <device-id> --format jpeg --quality 80 --output screenshot.jpg
-  ```
-* **Record Screen**:
-  ```bash
-  # Record screen to MP4 file
-  mobilecli screenrecord --device <device-id> --output recording.mp4
-  
-  # Record with custom time limit (in seconds) and suppress progress output
-  mobilecli screenrecord --device <device-id> --output recording.mp4 --time-limit 15 --silent
-  ```
-
-### 4. Input & Gestures
-* **Tap Coordinates**:
-  ```bash
-  mobilecli io tap --device <device-id> 150,300
-  ```
-* **Long Press**:
-  ```bash
-  mobilecli io longpress --device <device-id> 150,300 --duration 2000
-  ```
-* **Swipe**:
-  ```bash
-  # Swipe from x1,y1 to x2,y2
-  mobilecli io swipe --device <device-id> 100,600,100,200
-  ```
-* **Send Text**:
-  ```bash
-  # Types text into the currently focused input field
-  mobilecli io text --device <device-id> "John Doe"
-  ```
-* **Hardware Buttons**:
-  ```bash
-  # All platforms: HOME, POWER, VOLUME_UP, VOLUME_DOWN
-  # Android only: BACK, ENTER, BACKSPACE, APP_SWITCH,
-  #               DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
-  mobilecli io button --device <device-id> HOME
-  ```
-* **Clipboard**:
-  ```bash
-  # Read the device clipboard
-  mobilecli io clipboard get --device <device-id>
-
-  # Write to the device clipboard
-  mobilecli io clipboard set --device <device-id> "Hello World"
-  ```
-
-### 5. UI Inspection & Webviews
-* **Dump UI Tree**:
-  ```bash
-  # Parsed JSON format
-  mobilecli dump ui --device <device-id>
-  
-  # Raw XML/JSON source from agent
-  mobilecli dump ui --device <device-id> --format raw
-  ```
-* **List Webviews**:
-  ```bash
-  mobilecli webview list --device <device-id>
-  ```
-* **Webview Navigation & Query**:
-  ```bash
-  # Navigate to a URL
-  mobilecli webview goto <webview-id> https://example.com --device <device-id>
-  
-  # Query DOM elements via CSS selector
-  mobilecli webview query <webview-id> "button.submit-btn" --device <device-id>
-  
-  # Dump full outer HTML
-  mobilecli webview content <webview-id> --device <device-id>
-  ```
-* **Evaluate JavaScript**:
-  ```bash
-  mobilecli webview eval <webview-id> "document.title" --device <device-id>
-  ```
-* **Wait for Load State**:
-  ```bash
-  # Wait states: "load" or "domcontentloaded"
-  mobilecli webview wait <webview-id> --state domcontentloaded --timeout 5000 --device <device-id>
-  ```
-
-### 6. Filesystem Operations
-Access files on-device or inside debuggable app private directories (Android and iOS Simulator).
-* **List Directory**:
-  ```bash
-  # Absolute path
-  mobilecli fs ls --device <device-id> /sdcard/Download
-  
-  # App private container path
-  mobilecli fs ls --device <device-id> com.example.app /Documents
-  ```
-* **Transfer Files**:
-  ```bash
-  # Push local file to device
-  mobilecli fs push --device <device-id> ./config.json /sdcard/config.json
-  
-  # Pull remote file to host
-  mobilecli fs pull --device <device-id> /sdcard/log.txt ./log.txt
-  ```
-* **Directories & Deletion**:
-  ```bash
-  # Create directory
-  mobilecli fs mkdir --device <device-id> -p /sdcard/newdir
-  
-  # Delete file or directory
-  mobilecli fs rm --device <device-id> -r /sdcard/newdir
-  ```
-
-### 7. Crash Logs & Deep Linking
-* **Deep Links**:
-  ```bash
-  mobilecli url --device <device-id> "myapp://settings?user=123"
-  ```
-* **Crash Reports**:
-  ```bash
-  # List crash logs
-  mobilecli device crashes list --device <device-id>
-  
-  # Get crash report content
-  mobilecli device crashes get <crash-id> --device <device-id>
-  ```
-* **Device Logs**:
-  ```bash
-  # Stream live logs, one json entry per line (ctrl+c to stop)
-  mobilecli device logs --device <device-id>
-
-  # Stop after 100 entries, filter with key=value / key!=value (repeatable, ANDed)
-  mobilecli device logs --device <device-id> --limit 100 --filter level=Error --filter process!=SpringBoard
-  ```
-  Filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
-
----
-
-## JSON-RPC Server & WebSocket API
-
-For scripts and long-running automation, make HTTP POST requests to the server's endpoint (`http://localhost:12000/rpc`). The JSON-RPC payload format is:
-`{"jsonrpc": "2.0", "method": "<method_name>", "params": { ... }, "id": 1}`
-
-### Core JSON-RPC API Examples
-
-* **List Devices**:
-  ```bash
-  curl http://localhost:12000/rpc -X POST -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
-  ```
-* **Take Crop/Clip Screenshot**:
-  ```bash
-  curl http://localhost:12000/rpc -X POST -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0", "id": 2, "method": "device.screenshot", "params": {"deviceId": "device-id", "format": "png", "clip": {"x": 50, "y": 100, "width": 200, "height": 300}}}'
-  ```
-* **Stop Server Remotely**:
-  ```bash
-  curl http://localhost:12000/rpc -X POST -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0", "id": 3, "method": "server.shutdown", "params": {}}'
-  ```
-
-### Custom Gestures (JSON-RPC only)
-For complex multi-action interactions (e.g. dragging, pinching, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events.
-
-Supported actions:
-- `pointerDown`: Touches screen at the current x,y coordinate.
-- `pointerMove`: Moves coordinates to target `x`, `y`.
-- `pointerUp`: Lifts pointer off screen.
-- `pause`: Sleeps for `duration` (in milliseconds).
-
-**Example: Drag-and-Drop Action**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "device.io.gesture",
-  "params": {
-    "deviceId": "my-device-id",
-    "actions": [
-      { "type": "pointerMove", "x": 100, "y": 150 },
-      { "type": "pointerDown" },
-      { "type": "pause", "duration": 500 },
-      { "type": "pointerMove", "x": 300, "y": 450 },
-      { "type": "pause", "duration": 200 },
-      { "type": "pointerUp" }
-    ]
-  }
-}
-```
-
-### Filesystem Limits in JSON-RPC
-> [!WARNING]
-> **1MB RPC payload limit**: The JSON-RPC calls `device.fs.push` and `device.fs.pull` encode file data using Base64. To maintain server performance, the maximum file size supported by these RPC endpoints is **1 MB**.
-> 
-> If you need to transfer databases, video files, or payloads larger than 1 MB, you must bypass the JSON-RPC endpoints and invoke the CLI commands directly (`mobilecli fs push` / `mobilecli fs pull`), which handle raw streams and are binary-safe for large volumes.
-
-### WebSocket API
-You can open a persistent connection to `ws://localhost:12000/ws` using tools like `wscat`:
-```bash
-wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
-< {"jsonrpc":"2.0","id":1,"result":[...]}
-```
-
----
-
-## Platform-Specific Notes & Troubleshooting
-
-### iOS Real Devices
-- **Agent Dependency**: Input gestures, screenshots, and UI dumps require the agent. Check and install it via:
-  ```bash
-  # Check agent installation status
-  mobilecli agent status --device <device-id>
-
-  # Install the agent (real iOS devices require a provisioning profile)
-  mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
-  ```
-  A valid Apple Provisioning Profile and signing identity must be present on the host to code-sign the agent.
-
-### Android Real Devices & Emulators
-- **ADB Access**: Ensure the device has "USB Debugging" enabled.
-- **App Private Container Paths**: Android app containers (`/data/user/0/...`) are accessed using `run-as`, which requires the application to be built as **debuggable** (`android:debuggable="true"` in the manifest).
-
-### iOS Simulator
-- Crash logs are read directly from `~/Library/Logs/DiagnosticReports/`.
 
 ---
 
 ## Best Practices for AI Agents
 
-> [!TIP]
-> **Use the JSON-RPC server whenever possible**: Invoking `mobilecli` via subprocess CLI commands incurs Go binary startup latency each time. Starting the server and querying it over HTTP/WebSocket speeds up interactions from seconds to milliseconds.
-
 > [!IMPORTANT]
-> **Tap coordinates must target the center of the bounding box**:
-> When parsing a UI element from `mobilecli dump ui`, locate the element's `rect` (`x`, `y`, `width`, `height`). Calculate the center coordinates:
-> `centerX = x + width/2`, `centerY = y + height/2`
-> Send this center point to `mobilecli io tap --device <device-id> <centerX>,<centerY>`.
+> **Prefer refs over coordinates**:
+> `mobilecli io tap @e5` taps the center of element 5 from the latest `dump ui`. Only fall back to coordinates when you need a point that is not an element (e.g. swipe start/end). If you do, use the center of the element's `rect`: `centerX = x + width/2`, `centerY = y + height/2`. Refs are invalidated by any UI change, so re-dump before reusing them.
+
+> [!TIP]
+> **Chain steps with `&&`**:
+> Run action + verification in one bash call: `mobilecli io tap @e5 --device <id> && mobilecli dump ui --device <id> --format text`. Fewer round-trips, and the chain stops at the first failing step.
+
+> [!WARNING]
+> **Release remote devices**:
+> Remote devices from Mobile Next Cloud stay allocated (and billed) until `mobilecli remote release --device <id>` runs. Release them at the end of the task, including on failure. Know that there is a 5 minutes minimum, so do not release a device until you are really done with it.
 
 > [!NOTE]
 > **Interact with input fields before writing text**:
@@ -415,3 +118,71 @@ wscat -c ws://localhost:12000/ws
 > [!WARNING]
 > **Auto-selection caveat**:
 > While `mobilecli` auto-selects the target device when only *one* online device is connected, always verify the list of connected devices first. If multiple devices are online, you must pass the exact device ID to avoid command failures.
+
+---
+
+## Quick Interaction Reference
+
+Here is a quick reference table mapping standard user actions to `mobilecli` commands:
+
+| User Action | CLI Command | Description |
+| :--- | :--- | :--- |
+| **Tap** | `mobilecli io tap @e5` or `mobilecli io tap <x,y>` | Single touch on a ref from `dump ui`, or at coordinates |
+| **Long Press** | `mobilecli io longpress <x,y> --duration <ms>` | Press and hold for a duration |
+| **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | Drag from start to end coordinates |
+| **Type Text** | `mobilecli io text "<text>"` | Send raw text to the focused field |
+| **Key Press** | `mobilecli io button <BUTTON_NAME>` | Press hardware buttons (e.g. HOME, POWER) |
+| **Read Clipboard** | `mobilecli io clipboard get` | Read text from the device clipboard |
+| **Write Clipboard** | `mobilecli io clipboard set "<text>"` | Replace text on the device clipboard |
+
+---
+
+## Remote Devices (Mobile Next Cloud)
+
+Real iOS and Android devices hosted by Mobile Next. Once allocated, a remote device shows up in `mobilecli devices` with `"type": "remote"` and every command above works on it unchanged via `--device <id>`.
+
+### 1. Authenticate once
+
+```bash
+# device-code flow: prints a URL and a code for the user to enter in a browser.
+# the user must do this step; it cannot be completed by the agent.
+mobilecli auth login
+
+# headless hosts with no OS keyring
+mobilecli auth login --insecure-storage
+
+# verify
+mobilecli auth token
+```
+
+Token lookup order: `MOBILECLI_TOKEN` env var, then the OS keyring (or the credentials file with `--insecure-storage`). In CI, set `MOBILECLI_TOKEN` instead of logging in. Not logged in and no token means every `remote` command fails; ask the user to run `mobilecli auth login`.
+
+### 2. Allocate, use, release
+
+```bash
+# see what the fleet has
+mobilecli remote list-devices
+
+# allocate and block until the device is ready (default timeout 900s)
+mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wait
+mobilecli remote allocate --platform android --version 14 --wait
+
+# the response includes the device id; from here it is a normal device
+mobilecli devices
+mobilecli apps install ./app.ipa --device <remote-id> && \
+  mobilecli apps launch com.example.app --device <remote-id> && \
+  mobilecli dump ui --device <remote-id> --format text
+
+# always release when done, devices are billed while allocated
+mobilecli remote release --device <remote-id>
+```
+
+Filters: `--platform ios|android`, `--version` (repeatable, ANDed, supports `>=`, `>`, `<=`, `<`, or exact), `--name` (exact or trailing `*` prefix). Always pass `--wait`; without it the command returns while the device is still `allocating`.
+
+---
+
+---
+
+## Full reference
+
+Every other command (apps, screen recording, swipe/longpress/buttons, clipboard, webviews, filesystem, crash reports, device logs, deep links, orientation), platform quirks, and the JSON-RPC/WebSocket API are in [reference.md](reference.md). `mobilecli <command> --help` is always current.
