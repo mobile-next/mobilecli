@@ -26,7 +26,9 @@ const (
 	oauthAuthorizeURL = "https://app.mobilenext.ai/login/oauth/authorize"
 	oauthTokenURL     = "https://app.mobilenext.ai/login/oauth/token"
 	oauthCallbackPath = "/callback"
-	oauthLoginTimeout = 5 * time.Minute
+	// Longer than the server's 10-minute consent session: the CLI must still be listening for
+	// as long as the browser can legitimately redirect back.
+	oauthLoginTimeout = 15 * time.Minute
 )
 
 type oauthCallback struct {
@@ -95,19 +97,28 @@ func waitForCallback(ctx context.Context, listener net.Listener) (oauthCallback,
 		} else {
 			fmt.Fprint(w, "<h2>Logged in to mobilecli</h2><p>You can close this tab.</p>")
 		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 		select {
 		case got <- cb:
 		default:
 		}
 	})
 	go func() { _ = server.Serve(listener) }()
-	defer server.Close()
+	// Shutdown, not Close: it waits for the in-flight handler to finish writing the page, so the
+	// browser never sees the connection drop mid-response.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 
 	select {
 	case cb := <-got:
 		return cb, nil
 	case <-ctx.Done():
-		return oauthCallback{}, errors.New("timed out waiting for browser login")
+		return oauthCallback{}, fmt.Errorf("no browser login within %s, run `mobilecli auth login` again", oauthLoginTimeout)
 	}
 }
 
