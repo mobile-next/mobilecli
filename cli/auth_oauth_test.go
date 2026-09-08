@@ -19,13 +19,14 @@ func TestPkceChallengeMatchesRFC7636Vector(t *testing.T) {
 }
 
 func TestBuildAuthorizeURLCarriesPKCEAndState(t *testing.T) {
-	u, err := url.Parse(buildAuthorizeURL("https://x/authorize", "http://127.0.0.1:1234/callback", "chal", "st"))
+	u, err := url.Parse(buildAuthorizeURL("https://x/authorize", "http://127.0.0.1:1234/callback", "chal", "st", "claude-code"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := u.Query()
 	if q.Get("client_id") != "mobilecli" || q.Get("code_challenge") != "chal" || q.Get("code_challenge_method") != "S256" ||
-		q.Get("state") != "st" || q.Get("redirect_uri") != "http://127.0.0.1:1234/callback" || q.Get("response_type") != "code" {
+		q.Get("state") != "st" || q.Get("redirect_uri") != "http://127.0.0.1:1234/callback" || q.Get("response_type") != "code" ||
+		q.Get("agent") != "claude-code" {
 		t.Fatalf("bad query: %s", u.RawQuery)
 	}
 }
@@ -73,5 +74,14 @@ func TestExchangeCodeSendsVerifierAndReturnsToken(t *testing.T) {
 	}
 	if token != "mob_token" {
 		t.Fatalf("got %s", token)
+	}
+}
+
+func TestDetectAgentRecognisesClaudeCode(t *testing.T) {
+	if got := detectAgent(envWith(map[string]string{"CLAUDECODE": "1"})); got != "claude-code" {
+		t.Fatalf("got %q", got)
+	}
+	if got := detectAgent(envWith(nil)); got != "" {
+		t.Fatalf("expected empty for a plain terminal, got %q", got)
 	}
 }

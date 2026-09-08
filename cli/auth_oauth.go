@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -53,7 +54,16 @@ func pkceChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-func buildAuthorizeURL(authorizeURL, redirectURI, challenge, state string) string {
+// detectAgent names the coding agent driving mobilecli, if any, so the server can tell
+// "a human in a terminal" from "Claude Code". Empty when none is recognised.
+func detectAgent(getenv func(string) string) string {
+	if getenv("CLAUDECODE") != "" {
+		return "claude-code"
+	}
+	return ""
+}
+
+func buildAuthorizeURL(authorizeURL, redirectURI, challenge, state, agent string) string {
 	q := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {oauthClientID},
@@ -61,6 +71,9 @@ func buildAuthorizeURL(authorizeURL, redirectURI, challenge, state string) strin
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {state},
+	}
+	if agent != "" {
+		q.Set("agent", agent)
 	}
 	return authorizeURL + "?" + q.Encode()
 }
@@ -149,7 +162,7 @@ func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
 	defer listener.Close()
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", listener.Addr().(*net.TCPAddr).Port, oauthCallbackPath)
 
-	loginURL := buildAuthorizeURL(authorizeURL, redirectURI, pkceChallenge(verifier), state)
+	loginURL := buildAuthorizeURL(authorizeURL, redirectURI, pkceChallenge(verifier), state, detectAgent(os.Getenv))
 	if err := openBrowser(loginURL); err != nil {
 		return "", err
 	}
