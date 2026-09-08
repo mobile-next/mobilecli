@@ -1,3 +1,8 @@
+## [1.0.9](https://github.com/mobile-next/mobilecli/releases/tag/1.0.9) (2026-09-08)
+* Feat: add `--full` flag to `dump ui` to include the on-screen keyboard ([#398](https://github.com/mobile-next/mobilecli/pull/398))
+* Docs: teach the mobilecli skill install, element refs, command chaining and remote devices ([#397](https://github.com/mobile-next/mobilecli/pull/397))
+* Fix: resolve lint findings (noctx, staticcheck, funlen, unused, unconvert) ([#395](https://github.com/mobile-next/mobilecli/pull/395), [#396](https://github.com/mobile-next/mobilecli/pull/396))
+
 ## [1.0.8](https://github.com/mobile-next/mobilecli/releases/tag/1.0.8) (2026-09-06)
 * Feat: Device Kit agent for Android is now embedded in mobilecli, no APK install required ([#387](https://github.com/mobile-next/mobilecli/pull/387))
 * Feat: Element refs in `dump ui` and tap by `@ref` ([#378](https://github.com/mobile-next/mobilecli/pull/378))
