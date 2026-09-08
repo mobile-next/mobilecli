@@ -41,5 +41,7 @@ func openBrowser(target string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to open browser: %w", err)
 	}
+	// ponytail: Start, not Run. xdg-open can block until the browser exits on some desktops.
+	go func() { _ = cmd.Wait() }()
 	return nil
 }

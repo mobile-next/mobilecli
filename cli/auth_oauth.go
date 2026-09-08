@@ -163,10 +163,13 @@ func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", listener.Addr().(*net.TCPAddr).Port, oauthCallbackPath)
 
 	loginURL := buildAuthorizeURL(authorizeURL, redirectURI, pkceChallenge(verifier), state, detectAgent(os.Getenv))
+	// A missing xdg-open (minimal Linux, WSL) is not fatal: the loopback callback works just as
+	// well when the user pastes the URL themselves.
 	if err := openBrowser(loginURL); err != nil {
-		return "", err
+		fmt.Printf("Could not open a browser (%v). Open this URL to log in:\n\n\t%s\n\n", err, loginURL)
+	} else {
+		fmt.Printf("Opened your browser to log in. If it did not open, visit:\n\n\t%s\n\n", loginURL)
 	}
-	fmt.Printf("Opened your browser to log in. If it did not open, visit:\n\n\t%s\n\n", loginURL)
 	fmt.Println("Waiting for authorization...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), oauthLoginTimeout)
