@@ -68,7 +68,7 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to your account",
-	Long:  `Authenticates using a device code flow. Opens your browser with the code prefilled, or prints the URL and code when running over SSH, in CI, headless, or with --no-browser.`,
+	Long:  `Opens your browser to approve the login and pick an organization. Falls back to a device code (URL + code to type) over SSH, in CI, headless, or with --no-browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if authProvider != "mobilenext" {
 			return fmt.Errorf("unsupported provider %q, supported values: \"mobilenext\"", authProvider)
@@ -172,25 +172,13 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 }
 
 func runAuthLogin() error {
-	codeResp, err := requestDeviceCode()
-	if err != nil {
-		return err
-	}
-
-	loginURL := verificationURLWithCode(codeResp.VerificationURI, codeResp.UserCode)
-	opened := false
-	if !shouldSkipBrowser(noBrowser, runtime.GOOS, os.Getenv) {
-		opened = openBrowser(loginURL) == nil
-	}
-	if opened {
-		fmt.Printf("Opened your browser to log in. If it did not open, visit:\n\n\t%s\n\n", loginURL)
+	var token string
+	var err error
+	if shouldSkipBrowser(noBrowser, runtime.GOOS, os.Getenv) {
+		token, err = runDeviceCodeLogin()
 	} else {
-		fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
+		token, err = runOAuthLogin(oauthAuthorizeURL, oauthTokenURL)
 	}
-	fmt.Printf("Your code: %s\n\n", codeResp.UserCode)
-	fmt.Println("Waiting for authorization...")
-
-	token, err := pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
 	if err != nil {
 		return err
 	}
@@ -203,6 +191,19 @@ func runAuthLogin() error {
 
 	fmt.Println("Successfully logged in")
 	return nil
+}
+
+func runDeviceCodeLogin() (string, error) {
+	codeResp, err := requestDeviceCode()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
+	fmt.Printf("Your code: %s\n\n", codeResp.UserCode)
+	fmt.Println("Waiting for authorization...")
+
+	return pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
 }
 
 var authLogoutCmd = &cobra.Command{

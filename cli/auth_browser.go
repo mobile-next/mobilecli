@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"net/url"
 	"os/exec"
 	"runtime"
 )
@@ -27,18 +26,6 @@ func shouldSkipBrowser(noBrowserFlag bool, goos string, getenv func(string) stri
 		return true
 	}
 	return false
-}
-
-// verificationURLWithCode appends user_code so the login page can prefill it.
-func verificationURLWithCode(verificationURI, userCode string) string {
-	u, err := url.Parse(verificationURI)
-	if err != nil {
-		return verificationURI
-	}
-	q := u.Query()
-	q.Set("user_code", userCode)
-	u.RawQuery = q.Encode()
-	return u.String()
 }
 
 func openBrowser(target string) error {

@@ -32,11 +32,3 @@ func TestShouldSkipBrowser(t *testing.T) {
 		})
 	}
 }
-
-func TestVerificationURLWithCode(t *testing.T) {
-	got := verificationURLWithCode("https://app.mobilenext.ai/login/device", "ABCD-1234")
-	want := "https://app.mobilenext.ai/login/device?user_code=ABCD-1234"
-	if got != want {
-		t.Fatalf("got %s, want %s", got, want)
-	}
-}

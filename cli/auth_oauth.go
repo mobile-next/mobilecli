@@ -1,0 +1,172 @@
+package cli
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/mobile-next/mobilecli/utils"
+)
+
+// OAuth authorization code + PKCE against the server's built-in "mobilecli" client
+// (RFC 8252 native app: ephemeral loopback port, no client secret).
+const (
+	oauthClientID     = "mobilecli"
+	oauthAuthorizeURL = "https://app.mobilenext.ai/login/oauth/authorize"
+	oauthTokenURL     = "https://app.mobilenext.ai/login/oauth/token"
+	oauthCallbackPath = "/callback"
+	oauthLoginTimeout = 5 * time.Minute
+)
+
+type oauthCallback struct {
+	code  string
+	state string
+	err   string
+}
+
+type oauthTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	Error       string `json:"error,omitempty"`
+}
+
+func randomURLSafe(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// pkceChallenge is S256 per RFC 7636 §4.2.
+func pkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func buildAuthorizeURL(authorizeURL, redirectURI, challenge, state string) string {
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {oauthClientID},
+		"redirect_uri":          {redirectURI},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"state":                 {state},
+	}
+	return authorizeURL + "?" + q.Encode()
+}
+
+// waitForCallback serves one request on listener and returns what the browser brought back.
+func waitForCallback(ctx context.Context, listener net.Listener) (oauthCallback, error) {
+	got := make(chan oauthCallback, 1)
+	server := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != oauthCallbackPath {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query()
+		cb := oauthCallback{code: q.Get("code"), state: q.Get("state"), err: q.Get("error")}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if cb.err != "" || cb.code == "" {
+			fmt.Fprint(w, "<h2>Login failed</h2><p>You can close this tab and retry in the terminal.</p>")
+		} else {
+			fmt.Fprint(w, "<h2>Logged in to mobilecli</h2><p>You can close this tab.</p>")
+		}
+		select {
+		case got <- cb:
+		default:
+		}
+	})
+	go func() { _ = server.Serve(listener) }()
+	defer server.Close()
+
+	select {
+	case cb := <-got:
+		return cb, nil
+	case <-ctx.Done():
+		return oauthCallback{}, errors.New("timed out waiting for browser login")
+	}
+}
+
+func exchangeCode(tokenURL, code, verifier, redirectURI string) (string, error) {
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"client_id":     {oauthClientID},
+		"code_verifier": {verifier},
+		"redirect_uri":  {redirectURI},
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", utils.UserAgent())
+	resp, err := authHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to exchange code: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token response: %w", err)
+	}
+	var tok oauthTokenResponse
+	if err := json.Unmarshal(body, &tok); err != nil {
+		return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+	if tok.Error != "" || tok.AccessToken == "" {
+		return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+	return tok.AccessToken, nil
+}
+
+// runOAuthLogin opens the browser to the consent screen (pick organization, approve) and
+// receives the code on a loopback port. Returns the access token.
+func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
+	verifier, err := randomURLSafe(32)
+	if err != nil {
+		return "", err
+	}
+	state, err := randomURLSafe(16)
+	if err != nil {
+		return "", err
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("failed to listen for browser callback: %w", err)
+	}
+	defer listener.Close()
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", listener.Addr().(*net.TCPAddr).Port, oauthCallbackPath)
+
+	loginURL := buildAuthorizeURL(authorizeURL, redirectURI, pkceChallenge(verifier), state)
+	if err := openBrowser(loginURL); err != nil {
+		return "", err
+	}
+	fmt.Printf("Opened your browser to log in. If it did not open, visit:\n\n\t%s\n\n", loginURL)
+	fmt.Println("Waiting for authorization...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), oauthLoginTimeout)
+	defer cancel()
+	cb, err := waitForCallback(ctx, listener)
+	if err != nil {
+		return "", err
+	}
+	if cb.err != "" {
+		return "", fmt.Errorf("login denied: %s", cb.err)
+	}
+	if cb.state != state {
+		return "", errors.New("login callback state mismatch")
+	}
+	return exchangeCode(tokenURL, cb.code, verifier, redirectURI)
+}
