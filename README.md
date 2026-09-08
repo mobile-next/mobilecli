@@ -50,40 +50,21 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Android SDK** with `adb` in PATH (for Android device support)
 - **Xcode Command Line Tools** (for iOS simulator support on macOS)
 
-#### Run instantly with npx
-```bash
-npx mobilecli@latest
-```
-
 #### Install globally with npm
 ```bash
 npm install -g mobilecli@latest
 ```
 
-#### Install from Source 🛠️
+### Agent Setup 🤖
+
+Install `mobilecli` and add the skill so your coding agent knows how to use it:
+
 ```bash
-git clone https://github.com/mobile-next/mobilecli.git
-cd mobilecli
-make build
+npm install -g mobilecli@latest
+npx skills add https://github.com/mobile-next/mobilecli
 ```
 
-### Install Dependencies
-
-#### 🍎 For iOS Simulator Support
-
-Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
-
-`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons and streaming screen capture.
-
-#### 🤖 For Android Support
-```bash
-# Install Android SDK and ensure adb is in PATH
-# Download from: https://developer.android.com/studio/command-line/adb
-# or
-brew install --cask android-platform-tools
-```
-
-## Usage
+## CLI Reference
 
 ### List Connected Devices 🔍
 
@@ -93,33 +74,6 @@ mobilecli devices
 
 # List all devices including offline emulators and simulators
 mobilecli devices --include-offline
-```
-
-Example output:
-```json
-[
-  {
-    "id": "12345678-1234567890ABCDEF",
-    "name": "iPhone 15",
-    "platform": "ios",
-    "type": "real",
-    "state": "online"
-  },
-  {
-    "id": "Pixel_6",
-    "name": "Pixel 6",
-    "platform": "android",
-    "type": "emulator",
-    "state": "online"
-  },
-  {
-    "id": "iPhone_13",
-    "name": "iPhone 13",
-    "platform": "ios",
-    "type": "simulator",
-    "state": "offline"
-  }
-]
 ```
 
 **Note**: Offline emulators and simulators can be booted using the `mobilecli device boot` command.
@@ -250,18 +204,6 @@ mobilecli apps uninstall <bundle-id> --device <device-id>
 mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
-Example output for `apps foreground`:
-```json
-{
-  "status": "ok",
-  "data": {
-    "packageName": "com.example.app",
-    "appName": "Example App",
-    "version": "1.0.0"
-  }
-}
-```
-
 ### Filesystem 📂
 
 Access files on the device or inside an app's data container. Currently supported on **Android** and **iOS Simulator**.
@@ -304,39 +246,6 @@ mobilecli fs rm --device <device-id> /sdcard/old_file.txt
 # Remove a directory recursively
 mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
-```
-
-Example output for `apps path`:
-```json
-{
-  "status": "ok",
-  "data": {
-    "path": "/data/user/0/com.example.app"
-  }
-}
-```
-
-Example output for `fs ls`:
-```json
-{
-  "status": "ok",
-  "data": [
-    {
-      "name": "files",
-      "path": "/data/user/0/com.example.app/files",
-      "size": 4096,
-      "modTime": "2026-05-11T19:20:00Z",
-      "isDir": true
-    },
-    {
-      "name": "shared_prefs",
-      "path": "/data/user/0/com.example.app/shared_prefs",
-      "size": 4096,
-      "modTime": "2026-05-11T12:49:00Z",
-      "isDir": true
-    }
-  ]
-}
 ```
 
 **Notes:**
