@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -66,7 +68,7 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to your account",
-	Long:  `Authenticates using a device code flow. Displays a URL and code to enter in your browser.`,
+	Long:  `Authenticates using a device code flow. Opens your browser with the code prefilled, or prints the URL and code when running over SSH, in CI, headless, or with --no-browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if authProvider != "mobilenext" {
 			return fmt.Errorf("unsupported provider %q, supported values: \"mobilenext\"", authProvider)
@@ -175,8 +177,17 @@ func runAuthLogin() error {
 		return err
 	}
 
-	fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
-	fmt.Printf("And enter the code: %s\n\n", codeResp.UserCode)
+	loginURL := verificationURLWithCode(codeResp.VerificationURI, codeResp.UserCode)
+	opened := false
+	if !shouldSkipBrowser(noBrowser, runtime.GOOS, os.Getenv) {
+		opened = openBrowser(loginURL) == nil
+	}
+	if opened {
+		fmt.Printf("Opened your browser to log in. If it did not open, visit:\n\n\t%s\n\n", loginURL)
+	} else {
+		fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
+	}
+	fmt.Printf("Your code: %s\n\n", codeResp.UserCode)
 	fmt.Println("Waiting for authorization...")
 
 	token, err := pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
@@ -237,4 +248,5 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd)
 	authLoginCmd.Flags().StringVar(&authProvider, "provider", "mobilenext", "authentication provider (supported values: \"mobilenext\")")
+	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL and code instead of opening a browser")
 }
