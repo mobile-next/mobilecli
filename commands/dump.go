@@ -9,9 +9,11 @@ import (
 // DumpUIRequest represents the parameters for dumping UI tree.
 // Format is "json" (default), "text" for indented one-line-per-element output,
 // or "raw" for the unprocessed agent tree.
+// Full includes elements normally left out, such as the on-screen keyboard.
 type DumpUIRequest struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format"`
+	Full     bool   `json:"full"`
 }
 
 // DumpUIResponse represents the response for a dump UI command
@@ -38,10 +40,11 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 	}
 
 	var response DumpUIResponse
+	opts := devices.DumpOptions{Full: req.Full}
 
 	// Check if raw format is requested
 	if req.Format == "raw" {
-		rawData, err := targetDevice.DumpSourceRaw()
+		rawData, err := targetDevice.DumpSourceRaw(opts)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to dump raw UI from device %s: %w", targetDevice.ID(), err))
 		}
@@ -51,7 +54,7 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 		}
 	} else {
 		// Dump UI tree from the device
-		elements, err := targetDevice.DumpSource()
+		elements, err := targetDevice.DumpSource(opts)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
 		}

@@ -777,6 +777,15 @@
             ],
             "default": "json"
           }
+        },
+        {
+          "name": "full",
+          "description": "Include additional elements normally left out, such as the on-screen keyboard",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          }
         }
       ],
       "result": {

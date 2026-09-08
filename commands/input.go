@@ -94,7 +94,7 @@ func TapCommand(req TapRequest) *CommandResponse {
 // does, and returns the center of the element matching ref ("@e5").
 // Refs are positional against a fresh dump; there is no staleness tracking.
 func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int, error) {
-	elements, err := device.DumpSource()
+	elements, err := device.DumpSource(devices.DumpOptions{})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to dump UI to resolve ref %s: %w", ref, err)
 	}

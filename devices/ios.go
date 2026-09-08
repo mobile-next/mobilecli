@@ -1164,7 +1164,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return d.mjpegClient.StartScreenCapture(config.Format, config.OnData)
 }
 
-func (d *IOSDevice) DumpSource() ([]ScreenElement, error) {
+func (d *IOSDevice) DumpSource(_ DumpOptions) ([]ScreenElement, error) {
 	// Flutter apps render into an opaque native view, so the accessibility dump
 	// misses typed/unlabeled/non-semantic widgets. When the foreground app is a
 	// Flutter app with a live Dart VM service, read its render tree instead. Any
@@ -1175,7 +1175,7 @@ func (d *IOSDevice) DumpSource() ([]ScreenElement, error) {
 	return d.deviceKitClient.GetSourceElements()
 }
 
-func (d *IOSDevice) DumpSourceRaw() (any, error) {
+func (d *IOSDevice) DumpSourceRaw(_ DumpOptions) (any, error) {
 	return d.deviceKitClient.GetSourceRaw()
 }
 
@@ -1283,7 +1283,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource()
+			elements, err := d.DumpSource(DumpOptions{})
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1346,7 +1346,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource()
+			elements, err := d.DumpSource(DumpOptions{})
 			if err != nil {
 				// continue trying on error
 				continue

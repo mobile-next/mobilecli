@@ -518,6 +518,7 @@ Dumps the UI hierarchy of the device screen
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `json, raw` |  | Output format (json or raw) |
+| `full` | `boolean` |  | Include additional elements normally left out, such as the on-screen keyboard |
 
 #### Response
 

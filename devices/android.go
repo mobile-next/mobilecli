@@ -1575,8 +1575,8 @@ func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 	return elements
 }
 
-func (d *AndroidDevice) getDeviceServerDump() (string, error) {
-	nodes, err := d.dumpUiNodes()
+func (d *AndroidDevice) getDeviceServerDump(opts DumpOptions) (string, error) {
+	nodes, err := d.dumpUiNodes(opts)
 	if err != nil {
 		return "", err
 	}
@@ -1615,8 +1615,8 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
 }
 
-func (d *AndroidDevice) DumpSourceRaw() (any, error) {
-	if jsonStr, err := d.getDeviceServerDump(); err == nil {
+func (d *AndroidDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
+	if jsonStr, err := d.getDeviceServerDump(opts); err == nil {
 		return jsonStr, nil
 	} else {
 		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
@@ -1630,7 +1630,7 @@ func (d *AndroidDevice) DumpSourceRaw() (any, error) {
 	return xmlContent, nil
 }
 
-func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
+func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 	// Flutter apps render into an opaque native view, so the accessibility-based
 	// dumps below miss typed/unlabeled/non-semantic widgets. When the foreground
 	// app is a debuggable Flutter app, read its live render tree from the Dart VM
@@ -1639,7 +1639,7 @@ func (d *AndroidDevice) DumpSource() ([]ScreenElement, error) {
 		return elements, nil
 	}
 
-	if nodes, err := d.dumpUiNodes(); err == nil {
+	if nodes, err := d.dumpUiNodes(opts); err == nil {
 		return collectUiNodeElements(nodes), nil
 	} else {
 		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)

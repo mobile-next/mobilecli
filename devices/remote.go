@@ -241,20 +241,20 @@ func (r *RemoteDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	return rpcCall[*ForegroundAppInfo](r, "device.apps.foreground", params{})
 }
 
-func (r *RemoteDevice) DumpSource() ([]ScreenElement, error) {
+func (r *RemoteDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 	resp, err := rpcCall[struct {
 		Elements []ScreenElement `json:"elements"`
-	}](r, "device.dump.ui", params{})
+	}](r, "device.dump.ui", params{"full": opts.Full})
 	if err != nil {
 		return nil, err
 	}
 	return resp.Elements, nil
 }
 
-func (r *RemoteDevice) DumpSourceRaw() (any, error) {
+func (r *RemoteDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
 	resp, err := rpcCall[struct {
 		RawData any `json:"rawData"`
-	}](r, "device.dump.ui", params{"format": "raw"})
+	}](r, "device.dump.ui", params{"format": "raw", "full": opts.Full})
 	if err != nil {
 		return nil, err
 	}
