@@ -131,10 +131,10 @@ func (d *AndroidDevice) serverRequest(method string, params map[string]any) (jso
 
 // dumpUiNodes fetches the UI hierarchy from the DeviceServer. Callers fall back
 // to uiautomator when it's unavailable.
-func (d *AndroidDevice) dumpUiNodes() ([]uiNode, error) {
+func (d *AndroidDevice) dumpUiNodes(opts DumpOptions) ([]uiNode, error) {
 	startTime := time.Now()
 
-	raw, err := d.serverRequest("device.dump.ui", map[string]any{"waitUntilIdle": dumpUiWaitUntilIdleMs})
+	raw, err := d.serverRequest("device.dump.ui", map[string]any{"waitUntilIdle": dumpUiWaitUntilIdleMs, "full": opts.Full})
 	if err != nil {
 		return nil, fmt.Errorf("device server dump.ui: %w", err)
 	}

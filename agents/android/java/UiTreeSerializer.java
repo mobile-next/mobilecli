@@ -23,7 +23,7 @@ class UiTreeSerializer {
 	private static final long IDLE_WINDOW_MS = 500;
 
 	@SuppressWarnings("deprecation") // recycle() is a no-op on API 33+, still frees pools below
-	static JSONObject dump(UiAutomation automation, long waitUntilIdle) throws Exception {
+	static JSONObject dump(UiAutomation automation, long waitUntilIdle, boolean full) throws Exception {
 		if (waitUntilIdle > 0) {
 			// Best-effort settle: waitForIdle throws when the UI never goes idle
 			// (animations, video, spinners). Dump the current state regardless.
@@ -36,6 +36,11 @@ class UiTreeSerializer {
 
 		List<AccessibilityNodeInfo> roots = new ArrayList<>();
 		for (AccessibilityWindowInfo window : automation.getWindows()) {
+			// The soft keyboard is noise for most callers: skip IME windows unless asked for a full dump.
+			if (!full && window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+				window.recycle();
+				continue;
+			}
 			AccessibilityNodeInfo root = window.getRoot();
 			if (root != null) roots.add(root);
 			window.recycle();

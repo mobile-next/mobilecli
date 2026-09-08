@@ -57,7 +57,7 @@ public class DeviceServer {
 			case "device.version":
 				return new JSONObject().put("dexSha256", DEX_SHA256);
 			case "device.dump.ui":
-				return UiTreeSerializer.dump(automation, p.optLong("waitUntilIdle", 0));
+				return UiTreeSerializer.dump(automation, p.optLong("waitUntilIdle", 0), p.optBoolean("full", false));
 			case "device.screenshot":
 				return screenshot(automation, p);
 			case "device.io.keyboard.hide":

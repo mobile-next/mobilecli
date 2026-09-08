@@ -149,6 +149,12 @@ type LaunchOptions struct {
 	Activity string
 }
 
+// DumpOptions controls what a UI dump includes.
+type DumpOptions struct {
+	// Full includes windows normally left out, such as the on-screen keyboard.
+	Full bool
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -181,8 +187,8 @@ type ControllableDevice interface {
 	ClearApp(bundleID string) error
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
-	DumpSource() ([]ScreenElement, error)
-	DumpSourceRaw() (any, error)
+	DumpSource(opts DumpOptions) ([]ScreenElement, error)
+	DumpSourceRaw(opts DumpOptions) (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)

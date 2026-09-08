@@ -710,6 +710,7 @@ type DeviceRebootParams struct {
 type DumpUIParams struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format,omitempty"` // "json" or "raw"
+	Full     bool   `json:"full,omitempty"`   // include the on-screen keyboard and other normally hidden windows
 }
 
 type AppsLaunchParams struct {
@@ -1052,6 +1053,7 @@ func handleDumpUI(params json.RawMessage) (any, error) {
 	req := commands.DumpUIRequest{
 		DeviceID: dumpUIParams.DeviceID,
 		Format:   dumpUIParams.Format,
+		Full:     dumpUIParams.Full,
 	}
 
 	response := commands.DumpUICommand(req)
