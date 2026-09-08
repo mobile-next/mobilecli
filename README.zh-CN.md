@@ -1,8 +1,8 @@
 # mobilecli
 
-**English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | [日本語](README.ja.md) | **简体中文**
 
-A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/).
+由 [Mobile Next](https://github.com/mobile-next/) 出品的通用命令行工具，用于管理 iOS 和 Android 设备、模拟器、仿真器以及应用。
 
 <p align="left">
   <a href="https://github.com/mobile-next/mobilecli">
@@ -19,63 +19,63 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   </a>
 </p>
 
-## Features 🚀
+## 功能特性 🚀
 
-- **Device Management**: List, manage, interactive with connected mobile devices
-- **Cross-Platform Support**: Works with iOS physical devices, iOS simulators, Android devices, and Android emulators
-- **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
-- **Screenshot Capture**: Take screenshots from any connected device with format options
-- **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
-- **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
-- **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
-- **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
-- **Location Override**: Fake the GPS location reported by a device
-- **Crash Reports**: List and fetch crash reports from iOS and Android devices
-- **Device Logs**: Stream real-time device logs with filtering from iOS and Android devices
-- **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
+- **设备管理**：列出、管理并操作已连接的移动设备
+- **跨平台支持**：支持 iOS 真机、iOS 模拟器、Android 真机和 Android 仿真器
+- **仿真器 / 模拟器控制**：通过编程方式启动和关闭仿真器与模拟器
+- **截图**：从任意已连接设备截图，并可选择输出格式
+- **多种输出格式**：以 PNG 或 JPEG 保存截图，并可控制画质
+- **屏幕录制视频流**：直接从设备推送 mjpeg / h264 视频流
+- **设备控制**：重启设备、点击屏幕坐标、按下硬件按键
+- **应用管理**：启动、终止、安装、卸载、清除数据、列出应用以及获取前台应用
+- **文件系统**：在设备上或应用容器内 push、pull、列出文件、mkdir 和 rm（Android、iOS 模拟器）
+- **位置伪装**：伪造设备上报的 GPS 位置
+- **崩溃报告**：列出并获取 iOS 和 Android 设备上的崩溃报告
+- **设备日志**：实时流式输出 iOS 和 Android 设备日志，并支持过滤
+- **WebView 检查**：列出内嵌 WebView、页面跳转、查询 DOM 以及执行 JavaScript
 
-### 🎯 Platform Support
+### 🎯 平台支持
 
-| Platform | Supported |
+| 平台 | 支持 |
 |----------|:---------:|
-| iOS Real Device | ✅ |
-| iOS Simulator | ✅ |
-| Android Real Device | ✅ |
-| Android Emulator | ✅ |
+| iOS 真机 | ✅ |
+| iOS 模拟器 | ✅ |
+| Android 真机 | ✅ |
+| Android 仿真器 | ✅ |
 
-## Installation 📦
+## 安装 📦
 
-#### Prerequisites 📋
-- **Android SDK** with `adb` in PATH (for Android device support)
-- **Xcode Command Line Tools** (for iOS simulator support on macOS)
+#### 前置条件 📋
+- **Android SDK**，且 `adb` 已加入 PATH（用于支持 Android 设备）
+- **Xcode Command Line Tools**（用于在 macOS 上支持 iOS 模拟器）
 
-#### Run instantly with npx
+#### 使用 npx 立即运行
 ```bash
 npx mobilecli@latest
 ```
 
-#### Install globally with npm
+#### 使用 npm 全局安装
 ```bash
 npm install -g mobilecli@latest
 ```
 
-#### Install from Source 🛠️
+#### 从源码安装 🛠️
 ```bash
 git clone https://github.com/mobile-next/mobilecli.git
 cd mobilecli
 make build
 ```
 
-### Install Dependencies
+### 安装依赖
 
-#### 🍎 For iOS Simulator Support
+#### 🍎 iOS 模拟器支持
 
-Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
+需要安装 Xcode，并确保已安装你所需的运行时。你需要先创建并启动模拟器，`mobilecli` 才能使用它们。
 
-`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons and streaming screen capture.
+`mobilecli` 会自动在设备上安装一个代理（agent），点击元素、按下按键以及屏幕录制推流等功能都依赖该代理。
 
-#### 🤖 For Android Support
+#### 🤖 Android 支持
 ```bash
 # Install Android SDK and ensure adb is in PATH
 # Download from: https://developer.android.com/studio/command-line/adb
@@ -83,9 +83,9 @@ Xcode is required. Make sure you have it installed with the runtimes relevant fo
 brew install --cask android-platform-tools
 ```
 
-## Usage
+## 使用方法
 
-### List Connected Devices 🔍
+### 列出已连接的设备 🔍
 
 ```bash
 # List all online devices and simulators
@@ -95,7 +95,7 @@ mobilecli devices
 mobilecli devices --include-offline
 ```
 
-Example output:
+输出示例：
 ```json
 [
   {
@@ -122,9 +122,9 @@ Example output:
 ]
 ```
 
-**Note**: Offline emulators and simulators can be booted using the `mobilecli device boot` command.
+**注意**：离线的仿真器和模拟器可以通过 `mobilecli device boot` 命令启动。
 
-### Take Screenshots 📸
+### 截图 📸
 
 ```bash
 # Take a PNG screenshot (default)
@@ -149,15 +149,15 @@ mobilecli screenshot --device <device-id> --output screenshot.png
 mobilecli screenshot --device <device-id> --output -
 ```
 
-### Stream Screen 🎥
+### 屏幕推流 🎥
 
 ```bash
 mobilecli screencapture --device <device-id> --format mjpeg | ffplay -
 ```
 
-Note that screencapture is one way. You will have to use `io tap` commands to tap on the screen.
+注意，screencapture 是单向的。要点击屏幕，需要使用 `io tap` 命令。
 
-### Device Control 🎮
+### 设备控制 🎮
 
 ```bash
 # Boot an offline emulator or simulator
@@ -194,7 +194,7 @@ mobilecli io clipboard set --device <device-id> 'hello world'
 mobilecli io keys --device <device-id> "cmd+v"
 ```
 
-### Location Override 📍
+### 位置伪装 📍
 
 ```bash
 # Fake the device location (latitude,longitude)
@@ -207,24 +207,24 @@ mobilecli device location set --device <device-id> 37.7749,-122.4194 --wait
 mobilecli device location clear --device <device-id>
 ```
 
-Caveats per platform:
+各平台注意事项：
 
-| Platform | Notes |
+| 平台 | 说明 |
 |----------|-------|
-| iOS Simulator | Works out of the box, the override survives mobilecli exiting |
-| iOS Real Device | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
-| Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
-| Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
+| iOS 模拟器 | 开箱即用，mobilecli 退出后伪装位置依然保留 |
+| iOS 真机 | 伪装位置只在设置它的那个 mobilecli 进程存活期间有效，因此必须使用 `--wait`。`clear` 也必须由同一个进程执行 |
+| Android 仿真器 | 使用仿真器控制台。它没有撤销定位的方法，因此 `clear` 会把位置重置为仿真器启动时的坐标（Googleplex），而不是真实位置 |
+| Android 真机 | 在设备上运行一个代理作为模拟位置提供者，并向 `com.android.shell` 授予 `mock_location` appop。部分 OEM ROM 会忽略模拟位置提供者，检查 `Location.isFromMockProvider()` 或 Play Integrity 的应用能够识别出来 |
 
-### Supported Hardware Buttons
+### 支持的硬件按键
 
-- `HOME` - Home button
-- `BACK` - Back button (Android only)
-- `POWER` - Power button
-- `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
-- `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+- `HOME` - Home 键
+- `BACK` - 返回键（仅 Android）
+- `POWER` - 电源键
+- `VOLUME_UP`, `VOLUME_DOWN` - 音量加 / 减
+- `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - 方向键控制（仅 Android）
 
-### App Management 📱
+### 应用管理 📱
 
 ```bash
 # List installed apps on device
@@ -250,7 +250,7 @@ mobilecli apps uninstall <bundle-id> --device <device-id>
 mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
-Example output for `apps foreground`:
+`apps foreground` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -262,9 +262,9 @@ Example output for `apps foreground`:
 }
 ```
 
-### Filesystem 📂
+### 文件系统 📂
 
-Access files on the device or inside an app's data container. Currently supported on **Android** and **iOS Simulator**.
+访问设备上或应用数据容器内的文件。目前支持 **Android** 和 **iOS 模拟器**。
 
 ```bash
 # Get the data container path of an app (Android)
@@ -306,7 +306,7 @@ mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
 ```
 
-Example output for `apps path`:
+`apps path` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -316,7 +316,7 @@ Example output for `apps path`:
 }
 ```
 
-Example output for `fs ls`:
+`fs ls` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -339,16 +339,16 @@ Example output for `fs ls`:
 }
 ```
 
-**Notes:**
-- Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
-- Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
-- Pulling binary files (images, databases, DEX files) is fully supported and binary-safe on all platforms.
+**注意：**
+- `/data/user/` 下的路径通过 `run-as` 访问，因此应用必须是可调试（debuggable）的。
+- 向 `/data/user/` push 文件时，会先把文件暂存到 `/data/local/tmp/`，再复制进容器。
+- 在所有平台上都完整支持 pull 二进制文件（图片、数据库、DEX 文件），并保证二进制安全。
 
-### Agent Management 🤖
+### 代理管理 🤖
 
-On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
+在 **iOS** 上，触控输入（点击、滑动、按键）、屏幕录制推流和 UI 树检查都需要设备上的代理。如果设备上没有运行代理，标准 iOS 工具链无法提供这些能力。
 
-On **Android**, no agent is needed. Running `mobilecli agent status` on an Android device simply reports that.
+在 **Android** 上不需要代理。在 Android 设备上运行 `mobilecli agent status` 只会报告这一点。
 
 ```bash
 # Check if the agent is installed on a device
@@ -364,7 +364,7 @@ mobilecli agent install --device <device-id> --force
 mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision
 ```
 
-Example output for `agent status`:
+`agent status` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -378,9 +378,9 @@ Example output for `agent status`:
 }
 ```
 
-### Webview Inspection 🌐
+### WebView 检查 🌐
 
-Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
+检查并操作原生应用中运行的内嵌 WebView（iOS 上为 `WKWebView`，Android 上为 `android.webkit.WebView`）。
 
 ```bash
 # List embedded webviews in the foreground app
@@ -413,7 +413,7 @@ mobilecli webview wait <id> --state load --device <device-id>
 mobilecli webview wait <id> --state domcontentloaded --timeout 5000 --device <device-id>
 ```
 
-Example output for `webview list`:
+`webview list` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -427,7 +427,7 @@ Example output for `webview list`:
 }
 ```
 
-Example output for `webview query <id> "button"`:
+`webview query <id> "button"` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -438,7 +438,7 @@ Example output for `webview query <id> "button"`:
 }
 ```
 
-### Crash Reports 💥
+### 崩溃报告 💥
 
 ```bash
 # List crash reports from a device
@@ -448,7 +448,7 @@ mobilecli device crashes list --device <device-id>
 mobilecli device crashes get <crash-id> --device <device-id>
 ```
 
-Example output for `crashes list`:
+`crashes list` 的输出示例：
 ```json
 {
   "status": "ok",
@@ -462,9 +462,9 @@ Example output for `crashes list`:
 }
 ```
 
-**Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
+**注意**：在 iOS 真机上，崩溃报告通过 Apple 的 crashreport 服务获取。在 iOS 模拟器上，从 `~/Library/Logs/DiagnosticReports/` 读取。在 Android 上，从 `adb logcat -b crash` 的输出中解析。
 
-### Device Logs 📋
+### 设备日志 📋
 
 ```bash
 # Stream logs from a device (Ctrl+C to stop)
@@ -484,14 +484,14 @@ mobilecli device logs --filter process!=SpringBoard
 mobilecli device logs --filter level=Error --filter process!=SpringBoard
 ```
 
-Supported filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
+支持的过滤键：`pid`、`process`、`tag`、`level`、`subsystem`、`category`、`message`
 
-Each log entry is printed as a JSON line:
+每条日志以一行 JSON 输出：
 ```json
 {"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
 ```
 
-Logs are also available over the [HTTP API](#http-api-) via the `device.logs` method, which takes the same `limit` and `filters` and returns a URL to stream from:
+日志也可以通过 [HTTP API](#http-api-) 的 `device.logs` 方法获取。它接受同样的 `limit` 和 `filters` 参数，并返回一个用于流式读取的 URL：
 
 ```bash
 curl -X POST http://localhost:12000/rpc -H "Content-Type: application/json" -d '{
@@ -503,9 +503,9 @@ curl -X POST http://localhost:12000/rpc -H "Content-Type: application/json" -d '
 curl -N http://localhost:12000/sessions/<session-id>/logs
 ```
 
-The session expires one minute after creation and accepts a single connection. Disconnecting stops the log stream on the device.
+会话在创建一分钟后过期，且只接受一个连接。断开连接会停止设备上的日志流。
 
-### Remote Devices ☁️
+### 远程设备 ☁️
 
 ```bash
 # Allocate a remote iOS device
@@ -521,11 +521,11 @@ mobilecli remote list-devices
 mobilecli remote release --device <device-id>
 ```
 
-## Claude Code Skill 🤖
+## Claude Code 技能 🤖
 
-This repo includes an agent skill ([skills/mobilecli/SKILL.md](skills/mobilecli/SKILL.md)) that teaches Claude Code (or any SKILL.md-compatible agent) how to drive `mobilecli` — listing devices, tapping and typing, dumping UI trees, managing apps, and using the JSON-RPC server for fast automation.
+本仓库包含一个智能体技能（[skills/mobilecli/SKILL.md](skills/mobilecli/SKILL.md)），用于教 Claude Code（或任何兼容 SKILL.md 的智能体）如何驱动 `mobilecli`：列出设备、点击和输入文字、导出 UI 树、管理应用，以及使用 JSON-RPC 服务器进行快速自动化。
 
-Install it with [skills](https://github.com/vercel-labs/skills):
+使用 [skills](https://github.com/vercel-labs/skills) 安装：
 
 ```bash
 # current project only
@@ -535,11 +535,11 @@ npx skills add mobile-next/mobilecli
 npx skills add mobile-next/mobilecli -g
 ```
 
-Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
+之后，向你的智能体提出诸如“给我的仿真器截个图”或“点击登录按钮”之类的请求，技能就会自动触发。
 
-## Daemon ⚙️
+## 守护进程 ⚙️
 
-Every device command talks to a per-user background daemon that keeps discovered devices, iOS tunnels and on-device agents alive between invocations, so only the first command pays the discovery cost. The daemon starts automatically on the first device command (`mobilecli --help` and `--version` never start it) and exits after 30 minutes without requests.
+每个设备命令都会与一个按用户运行的后台守护进程通信。守护进程在多次调用之间保持已发现的设备、iOS 隧道和设备上的代理处于活动状态，因此只有第一个命令需要承担设备发现的开销。守护进程会在第一个设备命令执行时自动启动（`mobilecli --help` 和 `--version` 绝不会启动它），并在 30 分钟没有请求后退出。
 
 ```bash
 # Inspect or control it explicitly
@@ -550,13 +550,13 @@ mobilecli daemon stop
 mobilecli daemon start --idle-timeout 0
 ```
 
-The CLI and daemon talk JSON-RPC over a unix domain socket in `~/.mobilecli/` (override with `MOBILECLI_HOME`); the daemon's log is `~/.mobilecli/daemon.log`. A daemon left over from an older mobilecli version is restarted automatically. `auth login` and `auth logout` stop a running daemon so it picks up the new credentials.
+CLI 与守护进程通过 `~/.mobilecli/` 下的 unix 域套接字进行 JSON-RPC 通信（可通过 `MOBILECLI_HOME` 覆盖）；守护进程的日志位于 `~/.mobilecli/daemon.log`。旧版本 mobilecli 遗留的守护进程会被自动重启。`auth login` 和 `auth logout` 会停止正在运行的守护进程，以便它加载新的凭据。
 
 ## HTTP API 🔌
 
-***mobilecli*** provides an http interface for all the functionality that is available through command line. The server is a thin front for the daemon above, so HTTP clients and the CLI share one set of devices and tunnels.
+***mobilecli*** 为命令行中可用的全部功能提供了 HTTP 接口。该服务器是上述守护进程的一层轻量前端，因此 HTTP 客户端和 CLI 共享同一组设备和隧道。
 
-For the full list of available JSON-RPC methods and their parameters, see the [OpenRPC specification](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md).
+完整的 JSON-RPC 方法列表及其参数，请参阅 [OpenRPC 规范](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md)。
 
 ```bash
 # Start the server (default port 12000)
@@ -566,9 +566,9 @@ curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": 
 curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
-## WebSocket Support 🔌
+## WebSocket 支持 🔌
 
-***mobilecli*** includes a WebSocket server that allows multiple requests over a single connection using the same JSON-RPC 2.0 format as the HTTP API.
+***mobilecli*** 内置了一个 WebSocket 服务器，允许在单个连接上发送多个请求，使用与 HTTP API 相同的 JSON-RPC 2.0 格式。
 
 ```bash
 # Start the server (default port 12000)
@@ -582,18 +582,18 @@ wscat -c ws://localhost:12000/ws
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
-**Note**: `screencapture` is not supported over WebSocket - use the HTTP `/rpc` endpoint for video streaming.
+**注意**：WebSocket 不支持 `screencapture`，视频推流请使用 HTTP 的 `/rpc` 端点。
 
-## Platform-Specific Notes
+## 平台相关说明
 
-### iOS Real Devices
-- Requires the on-device agent. Install it with `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision`. A valid Apple provisioning profile is needed to re-sign the agent for your device.
+### iOS 真机
+- 需要设备上的代理。使用 `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision` 安装。需要有效的 Apple 描述文件（provisioning profile），以便为你的设备重新签名代理。
 
-## Development 👩‍💻
+## 开发 👩‍💻
 
-### Building 🛠️
+### 构建 🛠️
 
-Please refer to (docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
+关于在本地测试 *mobilecli* 的更多说明，请参阅 (docs/TESTING.md)。
 
 ```bash
 make lint
@@ -601,11 +601,10 @@ make build
 make test
 ```
 
-## Support 💬
+## 支持 💬
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
+如有问题或功能需求，请使用 [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) 页面。
 
-Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
+欢迎立即<a href="http://mobilenext.ai/join-slack">加入我们的 Slack 频道</a> 💜
 
-To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
-
+了解更多关于 <a href="https://mobilenext.ai/">Mobile Next</a> 以及我们正在构建的产品。
