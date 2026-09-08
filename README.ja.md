@@ -50,40 +50,21 @@
 - **Android SDK**（`adb` が PATH に含まれていること。Android デバイス対応に必要）
 - **Xcode Command Line Tools**（macOS での iOS シミュレーター対応に必要）
 
-#### npx ですぐに実行
-```bash
-npx mobilecli@latest
-```
-
 #### npm でグローバルにインストール
 ```bash
 npm install -g mobilecli@latest
 ```
 
-#### ソースからインストール 🛠️
+### エージェントのセットアップ 🤖
+
+`mobilecli` をインストールし、コーディングエージェントが使い方を理解できるようにスキルを追加します:
+
 ```bash
-git clone https://github.com/mobile-next/mobilecli.git
-cd mobilecli
-make build
+npm install -g mobilecli@latest
+npx skills add https://github.com/mobile-next/mobilecli
 ```
 
-### 依存関係のインストール
-
-#### 🍎 iOS シミュレーター対応
-
-Xcode が必要です。必要なランタイムと合わせてインストールされていることを確認してください。`mobilecli` が利用できるように、事前にシミュレーターを作成して起動しておく必要があります。
-
-`mobilecli` は、要素のタップ、ボタンの押下、画面キャプチャのストリーミングなどの機能に必要なエージェントを、デバイスに自動的にインストールします。
-
-#### 🤖 Android 対応
-```bash
-# Install Android SDK and ensure adb is in PATH
-# Download from: https://developer.android.com/studio/command-line/adb
-# or
-brew install --cask android-platform-tools
-```
-
-## 使い方
+## CLI リファレンス
 
 ### 接続されたデバイスの一覧表示 🔍
 
@@ -93,33 +74,6 @@ mobilecli devices
 
 # List all devices including offline emulators and simulators
 mobilecli devices --include-offline
-```
-
-出力例:
-```json
-[
-  {
-    "id": "12345678-1234567890ABCDEF",
-    "name": "iPhone 15",
-    "platform": "ios",
-    "type": "real",
-    "state": "online"
-  },
-  {
-    "id": "Pixel_6",
-    "name": "Pixel 6",
-    "platform": "android",
-    "type": "emulator",
-    "state": "online"
-  },
-  {
-    "id": "iPhone_13",
-    "name": "iPhone 13",
-    "platform": "ios",
-    "type": "simulator",
-    "state": "offline"
-  }
-]
 ```
 
 **注意**: オフラインのエミュレーターやシミュレーターは `mobilecli device boot` コマンドで起動できます。
@@ -250,18 +204,6 @@ mobilecli apps uninstall <bundle-id> --device <device-id>
 mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
-`apps foreground` の出力例:
-```json
-{
-  "status": "ok",
-  "data": {
-    "packageName": "com.example.app",
-    "appName": "Example App",
-    "version": "1.0.0"
-  }
-}
-```
-
 ### ファイルシステム 📂
 
 デバイス上、またはアプリのデータコンテナ内のファイルにアクセスします。現在は **Android** と **iOS シミュレーター** に対応しています。
@@ -304,39 +246,6 @@ mobilecli fs rm --device <device-id> /sdcard/old_file.txt
 # Remove a directory recursively
 mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
-```
-
-`apps path` の出力例:
-```json
-{
-  "status": "ok",
-  "data": {
-    "path": "/data/user/0/com.example.app"
-  }
-}
-```
-
-`fs ls` の出力例:
-```json
-{
-  "status": "ok",
-  "data": [
-    {
-      "name": "files",
-      "path": "/data/user/0/com.example.app/files",
-      "size": 4096,
-      "modTime": "2026-05-11T19:20:00Z",
-      "isDir": true
-    },
-    {
-      "name": "shared_prefs",
-      "path": "/data/user/0/com.example.app/shared_prefs",
-      "size": 4096,
-      "modTime": "2026-05-11T12:49:00Z",
-      "isDir": true
-    }
-  ]
-}
 ```
 
 **注意:**

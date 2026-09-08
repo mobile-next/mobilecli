@@ -50,40 +50,21 @@
 - **Android SDK**，且 `adb` 已加入 PATH（用于支持 Android 设备）
 - **Xcode Command Line Tools**（用于在 macOS 上支持 iOS 模拟器）
 
-#### 使用 npx 立即运行
-```bash
-npx mobilecli@latest
-```
-
 #### 使用 npm 全局安装
 ```bash
 npm install -g mobilecli@latest
 ```
 
-#### 从源码安装 🛠️
+### Agent 设置 🤖
+
+安装 `mobilecli` 并添加 skill，让你的编码 agent 知道如何使用它：
+
 ```bash
-git clone https://github.com/mobile-next/mobilecli.git
-cd mobilecli
-make build
+npm install -g mobilecli@latest
+npx skills add https://github.com/mobile-next/mobilecli
 ```
 
-### 安装依赖
-
-#### 🍎 iOS 模拟器支持
-
-需要安装 Xcode，并确保已安装你所需的运行时。你需要先创建并启动模拟器，`mobilecli` 才能使用它们。
-
-`mobilecli` 会自动在设备上安装一个代理（agent），点击元素、按下按键以及屏幕录制推流等功能都依赖该代理。
-
-#### 🤖 Android 支持
-```bash
-# Install Android SDK and ensure adb is in PATH
-# Download from: https://developer.android.com/studio/command-line/adb
-# or
-brew install --cask android-platform-tools
-```
-
-## 使用方法
+## CLI 参考
 
 ### 列出已连接的设备 🔍
 
@@ -93,33 +74,6 @@ mobilecli devices
 
 # List all devices including offline emulators and simulators
 mobilecli devices --include-offline
-```
-
-输出示例：
-```json
-[
-  {
-    "id": "12345678-1234567890ABCDEF",
-    "name": "iPhone 15",
-    "platform": "ios",
-    "type": "real",
-    "state": "online"
-  },
-  {
-    "id": "Pixel_6",
-    "name": "Pixel 6",
-    "platform": "android",
-    "type": "emulator",
-    "state": "online"
-  },
-  {
-    "id": "iPhone_13",
-    "name": "iPhone 13",
-    "platform": "ios",
-    "type": "simulator",
-    "state": "offline"
-  }
-]
 ```
 
 **注意**：离线的仿真器和模拟器可以通过 `mobilecli device boot` 命令启动。
@@ -250,18 +204,6 @@ mobilecli apps uninstall <bundle-id> --device <device-id>
 mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
-`apps foreground` 的输出示例：
-```json
-{
-  "status": "ok",
-  "data": {
-    "packageName": "com.example.app",
-    "appName": "Example App",
-    "version": "1.0.0"
-  }
-}
-```
-
 ### 文件系统 📂
 
 访问设备上或应用数据容器内的文件。目前支持 **Android** 和 **iOS 模拟器**。
@@ -304,39 +246,6 @@ mobilecli fs rm --device <device-id> /sdcard/old_file.txt
 # Remove a directory recursively
 mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
-```
-
-`apps path` 的输出示例：
-```json
-{
-  "status": "ok",
-  "data": {
-    "path": "/data/user/0/com.example.app"
-  }
-}
-```
-
-`fs ls` 的输出示例：
-```json
-{
-  "status": "ok",
-  "data": [
-    {
-      "name": "files",
-      "path": "/data/user/0/com.example.app/files",
-      "size": 4096,
-      "modTime": "2026-05-11T19:20:00Z",
-      "isDir": true
-    },
-    {
-      "name": "shared_prefs",
-      "path": "/data/user/0/com.example.app/shared_prefs",
-      "size": 4096,
-      "modTime": "2026-05-11T12:49:00Z",
-      "isDir": true
-    }
-  ]
-}
 ```
 
 **注意：**
