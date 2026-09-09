@@ -24,6 +24,7 @@ import (
 const (
 	oauthClientID     = "mobilecli"
 	oauthAuthorizeURL = "https://app.mobilenext.ai/login/oauth/authorize"
+	// #nosec G101 -- this is the public token endpoint URL, not a credential
 	oauthTokenURL     = "https://app.mobilenext.ai/login/oauth/token"
 	oauthCallbackPath = "/callback"
 	// Longer than the server's 10-minute consent session: the CLI must still be listening for
@@ -92,10 +93,14 @@ func waitForCallback(ctx context.Context, listener net.Listener) (oauthCallback,
 		q := r.URL.Query()
 		cb := oauthCallback{code: q.Get("code"), state: q.Get("state"), err: q.Get("error")}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		page := "<h2>Logged in to mobilecli</h2><p>You can close this tab.</p>"
 		if cb.err != "" || cb.code == "" {
-			fmt.Fprint(w, "<h2>Login failed</h2><p>You can close this tab and retry in the terminal.</p>")
-		} else {
-			fmt.Fprint(w, "<h2>Logged in to mobilecli</h2><p>You can close this tab.</p>")
+			page = "<h2>Login failed</h2><p>You can close this tab and retry in the terminal.</p>"
+		}
+		// the login itself already succeeded or failed by now, so a browser that
+		// hung up before reading the page changes nothing
+		if _, writeErr := fmt.Fprint(w, page); writeErr != nil {
+			utils.Verbose("failed to write callback page: %v", writeErr)
 		}
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
@@ -105,13 +110,19 @@ func waitForCallback(ctx context.Context, listener net.Listener) (oauthCallback,
 		default:
 		}
 	})
-	go func() { _ = server.Serve(listener) }()
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			utils.Verbose("callback listener stopped: %v", serveErr)
+		}
+	}()
 	// Shutdown, not Close: it waits for the in-flight handler to finish writing the page, so the
 	// browser never sees the connection drop mid-response.
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
+		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+			utils.Verbose("callback listener shutdown: %v", shutdownErr)
+		}
 	}()
 
 	select {
@@ -140,7 +151,11 @@ func exchangeCode(tokenURL, code, verifier, redirectURI string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("failed to exchange code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			utils.Verbose("failed to close token response: %v", closeErr)
+		}
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read token response: %w", err)
@@ -170,8 +185,16 @@ func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to listen for browser callback: %w", err)
 	}
-	defer listener.Close()
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", listener.Addr().(*net.TCPAddr).Port, oauthCallbackPath)
+	defer func() {
+		if closeErr := listener.Close(); closeErr != nil {
+			utils.Verbose("failed to close callback listener: %v", closeErr)
+		}
+	}()
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return "", fmt.Errorf("callback listener is not tcp: %T", listener.Addr())
+	}
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", addr.Port, oauthCallbackPath)
 
 	loginURL := buildAuthorizeURL(authorizeURL, redirectURI, pkceChallenge(verifier), state, detectAgent(os.Getenv))
 	// A missing xdg-open (minimal Linux, WSL) is not fatal: the loopback callback works just as
@@ -194,6 +217,9 @@ func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
 	}
 	if cb.state != state {
 		return "", errors.New("login callback state mismatch")
+	}
+	if cb.code == "" {
+		return "", errors.New("login callback carried no authorization code, run `mobilecli auth login` again")
 	}
 	return exchangeCode(tokenURL, cb.code, verifier, redirectURI)
 }

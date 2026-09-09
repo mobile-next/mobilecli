@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 var noBrowser bool
@@ -42,6 +44,11 @@ func openBrowser(target string) error {
 		return fmt.Errorf("failed to open browser: %w", err)
 	}
 	// ponytail: Start, not Run. xdg-open can block until the browser exits on some desktops.
-	go func() { _ = cmd.Wait() }()
+	// Wait only reaps the child; the browser opening is what mattered and already happened.
+	go func() {
+		if waitErr := cmd.Wait(); waitErr != nil {
+			utils.Verbose("browser opener exited: %v", waitErr)
+		}
+	}()
 	return nil
 }

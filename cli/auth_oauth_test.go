@@ -18,15 +18,17 @@ func TestPkceChallengeMatchesRFC7636Vector(t *testing.T) {
 	}
 }
 
+const testAgent = "claude-code"
+
 func TestBuildAuthorizeURLCarriesPKCEAndState(t *testing.T) {
-	u, err := url.Parse(buildAuthorizeURL("https://x/authorize", "http://127.0.0.1:1234/callback", "chal", "st", "claude-code"))
+	u, err := url.Parse(buildAuthorizeURL("https://x/authorize", "http://127.0.0.1:1234/callback", "chal", "st", testAgent))
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := u.Query()
 	if q.Get("client_id") != "mobilecli" || q.Get("code_challenge") != "chal" || q.Get("code_challenge_method") != "S256" ||
 		q.Get("state") != "st" || q.Get("redirect_uri") != "http://127.0.0.1:1234/callback" || q.Get("response_type") != "code" ||
-		q.Get("agent") != "claude-code" {
+		q.Get("agent") != testAgent {
 		t.Fatalf("bad query: %s", u.RawQuery)
 	}
 }
@@ -41,9 +43,17 @@ func TestWaitForCallbackReturnsCodeAndState(t *testing.T) {
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		resp, err := http.Get("http://" + listener.Addr().String() + "/callback?code=abc&state=xyz")
-		if err == nil {
-			resp.Body.Close()
+		callbackURL := "http://" + listener.Addr().String() + "/callback?code=abc&state=xyz"
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, callbackURL, nil)
+		if reqErr != nil {
+			return
+		}
+		resp, getErr := http.DefaultClient.Do(req)
+		if getErr != nil {
+			return
+		}
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("failed to close callback response: %v", closeErr)
 		}
 	}()
 
@@ -58,13 +68,16 @@ func TestWaitForCallbackReturnsCodeAndState(t *testing.T) {
 
 func TestExchangeCodeSendsVerifierAndReturnsToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		if r.PostForm.Get("code_verifier") != "ver" || r.PostForm.Get("code") != "abc" || r.PostForm.Get("client_id") != "mobilecli" {
-			w.WriteHeader(400)
-			w.Write([]byte(`{"error":"invalid_grant"}`))
+		if parseErr := r.ParseForm(); parseErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		w.Write([]byte(`{"access_token":"mob_token","token_type":"bearer"}`))
+		if r.PostForm.Get("code_verifier") != "ver" || r.PostForm.Get("code") != "abc" || r.PostForm.Get("client_id") != "mobilecli" {
+			w.WriteHeader(http.StatusBadRequest)
+			writeTestResponse(t, w, `{"error":"invalid_grant"}`)
+			return
+		}
+		writeTestResponse(t, w, `{"access_token":"mob_token","token_type":"bearer"}`)
 	}))
 	defer server.Close()
 
@@ -83,5 +96,13 @@ func TestDetectAgentRecognisesClaudeCode(t *testing.T) {
 	}
 	if got := detectAgent(envWith(nil)); got != "" {
 		t.Fatalf("expected empty for a plain terminal, got %q", got)
+	}
+}
+
+func writeTestResponse(t *testing.T, w http.ResponseWriter, body string) {
+	t.Helper()
+
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Errorf("failed to write test response: %v", err)
 	}
 }
