@@ -10,6 +10,9 @@ type ActiveAppInfo struct {
 	BundleID  string `json:"bundleId"`
 	Name      string `json:"name"`
 	ProcessID int    `json:"pid"`
+	// ViewController is the class name of the controller presenting the current
+	// screen. Empty when the agent predates the field or has nothing to report.
+	ViewController string `json:"viewController"`
 }
 
 func (c *DeviceKitClient) GetActiveAppInfo() (*ActiveAppInfo, error) {
