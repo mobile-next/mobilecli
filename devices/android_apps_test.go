@@ -23,3 +23,30 @@ func TestParsePackageListerOutputRejectsNonJSON(t *testing.T) {
 		t.Fatal("expected error for non-JSON output")
 	}
 }
+
+func TestAppNameForReturnsLabel(t *testing.T) {
+	apps := []InstalledAppInfo{
+		{PackageName: "com.mobilenext.devicekit", AppName: "DeviceKit"},
+		{PackageName: "com.mobilenext.playground", AppName: "Playground"},
+	}
+
+	if got := appNameFor(apps, "com.mobilenext.playground"); got != "Playground" {
+		t.Errorf("got %q, want %q", got, "Playground")
+	}
+}
+
+func TestAppNameForFallsBackToPackageNameWhenUnknown(t *testing.T) {
+	apps := []InstalledAppInfo{{PackageName: "com.mobilenext.devicekit", AppName: "DeviceKit"}}
+
+	if got := appNameFor(apps, "com.example.missing"); got != "com.example.missing" {
+		t.Errorf("got %q, want the package name back", got)
+	}
+}
+
+func TestAppNameForFallsBackWhenLabelIsEmpty(t *testing.T) {
+	apps := []InstalledAppInfo{{PackageName: "com.example.nolabel", AppName: ""}}
+
+	if got := appNameFor(apps, "com.example.nolabel"); got != "com.example.nolabel" {
+		t.Errorf("got %q, want the package name back", got)
+	}
+}
