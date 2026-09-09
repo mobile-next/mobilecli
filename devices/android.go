@@ -1065,30 +1065,32 @@ func parsePackageListerOutput(output []byte) ([]InstalledAppInfo, error) {
 	return apps, nil
 }
 
-func (d *AndroidDevice) getForegroundPackageName() (string, error) {
+// getForegroundComponent returns the package name and activity of the focused
+// window. Note that mCurrentFocus also reports dialogs and the IME.
+func (d *AndroidDevice) getForegroundComponent() (string, string, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "window", "displays")
 	if err != nil {
-		return "", fmt.Errorf("failed to get window displays: %w", err)
+		return "", "", fmt.Errorf("failed to get window displays: %w", err)
 	}
 
 	// parse package name from mCurrentFocus line
-	// format: mCurrentFocus=Window{...u0 com.package.name/...}
+	// format: mCurrentFocus=Window{... u0 com.package.name/com.package.name.MainActivity}
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "mCurrentFocus") {
 			parts := strings.Fields(line)
 			if len(parts) >= 3 {
-				focusPart := parts[2]
-				// extract package name (before the '/')
+				focusPart := strings.TrimSuffix(parts[2], "}")
+				// split into package name (before the '/') and activity (after)
 				if idx := strings.Index(focusPart, "/"); idx != -1 {
-					return focusPart[:idx], nil
+					return focusPart[:idx], focusPart[idx+1:], nil
 				}
 			}
 			break
 		}
 	}
 
-	return "", fmt.Errorf("could not determine foreground app")
+	return "", "", fmt.Errorf("could not determine foreground app")
 }
 
 func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
@@ -1112,14 +1114,38 @@ func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
 	return "", nil
 }
 
+// resolveAppName returns the launcher label for a package. The label lives in
+// the package's resources, so it needs the on-device agent; without it, callers
+// still get the package name rather than an error.
+func (d *AndroidDevice) resolveAppName(packageName string) string {
+	apps, err := d.listAllPackages()
+	if err != nil {
+		return packageName
+	}
+
+	return appNameFor(apps, packageName)
+}
+
+// appNameFor picks a package's label out of a listing, falling back to the
+// package name when the package is missing or carries no label.
+func appNameFor(apps []InstalledAppInfo, packageName string) string {
+	for _, app := range apps {
+		if app.PackageName == packageName && app.AppName != "" {
+			return app.AppName
+		}
+	}
+
+	return packageName
+}
+
 func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	// dumpsys returns a null focus while animations are running, so retry for
 	// up to 5 seconds (every 250ms) before giving up.
-	var packageName string
+	var packageName, activity string
 	var err error
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		packageName, err = d.getForegroundPackageName()
+		packageName, activity, err = d.getForegroundComponent()
 		if err == nil {
 			break
 		}
@@ -1138,8 +1164,9 @@ func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 
 	return &ForegroundAppInfo{
 		PackageName: packageName,
-		AppName:     packageName,
+		AppName:     d.resolveAppName(packageName),
 		Version:     version,
+		Activity:    activity,
 	}, nil
 }
 
