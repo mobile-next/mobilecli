@@ -448,6 +448,6 @@ type ForegroundAppInfo struct {
 	AppName     string `json:"appName"`
 	Version     string `json:"version"`
 	// Activity is the focused component within the app: activity class on
-	// Android, empty on iOS.
+	// Android, view controller class on iOS.
 	Activity string `json:"activity,omitempty"`
 }

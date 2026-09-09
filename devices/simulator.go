@@ -677,6 +677,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 				PackageName: app.PackageName,
 				AppName:     app.AppName,
 				Version:     app.Version,
+				Activity:    activeApp.ViewController,
 			}, nil
 		}
 	}
@@ -686,6 +687,7 @@ func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 		PackageName: activeApp.BundleID,
 		AppName:     activeApp.Name,
 		Version:     "",
+		Activity:    activeApp.ViewController,
 	}, nil
 }
 
