@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -84,6 +86,51 @@ func loadToken() (string, error) {
 		return "", fmt.Errorf("failed to get token from keyring: %w", err)
 	}
 	return token, nil
+}
+
+// tokenLoadTimeout bounds how long loading a token from the OS keyring may
+// block. Some keyring backends never return - notably the freedesktop Secret
+// Service when its login collection is locked and no interactive prompter is
+// available (e.g. commands auto-started from an SSH session). Without this
+// bound, every command that touches the keyring would hang forever.
+const tokenLoadTimeout = 3 * time.Second
+
+var (
+	tokenLoadOnce sync.Once
+	tokenLoadVal  string
+	tokenLoadErr  error
+)
+
+// loadTokenWithTimeout is loadToken with a hard deadline, memoized so the
+// timeout is paid at most once per process. Callers that must not hang, like
+// the root pre-run and daemon startup, use this instead of loadToken.
+func loadTokenWithTimeout() (string, error) {
+	tokenLoadOnce.Do(func() {
+		tokenLoadVal, tokenLoadErr = loadTokenDeadline(loadToken, tokenLoadTimeout)
+	})
+	return tokenLoadVal, tokenLoadErr
+}
+
+// loadTokenDeadline runs fn but gives up after timeout. It is split out from
+// loadTokenWithTimeout so the deadline behavior can be unit-tested.
+func loadTokenDeadline(fn func() (string, error), timeout time.Duration) (string, error) {
+	type result struct {
+		token string
+		err   error
+	}
+
+	ch := make(chan result, 1)
+	go func() {
+		token, err := fn()
+		ch <- result{token: token, err: err}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.token, r.err
+	case <-time.After(timeout):
+		return "", fmt.Errorf("timed out after %s reading credentials; the OS keyring may be locked (unlock it, or use --insecure-storage)", timeout)
+	}
 }
 
 func loadTokenFromFile() (string, error) {

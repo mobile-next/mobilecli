@@ -12,7 +12,7 @@ import (
 )
 
 func getRemoteToken() (string, error) {
-	token, err := loadToken()
+	token, err := loadTokenWithTimeout()
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
 			return "", fmt.Errorf("not logged in, run 'mobilecli auth login' first")
