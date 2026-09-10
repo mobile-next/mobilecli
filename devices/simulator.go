@@ -788,18 +788,18 @@ type ProcessInfo struct {
 	Command string
 }
 
-// listAllProcesses returns a list of all running processes with their PIDs and command info
-func listAllProcesses() ([]ProcessInfo, error) {
-	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run ps command: %w", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
+// parsePsOutput parses the output of "ps -o pid,command" into ProcessInfo entries.
+// ps right-aligns the PID column, so any PID narrower than the column width is
+// emitted with leading padding (e.g. " 1637 /path/to/binary"). The padding has to
+// be trimmed before the PID field is split off, otherwise those lines are silently
+// dropped and only processes whose PID happens to fill the column are ever returned.
+func parsePsOutput(output string) []ProcessInfo {
+	lines := strings.Split(output, "\n")
 	processes := make([]ProcessInfo, 0, len(lines))
 
 	for _, line := range lines {
+		// strip the right-alignment padding ps adds to the PID column
+		line = strings.TrimLeft(line, " \t")
 		if line == "" {
 			continue
 		}
@@ -810,8 +810,8 @@ func listAllProcesses() ([]ProcessInfo, error) {
 			continue
 		}
 
-		pidStr := strings.TrimSpace(line[:spaceIndex])
-		pid, err := strconv.Atoi(pidStr)
+		// skips the "PID COMMAND" header, which does not parse as a number
+		pid, err := strconv.Atoi(line[:spaceIndex])
 		if err != nil {
 			continue
 		}
@@ -824,7 +824,18 @@ func listAllProcesses() ([]ProcessInfo, error) {
 		})
 	}
 
-	return processes, nil
+	return processes
+}
+
+// listAllProcesses returns a list of all running processes with their PIDs and command info
+func listAllProcesses() ([]ProcessInfo, error) {
+	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ps command: %w", err)
+	}
+
+	return parsePsOutput(string(output)), nil
 }
 
 func findDeviceKitProcessForDevice(deviceUDID string) (int, string, error) {
