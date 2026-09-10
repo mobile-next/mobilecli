@@ -24,7 +24,7 @@ const (
 
 	deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
 	deviceCodeURL      = "https://app.mobilenext.ai/login/device/code"
-	deviceTokenURL     = "https://app.mobilenext.ai/login/device/token"
+	deviceTokenURL     = "https://app.mobilenext.ai/login/device/token" // #nosec G101 -- public endpoint URL, not a credential
 	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 
 	authHTTPTimeout = 30 * time.Second
@@ -91,12 +91,20 @@ func postJSON(url string, body []byte) (*http.Response, error) {
 }
 
 func requestDeviceCode() (*deviceCodeResponse, error) {
-	reqBody, _ := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
+	reqBody, err := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build device code request: %w", err)
+	}
+
 	resp, err := postJSON(deviceCodeURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			utils.Verbose("failed to close device code response: %v", closeErr)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -129,18 +137,24 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 	for time.Now().Before(deadline) {
 		time.Sleep(pollInterval)
 
-		reqBody, _ := json.Marshal(deviceTokenRequest{
+		reqBody, err := json.Marshal(deviceTokenRequest{
 			ClientID:   deviceFlowClientID,
 			DeviceCode: deviceCode,
 			GrantType:  deviceGrantType,
 		})
+		if err != nil {
+			return "", fmt.Errorf("failed to build token request: %w", err)
+		}
+
 		resp, err := postJSON(deviceTokenURL, reqBody)
 		if err != nil {
 			return "", fmt.Errorf("failed to poll for token: %w", err)
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			utils.Verbose("failed to close token response: %v", closeErr)
+		}
 		if err != nil {
 			return "", fmt.Errorf("failed to read response: %w", err)
 		}
