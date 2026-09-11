@@ -79,13 +79,15 @@ public class Input {
 		if (events == null) {
 			throw new RpcException(RpcException.INVALID_PARAMS, "text has characters the keyboard cannot type");
 		}
-		for (KeyEvent event : events) {
+		for (int i = 0; i < events.length; i++) {
 			long now = SystemClock.uptimeMillis();
-			KeyEvent timed = KeyEvent.changeTimeRepeat(event, now, 0);
+			KeyEvent timed = KeyEvent.changeTimeRepeat(events[i], now, 0);
 			if (timed.getSource() == InputDevice.SOURCE_UNKNOWN) {
 				timed.setSource(InputDevice.SOURCE_KEYBOARD);
 			}
-			InputInjector.inject(automation, timed, false);
+			// wait on the last one, so the text is in the field by the time the
+			// call returns and a dump or screenshot right after sees it
+			InputInjector.inject(automation, timed, i == events.length - 1);
 		}
 		return ok();
 	}

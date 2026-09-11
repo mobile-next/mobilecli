@@ -24,16 +24,27 @@ class InputInjector {
 	private static final Object INPUT_MANAGER = resolveInputManager();
 	private static final Method INJECT = resolveInject(INPUT_MANAGER);
 
-	/** Injects one event; sync waits for the app to finish handling it. */
-	static void inject(UiAutomation automation, InputEvent event, boolean sync) {
-		if (INJECT == null) {
-			automation.injectInputEvent(event, sync);
-			return;
+	/**
+	 * Injects one event; sync waits for the app to finish handling it. The
+	 * platform refusing an event is an error, not a quiet no-op: a caller told
+	 * its tap landed when nothing happened has no way to tell.
+	 */
+	static void inject(UiAutomation automation, InputEvent event, boolean sync) throws RpcException {
+		int mode = sync ? WAIT_FOR_FINISH : ASYNC;
+		if (INJECT != null) {
+			try {
+				if (!(Boolean) INJECT.invoke(INPUT_MANAGER, event, mode)) {
+					throw new RpcException(RpcException.INTERNAL_ERROR, "device refused " + event);
+				}
+				return;
+			} catch (RpcException e) {
+				throw e;
+			} catch (Exception e) {
+				// the hidden method went away under us; the public path still works
+			}
 		}
-		try {
-			INJECT.invoke(INPUT_MANAGER, event, sync ? WAIT_FOR_FINISH : ASYNC);
-		} catch (Exception e) {
-			automation.injectInputEvent(event, sync);
+		if (!automation.injectInputEvent(event, sync)) {
+			throw new RpcException(RpcException.INTERNAL_ERROR, "device refused " + event);
 		}
 	}
 

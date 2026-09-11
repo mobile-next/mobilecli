@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
@@ -116,4 +117,24 @@ func TestAgentRequestReportsAnErrorTheAgentItselfSentAsSomethingElse(t *testing.
 
 	assert.Error(t, err)
 	assert.NotErrorIs(t, err, errAgentUnreachable)
+}
+
+func TestAgentRequestReportsATimeoutSeparatelyFromAnUnreachableAgent(t *testing.T) {
+	slowAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer slowAgent.Close()
+	port := slowAgent.Listener.Addr().(*net.TCPAddr).Port
+
+	_, err := agentRequestWithTimeout(port, "device.dump.ui", nil, 10*time.Millisecond)
+
+	assert.ErrorIs(t, err, errAgentTimedOut)
+	assert.NotErrorIs(t, err, errAgentUnreachable, "a timed-out call must not be resent")
+}
+
+func TestPressingNoKeysDoesNothingRatherThanAskingTheServerToPressNothing(t *testing.T) {
+	device := &AndroidDevice{id: "no-such-device"}
+
+	assert.NoError(t, device.PressKeys(nil))
+	assert.NoError(t, device.PressKeys([]KeyCombo{}))
 }

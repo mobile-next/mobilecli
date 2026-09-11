@@ -68,10 +68,10 @@ public class DeviceServer {
 			case "device.io.tap":
 				return Input.tap(automation, requireInt(p, "x"), requireInt(p, "y"));
 			case "device.io.longpress":
-				return Input.longPress(automation, requireInt(p, "x"), requireInt(p, "y"), p.optInt("duration", 500));
+				return Input.longPress(automation, requireInt(p, "x"), requireInt(p, "y"), optionalInt(p, "duration", 500));
 			case "device.io.swipe":
 				return Input.swipe(automation, requireInt(p, "x1"), requireInt(p, "y1"), requireInt(p, "x2"), requireInt(p, "y2"),
-						p.optInt("duration", 1000));
+						optionalInt(p, "duration", 1000));
 			case "device.io.button":
 				return Input.pressKey(automation, JsonRpcSocketServer.requireParam(params, "button"), null);
 			case "device.io.keys":
@@ -123,11 +123,22 @@ public class DeviceServer {
 		return ok();
 	}
 
+	// optInt turns null, a string or a missing key into 0, which for a coordinate
+	// means silently tapping the top-left corner. Anything that isn't a number is
+	// a bad request instead.
 	private static int requireInt(JSONObject p, String key) throws RpcException {
-		if (!p.has(key)) {
-			throw new RpcException(RpcException.INVALID_PARAMS, "missing params." + key);
+		Object value = p.opt(key);
+		if (!(value instanceof Number)) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "params." + key + " must be a number");
 		}
-		return p.optInt(key);
+		return ((Number) value).intValue();
+	}
+
+	private static int optionalInt(JSONObject p, String key, int fallback) throws RpcException {
+		if (!p.has(key) || p.isNull(key)) {
+			return fallback;
+		}
+		return requireInt(p, key);
 	}
 
 	private static JSONObject ok() throws Exception {

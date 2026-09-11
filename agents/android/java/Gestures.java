@@ -182,7 +182,7 @@ public class Gestures {
 	// Presses every finger at time zero, then walks the timeline a frame at a
 	// time: one ACTION_MOVE for all fingers still down, then a lift for each
 	// finger whose path has ended, until the last one is up.
-	private static void replay(UiAutomation automation, List<Finger> fingers) {
+	private static void replay(UiAutomation automation, List<Finger> fingers) throws RpcException {
 		long endMs = 0;
 		for (Finger finger : fingers) endMs = Math.max(endMs, finger.liftAtMs());
 
@@ -222,7 +222,7 @@ public class Gestures {
 	// which on a tap is most of the call. Waiting for the final one still means the
 	// gesture has landed by the time the call returns.
 	private static void inject(UiAutomation automation, long downTime, long eventTime, int action,
-			List<Finger> pointers, long atMs, boolean sync) {
+			List<Finger> pointers, long atMs, boolean sync) throws RpcException {
 		int count = pointers.size();
 		MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[count];
 		MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[count];

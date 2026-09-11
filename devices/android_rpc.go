@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -23,6 +24,11 @@ const defaultAgentTimeout = 10 * time.Second
 // an error the agent itself reported. Callers that can restart their agent use
 // it to tell "it died" from "it said no".
 var errAgentUnreachable = errors.New("agent unreachable")
+
+// errAgentTimedOut is the one unreachable case that must not be repeated: the
+// agent may well be working on the request, so sending it again would run it
+// twice.
+var errAgentTimedOut = errors.New("agent timed out")
 
 // jsonRPCRequest is the envelope every agent call is wrapped in. Params is
 // whatever shape the method takes, typically a small struct declared next to
@@ -54,6 +60,9 @@ func agentRequestWithTimeout(port int, method string, params any, timeout time.D
 	client := &http.Client{Timeout: timeout}
 	resp, err := postJSON(client, port, bytes.NewReader(payload))
 	if err != nil {
+		if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
+			return nil, fmt.Errorf("%w on port %d after %s: %v", errAgentTimedOut, port, timeout, err)
+		}
 		return nil, fmt.Errorf("%w on port %d: %v", errAgentUnreachable, port, err)
 	}
 	defer resp.Body.Close()

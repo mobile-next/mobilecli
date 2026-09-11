@@ -160,7 +160,9 @@ func embeddedDexSHA256() string {
 // serverRequest sends a JSON-RPC call to the persistent DeviceServer, starting
 // it if needed. A server that has gone away (device rebooted, another mobilecli
 // build restarted it) is set up again once and the call retried, so the
-// remembered port never strands a session.
+// remembered port never strands a session. A call that timed out is never
+// resent: the server may still be running it, and repeating a tap or a line of
+// text is worse than reporting the timeout.
 func (d *AndroidDevice) serverRequest(method string, params any) (json.RawMessage, error) {
 	port, err := d.ensureDeviceServerReady()
 	if err != nil {

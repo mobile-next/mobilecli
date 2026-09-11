@@ -906,6 +906,10 @@ func androidKeycodeForKey(key string) (string, error) {
 }
 
 func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
+	if len(combos) == 0 {
+		return nil
+	}
+
 	// resolve every combo upfront, so an invalid one fails before any key is pressed
 	keys := make([]keyParams, len(combos))
 	for i, combo := range combos {
