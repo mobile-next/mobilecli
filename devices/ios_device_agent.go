@@ -65,11 +65,11 @@ func setCachedDeviceAgentPort(udid string, port int) {
 // agentCall ensures the agent is ready and makes a JSON-RPC call to it. This is
 // the single seam every device-agent feature uses; it also drops the cached
 // port on failure so a dead agent is re-injected on the next call.
-func (d *IOSDevice) agentCall(method string, params map[string]any) (json.RawMessage, error) {
+func (d *IOSDevice) agentCall(method string, params any) (json.RawMessage, error) {
 	return d.agentCallWithTimeout(method, params, defaultAgentTimeout)
 }
 
-func (d *IOSDevice) agentCallWithTimeout(method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
+func (d *IOSDevice) agentCallWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	port, err := d.ensureIOSDeviceAgentReady()
 	if err != nil {
 		return nil, err

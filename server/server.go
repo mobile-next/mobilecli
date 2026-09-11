@@ -443,6 +443,15 @@ type IoSwipeParams struct {
 	Duration int    `json:"duration"`
 }
 
+type IoPinchParams struct {
+	DeviceID  string `json:"deviceId"`
+	X         int    `json:"x"`
+	Y         int    `json:"y"`
+	Direction string `json:"direction"`
+	Distance  int    `json:"distance"`
+	Duration  int    `json:"duration"`
+}
+
 func handleIoTap(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
@@ -535,6 +544,47 @@ func handleIoSwipe(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.SwipeCommand(req)
+	if response.Status == "error" {
+		return nil, fmt.Errorf("%s", response.Error)
+	}
+
+	return okResponse, nil
+}
+
+func handleIoPinch(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, direction, x, y")
+	}
+
+	var ioPinchParams IoPinchParams
+	if err := json.Unmarshal(params, &ioPinchParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, direction, x, y", err)
+	}
+
+	if ioPinchParams.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	// direction is checked by presence so a missing field is named, not
+	// reported as an invalid empty value
+	var rawParams map[string]any
+	if err := json.Unmarshal(params, &rawParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters format")
+	}
+	if _, exists := rawParams["direction"]; !exists {
+		return nil, fmt.Errorf("'direction' is required")
+	}
+
+	req := commands.PinchRequest{
+		DeviceID:  ioPinchParams.DeviceID,
+		X:         ioPinchParams.X,
+		Y:         ioPinchParams.Y,
+		Direction: ioPinchParams.Direction,
+		Distance:  ioPinchParams.Distance,
+		Duration:  ioPinchParams.Duration,
+	}
+
+	response := commands.PinchCommand(req)
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}

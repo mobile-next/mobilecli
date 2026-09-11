@@ -18,23 +18,24 @@ import (
 
 const defaultAgentTimeout = 10 * time.Second
 
+// jsonRPCRequest is the envelope every agent call is wrapped in. Params is
+// whatever shape the method takes, typically a small struct declared next to
+// its caller; nil means the method takes none and the field is left out.
+type jsonRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
 // agentRequest sends a JSON-RPC 2.0 request to the agent over HTTP and returns
 // the result field from the response.
-func agentRequest(port int, method string, params map[string]any) (json.RawMessage, error) {
+func agentRequest(port int, method string, params any) (json.RawMessage, error) {
 	return agentRequestWithTimeout(port, method, params, defaultAgentTimeout)
 }
 
-func agentRequestWithTimeout(port int, method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
-	body := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "1",
-		"method":  method,
-	}
-	if len(params) > 0 {
-		body["params"] = params
-	}
-
-	payload, err := json.Marshal(body)
+func agentRequestWithTimeout(port int, method string, params any, timeout time.Duration) (json.RawMessage, error) {
+	payload, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", ID: "1", Method: method, Params: params})
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}

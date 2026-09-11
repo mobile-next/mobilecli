@@ -13,6 +13,12 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+// dumpUiParams is what DeviceServer's device.dump.ui reads.
+type dumpUiParams struct {
+	WaitUntilIdle int  `json:"waitUntilIdle"`
+	Full          bool `json:"full"`
+}
+
 // deviceServerClass is the persistent on-device server (agents/android/java/DeviceServer.java).
 const deviceServerClass = "com.mobilenext.mobilecli.DeviceServer"
 
@@ -121,7 +127,7 @@ func embeddedDexSHA256() string {
 
 // serverRequest sends a JSON-RPC call to the persistent DeviceServer, starting
 // it if needed.
-func (d *AndroidDevice) serverRequest(method string, params map[string]any) (json.RawMessage, error) {
+func (d *AndroidDevice) serverRequest(method string, params any) (json.RawMessage, error) {
 	port, err := d.ensureDeviceServerReady()
 	if err != nil {
 		return nil, err
@@ -134,7 +140,7 @@ func (d *AndroidDevice) serverRequest(method string, params map[string]any) (jso
 func (d *AndroidDevice) dumpUiNodes(opts DumpOptions) ([]uiNode, error) {
 	startTime := time.Now()
 
-	raw, err := d.serverRequest("device.dump.ui", map[string]any{"waitUntilIdle": dumpUiWaitUntilIdleMs, "full": opts.Full})
+	raw, err := d.serverRequest("device.dump.ui", dumpUiParams{WaitUntilIdle: dumpUiWaitUntilIdleMs, Full: opts.Full})
 	if err != nil {
 		return nil, fmt.Errorf("device server dump.ui: %w", err)
 	}

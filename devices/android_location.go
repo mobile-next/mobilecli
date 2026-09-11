@@ -7,6 +7,12 @@ import (
 	"github.com/mobile-next/mobilecli/utils"
 )
 
+// locationParams is what DeviceServer's device.location.set reads.
+type locationParams struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
 // shellPackage is the package the DeviceServer (app_process) is attributed
 // to, and therefore the one the mock_location appop has to be granted to
 const shellPackage = "com.android.shell"
@@ -76,7 +82,7 @@ func (d *AndroidDevice) startMockLocation(lat, lon float64) error {
 		return fmt.Errorf("grant mock_location appop: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	if _, err := d.serverRequest("device.location.set", map[string]any{"lat": lat, "lon": lon}); err != nil {
+	if _, err := d.serverRequest("device.location.set", locationParams{Lat: lat, Lon: lon}); err != nil {
 		if revokeErr := d.revokeMockLocationAppop(); revokeErr != nil {
 			utils.Verbose("failed to revoke mock_location appop after a failed start: %v", revokeErr)
 		}

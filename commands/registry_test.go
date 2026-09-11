@@ -41,7 +41,7 @@ func TestCLIRegistryCoversEveryCLIMethod(t *testing.T) {
 		"cli.apps.launch", "cli.apps.terminate", "cli.apps.list", "cli.apps.install", "cli.apps.uninstall",
 		"cli.apps.clear", "cli.apps.foreground", "cli.apps.path",
 		"cli.io.tap", "cli.io.longpress", "cli.io.button", "cli.io.text", "cli.io.keys", "cli.io.swipe",
-		"cli.io.gesture", "cli.io.clipboard.get", "cli.io.clipboard.set",
+		"cli.io.pinch", "cli.io.gesture", "cli.io.clipboard.get", "cli.io.clipboard.set",
 		"cli.fs.push", "cli.fs.pull", "cli.fs.ls", "cli.fs.mkdir", "cli.fs.rm",
 		"cli.webview.list", "cli.webview.goto", "cli.webview.reload", "cli.webview.back", "cli.webview.forward",
 		"cli.webview.eval", "cli.webview.wait", "cli.webview.content",

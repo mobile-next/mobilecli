@@ -32,6 +32,7 @@ JSON-RPC API for mobile device automation and control
 - [device.io.longpress](#deviceiolongpress)
 - [device.io.orientation.get](#deviceioorientationget)
 - [device.io.orientation.set](#deviceioorientationset)
+- [device.io.pinch](#deviceiopinch)
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
@@ -534,7 +535,8 @@ UI hierarchy data
   "method": "device.dump.ui",
   "params": {
     "deviceId": "string",
-    "format": "json"
+    "format": "json",
+    "full": false
   },
   "id": 1
 }
@@ -959,6 +961,48 @@ Operation result
   "params": {
     "deviceId": "string",
     "orientation": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.io.pinch
+
+**Perform two-finger pinch gesture**
+
+Performs a two-finger pinch centered at (x, y) on the device screen. Direction "out" spreads the fingers apart to zoom in, "in" brings them together to zoom out. Omitting x and y pinches around the center of the screen.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `direction` | enum: `in, out` | ✓ | "in" to zoom out or "out" to zoom in |
+| `x` | `integer` |  | X coordinate of the pinch center, defaults to the screen center |
+| `y` | `integer` |  | Y coordinate of the pinch center, defaults to the screen center |
+| `distance` | `integer` |  | Pixels each finger travels, defaults to 200 |
+| `duration` | `integer` |  | Duration of the finger movement in milliseconds, defaults to 300 |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.pinch",
+  "params": {
+    "deviceId": "string",
+    "direction": "in",
+    "x": 0,
+    "y": 0,
+    "distance": 0,
+    "duration": 0
   },
   "id": 1
 }

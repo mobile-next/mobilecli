@@ -16,7 +16,7 @@ import java.security.MessageDigest;
 
 /**
  * Persistent device server via app_process. Keeps one connected UiAutomation
- * alive and serves UI dump, screenshot, keyboard, clipboard, app list and mock location
+ * alive and serves UI dump, screenshot, keyboard, touch gestures, clipboard, app list and mock location
  * over JSON-RPC on a localabstract socket, so repeated calls skip process-fork
  * and connect cost, and long-lived state (test location providers) has a home.
  *
@@ -62,6 +62,8 @@ public class DeviceServer {
 				return screenshot(automation, p);
 			case "device.io.keyboard.hide":
 				return new JSONObject().put("dismissed", hideKeyboard(automation));
+			case "device.io.gesture":
+				return Gestures.perform(automation, p.optJSONArray("actions"));
 			case "device.clipboard.get":
 				return new JSONObject().put("text", orEmpty(Clipboard.getText()));
 			case "device.clipboard.set":

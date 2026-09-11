@@ -33,6 +33,25 @@ const androidDiscoveryGetpropTimeout = 5 * time.Second
 const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
+// Parameter shapes for the DeviceServer methods this file calls; the JSON keys
+// are the ones agents/android/java/DeviceServer.java reads.
+type screenshotParams struct {
+	Format      string                   `json:"format"`
+	Quality     int                      `json:"quality"`
+	Scale       float64                  `json:"scale"`
+	MaxSize     int                      `json:"maxSize"`
+	Clip        *types.ScreenElementRect `json:"clip,omitempty"`
+	ScreenWidth int                      `json:"screenWidth,omitempty"`
+}
+
+type clipboardSetParams struct {
+	Text string `json:"text"`
+}
+
+type gestureParams struct {
+	Actions []devicekit.GestureAction `json:"actions"`
+}
+
 type AndroidDevice struct {
 	id          string
 	name        string
@@ -284,17 +303,15 @@ func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, e
 
 	utils.Verbose("taking screenshot on-device via mobilecli.dex")
 
-	params := map[string]any{
-		"format":  format,
-		"quality": opts.Quality,
-		"scale":   opts.Scale,
-		"maxSize": opts.MaxSize,
+	params := screenshotParams{
+		Format:  format,
+		Quality: opts.Quality,
+		Scale:   opts.Scale,
+		MaxSize: opts.MaxSize,
 	}
 	if opts.Clip != nil {
-		params["clip"] = map[string]any{
-			"x": opts.Clip.X, "y": opts.Clip.Y, "width": opts.Clip.Width, "height": opts.Clip.Height,
-		}
-		params["screenWidth"] = opts.ScreenWidthPoints
+		params.Clip = opts.Clip
+		params.ScreenWidth = opts.ScreenWidthPoints
 	}
 
 	raw, err := d.serverRequest("device.screenshot", params)
@@ -516,44 +533,18 @@ func (d *AndroidDevice) SetClipboard(text string) error {
 		_, err := d.serverRequest("device.clipboard.clear", nil)
 		return err
 	}
-	_, err := d.serverRequest("device.clipboard.set", map[string]any{"text": text})
+	_, err := d.serverRequest("device.clipboard.set", clipboardSetParams{Text: text})
 	return err
 }
 
-// Gesture performs a sequence of touch actions on the Android device
+// Gesture performs a multi-finger touch sequence through the on-device server,
+// which replays it as timed MotionEvents via UiAutomation. Actions are grouped
+// by Button (finger index) and converted exactly as for devicekit-ios, so both
+// platforms take one gesture contract; fingers move at the same time, which is
+// what makes a pinch possible here.
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
-
-	x := 0
-	y := 0
-
-	for _, action := range actions {
-		var cmd []string
-
-		if action.Type == "pause" {
-			time.Sleep(time.Duration(action.Duration) * time.Millisecond)
-			continue
-		}
-
-		switch action.Type {
-		case "pointerDown":
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "down", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
-		case "pointerMove":
-			x = action.X
-			y = action.Y
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "move", fmt.Sprintf("%d", action.X), fmt.Sprintf("%d", action.Y)}
-		case "pointerUp":
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "up", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
-		default:
-			return fmt.Errorf("unsupported gesture action type: %s", action.Type)
-		}
-
-		_, err := d.runAdbCommand(cmd...)
-		if err != nil {
-			return fmt.Errorf("failed to execute gesture action %s: %v", action.Type, err)
-		}
-	}
-
-	return nil
+	_, err := d.serverRequest("device.io.gesture", gestureParams{Actions: devicekit.ConvertActions(actions)})
+	return err
 }
 
 func parseAdbDevicesOutput(output string) []ControllableDevice {
