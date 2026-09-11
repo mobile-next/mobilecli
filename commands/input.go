@@ -18,12 +18,14 @@ type TapRequest struct {
 	Ref      string `json:"ref,omitempty"`
 }
 
-// LongPressRequest represents the parameters for a long press command
+// LongPressRequest represents the parameters for a long press command. Either
+// X,Y or Ref ("@e5", from the latest dump) must be set; Ref wins when both are.
 type LongPressRequest struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
 	Duration int    `json:"duration"`
+	Ref      string `json:"ref,omitempty"`
 }
 
 // TextRequest represents the parameters for a text input command
@@ -199,7 +201,7 @@ func findElementByRef(elements []types.ScreenElement, ref string) *types.ScreenE
 
 // LongPressCommand performs a long press operation on the specified device
 func LongPressCommand(req LongPressRequest) *CommandResponse {
-	if req.X < 0 || req.Y < 0 {
+	if req.Ref == "" && (req.X < 0 || req.Y < 0) {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
@@ -215,13 +217,21 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	err = targetDevice.LongPress(req.X, req.Y, req.Duration)
+	x, y := req.X, req.Y
+	if req.Ref != "" {
+		x, y, err = resolveRefTapPoint(targetDevice, req.Ref)
+		if err != nil {
+			return NewErrorResponse(err)
+		}
+	}
+
+	err = targetDevice.LongPress(x, y, req.Duration)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to long press on device %s: %v", targetDevice.ID(), err))
 	}
 
 	return NewSuccessResponse(MessageResult{
-		Message: fmt.Sprintf("Long pressed on device %s at (%d,%d) for %dms", targetDevice.ID(), req.X, req.Y, req.Duration),
+		Message: fmt.Sprintf("Long pressed on device %s at (%d,%d) for %dms", targetDevice.ID(), x, y, req.Duration),
 	})
 }
 

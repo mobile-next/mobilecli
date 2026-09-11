@@ -15,40 +15,53 @@ var ioCmd = &cobra.Command{
 	Long:  `Perform input/output operations like tapping, pressing buttons, sending text, and reading or writing the device clipboard.`,
 }
 
+// screenPoint is where a touch command should land: either explicit
+// coordinates or an element ref ("@e5") to resolve against the current screen.
+type screenPoint struct {
+	X   int
+	Y   int
+	Ref string
+}
+
+// parseScreenPoint reads the single argument tap and longpress take: "x,y" or
+// an element ref from the latest "dump ui".
+func parseScreenPoint(arg string) (screenPoint, error) {
+	if strings.HasPrefix(arg, "@") {
+		return screenPoint{Ref: arg}, nil
+	}
+
+	parts := strings.Split(arg, ",")
+	if len(parts) != 2 {
+		return screenPoint{}, fmt.Errorf("invalid target format. Expected 'x,y' coordinates or an element ref like '@e15', got '%s'", arg)
+	}
+
+	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errX != nil || errY != nil {
+		return screenPoint{}, fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1])
+	}
+
+	return screenPoint{X: x, Y: y}, nil
+}
+
 var ioTapCmd = &cobra.Command{
 	Use:   "tap [x,y | @ref]",
 	Short: "Tap on a device screen at the given coordinates or element ref",
 	Long:  `Sends a tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		coordsStr := args[0]
-		if strings.HasPrefix(coordsStr, "@") {
-			return runViaDaemon("cli.io.tap", commands.TapRequest{
-				DeviceID: deviceId,
-				Ref:      coordsStr,
-			})
-		}
-
-		parts := strings.Split(coordsStr, ",")
-		if len(parts) != 2 {
-			response := commands.NewErrorResponse(fmt.Errorf("invalid target format. Expected 'x,y' coordinates or an element ref like '@e15', got '%s'", coordsStr))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
-		y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
-
-		if errX != nil || errY != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+		target, err := parseScreenPoint(args[0])
+		if err != nil {
+			response := commands.NewErrorResponse(err)
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
 
 		req := commands.TapRequest{
 			DeviceID: deviceId,
-			X:        x,
-			Y:        y,
+			X:        target.X,
+			Y:        target.Y,
+			Ref:      target.Ref,
 		}
 
 		return runViaDaemon("cli.io.tap", req)
@@ -62,33 +75,24 @@ var pinchDistance int
 var pinchDuration int
 
 var ioLongPressCmd = &cobra.Command{
-	Use:   "longpress [x,y]",
-	Short: "Long press on a device screen at the given coordinates",
-	Long:  `Sends a long press event to the specified device at the given x,y coordinates. Coordinates should be provided as a single string "x,y".`,
+	Use:   "longpress [x,y | @ref]",
+	Short: "Long press on a device screen at the given coordinates or element ref",
+	Long:  `Sends a long press event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		coordsStr := args[0]
-		parts := strings.Split(coordsStr, ",")
-		if len(parts) != 2 {
-			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
-		y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
-
-		if errX != nil || errY != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+		target, err := parseScreenPoint(args[0])
+		if err != nil {
+			response := commands.NewErrorResponse(err)
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
 
 		req := commands.LongPressRequest{
 			DeviceID: deviceId,
-			X:        x,
-			Y:        y,
+			X:        target.X,
+			Y:        target.Y,
 			Duration: longPressDuration,
+			Ref:      target.Ref,
 		}
 
 		return runViaDaemon("cli.io.longpress", req)
