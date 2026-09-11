@@ -275,6 +275,7 @@ test.describe('rpc method validation', () => {
 		{method: 'device.io.tap', params: {x: 10, y: 10}},
 		{method: 'device.io.longpress', params: {x: 10, y: 10}},
 		{method: 'device.io.swipe', params: {x1: 1, y1: 2, x2: 3, y2: 4}},
+		{method: 'device.io.pinch', params: {x: 500, y: 500, direction: 'out'}},
 		{method: 'device.io.button', params: {button: 'HOME'}},
 		{method: 'device.io.text', params: {text: 'hello'}},
 		{method: 'device.io.keys', params: {keys: ['a']}},
@@ -309,6 +310,8 @@ test.describe('rpc method validation', () => {
 		{name: 'device.fs.mkdir without remotePath', method: 'device.fs.mkdir', params: {}, mentions: 'remotePath'},
 		{name: 'device.fs.rm without remotePath', method: 'device.fs.rm', params: {}, mentions: 'remotePath'},
 		{name: 'device.io.swipe without x2', method: 'device.io.swipe', params: {x1: 1, y1: 2, y2: 4}, mentions: 'x2'},
+		{name: 'device.io.pinch without direction', method: 'device.io.pinch', params: {x: 500, y: 500}, mentions: 'direction'},
+		{name: 'device.io.pinch with a direction that is not in or out', method: 'device.io.pinch', params: {x: 500, y: 500, direction: 'sideways'}, mentions: 'direction'},
 		{name: 'device.webview.goto without url', method: 'device.webview.goto', params: {id: 'x'}, mentions: 'url'},
 	];
 

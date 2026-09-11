@@ -57,6 +57,9 @@ var ioTapCmd = &cobra.Command{
 
 var longPressDuration int
 var swipeDuration int
+var pinchDirection string
+var pinchDistance int
+var pinchDuration int
 
 var ioLongPressCmd = &cobra.Command{
 	Use:   "longpress [x,y]",
@@ -177,6 +180,45 @@ var ioSwipeCmd = &cobra.Command{
 	},
 }
 
+var ioPinchCmd = &cobra.Command{
+	Use:   "pinch [x,y]",
+	Short: "Pinch on a device screen with two fingers to zoom in or out",
+	Long:  `Sends a two-finger pinch to the specified device, centered at the given x,y coordinates or at the center of the screen when omitted. "--direction out" spreads the fingers apart (zoom in); "--direction in" brings them together (zoom out). Coordinates should be provided as a single string "x,y".`,
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.PinchRequest{
+			DeviceID:  deviceId,
+			Direction: pinchDirection,
+			Distance:  pinchDistance,
+			Duration:  pinchDuration,
+		}
+
+		if len(args) == 1 {
+			coordsStr := args[0]
+			parts := strings.Split(coordsStr, ",")
+			if len(parts) != 2 {
+				response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
+				printJson(response)
+				return fmt.Errorf("%s", response.Error)
+			}
+
+			x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+			y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+
+			if errX != nil || errY != nil {
+				response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+				printJson(response)
+				return fmt.Errorf("%s", response.Error)
+			}
+
+			req.X = x
+			req.Y = y
+		}
+
+		return runViaDaemon("cli.io.pinch", req)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -187,6 +229,7 @@ func init() {
 	ioCmd.AddCommand(ioTextCmd)
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioPinchCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -197,4 +240,9 @@ func init() {
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
+	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
+	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
+	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 200, "pixels each finger travels")
+	ioPinchCmd.Flags().IntVar(&pinchDuration, "duration", 300, "duration of the finger movement in milliseconds")
+	cobra.CheckErr(ioPinchCmd.MarkFlagRequired("direction"))
 }

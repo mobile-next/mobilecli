@@ -95,6 +95,13 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Swipe from x1,y1 to x2,y2
   mobilecli io swipe --device <device-id> 100,600,100,200
   ```
+* **Pinch** (two fingers, zoom):
+  ```bash
+  # Zoom in around 500,800 (fingers spread apart); omit the coordinates to pinch at the screen center
+  mobilecli io pinch --device <device-id> 500,800 --direction out
+  # Zoom out, fingers travel 300px each over 500ms
+  mobilecli io pinch --device <device-id> --direction in --distance 300 --duration 500
+  ```
 * **Send Text**:
   ```bash
   # Types text into the currently focused input field
@@ -232,13 +239,15 @@ For scripts and long-running automation, make HTTP POST requests to the server's
   ```
 
 ### Custom Gestures (JSON-RPC only)
-For complex multi-action interactions (e.g. dragging, pinching, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events.
+For complex multi-action interactions (e.g. dragging, rotating, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events. For a plain zoom, prefer `device.io.pinch` / `mobilecli io pinch`.
 
 Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.
-- `pointerMove`: Moves coordinates to target `x`, `y`.
+- `pointerMove`: Moves coordinates to target `x`, `y` over `duration` (in milliseconds).
 - `pointerUp`: Lifts pointer off screen.
 - `pause`: Sleeps for `duration` (in milliseconds).
+
+Multi-finger gestures: give each action a `button` (finger index, default 0) and list every finger's actions contiguously, one complete `pointerMove` → `pointerDown` → ... → `pointerUp` sequence per finger; the fingers then move at the same time on both iOS and Android.
 
 **Example: Drag-and-Drop Action**
 ```json

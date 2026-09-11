@@ -1,6 +1,6 @@
 ---
 name: mobilecli
-description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, get crash reports, install mobilecli, or allocate and release remote real devices on Mobile Next cloud, even if they don't explicitly name "mobilecli". Requires the mobilecli npm package; the skill installs it if missing.
+description: Run mobile automation, app testing, and interact with iOS and Android devices, simulators, emulators, and apps using the mobilecli CLI tool or JSON-RPC API. Trigger this skill whenever the user wants to list connected devices, boot or shut down simulators/emulators, take mobile screenshots, start screen recordings, send key/touch inputs (tap, text, swipe, pinch, hardware buttons), manage apps (install, uninstall, launch, terminate, get foreground app), inspect webviews (query DOM, evaluate JS, navigate), download/upload files on-device, get crash reports, install mobilecli, or allocate and release remote real devices on Mobile Next cloud, even if they don't explicitly name "mobilecli". Requires the mobilecli npm package; the skill installs it if missing.
 allowed-tools: Bash(mobilecli:*)
 ---
 
@@ -130,6 +130,7 @@ Here is a quick reference table mapping standard user actions to `mobilecli` com
 | **Tap** | `mobilecli io tap @e5` or `mobilecli io tap <x,y>` | Single touch on a ref from `dump ui`, or at coordinates |
 | **Long Press** | `mobilecli io longpress <x,y> --duration <ms>` | Press and hold for a duration |
 | **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | Drag from start to end coordinates |
+| **Pinch** | `mobilecli io pinch [x,y] --direction in\|out` | Two-finger zoom out (`in`) or in (`out`), around x,y or the screen center |
 | **Type Text** | `mobilecli io text "<text>"` | Send raw text to the focused field |
 | **Key Press** | `mobilecli io button <BUTTON_NAME>` | Press hardware buttons (e.g. HOME, POWER) |
 | **Read Clipboard** | `mobilecli io clipboard get` | Read text from the device clipboard |

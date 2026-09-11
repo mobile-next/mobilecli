@@ -87,6 +87,9 @@ INPUT/OUTPUT:
   # Swipe from one point to another
   mobilecli io swipe --device <device-id> 100,200,300,400
 
+  # Pinch to zoom in (out) or out (in) around a point, or the screen center if omitted
+  mobilecli io pinch --device <device-id> 500,800 --direction out
+
   # Press hardware button (HOME, VOLUME_UP, VOLUME_DOWN, POWER)
   mobilecli io button --device <device-id> HOME
 

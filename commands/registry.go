@@ -66,6 +66,7 @@ func CLIRegistry() map[string]CLIHandler {
 		"cli.io.text":                adapt(TextCommand),
 		"cli.io.keys":                adapt(KeysCommand),
 		"cli.io.swipe":               adapt(SwipeCommand),
+		"cli.io.pinch":               adapt(PinchCommand),
 		"cli.io.gesture":             adapt(GestureCommand),
 		"cli.io.clipboard.get":       adapt(ClipboardGetCommand),
 		"cli.io.clipboard.set":       adapt(ClipboardSetCommand),

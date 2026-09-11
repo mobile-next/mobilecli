@@ -545,6 +545,69 @@
       }
     },
     {
+      "name": "device.io.pinch",
+      "summary": "Perform two-finger pinch gesture",
+      "description": "Performs a two-finger pinch centered at (x, y) on the device screen. Direction \"out\" spreads the fingers apart to zoom in, \"in\" brings them together to zoom out. Omitting x and y pinches around the center of the screen.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "direction",
+          "description": "\"in\" to zoom out or \"out\" to zoom in",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": ["in", "out"]
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate of the pinch center, defaults to the screen center",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate of the pinch center, defaults to the screen center",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "distance",
+          "description": "Pixels each finger travels, defaults to 200",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the finger movement in milliseconds, defaults to 300",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.info",
       "summary": "Get device information",
       "description": "Returns detailed information about the specified device",
