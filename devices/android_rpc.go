@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,11 @@ import (
 // socket and the in-app webview agent.
 
 const defaultAgentTimeout = 10 * time.Second
+
+// errAgentUnreachable marks a failure to reach an agent at all, as opposed to
+// an error the agent itself reported. Callers that can restart their agent use
+// it to tell "it died" from "it said no".
+var errAgentUnreachable = errors.New("agent unreachable")
 
 // jsonRPCRequest is the envelope every agent call is wrapped in. Params is
 // whatever shape the method takes, typically a small struct declared next to
@@ -48,7 +54,7 @@ func agentRequestWithTimeout(port int, method string, params any, timeout time.D
 	client := &http.Client{Timeout: timeout}
 	resp, err := postJSON(client, port, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("connect to agent on port %d: %w", port, err)
+		return nil, fmt.Errorf("%w on port %d: %v", errAgentUnreachable, port, err)
 	}
 	defer resp.Body.Close()
 

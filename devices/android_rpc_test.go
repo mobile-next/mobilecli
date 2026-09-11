@@ -2,6 +2,9 @@ package devices
 
 import (
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
@@ -84,4 +87,33 @@ func TestInputParamsUseTheOpenRpcFieldNames(t *testing.T) {
 	assert.ElementsMatch(t, []string{"x1", "y1", "x2", "y2", "duration"}, wireKeys(t, swipeParams{X1: 1, Y1: 2, X2: 3, Y2: 4, Duration: 300}))
 	assert.ElementsMatch(t, []string{"button"}, wireKeys(t, buttonParams{Button: "KEYCODE_HOME"}))
 	assert.ElementsMatch(t, []string{"text"}, wireKeys(t, textParams{Text: "hi"}))
+}
+
+// freePort returns a port with nothing listening on it.
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+	return port
+}
+
+func TestAgentRequestReportsAnAgentItCannotReachAsUnreachable(t *testing.T) {
+	_, err := agentRequest(freePort(t), "device.version", nil)
+
+	assert.ErrorIs(t, err, errAgentUnreachable)
+}
+
+func TestAgentRequestReportsAnErrorTheAgentItselfSentAsSomethingElse(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}`))
+	}))
+	defer agent.Close()
+	port := agent.Listener.Addr().(*net.TCPAddr).Port
+
+	_, err := agentRequest(port, "device.nonsense", nil)
+
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, errAgentUnreachable)
 }

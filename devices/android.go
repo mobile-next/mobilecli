@@ -97,6 +97,10 @@ type AndroidDevice struct {
 	state       string // "online" or "offline"
 	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
 	model       string
+
+	// host port of the DeviceServer once it's known to be up and current
+	serverMu   sync.Mutex
+	serverPort int
 }
 
 func (d *AndroidDevice) ID() string {
