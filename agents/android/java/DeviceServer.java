@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import android.util.Base64;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.FileInputStream;
@@ -16,7 +17,7 @@ import java.security.MessageDigest;
 
 /**
  * Persistent device server via app_process. Keeps one connected UiAutomation
- * alive and serves UI dump, screenshot, keyboard, touch gestures, clipboard, app list and mock location
+ * alive and serves UI dump, screenshot, keys, text, touch gestures, clipboard, app list and mock location
  * over JSON-RPC on a localabstract socket, so repeated calls skip process-fork
  * and connect cost, and long-lived state (test location providers) has a home.
  *
@@ -64,6 +65,19 @@ public class DeviceServer {
 				return new JSONObject().put("dismissed", hideKeyboard(automation));
 			case "device.io.gesture":
 				return Gestures.perform(automation, p.optJSONArray("actions"));
+			case "device.io.tap":
+				return Input.tap(automation, requireInt(p, "x"), requireInt(p, "y"));
+			case "device.io.longpress":
+				return Input.longPress(automation, requireInt(p, "x"), requireInt(p, "y"), p.optInt("duration", 500));
+			case "device.io.swipe":
+				return Input.swipe(automation, requireInt(p, "x1"), requireInt(p, "y1"), requireInt(p, "x2"), requireInt(p, "y2"),
+						p.optInt("duration", 1000));
+			case "device.io.button":
+				return Input.pressKey(automation, JsonRpcSocketServer.requireParam(params, "button"), null);
+			case "device.io.keys":
+				return pressKeys(automation, p.optJSONArray("keys"));
+			case "device.io.text":
+				return Input.typeText(automation, JsonRpcSocketServer.requireParam(params, "text"));
 			case "device.clipboard.get":
 				return new JSONObject().put("text", orEmpty(Clipboard.getText()));
 			case "device.clipboard.set":
@@ -95,6 +109,25 @@ public class DeviceServer {
 				p.optInt("quality", 90), p.optDouble("scale", 1.0), p.optInt("maxSize", 0),
 				clip, p.optInt("screenWidth", 0));
 		return new JSONObject().put("data", Base64.encodeToString(image, Base64.NO_WRAP));
+	}
+
+	// keys: [{keycode: "KEYCODE_A", modifiers: ["KEYCODE_CTRL_LEFT"]}, ...], pressed in order
+	private static JSONObject pressKeys(UiAutomation automation, JSONArray keys) throws Exception {
+		if (keys == null || keys.length() == 0) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params.keys");
+		}
+		for (int i = 0; i < keys.length(); i++) {
+			JSONObject key = keys.getJSONObject(i);
+			Input.pressKey(automation, JsonRpcSocketServer.requireParam(key, "keycode"), key.optJSONArray("modifiers"));
+		}
+		return ok();
+	}
+
+	private static int requireInt(JSONObject p, String key) throws RpcException {
+		if (!p.has(key)) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params." + key);
+		}
+		return p.optInt(key);
 	}
 
 	private static JSONObject ok() throws Exception {

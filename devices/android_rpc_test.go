@@ -68,3 +68,20 @@ func TestScreenshotParamsUseTheKeysDeviceServerReads(t *testing.T) {
 	assert.ElementsMatch(t, []string{"format", "quality", "scale", "maxSize", "clip", "screenWidth"}, wireKeys(t, clipped))
 	assert.ElementsMatch(t, []string{"x", "y", "width", "height"}, wireKeys(t, clipped.Clip))
 }
+
+func TestKeysParamsCarryKeycodeAndModifiersPerKey(t *testing.T) {
+	payload, err := json.Marshal(keysParams{Keys: []keyParams{
+		{Keycode: "KEYCODE_A", Modifiers: []string{"KEYCODE_CTRL_LEFT"}},
+		{Keycode: "KEYCODE_ENTER"},
+	}})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"keys":[{"keycode":"KEYCODE_A","modifiers":["KEYCODE_CTRL_LEFT"]},{"keycode":"KEYCODE_ENTER"}]}`, string(payload))
+}
+
+func TestInputParamsUseTheOpenRpcFieldNames(t *testing.T) {
+	assert.ElementsMatch(t, []string{"x", "y"}, wireKeys(t, tapParams{X: 1, Y: 2}))
+	assert.ElementsMatch(t, []string{"x", "y", "duration"}, wireKeys(t, longPressParams{X: 1, Y: 2, Duration: 500}))
+	assert.ElementsMatch(t, []string{"x1", "y1", "x2", "y2", "duration"}, wireKeys(t, swipeParams{X1: 1, Y1: 2, X2: 3, Y2: 4, Duration: 300}))
+	assert.ElementsMatch(t, []string{"button"}, wireKeys(t, buttonParams{Button: "KEYCODE_HOME"}))
+	assert.ElementsMatch(t, []string{"text"}, wireKeys(t, textParams{Text: "hi"}))
+}
