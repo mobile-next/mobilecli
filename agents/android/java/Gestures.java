@@ -31,6 +31,11 @@ public class Gestures {
 
 	private static final long FRAME_MS = 16; // ~60 fps, what a real touchscreen reports
 
+	// JsonRpcSocketServer serves one request at a time, and replay sleeps for
+	// the whole gesture, so an over-long one would stall every other call
+	// (screenshots included) until it ends. Nothing legitimate takes this long.
+	private static final long MAX_GESTURE_MS = 30_000;
+
 	private static final String TYPE_PRESS = "press";
 	private static final String TYPE_MOVE = "move";
 	private static final String TYPE_RELEASE = "release";
@@ -77,6 +82,12 @@ public class Gestures {
 
 	static JSONObject perform(UiAutomation automation, JSONArray actions) throws Exception {
 		List<Finger> fingers = parseFingers(actions);
+		long endMs = 0;
+		for (Finger finger : fingers) endMs = Math.max(endMs, finger.liftAtMs());
+		if (endMs > MAX_GESTURE_MS) {
+			throw new RpcException(RpcException.INVALID_PARAMS,
+					"gesture is " + endMs + "ms long, the limit is " + MAX_GESTURE_MS + "ms");
+		}
 		replay(automation, fingers);
 		return new JSONObject().put("ok", true);
 	}
