@@ -138,7 +138,7 @@ func loadTokenFromFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the fixed credentials file under the user config dir
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", keyring.ErrNotFound

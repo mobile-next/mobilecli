@@ -80,7 +80,10 @@ func TestInsecureStorageUsesFileAndSkipsKeyring(t *testing.T) {
 		t.Fatalf("storeToken with --insecure-storage: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("credentials file was not written: %v", err)
@@ -108,7 +111,10 @@ func TestKeyringStorageDoesNotWriteFile(t *testing.T) {
 		t.Fatalf("storeToken: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("no credentials file should exist without --insecure-storage, stat err = %v", err)
 	}
@@ -161,7 +167,10 @@ func TestDeleteTokenRemovesFile(t *testing.T) {
 		t.Fatalf("deleteToken: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("credentials file should be gone, stat err = %v", err)
 	}
