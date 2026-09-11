@@ -1,5 +1,11 @@
-## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (unreleased)
+## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (2026-09-11)
 * Feat: Pinch to zoom with `mobilecli io pinch` and `device.io.pinch`, and a real multi-finger `device.io.gesture` on Android through the embedded agent ([#410](https://github.com/mobile-next/mobilecli/pull/410))
+* Fix: Don't hang on a locked keyring when reading credentials; time out after 3s and continue without remote devices ([#408](https://github.com/mobile-next/mobilecli/pull/408)), thanks to [@EnglandLobster](https://github.com/EnglandLobster)
+* Fix(ios): Parse `ps` output for PIDs narrower than the PID column, so a running agent is no longer torn down and relaunched on every call ([#406](https://github.com/mobile-next/mobilecli/pull/406)), thanks to [@bjjeong](https://github.com/bjjeong)
+* Feat(ios): Report the on-screen view controller as the activity of the foreground app ([#405](https://github.com/mobile-next/mobilecli/pull/405))
+* Fix(android): Report the real app name and focused activity for the foreground app ([#403](https://github.com/mobile-next/mobilecli/pull/403))
+* Fix: `auth login` opens the browser for OAuth, falling back to the device code flow only when headless ([#402](https://github.com/mobile-next/mobilecli/pull/402))
+* Docs: Translate README to Japanese and Simplified Chinese ([#400](https://github.com/mobile-next/mobilecli/pull/400))
 
 ## [1.0.9](https://github.com/mobile-next/mobilecli/releases/tag/1.0.9) (2026-09-08)
 * Feat: add `--full` flag to `dump ui` to include the on-screen keyboard ([#398](https://github.com/mobile-next/mobilecli/pull/398))
