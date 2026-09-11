@@ -520,40 +520,14 @@ func (d *AndroidDevice) SetClipboard(text string) error {
 	return err
 }
 
-// Gesture performs a sequence of touch actions on the Android device
+// Gesture performs a multi-finger touch sequence through the on-device server,
+// which replays it as timed MotionEvents via UiAutomation. Actions are grouped
+// by Button (finger index) and converted exactly as for devicekit-ios, so both
+// platforms take one gesture contract; fingers move at the same time, which is
+// what makes a pinch possible here.
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
-
-	x := 0
-	y := 0
-
-	for _, action := range actions {
-		var cmd []string
-
-		if action.Type == "pause" {
-			time.Sleep(time.Duration(action.Duration) * time.Millisecond)
-			continue
-		}
-
-		switch action.Type {
-		case "pointerDown":
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "down", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
-		case "pointerMove":
-			x = action.X
-			y = action.Y
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "move", fmt.Sprintf("%d", action.X), fmt.Sprintf("%d", action.Y)}
-		case "pointerUp":
-			cmd = []string{"shell", "input", "touchscreen", "motionevent", "up", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y)}
-		default:
-			return fmt.Errorf("unsupported gesture action type: %s", action.Type)
-		}
-
-		_, err := d.runAdbCommand(cmd...)
-		if err != nil {
-			return fmt.Errorf("failed to execute gesture action %s: %v", action.Type, err)
-		}
-	}
-
-	return nil
+	_, err := d.serverRequest("device.io.gesture", map[string]any{"actions": devicekit.ConvertActions(actions)})
+	return err
 }
 
 func parseAdbDevicesOutput(output string) []ControllableDevice {
