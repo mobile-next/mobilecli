@@ -87,6 +87,7 @@ func TestPinchListsEachFingerContiguously(t *testing.T) {
 	converted := devicekit.ConvertActions(actions)
 	require.Len(t, converted, 6)
 	assert.Equal(t, []string{"press", "move", "release", "press", "move", "release"}, actionTypes(converted))
+	assert.Equal(t, []int{0, 0, 0, 1, 1, 1}, actionButtons(converted), "the finger index survives conversion")
 }
 
 func actionTypes(actions []devicekit.GestureAction) []string {
@@ -97,16 +98,30 @@ func actionTypes(actions []devicekit.GestureAction) []string {
 	return types
 }
 
+func actionButtons(actions []devicekit.GestureAction) []int {
+	buttons := make([]int, len(actions))
+	for i, a := range actions {
+		buttons[i] = a.Button
+	}
+	return buttons
+}
+
 func TestPinchRejectsUnknownDirection(t *testing.T) {
 	_, err := pinchActions(640, 1428, "sideways", 200, 300)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "direction")
 }
 
-func TestPinchRejectsAFingerThatWouldLeaveTheScreen(t *testing.T) {
+func TestPinchRejectsAFingerThatWouldCrossTheLeftEdge(t *testing.T) {
 	_, err := pinchActions(100, 1428, PinchDirectionIn, 200, 300)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not fit on screen")
+	assert.Contains(t, err.Error(), "left finger at x=-130")
+}
+
+func TestPinchRejectsANegativeCenterY(t *testing.T) {
+	_, err := pinchActions(640, -1, PinchDirectionOut, 200, 300)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "y must be non-negative")
 }
 
 func TestPinchCommandNamesTheDirectionBeforeLookingForADevice(t *testing.T) {

@@ -87,6 +87,11 @@ const (
 // Each finger is one complete, contiguous pointer sequence with its own Button,
 // which is what devicekit.ConvertActions expects; the agents run both fingers
 // at the same time.
+//
+// Like every other io command, this rejects negative coordinates and leaves
+// the far edges to the device: the screen size mobilecli can read is the
+// natural-orientation one, so checking against it would refuse valid pinches
+// on a rotated screen.
 func pinchActions(x, y int, direction string, distance, duration int) ([]devicekit.TapAction, error) {
 	if distance <= 0 {
 		distance = defaultPinchDistance
@@ -106,8 +111,11 @@ func pinchActions(x, y int, direction string, distance, duration int) ([]devicek
 		return nil, fmt.Errorf("direction must be %q or %q, got %q", PinchDirectionIn, PinchDirectionOut, direction)
 	}
 
-	if x-far < 0 || y < 0 {
-		return nil, fmt.Errorf("pinch centered at (%d,%d) with distance %d does not fit on screen: the left finger would reach x=%d", x, y, distance, x-far)
+	if y < 0 {
+		return nil, fmt.Errorf("pinch center y must be non-negative, got %d", y)
+	}
+	if x-far < 0 {
+		return nil, fmt.Errorf("pinch centered at (%d,%d) with distance %d would put the left finger at x=%d, past the left edge", x, y, distance, x-far)
 	}
 
 	var actions []devicekit.TapAction
