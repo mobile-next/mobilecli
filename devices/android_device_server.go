@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,11 +31,42 @@ const deviceServerTarget = "localabstract:mobilecli-server"
 // dumpUiWaitUntilIdleMs is how long a dump waits for the UI to settle.
 const dumpUiWaitUntilIdleMs = 2000
 
-// ensureDeviceServerReady makes sure the persistent DeviceServer is running,
-// forwarded, and built from this binary's dex, reusing an existing forward when
-// possible. It's launched detached (nohup + &) on the device shell so it
-// outlives this CLI invocation and keeps serving subsequent mobilecli calls.
+// ensureDeviceServerReady returns the port of a DeviceServer that is running,
+// forwarded and built from this binary's dex, starting it if needed.
+//
+// The port is remembered for the lifetime of the device: checking it costs an
+// `adb forward --list` process plus two round trips, which is more than most
+// calls it guards. serverRequest drops it and comes back here if the server
+// turns out to be gone.
 func (d *AndroidDevice) ensureDeviceServerReady() (int, error) {
+	d.serverMu.Lock()
+	defer d.serverMu.Unlock()
+
+	if d.serverPort != 0 {
+		return d.serverPort, nil
+	}
+
+	port, err := d.startDeviceServer()
+	if err != nil {
+		return 0, err
+	}
+	d.serverPort = port
+	return port, nil
+}
+
+// forgetDeviceServer drops the remembered port, so the next call checks the
+// server again and restarts it if it is really gone.
+func (d *AndroidDevice) forgetDeviceServer() {
+	d.serverMu.Lock()
+	defer d.serverMu.Unlock()
+	d.serverPort = 0
+}
+
+// startDeviceServer finds or launches the DeviceServer and returns its host
+// port, reusing an existing forward when possible. It's launched detached
+// (nohup + &) on the device shell so it outlives this CLI invocation and keeps
+// serving subsequent mobilecli calls.
+func (d *AndroidDevice) startDeviceServer() (int, error) {
 	if port := d.findForward(deviceServerTarget); port != 0 && isAgentReady(port) {
 		if d.deviceServerMatchesEmbeddedDex(port) {
 			return port, nil
@@ -126,11 +158,27 @@ func embeddedDexSHA256() string {
 }
 
 // serverRequest sends a JSON-RPC call to the persistent DeviceServer, starting
-// it if needed.
+// it if needed. A server that has gone away (device rebooted, another mobilecli
+// build restarted it) is set up again once and the call retried, so the
+// remembered port never strands a session. A call that timed out is never
+// resent: the server may still be running it, and repeating a tap or a line of
+// text is worse than reporting the timeout.
 func (d *AndroidDevice) serverRequest(method string, params any) (json.RawMessage, error) {
 	port, err := d.ensureDeviceServerReady()
 	if err != nil {
 		return nil, err
+	}
+
+	raw, err := agentRequest(port, method, params)
+	if !errors.Is(err, errAgentUnreachable) {
+		return raw, err
+	}
+
+	utils.Verbose("device server on port %d is gone, starting it again", port)
+	d.forgetDeviceServer()
+	port, startErr := d.ensureDeviceServerReady()
+	if startErr != nil {
+		return nil, fmt.Errorf("%w (restart failed: %v)", err, startErr)
 	}
 	return agentRequest(port, method, params)
 }

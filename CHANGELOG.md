@@ -1,4 +1,5 @@
 ## [1.0.11](https://github.com/mobile-next/mobilecli/releases/tag/1.0.11) (unreleased)
+* Feat: Tap, long press, swipe, button, keys and text on Android now go through the embedded agent instead of `adb shell input`, which forked a JVM on the device per call, thanks to @akexorcist for finding the bottleneck and the fix in [#286](https://github.com/mobile-next/mobilecli/pull/286) ([#412](https://github.com/mobile-next/mobilecli/pull/412))
 * Fix: `mobilecli io longpress` accepts an element ref like `@e5`, the way `io tap` already did ([#413](https://github.com/mobile-next/mobilecli/pull/413))
 
 ## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (2026-09-11)

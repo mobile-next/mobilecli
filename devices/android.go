@@ -52,6 +52,44 @@ type gestureParams struct {
 	Actions []devicekit.GestureAction `json:"actions"`
 }
 
+type tapParams struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type longPressParams struct {
+	X        int `json:"x"`
+	Y        int `json:"y"`
+	Duration int `json:"duration"`
+}
+
+type swipeParams struct {
+	X1       int `json:"x1"`
+	Y1       int `json:"y1"`
+	X2       int `json:"x2"`
+	Y2       int `json:"y2"`
+	Duration int `json:"duration"`
+}
+
+type buttonParams struct {
+	Button string `json:"button"`
+}
+
+// keyParams is one entry of device.io.keys: a KEYCODE_* name with the
+// KEYCODE_* names of the modifiers held while it's pressed.
+type keyParams struct {
+	Keycode   string   `json:"keycode"`
+	Modifiers []string `json:"modifiers,omitempty"`
+}
+
+type keysParams struct {
+	Keys []keyParams `json:"keys"`
+}
+
+type textParams struct {
+	Text string `json:"text"`
+}
+
 type AndroidDevice struct {
 	id          string
 	name        string
@@ -59,6 +97,10 @@ type AndroidDevice struct {
 	state       string // "online" or "offline"
 	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
 	model       string
+
+	// host port of the DeviceServer once it's known to be up and current
+	serverMu   sync.Mutex
+	serverPort int
 }
 
 func (d *AndroidDevice) ID() string {
@@ -477,24 +519,18 @@ func (d *AndroidDevice) Shutdown() error {
 	return nil
 }
 
-// Tap simulates a tap at (x, y) on the Android device.
+// Tap, LongPress and Swipe go through the on-device server (Input.java),
+// which injects them via UiAutomation. `adb shell input` forks a JVM on the
+// device for every call, which is where most of its ~200ms went.
 func (d *AndroidDevice) Tap(x, y int) error {
-	_, err := d.runAdbCommand("shell", "input", "tap", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := d.serverRequest("device.io.tap", tapParams{X: x, Y: y})
+	return err
 }
 
 // LongPress simulates a long press at (x, y) on the Android device.
 func (d *AndroidDevice) LongPress(x, y, duration int) error {
-	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", x), fmt.Sprintf("%d", y), fmt.Sprintf("%d", duration))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := d.serverRequest("device.io.longpress", longPressParams{X: x, Y: y, Duration: duration})
+	return err
 }
 
 const defaultSwipeDurationMs = 1000
@@ -506,12 +542,8 @@ func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
 		duration = defaultSwipeDurationMs
 	}
 
-	_, err := d.runAdbCommand("shell", "input", "swipe", fmt.Sprintf("%d", x1), fmt.Sprintf("%d", y1), fmt.Sprintf("%d", x2), fmt.Sprintf("%d", y2), fmt.Sprintf("%d", duration))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := d.serverRequest("device.io.swipe", swipeParams{X1: x1, Y1: y1, X2: x2, Y2: y2, Duration: duration})
+	return err
 }
 
 func (d *AndroidDevice) GetClipboard() (string, error) {
@@ -808,11 +840,9 @@ func (d *AndroidDevice) PressButton(key string) error {
 		return fmt.Errorf("AndroidDevice: unsupported button key: %s", key)
 	}
 
-	output, err := d.runAdbCommand("shell", "input", "keyevent", keycode)
-	if err != nil {
-		return fmt.Errorf("AndroidDevice: failed to press %s button: %v\nOutput: %s", key, err, string(output))
+	if _, err := d.serverRequest("device.io.button", buttonParams{Button: keycode}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to press %s button: %w", key, err)
 	}
-
 	return nil
 }
 
@@ -876,41 +906,32 @@ func androidKeycodeForKey(key string) (string, error) {
 }
 
 func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
-	// resolve all combos into adb args upfront, so an invalid combo fails
-	// before any key is pressed
-	adbArgs := make([][]string, len(combos))
+	if len(combos) == 0 {
+		return nil
+	}
+
+	// resolve every combo upfront, so an invalid one fails before any key is pressed
+	keys := make([]keyParams, len(combos))
 	for i, combo := range combos {
 		keycode, err := androidKeycodeForKey(combo.Key)
 		if err != nil {
 			return err
 		}
 
-		if len(combo.Modifiers) == 0 {
-			adbArgs[i] = []string{"shell", "input", "keyevent", keycode}
-			continue
-		}
-
-		args := []string{"shell", "input", "keycombination"}
+		var modifiers []string
 		for _, modifier := range combo.Modifiers {
 			modifierKeycode, ok := androidModifierKeycodes[modifier]
 			if !ok {
 				return fmt.Errorf("AndroidDevice: unsupported modifier: %s", modifier)
 			}
-			args = append(args, modifierKeycode)
+			modifiers = append(modifiers, modifierKeycode)
 		}
-		adbArgs[i] = append(args, keycode)
+		keys[i] = keyParams{Keycode: keycode, Modifiers: modifiers}
 	}
 
-	for i, args := range adbArgs {
-		output, err := d.runAdbCommand(args...)
-		if err != nil {
-			if strings.Contains(string(output), "Unknown command") {
-				return fmt.Errorf("AndroidDevice: key combinations require Android 12 or newer")
-			}
-			return fmt.Errorf("AndroidDevice: failed to press key '%s': %v\nOutput: %s", combos[i].Key, err, string(output))
-		}
+	if _, err := d.serverRequest("device.io.keys", keysParams{Keys: keys}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to press keys: %w", err)
 	}
-
 	return nil
 }
 
@@ -922,21 +943,6 @@ func isAscii(text string) bool {
 		}
 	}
 	return true
-}
-
-// escapeShellText escapes shell special characters
-func escapeShellText(text string) string {
-	// escape all shell special characters that could be used for injection
-	specialChars := `\'"` + "`" + `
-|&;()<>{}[]$*? `
-	result := ""
-	for _, char := range text {
-		if strings.ContainsRune(specialChars, char) {
-			result += "\\"
-		}
-		result += string(char)
-	}
-	return result
 }
 
 func (d *AndroidDevice) SendKeys(text string) error {
@@ -954,14 +960,13 @@ func (d *AndroidDevice) SendKeys(text string) error {
 	}
 
 	if isAscii(text) {
-		// adb shell input only supports ascii characters. and
-		// some of the keys have to be escaped.
-		escapedText := escapeShellText(text)
-		_, err := d.runAdbCommand("shell", "input", "text", escapedText)
+		// the virtual keyboard's character map only covers what a physical
+		// keyboard can type, which is ascii
+		_, err := d.serverRequest("device.io.text", textParams{Text: text})
 		return err
 	}
 
-	// adb shell input can't carry non-ASCII; put it on the clipboard and paste
+	// anything else can't be typed key by key; put it on the clipboard and paste
 	if err := d.SetClipboard(text); err != nil {
 		return fmt.Errorf("failed to set clipboard: %w", err)
 	}
@@ -971,7 +976,7 @@ func (d *AndroidDevice) SendKeys(text string) error {
 		}
 	}()
 
-	if _, err := d.runAdbCommand("shell", "input", "keyevent", "KEYCODE_PASTE"); err != nil {
+	if _, err := d.serverRequest("device.io.button", buttonParams{Button: "KEYCODE_PASTE"}); err != nil {
 		return fmt.Errorf("failed to paste: %w", err)
 	}
 	return nil

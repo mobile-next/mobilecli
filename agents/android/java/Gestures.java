@@ -182,7 +182,7 @@ public class Gestures {
 	// Presses every finger at time zero, then walks the timeline a frame at a
 	// time: one ACTION_MOVE for all fingers still down, then a lift for each
 	// finger whose path has ended, until the last one is up.
-	private static void replay(UiAutomation automation, List<Finger> fingers) {
+	private static void replay(UiAutomation automation, List<Finger> fingers) throws RpcException {
 		long endMs = 0;
 		for (Finger finger : fingers) endMs = Math.max(endMs, finger.liftAtMs());
 
@@ -193,15 +193,14 @@ public class Gestures {
 			int action = down.size() == 1
 					? MotionEvent.ACTION_DOWN
 					: MotionEvent.ACTION_POINTER_DOWN | ((down.size() - 1) << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-			inject(automation, downTime, downTime, action, down, 0);
+			inject(automation, downTime, downTime, action, down, 0, false);
 		}
 
-		for (long atMs = FRAME_MS; !down.isEmpty(); atMs += FRAME_MS) {
-			if (atMs > endMs) atMs = endMs;
+		for (long atMs = Math.min(FRAME_MS, endMs); !down.isEmpty(); atMs = nextFrame(atMs, downTime, endMs)) {
 			sleepUntil(downTime + atMs);
 			long eventTime = SystemClock.uptimeMillis();
 
-			inject(automation, downTime, eventTime, MotionEvent.ACTION_MOVE, down, atMs);
+			inject(automation, downTime, eventTime, MotionEvent.ACTION_MOVE, down, atMs, false);
 
 			for (int i = 0; i < down.size(); ) {
 				Finger finger = down.get(i);
@@ -212,14 +211,18 @@ public class Gestures {
 				int action = down.size() == 1
 						? MotionEvent.ACTION_UP
 						: MotionEvent.ACTION_POINTER_UP | (i << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-				inject(automation, downTime, eventTime, action, down, atMs);
+				inject(automation, downTime, eventTime, action, down, atMs, down.size() == 1);
 				down.remove(i);
 			}
 		}
 	}
 
+	// Only the event that lifts the last finger is injected synchronously: waiting
+	// for the app to finish handling every intermediate event costs a frame each,
+	// which on a tap is most of the call. Waiting for the final one still means the
+	// gesture has landed by the time the call returns.
 	private static void inject(UiAutomation automation, long downTime, long eventTime, int action,
-			List<Finger> pointers, long atMs) {
+			List<Finger> pointers, long atMs, boolean sync) throws RpcException {
 		int count = pointers.size();
 		MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[count];
 		MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[count];
@@ -241,10 +244,20 @@ public class Gestures {
 		MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, count, properties, coords,
 				0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
 		try {
-			automation.injectInputEvent(event, true);
+			InputInjector.inject(automation, event, sync);
 		} finally {
 			event.recycle();
 		}
+	}
+
+	// A gesture is replayed in real time, so the clock picks the next frame, not
+	// the frame count: injecting is synchronous and can cost more than a frame on
+	// a slow device or emulator, and replaying every frame it fell behind on would
+	// stretch a 1s swipe into several seconds. Skipping them keeps the gesture the
+	// length it was asked for, with fewer intermediate points.
+	private static long nextFrame(long atMs, long downTime, long endMs) {
+		long elapsed = SystemClock.uptimeMillis() - downTime;
+		return Math.min(Math.max(atMs + FRAME_MS, elapsed), endMs);
 	}
 
 	private static void sleepUntil(long uptimeMs) {

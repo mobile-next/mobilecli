@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import android.util.Base64;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.FileInputStream;
@@ -16,7 +17,7 @@ import java.security.MessageDigest;
 
 /**
  * Persistent device server via app_process. Keeps one connected UiAutomation
- * alive and serves UI dump, screenshot, keyboard, touch gestures, clipboard, app list and mock location
+ * alive and serves UI dump, screenshot, keys, text, touch gestures, clipboard, app list and mock location
  * over JSON-RPC on a localabstract socket, so repeated calls skip process-fork
  * and connect cost, and long-lived state (test location providers) has a home.
  *
@@ -64,6 +65,19 @@ public class DeviceServer {
 				return new JSONObject().put("dismissed", hideKeyboard(automation));
 			case "device.io.gesture":
 				return Gestures.perform(automation, p.optJSONArray("actions"));
+			case "device.io.tap":
+				return Input.tap(automation, requireInt(p, "x"), requireInt(p, "y"));
+			case "device.io.longpress":
+				return Input.longPress(automation, requireInt(p, "x"), requireInt(p, "y"), optionalInt(p, "duration", 500));
+			case "device.io.swipe":
+				return Input.swipe(automation, requireInt(p, "x1"), requireInt(p, "y1"), requireInt(p, "x2"), requireInt(p, "y2"),
+						optionalInt(p, "duration", 1000));
+			case "device.io.button":
+				return Input.pressKey(automation, JsonRpcSocketServer.requireParam(params, "button"), null);
+			case "device.io.keys":
+				return pressKeys(automation, p.optJSONArray("keys"));
+			case "device.io.text":
+				return Input.typeText(automation, JsonRpcSocketServer.requireParam(params, "text"));
 			case "device.clipboard.get":
 				return new JSONObject().put("text", orEmpty(Clipboard.getText()));
 			case "device.clipboard.set":
@@ -95,6 +109,42 @@ public class DeviceServer {
 				p.optInt("quality", 90), p.optDouble("scale", 1.0), p.optInt("maxSize", 0),
 				clip, p.optInt("screenWidth", 0));
 		return new JSONObject().put("data", Base64.encodeToString(image, Base64.NO_WRAP));
+	}
+
+	// keys: [{keycode: "KEYCODE_A", modifiers: ["KEYCODE_CTRL_LEFT"]}, ...], pressed in order
+	private static JSONObject pressKeys(UiAutomation automation, JSONArray keys) throws Exception {
+		if (keys == null || keys.length() == 0) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "missing params.keys");
+		}
+		for (int i = 0; i < keys.length(); i++) {
+			JSONObject key = keys.getJSONObject(i);
+			Input.pressKey(automation, JsonRpcSocketServer.requireParam(key, "keycode"), key.optJSONArray("modifiers"));
+		}
+		return ok();
+	}
+
+	// optInt turns null, a string or a missing key into 0, which for a coordinate
+	// means silently tapping the top-left corner, and it truncates or wraps
+	// anything that isn't a plain int. A value that can't be used as given is a
+	// bad request instead.
+	private static int requireInt(JSONObject p, String key) throws RpcException {
+		Object value = p.opt(key);
+		if (!(value instanceof Number)) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "params." + key + " must be a number");
+		}
+		double number = ((Number) value).doubleValue();
+		if (number != Math.rint(number) || number < Integer.MIN_VALUE || number > Integer.MAX_VALUE) {
+			throw new RpcException(RpcException.INVALID_PARAMS,
+					"params." + key + " must be a whole number that fits in an int, got " + value);
+		}
+		return (int) number;
+	}
+
+	private static int optionalInt(JSONObject p, String key, int fallback) throws RpcException {
+		if (!p.has(key) || p.isNull(key)) {
+			return fallback;
+		}
+		return requireInt(p, key);
 	}
 
 	private static JSONObject ok() throws Exception {

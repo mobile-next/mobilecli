@@ -2,7 +2,11 @@ package devices
 
 import (
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
@@ -67,4 +71,70 @@ func TestScreenshotParamsUseTheKeysDeviceServerReads(t *testing.T) {
 	clipped.ScreenWidth = 412
 	assert.ElementsMatch(t, []string{"format", "quality", "scale", "maxSize", "clip", "screenWidth"}, wireKeys(t, clipped))
 	assert.ElementsMatch(t, []string{"x", "y", "width", "height"}, wireKeys(t, clipped.Clip))
+}
+
+func TestKeysParamsCarryKeycodeAndModifiersPerKey(t *testing.T) {
+	payload, err := json.Marshal(keysParams{Keys: []keyParams{
+		{Keycode: "KEYCODE_A", Modifiers: []string{"KEYCODE_CTRL_LEFT"}},
+		{Keycode: "KEYCODE_ENTER"},
+	}})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"keys":[{"keycode":"KEYCODE_A","modifiers":["KEYCODE_CTRL_LEFT"]},{"keycode":"KEYCODE_ENTER"}]}`, string(payload))
+}
+
+func TestInputParamsUseTheOpenRpcFieldNames(t *testing.T) {
+	assert.ElementsMatch(t, []string{"x", "y"}, wireKeys(t, tapParams{X: 1, Y: 2}))
+	assert.ElementsMatch(t, []string{"x", "y", "duration"}, wireKeys(t, longPressParams{X: 1, Y: 2, Duration: 500}))
+	assert.ElementsMatch(t, []string{"x1", "y1", "x2", "y2", "duration"}, wireKeys(t, swipeParams{X1: 1, Y1: 2, X2: 3, Y2: 4, Duration: 300}))
+	assert.ElementsMatch(t, []string{"button"}, wireKeys(t, buttonParams{Button: "KEYCODE_HOME"}))
+	assert.ElementsMatch(t, []string{"text"}, wireKeys(t, textParams{Text: "hi"}))
+}
+
+// freePort returns a port with nothing listening on it.
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+	return port
+}
+
+func TestAgentRequestReportsAnAgentItCannotReachAsUnreachable(t *testing.T) {
+	_, err := agentRequest(freePort(t), "device.version", nil)
+
+	assert.ErrorIs(t, err, errAgentUnreachable)
+}
+
+func TestAgentRequestReportsAnErrorTheAgentItselfSentAsSomethingElse(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}`))
+	}))
+	defer agent.Close()
+	port := agent.Listener.Addr().(*net.TCPAddr).Port
+
+	_, err := agentRequest(port, "device.nonsense", nil)
+
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, errAgentUnreachable)
+}
+
+func TestAgentRequestReportsATimeoutSeparatelyFromAnUnreachableAgent(t *testing.T) {
+	slowAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer slowAgent.Close()
+	port := slowAgent.Listener.Addr().(*net.TCPAddr).Port
+
+	_, err := agentRequestWithTimeout(port, "device.dump.ui", nil, 10*time.Millisecond)
+
+	assert.ErrorIs(t, err, errAgentTimedOut)
+	assert.NotErrorIs(t, err, errAgentUnreachable, "a timed-out call must not be resent")
+}
+
+func TestPressingNoKeysDoesNothingRatherThanAskingTheServerToPressNothing(t *testing.T) {
+	device := &AndroidDevice{id: "no-such-device"}
+
+	assert.NoError(t, device.PressKeys(nil))
+	assert.NoError(t, device.PressKeys([]KeyCombo{}))
 }
