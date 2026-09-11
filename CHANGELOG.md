@@ -1,3 +1,6 @@
+## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (unreleased)
+* Feat: Pinch to zoom with `mobilecli io pinch` and `device.io.pinch`, and a real multi-finger `device.io.gesture` on Android through the embedded agent ([#409](https://github.com/mobile-next/mobilecli/pull/409))
+
 ## [1.0.9](https://github.com/mobile-next/mobilecli/releases/tag/1.0.9) (2026-09-08)
 * Feat: add `--full` flag to `dump ui` to include the on-screen keyboard ([#398](https://github.com/mobile-next/mobilecli/pull/398))
 * Docs: teach the mobilecli skill install, element refs, command chaining and remote devices ([#397](https://github.com/mobile-next/mobilecli/pull/397))
