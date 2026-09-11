@@ -92,7 +92,7 @@ func runDaemon() error {
 	commands.SetShutdownHook(hook)
 	// not being logged in is normal; anything else (unreadable keyring) is
 	// worth a line in the daemon log since remote devices silently vanish
-	if token, err := loadToken(); err == nil {
+	if token, err := loadTokenWithTimeout(); err == nil {
 		commands.SetFleetConfig(token)
 	} else if !errors.Is(err, keyring.ErrNotFound) {
 		utils.Info("fleet token unavailable, remote devices disabled: %v", err)

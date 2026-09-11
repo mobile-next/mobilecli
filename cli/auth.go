@@ -246,7 +246,7 @@ var authTokenCmd = &cobra.Command{
 	Short: "Display the current auth token",
 	Long:  `Displays the authentication token for the current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := loadToken()
+		token, err := loadTokenWithTimeout()
 		if err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				return fmt.Errorf("no auth token found for mobilecli")

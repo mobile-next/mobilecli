@@ -4,7 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -78,7 +80,10 @@ func TestInsecureStorageUsesFileAndSkipsKeyring(t *testing.T) {
 		t.Fatalf("storeToken with --insecure-storage: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("credentials file was not written: %v", err)
@@ -106,7 +111,10 @@ func TestKeyringStorageDoesNotWriteFile(t *testing.T) {
 		t.Fatalf("storeToken: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("no credentials file should exist without --insecure-storage, stat err = %v", err)
 	}
@@ -159,12 +167,39 @@ func TestDeleteTokenRemovesFile(t *testing.T) {
 		t.Fatalf("deleteToken: %v", err)
 	}
 
-	path, _ := credentialsFilePath()
+	path, err := credentialsFilePath()
+	if err != nil {
+		t.Fatalf("credentialsFilePath: %v", err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("credentials file should be gone, stat err = %v", err)
 	}
 
 	if err := deleteToken(); !errors.Is(err, keyring.ErrNotFound) {
 		t.Fatalf("second deleteToken err = %v, want keyring.ErrNotFound", err)
+	}
+}
+
+func TestLoadTokenDeadlineReturnsResult(t *testing.T) {
+	got, err := loadTokenDeadline(func() (string, error) { return "tok", nil }, time.Second)
+	if err != nil {
+		t.Fatalf("loadTokenDeadline: %v", err)
+	}
+	if got != "tok" {
+		t.Fatalf("loadTokenDeadline = %q, want %q", got, "tok")
+	}
+}
+
+func TestLoadTokenDeadlineTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	_, err := loadTokenDeadline(func() (string, error) {
+		<-release
+		return "late", nil
+	}, 50*time.Millisecond)
+
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("loadTokenDeadline err = %v, want timeout error", err)
 	}
 }
