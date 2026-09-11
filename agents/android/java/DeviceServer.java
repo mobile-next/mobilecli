@@ -124,14 +124,20 @@ public class DeviceServer {
 	}
 
 	// optInt turns null, a string or a missing key into 0, which for a coordinate
-	// means silently tapping the top-left corner. Anything that isn't a number is
-	// a bad request instead.
+	// means silently tapping the top-left corner, and it truncates or wraps
+	// anything that isn't a plain int. A value that can't be used as given is a
+	// bad request instead.
 	private static int requireInt(JSONObject p, String key) throws RpcException {
 		Object value = p.opt(key);
 		if (!(value instanceof Number)) {
 			throw new RpcException(RpcException.INVALID_PARAMS, "params." + key + " must be a number");
 		}
-		return ((Number) value).intValue();
+		double number = ((Number) value).doubleValue();
+		if (number != Math.rint(number) || number < Integer.MIN_VALUE || number > Integer.MAX_VALUE) {
+			throw new RpcException(RpcException.INVALID_PARAMS,
+					"params." + key + " must be a whole number that fits in an int, got " + value);
+		}
+		return (int) number;
 	}
 
 	private static int optionalInt(JSONObject p, String key, int fallback) throws RpcException {
