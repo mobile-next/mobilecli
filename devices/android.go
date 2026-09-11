@@ -33,6 +33,25 @@ const androidDiscoveryGetpropTimeout = 5 * time.Second
 const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
 // AndroidDevice implements the ControllableDevice interface for Android devices
+// Parameter shapes for the DeviceServer methods this file calls; the JSON keys
+// are the ones agents/android/java/DeviceServer.java reads.
+type screenshotParams struct {
+	Format      string                   `json:"format"`
+	Quality     int                      `json:"quality"`
+	Scale       float64                  `json:"scale"`
+	MaxSize     int                      `json:"maxSize"`
+	Clip        *types.ScreenElementRect `json:"clip,omitempty"`
+	ScreenWidth int                      `json:"screenWidth,omitempty"`
+}
+
+type clipboardSetParams struct {
+	Text string `json:"text"`
+}
+
+type gestureParams struct {
+	Actions []devicekit.GestureAction `json:"actions"`
+}
+
 type AndroidDevice struct {
 	id          string
 	name        string
@@ -284,17 +303,15 @@ func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, e
 
 	utils.Verbose("taking screenshot on-device via mobilecli.dex")
 
-	params := map[string]any{
-		"format":  format,
-		"quality": opts.Quality,
-		"scale":   opts.Scale,
-		"maxSize": opts.MaxSize,
+	params := screenshotParams{
+		Format:  format,
+		Quality: opts.Quality,
+		Scale:   opts.Scale,
+		MaxSize: opts.MaxSize,
 	}
 	if opts.Clip != nil {
-		params["clip"] = map[string]any{
-			"x": opts.Clip.X, "y": opts.Clip.Y, "width": opts.Clip.Width, "height": opts.Clip.Height,
-		}
-		params["screenWidth"] = opts.ScreenWidthPoints
+		params.Clip = opts.Clip
+		params.ScreenWidth = opts.ScreenWidthPoints
 	}
 
 	raw, err := d.serverRequest("device.screenshot", params)
@@ -516,7 +533,7 @@ func (d *AndroidDevice) SetClipboard(text string) error {
 		_, err := d.serverRequest("device.clipboard.clear", nil)
 		return err
 	}
-	_, err := d.serverRequest("device.clipboard.set", map[string]any{"text": text})
+	_, err := d.serverRequest("device.clipboard.set", clipboardSetParams{Text: text})
 	return err
 }
 
@@ -526,7 +543,7 @@ func (d *AndroidDevice) SetClipboard(text string) error {
 // platforms take one gesture contract; fingers move at the same time, which is
 // what makes a pinch possible here.
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
-	_, err := d.serverRequest("device.io.gesture", map[string]any{"actions": devicekit.ConvertActions(actions)})
+	_, err := d.serverRequest("device.io.gesture", gestureParams{Actions: devicekit.ConvertActions(actions)})
 	return err
 }
 
