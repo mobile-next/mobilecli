@@ -72,24 +72,35 @@ func writeLenPrefixed(t *testing.T, conn net.Conn, payload string) {
 	}
 }
 
-func TestADB_Shell_UsesTransportOnSameConnection(t *testing.T) {
-	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
+// serveTransportThenService answers the two-step adb handshake a device command
+// makes on a single connection — select the device, then request the service —
+// and replies with output.
+func serveTransportThenService(t *testing.T, serial, service, output string) func(net.Conn) {
+	t.Helper()
+
+	return func(conn net.Conn) {
 		defer conn.Close()
 
 		got := readADBService(t, conn)
-		if got != "host:transport:serial-123" {
-			t.Fatalf("expected transport select, got %q", got)
+		if got != "host:transport:"+serial {
+			t.Errorf("expected transport select, got %q", got)
+			return
 		}
 		writeOKAY(t, conn)
 
 		got = readADBService(t, conn)
-		if got != "shell:echo hi" {
-			t.Fatalf("expected shell, got %q", got)
+		if got != service {
+			t.Errorf("expected %q, got %q", service, got)
+			return
 		}
 		writeOKAY(t, conn)
 
-		_, _ = conn.Write([]byte("hi\n"))
-	})
+		_, _ = conn.Write([]byte(output))
+	}
+}
+
+func TestADB_Shell_UsesTransportOnSameConnection(t *testing.T) {
+	host, port, closeFn := startFakeADBServer(t, serveTransportThenService(t, "serial-123", "shell:echo hi", "hi\n"))
 	defer closeFn()
 
 	adb := NewADB(host, port)
@@ -184,23 +195,7 @@ func TestADB_ResponseLimit(t *testing.T) {
 }
 
 func TestADB_ExecOut_UsesTransportOnSameConnection(t *testing.T) {
-	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
-		defer conn.Close()
-
-		got := readADBService(t, conn)
-		if got != "host:transport:serial-123" {
-			t.Fatalf("expected transport select, got %q", got)
-		}
-		writeOKAY(t, conn)
-
-		got = readADBService(t, conn)
-		if got != "exec:cmd" {
-			t.Fatalf("expected exec, got %q", got)
-		}
-		writeOKAY(t, conn)
-
-		_, _ = conn.Write([]byte("out\n"))
-	})
+	host, port, closeFn := startFakeADBServer(t, serveTransportThenService(t, "serial-123", "exec:cmd", "out\n"))
 	defer closeFn()
 
 	adb := NewADB(host, port)

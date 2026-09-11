@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-
-	"github.com/mobile-next/mobilecli/devices"
 )
 
 // OrientationGetRequest represents the request for getting device orientation
@@ -24,17 +22,9 @@ type OrientationResponse struct {
 
 // OrientationGetCommand gets the current device orientation
 func OrientationGetCommand(req OrientationGetRequest) *CommandResponse {
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
-	}
-
-	// start agent if needed
-	err = device.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", device.ID(), err))
 	}
 
 	orientation, err := device.GetOrientation()
@@ -56,17 +46,9 @@ func OrientationSetCommand(req OrientationSetRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", req.Orientation))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
-	}
-
-	// start agent if needed
-	err = device.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", device.ID(), err))
 	}
 
 	err = device.SetOrientation(req.Orientation)

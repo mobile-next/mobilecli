@@ -383,10 +383,7 @@ func handleDevicesList(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.DevicesCommand(opts, commands.GetFleetToken())
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleScreenshot(params json.RawMessage) (any, error) {
@@ -612,11 +609,7 @@ func handleClipboardGet(params json.RawMessage) (any, error) {
 	response := commands.ClipboardGetCommand(commands.ClipboardGetRequest{
 		DeviceID: clipboardParams.DeviceID,
 	})
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleClipboardSet(params json.RawMessage) (any, error) {
@@ -899,11 +892,7 @@ func handleDeviceInfo(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.InfoCommand(infoParams.DeviceID)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleIoOrientationGet(params json.RawMessage) (any, error) {
@@ -921,11 +910,7 @@ func handleIoOrientationGet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.OrientationGetCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleIoOrientationSet(params json.RawMessage) (any, error) {
@@ -972,11 +957,7 @@ func handleLocationSet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.LocationSetCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleLocationClear(params json.RawMessage) (any, error) {
@@ -1039,11 +1020,7 @@ func handleDeviceBoot(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.BootCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleDeviceShutdown(params json.RawMessage) (any, error) {
@@ -1061,11 +1038,7 @@ func handleDeviceShutdown(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.ShutdownCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleDeviceReboot(params json.RawMessage) (any, error) {
@@ -1083,11 +1056,7 @@ func handleDeviceReboot(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.RebootCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleDumpUI(params json.RawMessage) (any, error) {
@@ -1107,11 +1076,7 @@ func handleDumpUI(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.DumpUICommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsLaunch(params json.RawMessage) (any, error) {
@@ -1132,11 +1097,7 @@ func handleAppsLaunch(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.LaunchAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsTerminate(params json.RawMessage) (any, error) {
@@ -1155,11 +1116,7 @@ func handleAppsTerminate(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.TerminateAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsList(params json.RawMessage) (any, error) {
@@ -1175,11 +1132,7 @@ func handleAppsList(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.ListAppsCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsForeground(params json.RawMessage) (any, error) {
@@ -1195,11 +1148,7 @@ func handleAppsForeground(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.ForegroundAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsInstall(params json.RawMessage) (any, error) {
@@ -1225,11 +1174,7 @@ func handleAppsInstall(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.InstallAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsClear(params json.RawMessage) (any, error) {
@@ -1252,11 +1197,7 @@ func handleAppsClear(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.ClearAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleAppsUninstall(params json.RawMessage) (any, error) {
@@ -1283,11 +1224,7 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.UninstallAppCommand(req)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 // screenRecordReadyTimeout bounds how long handleScreenRecord waits for the
@@ -1418,11 +1355,7 @@ func handleCrashesList(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.CrashesListCommand(p.DeviceID)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleCrashesGet(params json.RawMessage) (any, error) {
@@ -1438,11 +1371,7 @@ func handleCrashesGet(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.CrashesGetCommand(p.DeviceID, p.ID)
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleServerInfo(params json.RawMessage) (any, error) {
@@ -2000,10 +1929,7 @@ func handleAppsPath(params json.RawMessage) (any, error) {
 		DeviceID: p.DeviceID,
 		BundleID: p.BundleID,
 	})
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleFsLs(params json.RawMessage) (any, error) {
@@ -2019,10 +1945,7 @@ func handleFsLs(params json.RawMessage) (any, error) {
 		BundleID:   p.BundleID,
 		RemotePath: p.RemotePath,
 	})
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleFsPull(params json.RawMessage) (any, error) {
@@ -2123,10 +2046,7 @@ func handleFsPush(params json.RawMessage) (any, error) {
 		LocalPath:  tmpPath,
 		RemotePath: p.RemotePath,
 	})
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleFsMkdir(params json.RawMessage) (any, error) {
@@ -2144,10 +2064,7 @@ func handleFsMkdir(params json.RawMessage) (any, error) {
 		RemotePath: p.RemotePath,
 		Parents:    p.Parents,
 	})
-	if response.Status == "error" {
-		return nil, fmt.Errorf("%s", response.Error)
-	}
-	return response.Data, nil
+	return commandResult(response)
 }
 
 func handleFsRm(params json.RawMessage) (any, error) {
@@ -2165,8 +2082,15 @@ func handleFsRm(params json.RawMessage) (any, error) {
 		RemotePath: p.RemotePath,
 		Recursive:  p.Recursive,
 	})
+	return commandResult(response)
+}
+
+// commandResult converts a command response into the (result, error) pair a
+// json-rpc handler returns.
+func commandResult(response *commands.CommandResponse) (any, error) {
 	if response.Status == "error" {
 		return nil, fmt.Errorf("%s", response.Error)
 	}
+
 	return response.Data, nil
 }

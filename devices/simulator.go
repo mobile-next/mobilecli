@@ -658,37 +658,7 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 }
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	// get active app info from WDA
-	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get active app info: %w", err)
-	}
-
-	// get all installed apps to enrich with version information
-	apps, err := s.ListApps(true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list apps: %w", err)
-	}
-
-	// find the matching app to get full details
-	for _, app := range apps {
-		if app.PackageName == activeApp.BundleID {
-			return &ForegroundAppInfo{
-				PackageName: app.PackageName,
-				AppName:     app.AppName,
-				Version:     app.Version,
-				Activity:    activeApp.ViewController,
-			}, nil
-		}
-	}
-
-	// if app not found in list (e.g., system app), return info from WDA only
-	return &ForegroundAppInfo{
-		PackageName: activeApp.BundleID,
-		AppName:     activeApp.Name,
-		Version:     "",
-		Activity:    activeApp.ViewController,
-	}, nil
+	return wdaForegroundApp(s.deviceKitClient, s.ListApps)
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {

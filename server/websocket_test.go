@@ -166,46 +166,38 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	assert.Equal(t, "Method not found", errorMap["message"])
 }
 
-func TestWebSocket_InvalidJSON(t *testing.T) {
+// expectJSONRPCErrorForMessage sends one raw websocket message and asserts the
+// json-rpc error the server answers with.
+func expectJSONRPCErrorForMessage(t *testing.T, messageType int, payload string, wantCode int, wantMessage, wantData string) {
+	t.Helper()
+
 	server, wsURL := setupTestServer(false)
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
 	defer conn.Close()
 
-	err := conn.WriteMessage(websocket.TextMessage, []byte("invalid json"))
-	require.NoError(t, err)
+	require.NoError(t, conn.WriteMessage(messageType, []byte(payload)))
 
 	resp := readJSONRPCResponse(t, conn)
 
 	assert.Equal(t, "2.0", resp.JSONRPC)
-	assert.NotNil(t, resp.Error)
+	require.NotNil(t, resp.Error)
 
 	errorMap := resp.Error.(map[string]any)
-	assert.Equal(t, float64(ErrCodeParseError), errorMap["code"])
-	assert.Equal(t, errTitleParseError, errorMap["message"])
-	assert.Equal(t, errMsgParseError, errorMap["data"])
+	assert.Equal(t, float64(wantCode), errorMap["code"])
+	assert.Equal(t, wantMessage, errorMap["message"])
+	assert.Equal(t, wantData, errorMap["data"])
+}
+
+func TestWebSocket_InvalidJSON(t *testing.T) {
+	expectJSONRPCErrorForMessage(t, websocket.TextMessage, "invalid json",
+		ErrCodeParseError, errTitleParseError, errMsgParseError)
 }
 
 func TestWebSocket_BinaryMessageRejected(t *testing.T) {
-	server, wsURL := setupTestServer(false)
-	defer server.Close()
-
-	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
-
-	err := conn.WriteMessage(websocket.BinaryMessage, []byte("binary data"))
-	require.NoError(t, err)
-
-	resp := readJSONRPCResponse(t, conn)
-
-	assert.Equal(t, "2.0", resp.JSONRPC)
-	assert.NotNil(t, resp.Error)
-
-	errorMap := resp.Error.(map[string]any)
-	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
-	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
-	assert.Equal(t, errMsgTextOnly, errorMap["data"])
+	expectJSONRPCErrorForMessage(t, websocket.BinaryMessage, "binary data",
+		ErrCodeInvalidRequest, errTitleInvalidReq, errMsgTextOnly)
 }
 
 func TestWebSocket_MultipleRequests(t *testing.T) {

@@ -26,17 +26,9 @@ type DumpUIResponse struct {
 // DumpUICommand starts an agent and dumps the UI tree from the specified device
 func DumpUICommand(req DumpUIRequest) *CommandResponse {
 	// Find the target device
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
-	}
-
-	// Start agent if needed
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	var response DumpUIResponse

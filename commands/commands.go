@@ -227,3 +227,21 @@ func getDeviceIDList(devices []devices.ControllableDevice) string {
 	}
 	return fmt.Sprintf("[%s]", strings.Join(ids, ", "))
 }
+
+// FindDeviceWithAgent finds a device by ID (or auto-selects one) and makes sure
+// its agent is running, so callers can immediately drive the device.
+func FindDeviceWithAgent(deviceID string) (devices.ControllableDevice, error) {
+	targetDevice, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Hook: GetShutdownHook(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err)
+	}
+
+	return targetDevice, nil
+}
