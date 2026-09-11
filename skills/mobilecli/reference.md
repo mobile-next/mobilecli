@@ -86,8 +86,9 @@ All commands support the global `--device <id>` flag to specify the target devic
   mobilecli io tap --device <device-id> @e5
   mobilecli io tap --device <device-id> 150,300
   ```
-* **Long Press**:
+* **Long Press** (ref from the latest `dump ui`, or coordinates):
   ```bash
+  mobilecli io longpress --device <device-id> @e5 --duration 2000
   mobilecli io longpress --device <device-id> 150,300 --duration 2000
   ```
 * **Swipe**:

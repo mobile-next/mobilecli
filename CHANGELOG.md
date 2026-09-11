@@ -1,3 +1,6 @@
+## [1.0.11](https://github.com/mobile-next/mobilecli/releases/tag/1.0.11) (unreleased)
+* Fix: `mobilecli io longpress` accepts an element ref like `@e5`, the way `io tap` already did ([#413](https://github.com/mobile-next/mobilecli/pull/413))
+
 ## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (2026-09-11)
 * Feat: Pinch to zoom with `mobilecli io pinch` and `device.io.pinch`, and a real multi-finger `device.io.gesture` on Android through the embedded agent ([#410](https://github.com/mobile-next/mobilecli/pull/410))
 * Fix: Don't hang on a locked keyring when reading credentials; time out after 3s and continue without remote devices ([#408](https://github.com/mobile-next/mobilecli/pull/408)), thanks to [@EnglandLobster](https://github.com/EnglandLobster)
