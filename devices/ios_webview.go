@@ -256,24 +256,13 @@ func (s *SimulatorDevice) WebViewContent(wvID string) (string, error) {
 }
 
 // WebViewWaitForLoadState blocks until the webview reaches the given load state.
-// timeoutMs of 0 uses the agent's default (30s).
+// timeoutMs of 0 uses the agent's default.
 func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs int) error {
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return err
 	}
-	const agentDefaultMs = 30_000
-	waitMs := agentDefaultMs
-	if timeoutMs > 0 {
-		waitMs = timeoutMs
-	}
-	params := map[string]any{"id": wvID, "timeout": waitMs}
-	if state != "" {
-		params["state"] = state
-	}
-	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
-	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
-	return err
+	return webViewWaitForLoadState(port, wvID, state, timeoutMs)
 }
 
 // WebViewGoto navigates the webview identified by wvID to url.
@@ -292,24 +281,7 @@ func (s *SimulatorDevice) WebViewEvaluate(wvID, expression string, args []any) (
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]any{
-		"id":         wvID,
-		"expression": ensureReturnExpression(expression),
-	}
-	if len(args) > 0 {
-		params["args"] = args
-	}
-	raw, err := agentRequest(port, "device.webview.evaluate", params)
-	if err != nil {
-		return nil, err
-	}
-	var wrapper struct {
-		Result any `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return nil, fmt.Errorf("parse evaluate result: %w", err)
-	}
-	return wrapper.Result, nil
+	return webViewEvaluate(port, wvID, expression, args)
 }
 
 // ListWebViews returns all embedded WKWebViews found in the foreground simulator app.

@@ -1,3 +1,4 @@
+//nolint:dupl // cobra command declarations for unrelated command groups share a shape, not logic
 package cli
 
 import (

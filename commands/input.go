@@ -139,16 +139,9 @@ func TapCommand(req TapRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	x, y := req.X, req.Y
@@ -205,16 +198,9 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	x, y := req.X, req.Y
@@ -241,16 +227,9 @@ func TextCommand(req TextRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("text is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	err = targetDevice.SendKeys(req.Text)
@@ -269,16 +248,9 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("button name is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	err = targetDevice.PressButton(req.Button)
@@ -297,16 +269,9 @@ func GestureCommand(req GestureRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("actions array is required and cannot be empty"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	// Convert []any to []devicekit.TapAction
@@ -340,16 +305,9 @@ func PinchCommand(req PinchRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("direction must be %q or %q, got %q", PinchDirectionIn, PinchDirectionOut, req.Direction))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	x, y := req.X, req.Y
@@ -388,16 +346,9 @@ func screenCenter(device devices.ControllableDevice) (int, int, error) {
 
 // SwipeCommand performs a swipe operation on the specified device
 func SwipeCommand(req SwipeRequest) *CommandResponse {
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	err = targetDevice.Swipe(req.X1, req.Y1, req.X2, req.Y2, req.Duration)

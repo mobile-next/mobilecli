@@ -331,44 +331,12 @@ func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
 	return content, nil
 }
 
-// ensureReturnExpression turns a value expression into a statement body that
-// returns that value, so the agent's eval wrapper can capture it. A bare
-// expression — even an IIFE that internally uses ';', '{' or newlines — must be
-// wrapped; only skip wrapping when the caller already supplied a top-level
-// "return". A trailing ';' is stripped so the wrapped form stays valid.
-func ensureReturnExpression(expression string) string {
-	trimmed := strings.TrimSpace(expression)
-	if strings.HasPrefix(trimmed, "return ") || strings.HasPrefix(trimmed, "return(") {
-		return expression
-	}
-	trimmed = strings.TrimRight(trimmed, " \t\r\n;")
-	return "return (" + trimmed + ")"
-}
-
 func (d *AndroidDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
 	port, err := d.getWebViewPort()
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]any{
-		"id":         webviewID,
-		"expression": ensureReturnExpression(expression),
-	}
-	if len(args) > 0 {
-		params["args"] = args
-	}
-	raw, err := agentRequest(port, "device.webview.evaluate", params)
-	if err != nil {
-		return nil, err
-	}
-	// agent returns {"result": <value>} — unwrap one level
-	var wrapper struct {
-		Result any `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return nil, fmt.Errorf("parse evaluate result: %w", err)
-	}
-	return wrapper.Result, nil
+	return webViewEvaluate(port, webviewID, expression, args)
 }
 
 func (d *AndroidDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
@@ -376,16 +344,5 @@ func (d *AndroidDevice) WebViewWaitForLoadState(webviewID, state string, timeout
 	if err != nil {
 		return err
 	}
-	const agentDefaultMs = 30_000
-	waitMs := agentDefaultMs
-	if timeoutMs > 0 {
-		waitMs = timeoutMs
-	}
-	params := map[string]any{"id": webviewID, "timeout": waitMs}
-	if state != "" {
-		params["state"] = state
-	}
-	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
-	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
-	return err
+	return webViewWaitForLoadState(port, webviewID, state, timeoutMs)
 }
