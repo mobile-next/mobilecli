@@ -42,7 +42,8 @@ func Convert(avcData []byte, output io.WriteSeeker) (*ConvertResult, error) {
 	firstTs := units[0].timestampUs
 	lastTs := units[len(units)-1].timestampUs
 	var duration time.Duration
-	if delta := lastTs - firstTs; lastTs > firstTs && delta <= math.MaxInt64 {
+	const maxDurationMicros = uint64(math.MaxInt64) / uint64(time.Microsecond)
+	if delta := lastTs - firstTs; lastTs > firstTs && delta <= maxDurationMicros {
 		duration = time.Duration(delta) * time.Microsecond
 	}
 
