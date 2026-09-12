@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import type {InstalledApp, Point, UIElement, UIDumpResponse, ForegroundAppResponse} from './types';
 import {coverageEnv} from './coverage';
+import {eventually} from './poll';
 import {
 	expectAppShape,
 	expectFsListingShape,
@@ -152,9 +153,8 @@ test.describe('Android Tests', () => {
 
 		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
 
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 	});
 
 	test('should terminate Settings app and verify launcher is in foreground', async () => {
@@ -166,41 +166,34 @@ test.describe('Android Tests', () => {
 		// force-stop returns to whatever task sits below the app, so start from the
 		// launcher — otherwise an app left running by an earlier test surfaces instead
 		pressButton(device!.id, 'HOME');
-		await sleep(2000);
+		await expectLauncherToBeInForeground(device!.id);
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		clearSettingsTask(device!.id);
-		await sleep(3000);
-
-		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+		await expectLauncherToBeInForeground(device!.id);
 	});
 
 	test('should handle launching app twice (idempotency)', async () => {
 		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		// launching again should resume the app, not fail
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
-
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 	});
 
 	test('should press HOME button and return to launcher from Settings', async () => {
 		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		pressButton(device!.id, 'HOME');
-		await sleep(3000);
-
-		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+		await expectLauncherToBeInForeground(device!.id);
 	});
 
 	test('should tap on Network & internet in Settings and navigate to that screen', async ({deviceType}) => {
@@ -212,13 +205,13 @@ test.describe('Android Tests', () => {
 		// land on the settings root screen rather than wherever a previous test left it
 		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(5000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+		await expectTextOnScreen(device!.id, 'Network & internet');
 
 		const entry = findElementByText(dumpUI(device!.id), 'Network & internet');
 		tap(device!.id, centerOf(entry).x, centerOf(entry).y);
-		await sleep(3000);
 
-		verifyElementWithTextExists(dumpUI(device!.id), 'Airplane mode');
+		await expectTextOnScreen(device!.id, 'Airplane mode');
 	});
 
 	test.describe('fs operations on /sdcard/Download', () => {
@@ -276,7 +269,7 @@ test.describe('Android Tests', () => {
 		}
 	});
 
-	test.describe('install and uninstall playground', () => {
+	test.describe.serial('install and uninstall playground', () => {
 		// installs an app we own rather than anything already on the image, so the
 		// uninstall half is safe to run for real. also leaves playground installed
 		// for the app-container fs group below.
@@ -317,7 +310,7 @@ test.describe('Android Tests', () => {
 		});
 	});
 
-	test.describe('webview', () => {
+	test.describe.serial('webview', () => {
 		// the playground webview screen is the one embedded webview we control on
 		// both platforms. a real handset would be left on an arbitrary screen.
 		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
@@ -326,14 +319,22 @@ test.describe('Android Tests', () => {
 
 		test.beforeAll(async () => {
 			if (!device) return;
-			await openPlaygroundWebViewScreen(device.id);
-			await sleep(3000);
-			webViewId = firstWebView(device.id).id;
+			const deviceId = device.id;
+
+			await openPlaygroundWebViewScreen(deviceId);
+			await expectWebViewToAppear(deviceId);
+			webViewId = firstWebView(deviceId).id;
 
 			// the app restores whatever url the webview last showed, so start every
 			// run from the sample page instead of inheriting the previous run's state
-			webViewGoto(device.id, webViewId, WEBVIEW_SAMPLE_URL);
-			webViewWait(device.id, webViewId, 'load');
+			webViewGoto(deviceId, webViewId, WEBVIEW_SAMPLE_URL);
+			webViewWait(deviceId, webViewId, 'load');
+
+			// the webview is listed as soon as it exists, before its page has a title,
+			// so settle it here rather than leaving every test to race the load
+			await expectWebViewUrlToBecome(() => webViewUrl(deviceId, webViewId), WEBVIEW_SAMPLE_URL);
+			await eventually(() => webViewTitle(deviceId, webViewId), 'sample page never finished loading')
+				.toBe(WEBVIEW_SAMPLE_TITLE);
 		});
 
 		test('should list the playground webview', () => {
@@ -443,10 +444,17 @@ test.describe('Android Tests', () => {
 	// reads the foreground app, so this launches a different app and would break the
 	// shared state the playground tests set up once in their beforeAll
 	test.describe('webview on an app that cannot be inspected', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
 		test.beforeAll(async () => {
 			if (!device) return;
 			launchApp(device.id, SETTINGS_PACKAGE);
-			await sleep(3000);
+			await expectForegroundAppToBecome(device.id, SETTINGS_PACKAGE);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			clearSettingsTask(device.id);
 		});
 
 		test('should fail to list webviews in an app that is not debuggable', () => {
@@ -675,9 +683,28 @@ function allTextsIn(uiDump: UIDumpResponse): string[] {
 
 async function openPlaygroundWebViewScreen(deviceId: string): Promise<void> {
 	launchApp(deviceId, PLAYGROUND_PACKAGE);
-	await sleep(3000);
+
+	// wait for the main menu to draw before looking for the button on it
+	await eventually(() => hasWebViewButton(deviceId), 'playground menu never appeared').toBe(true);
+
 	const button = findWebViewButton(dumpUI(deviceId));
 	tap(deviceId, centerOf(button).x, centerOf(button).y);
+}
+
+function hasWebViewButton(deviceId: string): boolean {
+	try {
+		findWebViewButton(dumpUI(deviceId));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// tapping the menu entry starts the webview activity, which loads its page before
+// the agent can report it
+async function expectWebViewToAppear(deviceId: string): Promise<void> {
+	await eventually(() => listWebViews(deviceId).length, 'no webview appeared in the playground app')
+		.toBeGreaterThan(0);
 }
 
 // runs a webview command that is expected to fail and returns the error message
@@ -685,15 +712,24 @@ function webViewCommandError(deviceId: string, args: string[]): string {
 	try {
 		mobilecliJson(['webview', ...args, '--device', deviceId]);
 	} catch (error: unknown) {
+		// a timeout or a missing binary fails without printing an envelope, and
+		// parsing that as json would bury the real cause
 		const stdout = (error as {stdout?: string}).stdout ?? '';
+		if (stdout.trim() === '') {
+			throw error;
+		}
 		return expectErrorEnvelope(JSON.parse(stdout));
 	}
 
 	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
 }
 
+function listWebViews(deviceId: string): unknown[] {
+	return mobilecliJson(['webview', 'list', '--device', deviceId]).data as unknown[];
+}
+
 function firstWebView(deviceId: string): WebViewInfo {
-	const webViews = mobilecliJson(['webview', 'list', '--device', deviceId]).data as unknown[];
+	const webViews = listWebViews(deviceId);
 	expect(webViews.length, 'no webview reported by the playground app').toBeGreaterThan(0);
 	expectWebViewShape(webViews[0]);
 	return webViews[0];
@@ -737,6 +773,23 @@ function webViewGoForward(deviceId: string, webViewId: string): void {
 
 function webViewWait(deviceId: string, webViewId: string, state: string): void {
 	mobilecliJson(['webview', 'wait', webViewId, '--state', state, '--timeout', '15000', '--device', deviceId]);
+}
+
+// the device settles on its own schedule, so these read it until it agrees
+// rather than sleeping for a guessed duration
+async function expectForegroundAppToBecome(deviceId: string, packageName: string): Promise<void> {
+	await eventually(() => getForegroundApp(deviceId).data.packageName,
+		`${packageName} never came to the foreground`).toBe(packageName);
+}
+
+async function expectLauncherToBeInForeground(deviceId: string): Promise<void> {
+	await eventually(() => getForegroundApp(deviceId).data.packageName,
+		'launcher never came to the foreground').toMatch(LAUNCHER_PACKAGE_PATTERN);
+}
+
+async function expectTextOnScreen(deviceId: string, text: string): Promise<void> {
+	await eventually(() => allTextsIn(dumpUI(deviceId)),
+		`"${text}" never appeared on screen`).toContain(text);
 }
 
 function getAppContainerPath(deviceId: string, packageName: string): string {

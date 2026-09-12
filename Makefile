@@ -29,13 +29,15 @@ test-e2e: build-cover
 	# inherits GOCOVERDIR, and a -cover binary only writes counters when it exits.
 	./mobilecli daemon stop
 	go test ./... -v -race -covermode=atomic -args -test.gocoverdir=$(CURDIR)/test/coverage
-	(cd test && npm run test:server)
-	(cd test && npm run test:daemon)
-	(cd test && npm run test:ios-simulator)
-	(cd test && npm run test:android)
+	# one shell with a trap, so a failing suite still stops the daemon and flushes
+	# its counters into test/coverage before they are read back
+	set -e; \
+	trap 'GOCOVERDIR=$(CURDIR)/test/coverage ./mobilecli daemon stop >/dev/null 2>&1 || true' EXIT; \
+	(cd test && npm run test:server); \
+	(cd test && npm run test:daemon); \
+	(cd test && npm run test:ios-simulator); \
+	(cd test && npm run test:android); \
 	(cd test && npm run test:emulator)
-	# flushes the daemon's counters into test/coverage before they are read back
-	GOCOVERDIR=$(CURDIR)/test/coverage ./mobilecli daemon stop
 	go tool covdata textfmt -i=test/coverage -o coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	go tool cover -func=coverage.out
