@@ -17,7 +17,7 @@ func makeTestPng(t *testing.T, width, height int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := range height {
 		for x := range width {
-			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+			img.Set(x, y, color.RGBA{uint8(x & 0xff), uint8(y & 0xff), 0, 255}) //nolint:gosec // masked to 0-255
 		}
 	}
 	var buf bytes.Buffer
@@ -203,7 +203,7 @@ func TestConvertPngToJpeg(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
 		for x := range w {
-			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+			img.Set(x, y, color.RGBA{uint8(x & 0xff), uint8(y & 0xff), 0, 255}) //nolint:gosec // masked to 0-255
 		}
 	}
 
