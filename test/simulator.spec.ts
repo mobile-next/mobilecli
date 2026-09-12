@@ -14,10 +14,33 @@ import {
 	expectDeviceShape,
 	expectFsListingShape,
 	expectForegroundAppShape,
+	expectErrorEnvelope,
+	expectInstallResultShape,
+	expectInstalledAppShape,
 	expectOkEnvelope,
 	expectUIDumpShape,
 } from './shapes';
-import type {UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
+import {
+	centerOf,
+	expectWebViewShape,
+	expectWebViewUrlToBecome,
+	findWebViewButton,
+	WEBVIEW_COMMANDS_TAKING_AN_ID,
+	WEBVIEW_DONE_GREETING,
+	WEBVIEW_DONE_URL,
+	WEBVIEW_MISSING_ID,
+	WEBVIEW_SAMPLE_TITLE,
+	WEBVIEW_SAMPLE_URL,
+} from './webview';
+import type {WebViewInfo, WebViewQueryResult} from './webview';
+import {
+	downloadPlayground,
+	PLAYGROUND_APP_NAME,
+	PLAYGROUND_APP_VERSION,
+	PLAYGROUND_APP_VERSION_CODE,
+	PLAYGROUND_PACKAGE,
+} from './playground';
+import type {AppsListResponse, InstalledApp, UIElement, UIDumpResponse, DeviceInfoResponse, ForegroundAppResponse} from './types';
 
 type Dimensions = {
 	width: number;
@@ -25,6 +48,9 @@ type Dimensions = {
 };
 
 const TEST_SERVER_URL = 'http://localhost:12001';
+
+// ships on every simulator image and is never a debug build
+const IOS_SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
 
 test.describe('iOS Simulator Tests', () => {
 	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
@@ -293,8 +319,186 @@ test.describe('iOS Simulator Tests', () => {
 				verifyRawViewtreeDump(rawDump);
 			});
 
+			test.describe('install and uninstall playground', () => {
+				// installs an app we own rather than anything on the simulator image, so
+				// the uninstall half is safe. also leaves playground installed for the
+				// app-container fs group below.
+				let zipPath: string;
+
+				test.beforeAll(async () => {
+					zipPath = await downloadPlayground('ios');
+				});
+
+				test('should uninstall playground and no longer list it', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					uninstallPlaygroundIfPresent(simulatorId);
+					expect(installedPackageNames(simulatorId)).not.toContain(PLAYGROUND_PACKAGE);
+				});
+
+				test('should install playground from a local zip', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const result: unknown = mobilecli(['apps', 'install', zipPath, '--device', simulatorId]).data;
+					expectInstallResultShape(result);
+					expect(result.app.packageName).toBe(PLAYGROUND_PACKAGE);
+					expect(result.app.version).toBe(PLAYGROUND_APP_VERSION);
+					expect(result.app.versionCode).toBe(PLAYGROUND_APP_VERSION_CODE);
+				});
+
+				test('should list playground with every field it reports today', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const app = findInstalledApp(simulatorId, PLAYGROUND_PACKAGE);
+					expect(app, `${PLAYGROUND_PACKAGE} missing after install`).toBeDefined();
+					expectInstalledAppShape(app);
+					expect(app!.appName).toBe(PLAYGROUND_APP_NAME);
+					expect(app!.version).toBe(PLAYGROUND_APP_VERSION);
+					expect(app!.versionCode).toBe(PLAYGROUND_APP_VERSION_CODE);
+				});
+			});
+
+			test.describe('webview', () => {
+				// the playground webview screen is the one embedded webview we control on
+				// both platforms. a real handset would be left on an arbitrary screen.
+				let webViewId: string;
+
+				test.beforeAll(async () => {
+					if (!simulatorId) return;
+					await openPlaygroundWebViewScreen(simulatorId);
+					await sleep(3000);
+					webViewId = firstWebView(simulatorId).id;
+
+					// the app restores whatever url the webview last showed, so start every
+					// run from the sample page instead of inheriting the previous run's state
+					webViewGoto(simulatorId, webViewId, WEBVIEW_SAMPLE_URL);
+					webViewWait(simulatorId, webViewId, 'load');
+				});
+
+				test('should list the playground webview', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const webView = firstWebView(simulatorId);
+					expect(webView.url).toBe(WEBVIEW_SAMPLE_URL);
+					expect(webView.title).toBe(WEBVIEW_SAMPLE_TITLE);
+					// ios reports no owning bundle for an inspected webview
+					expect(webView.bundleId).toBe('');
+					expect(webView.isVisible).toBe(true);
+				});
+
+				test('should report the url and title of the webview', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					expect(webViewUrl(simulatorId, webViewId)).toBe(WEBVIEW_SAMPLE_URL);
+					expect(webViewTitle(simulatorId, webViewId)).toBe(WEBVIEW_SAMPLE_TITLE);
+				});
+
+				test('should evaluate javascript inside the webview', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					expect(webViewEval(simulatorId, webViewId, 'document.title')).toBe(WEBVIEW_SAMPLE_TITLE);
+				});
+
+				test('should dump the html content of the webview', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const html = webViewContent(simulatorId, webViewId);
+					expect(html).toContain('<form id="loginForm"');
+					expect(html).toContain(WEBVIEW_SAMPLE_TITLE);
+				});
+
+				test('should query dom elements by css selector', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const inputs = webViewQuery(simulatorId, webViewId, 'input#name');
+					expect(inputs.length).toBe(1);
+					expect(inputs[0].tag).toBe('input');
+					expect(inputs[0].id).toBe('name');
+				});
+
+				test('should wait for the webview to finish loading', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewWait(simulatorId, webViewId, 'domcontentloaded');
+					webViewWait(simulatorId, webViewId, 'load');
+				});
+
+				test('should navigate the webview to another url', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewGoto(simulatorId, webViewId, WEBVIEW_DONE_URL);
+					webViewWait(simulatorId, webViewId, 'load');
+
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, webViewId), WEBVIEW_DONE_URL);
+					expect(webViewQuery(simulatorId, webViewId, 'h1')[0].text).toBe(WEBVIEW_DONE_GREETING);
+				});
+
+				test('should go back to the page it navigated away from', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewGoBack(simulatorId, webViewId);
+					await sleep(2000);
+
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, webViewId), WEBVIEW_SAMPLE_URL);
+				});
+
+				test('should go forward again', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewGoForward(simulatorId, webViewId);
+					await sleep(2000);
+
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, webViewId), WEBVIEW_DONE_URL);
+				});
+
+				test('should report an error for every command given an unknown webview id', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					for (const [subcommand, ...args] of WEBVIEW_COMMANDS_TAKING_AN_ID) {
+						const message = webViewCommandError(simulatorId, [subcommand, WEBVIEW_MISSING_ID, ...args]);
+						expect(message, `${subcommand} accepted an unknown webview id`).toContain(WEBVIEW_MISSING_ID);
+					}
+				});
+
+				test('should report an error when the device does not exist', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const message = webViewCommandError('no-such-device', ['list']);
+					expect(message).toContain('error finding device');
+				});
+
+				test('should reload the webview and stay on the same url', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewReload(simulatorId, webViewId);
+					webViewWait(simulatorId, webViewId, 'load');
+
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, webViewId), WEBVIEW_DONE_URL);
+				});
+
+			});
+
+			// its own describe, not a test inside the playground group above: `webview list`
+			// reads the foreground app, so this launches a different app and would break the
+			// shared state the playground tests set up once in their beforeAll
+			test.describe('webview on an app that cannot be inspected', () => {
+				test.beforeAll(async () => {
+					if (!simulatorId) return;
+					launchApp(simulatorId, IOS_SETTINGS_BUNDLE_ID);
+					await sleep(3000);
+				});
+
+				test('should fail to list webviews in an app that is not debuggable', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const message = webViewCommandError(simulatorId, ['list']);
+					expect(message).toContain('webview list failed');
+					expect(message).toContain(IOS_SETTINGS_BUNDLE_ID);
+				});
+			});
+
 			test.describe('fs operations on app container (com.mobilenext.playground)', () => {
-				const packageName = 'com.mobilenext.playground';
+				const packageName = PLAYGROUND_PACKAGE;
 				let containerPath: string;
 				let remoteDir: string;
 				let remoteFile: string;
@@ -453,13 +657,35 @@ function verifyDeviceInfo(info: DeviceInfoResponse, simulatorId: string): void {
 	expect(info.data.device.state).toBe('online');
 }
 
-function listApps(simulatorId: string): any {
-	return mobilecli(['apps', 'list', '--device', simulatorId]);
+function listApps(simulatorId: string): AppsListResponse {
+	return mobilecli(['apps', 'list', '--device', simulatorId]) as AppsListResponse;
 }
 
-function verifyAppsListContainsSafari(response: any): void {
+function verifyAppsListContainsSafari(response: AppsListResponse): void {
 	response.data.forEach(expectAppShape);
-	expect(response.data.map((a: any) => a.packageName)).toContain('com.apple.mobilesafari');
+	expect(response.data.map(app => app.packageName)).toContain('com.apple.mobilesafari');
+}
+
+function installedApps(simulatorId: string): InstalledApp[] {
+	return listApps(simulatorId).data as InstalledApp[];
+}
+
+function installedPackageNames(simulatorId: string): string[] {
+	return installedApps(simulatorId).map(app => app.packageName);
+}
+
+function findInstalledApp(simulatorId: string, packageName: string): InstalledApp | undefined {
+	return installedApps(simulatorId).find(app => app.packageName === packageName);
+}
+
+// uninstalling an app that is not installed is not an error worth failing on: the
+// point of this call is only to reach a known-clean starting state
+function uninstallPlaygroundIfPresent(simulatorId: string): void {
+	try {
+		mobilecli(['apps', 'uninstall', PLAYGROUND_PACKAGE, '--device', simulatorId]);
+	} catch {
+		// already absent
+	}
 }
 
 function launchApp(simulatorId: string, packageName: string): void {
@@ -657,6 +883,77 @@ function verifyRawViewtreeDump(response: any): void {
 	// rawData should contain the tree structure directly from WDA
 	const rawData = data.rawData;
 	expect(Array.isArray(rawData.children)).toBe(true);
+}
+
+async function openPlaygroundWebViewScreen(simulatorId: string): Promise<void> {
+	launchApp(simulatorId, PLAYGROUND_PACKAGE);
+	await sleep(3000);
+	const button = findWebViewButton(dumpUI(simulatorId));
+	tap(simulatorId, centerOf(button).x, centerOf(button).y);
+}
+
+// runs a webview command that is expected to fail and returns the error message
+function webViewCommandError(simulatorId: string, args: string[]): string {
+	try {
+		mobilecli(['webview', ...args, '--device', simulatorId]);
+	} catch (error: unknown) {
+		const stdout = (error as {stdout?: string}).stdout ?? '';
+		return expectErrorEnvelope(JSON.parse(stdout));
+	}
+
+	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+}
+
+function firstWebView(simulatorId: string): WebViewInfo {
+	const webViews = mobilecli(['webview', 'list', '--device', simulatorId]).data as unknown[];
+	expect(webViews.length, 'no webview reported by the playground app').toBeGreaterThan(0);
+	expectWebViewShape(webViews[0]);
+	return webViews[0];
+}
+
+function webViewUrl(simulatorId: string, webViewId: string): string {
+	return mobilecli(['webview', 'url', webViewId, '--device', simulatorId]).data as string;
+}
+
+function webViewTitle(simulatorId: string, webViewId: string): string {
+	return mobilecli(['webview', 'title', webViewId, '--device', simulatorId]).data as string;
+}
+
+function webViewContent(simulatorId: string, webViewId: string): string {
+	return mobilecli(['webview', 'content', webViewId, '--device', simulatorId]).data as string;
+}
+
+function webViewEval(simulatorId: string, webViewId: string, expression: string): unknown {
+	return mobilecli(['webview', 'eval', webViewId, expression, '--device', simulatorId]).data;
+}
+
+function webViewQuery(simulatorId: string, webViewId: string, selector: string): WebViewQueryResult[] {
+	return mobilecli(['webview', 'query', webViewId, selector, '--device', simulatorId]).data as WebViewQueryResult[];
+}
+
+function webViewGoto(simulatorId: string, webViewId: string, url: string): void {
+	mobilecli(['webview', 'goto', webViewId, url, '--device', simulatorId]);
+}
+
+function webViewReload(simulatorId: string, webViewId: string): void {
+	mobilecli(['webview', 'reload', webViewId, '--device', simulatorId]);
+}
+
+function webViewGoBack(simulatorId: string, webViewId: string): void {
+	mobilecli(['webview', 'back', webViewId, '--device', simulatorId]);
+}
+
+function webViewGoForward(simulatorId: string, webViewId: string): void {
+	mobilecli(['webview', 'forward', webViewId, '--device', simulatorId]);
+}
+
+function webViewWait(simulatorId: string, webViewId: string, state: string): void {
+	mobilecli(['webview', 'wait', webViewId, '--state', state, '--timeout', '15000', '--device', simulatorId]);
+}
+
+// playwright has no sleep of its own and these waits are for device settling
+function sleep(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function getAppContainerPath(simulatorId: string, packageName: string): string {
