@@ -24,12 +24,19 @@ test-cover: build-cover
 test-e2e: build-cover
 	rm -rf test/coverage
 	mkdir -p test/coverage
+	# device commands run inside the daemon, so its counters are the bulk of the
+	# coverage. stop any daemon already running: the suites spawn a fresh one that
+	# inherits GOCOVERDIR, and a -cover binary only writes counters when it exits.
+	./mobilecli daemon stop
 	go test ./... -v -race -covermode=atomic -args -test.gocoverdir=$(CURDIR)/test/coverage
-	(cd test && npm run test:server)
-	(cd test && npm run test:daemon)
-	# (cd test && npm run test:ios)
-	(cd test && npm run test:simulator)
-	(cd test && npm run test:android)
+	# one shell with a trap, so a failing suite still stops the daemon and flushes
+	# its counters into test/coverage before they are read back
+	set -e; \
+	trap 'GOCOVERDIR=$(CURDIR)/test/coverage ./mobilecli daemon stop >/dev/null 2>&1 || true' EXIT; \
+	(cd test && npm run test:server); \
+	(cd test && npm run test:daemon); \
+	(cd test && npm run test:ios-simulator); \
+	(cd test && npm run test:android); \
 	(cd test && npm run test:emulator)
 	go tool covdata textfmt -i=test/coverage -o coverage.out
 	go tool cover -html=coverage.out -o coverage.html

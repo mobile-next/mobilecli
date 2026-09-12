@@ -15,6 +15,11 @@ export interface UIElement {
 	children?: UIElement[];
 }
 
+export interface Point {
+	x: number;
+	y: number;
+}
+
 export interface UIDumpResponse {
 	status: string;
 	data: {
@@ -48,4 +53,42 @@ export interface ForegroundAppResponse {
 		appName: string;
 		version: string;
 	};
+}
+
+// one entry of `apps list`. every field is reported on both platforms today; the
+// shape assertions in shapes.ts are what keep that true.
+export interface InstalledApp {
+	packageName: string;
+	appName: string;
+	version: string;
+	versionCode: string;
+}
+
+export interface AppsListResponse {
+	status: string;
+	data: InstalledApp[];
+}
+
+// `apps install` reads the metadata out of the artifact, so it has no appName
+export interface InstallResult {
+	message: string;
+	app: {
+		packageName: string;
+		version: string;
+		versionCode: string;
+	};
+}
+
+export interface AppsInstallResponse {
+	status: string;
+	data: InstallResult;
+}
+
+export interface UninstallResult {
+	packageName: string;
+}
+
+export interface AppsUninstallResponse {
+	status: string;
+	data: UninstallResult;
 }
