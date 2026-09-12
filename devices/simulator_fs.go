@@ -104,7 +104,7 @@ func (s *SimulatorDevice) PullFile(remotePath, localPath string) error {
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
-	return os.WriteFile(localPath, data, 0644)
+	return os.WriteFile(localPath, data, 0600)
 }
 
 func (s *SimulatorDevice) PushFile(localPath, remotePath string) error {
@@ -115,7 +115,7 @@ func (s *SimulatorDevice) PushFile(localPath, remotePath string) error {
 	if err != nil {
 		return fmt.Errorf("read local file failed: %w", err)
 	}
-	return os.WriteFile(remotePath, data, 0644)
+	return os.WriteFile(remotePath, data, 0600)
 }
 
 func (s *SimulatorDevice) Mkdir(bundleID, remotePath string, parents bool) error {
@@ -123,9 +123,9 @@ func (s *SimulatorDevice) Mkdir(bundleID, remotePath string, parents bool) error
 		return err
 	}
 	if parents {
-		return os.MkdirAll(remotePath, 0755)
+		return os.MkdirAll(remotePath, 0750)
 	}
-	return os.Mkdir(remotePath, 0755)
+	return os.Mkdir(remotePath, 0750)
 }
 
 func (s *SimulatorDevice) Rm(bundleID, remotePath string, recursive bool) error {

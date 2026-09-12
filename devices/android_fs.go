@@ -88,7 +88,7 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 		}
 		return fmt.Errorf("pull failed: %w", err)
 	}
-	return os.WriteFile(localPath, data, 0644)
+	return os.WriteFile(localPath, data, 0600)
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {

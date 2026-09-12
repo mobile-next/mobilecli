@@ -979,7 +979,7 @@ func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
 	}
 
 	buf := make([]byte, 4+len(msg))
-	binary.BigEndian.PutUint32(buf, uint32(len(msg)))
+	binary.BigEndian.PutUint32(buf, uint32(len(msg))) //nolint:gosec // length bounded by maxAvcControlMessageSize above
 	copy(buf[4:], msg)
 
 	d.avcWriteMu.Lock()

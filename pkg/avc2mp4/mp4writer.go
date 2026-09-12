@@ -3,6 +3,7 @@ package avc2mp4
 import (
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/yapingcat/gomedia/go-mp4"
@@ -40,7 +41,10 @@ func Convert(avcData []byte, output io.WriteSeeker) (*ConvertResult, error) {
 
 	firstTs := units[0].timestampUs
 	lastTs := units[len(units)-1].timestampUs
-	duration := time.Duration(lastTs-firstTs) * time.Microsecond
+	var duration time.Duration
+	if delta := lastTs - firstTs; lastTs > firstTs && delta <= math.MaxInt64 {
+		duration = time.Duration(delta) * time.Microsecond
+	}
 
 	return &ConvertResult{
 		FrameCount: len(units),
