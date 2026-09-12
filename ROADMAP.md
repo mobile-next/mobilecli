@@ -27,6 +27,7 @@ This is a living document of planned and in-progress features. Items are roughly
 | ✅ Screenshot scaling & clipping | `mobilecli screenshot --scale`, `--max-size`, `--clip x,y,w,h` |
 | ✅ Flutter UI dump | `mobilecli dump ui` reads Flutter widget trees via the Dart VM service |
 | ✅ Element references | `mobilecli dump ui` assigns `@ref` ids, `io tap @ref` acts on elements without coordinates |
+| ✅ Windows ARM64 | Native `windows-arm64` builds published with every release |
 
 ## What's coming
 
@@ -35,5 +36,4 @@ This is a living document of planned and in-progress features. Items are roughly
 | **Keyboard dismiss** | Check visibility of on-screen keyboard and dismiss upon request | Planned |
 | **Clear app storage** | Clear app cache and documents | Planned |
 | **Simulate Shake** | Simulate a shake on the device | Planned |
-| **Windows ARM64** | First-class Windows ARM64 builds and support | Planned |
 
