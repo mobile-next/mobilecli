@@ -36,4 +36,8 @@ This is a living document of planned and in-progress features. Items are roughly
 | **Keyboard dismiss** | Check visibility of on-screen keyboard and dismiss upon request | Planned |
 | **Clear app storage** | Clear app cache and documents | Planned |
 | **Simulate Shake** | Simulate a shake on the device | Planned |
-
+| **Push notifications** | Deliver a notification payload to an app without a real APNs/FCM round-trip | Planned |
+| **Biometrics** | Simulate Face ID, Touch ID and fingerprint match/non-match (virtual devices only) | Planned |
+| **Image injection** | Add images and videos to the device photo library | Planned |
+| **Dark mode** | Switch the device between light and dark appearance | Planned |
+| **Wifi & airplane mode** | Toggle wifi and airplane mode to test offline behaviour | Planned |
