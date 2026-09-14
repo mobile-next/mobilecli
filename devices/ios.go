@@ -1225,6 +1225,11 @@ func (d *IOSDevice) SetOrientation(orientation string) error {
 	return d.deviceKitClient.SetOrientation(orientation)
 }
 
+// SetAppearance switches the device between light and dark mode
+func (d *IOSDevice) SetAppearance(appearance string) error {
+	return d.deviceKitClient.SetAppearance(appearance)
+}
+
 // DeviceKitInfo contains information about the started DeviceKit session
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`

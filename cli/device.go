@@ -100,11 +100,12 @@ var settingsCmd = &cobra.Command{
 }
 
 var settingsAnimations string
+var settingsAppearance string
 
 var settingsApplyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply device settings",
-	Long:  `Apply device-level settings. Example: mobilecli device settings apply --animations=off`,
+	Long:  `Apply device-level settings. Example: mobilecli device settings apply --animations=off --appearance=dark`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.ApplySettingsRequest{
 			DeviceID: deviceId,
@@ -112,6 +113,10 @@ var settingsApplyCmd = &cobra.Command{
 
 		if cmd.Flags().Changed("animations") {
 			req.Animations = &settingsAnimations
+		}
+
+		if cmd.Flags().Changed("appearance") {
+			req.Appearance = &settingsAppearance
 		}
 
 		return runViaDaemon("cli.device.settings.apply", req)
@@ -145,4 +150,5 @@ func init() {
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
 	settingsApplyCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to apply settings to")
 	settingsApplyCmd.Flags().StringVar(&settingsAnimations, "animations", "", "Toggle system animations: 'on' or 'off'")
+	settingsApplyCmd.Flags().StringVar(&settingsAppearance, "appearance", "", "System appearance: 'light' or 'dark'")
 }

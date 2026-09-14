@@ -736,6 +736,7 @@ type LocationClearParams struct {
 type DeviceSettingsApplyParams struct {
 	DeviceID   string  `json:"deviceId"`
 	Animations *string `json:"animations,omitempty"` // "on" or "off"
+	Appearance *string `json:"appearance,omitempty"` // "light" or "dark"
 }
 
 type DeviceBootParams struct {
@@ -989,12 +990,13 @@ func handleSettingsApply(params json.RawMessage) (any, error) {
 
 	var settingsParams DeviceSettingsApplyParams
 	if err := json.Unmarshal(params, &settingsParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, animations", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, animations, appearance", err)
 	}
 
 	req := commands.ApplySettingsRequest{
 		DeviceID:   settingsParams.DeviceID,
 		Animations: settingsParams.Animations,
+		Appearance: settingsParams.Appearance,
 	}
 
 	response := commands.ApplySettingsCommand(req)

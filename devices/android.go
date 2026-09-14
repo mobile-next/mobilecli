@@ -1799,6 +1799,21 @@ func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {
 	return nil
 }
 
+// SetAppearance switches the system-wide night mode (Android 10+).
+func (d *AndroidDevice) SetAppearance(appearance string) error {
+	night := "no"
+	if appearance == "dark" {
+		night = "yes"
+	}
+
+	_, err := d.runAdbCommand("shell", "cmd", "uimode", "night", night)
+	if err != nil {
+		return fmt.Errorf("failed to set appearance: %v", err)
+	}
+
+	return nil
+}
+
 func (d *AndroidDevice) getCrashLog() (string, error) {
 	output, err := d.runAdbCommand("logcat", "-b", "crash", "-d", "-v", "year")
 	if err != nil {

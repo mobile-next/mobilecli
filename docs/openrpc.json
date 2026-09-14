@@ -816,6 +816,46 @@
       }
     },
     {
+      "name": "device.settings.apply",
+      "summary": "Apply device settings",
+      "description": "Applies device-level settings. Only the settings provided are changed",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "animations",
+          "description": "Toggle system animations (Android only)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": ["on", "off"]
+          }
+        },
+        {
+          "name": "appearance",
+          "description": "System appearance",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": ["light", "dark"]
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.dump.ui",
       "summary": "Dump UI hierarchy",
       "description": "Dumps the UI hierarchy of the device screen",
