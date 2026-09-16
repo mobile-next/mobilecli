@@ -1069,20 +1069,30 @@ func (d *AndroidDevice) getForegroundComponent() (string, string, error) {
 		return "", "", fmt.Errorf("failed to get window displays: %w", err)
 	}
 
-	// parse package name from mCurrentFocus line
-	// format: mCurrentFocus=Window{... u0 com.package.name/com.package.name.MainActivity}
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "mCurrentFocus") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				focusPart := strings.TrimSuffix(parts[2], "}")
-				// split into package name (before the '/') and activity (after)
-				if idx := strings.Index(focusPart, "/"); idx != -1 {
-					return focusPart[:idx], focusPart[idx+1:], nil
-				}
-			}
-			break
+	return parseForegroundComponent(string(output))
+}
+
+// parseForegroundComponent extracts the focused package and activity from
+// `dumpsys window displays` lines of the form:
+//
+//	mCurrentFocus=Window{... u0 com.package.name/com.package.name.MainActivity}
+//
+// A multi-display device prints one such line per display and the unfocused ones read
+// "mCurrentFocus=null", so a line that does not parse means "not this display" rather
+// than "no foreground app".
+func parseForegroundComponent(output string) (string, string, error) {
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(line, "mCurrentFocus") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 3 {
+			continue
+		}
+		focusPart := strings.TrimSuffix(parts[2], "}")
+		// split into package name (before the '/') and activity (after)
+		if idx := strings.Index(focusPart, "/"); idx != -1 {
+			return focusPart[:idx], focusPart[idx+1:], nil
 		}
 	}
 
