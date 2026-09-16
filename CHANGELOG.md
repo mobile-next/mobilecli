@@ -1,6 +1,9 @@
-## [1.0.11](https://github.com/mobile-next/mobilecli/releases/tag/1.0.11) (unreleased)
+## [1.0.11](https://github.com/mobile-next/mobilecli/releases/tag/1.0.11) (2026-09-16)
 * Feat: Tap, long press, swipe, button, keys and text on Android now go through the embedded agent instead of `adb shell input`, which forked a JVM on the device per call, thanks to @akexorcist for finding the bottleneck and the fix in [#286](https://github.com/mobile-next/mobilecli/pull/286) ([#412](https://github.com/mobile-next/mobilecli/pull/412))
 * Fix: `mobilecli io longpress` accepts an element ref like `@e5`, the way `io tap` already did ([#413](https://github.com/mobile-next/mobilecli/pull/413))
+* Feat: Switch light/dark appearance with `mobilecli device settings apply --appearance=light|dark` ([#421](https://github.com/mobile-next/mobilecli/pull/421), [devicekit-ios#78](https://github.com/mobile-next/devicekit-ios/pull/78))
+* Fix(ios): Restore iOS 14 support, mirror swift concurrency runtime into runner below iOS 15 ([devicekit-ios#75](https://github.com/mobile-next/devicekit-ios/pull/75), [devicekit-ios#76](https://github.com/mobile-next/devicekit-ios/pull/76)), thanks to [@hakanor](https://github.com/hakanor)
+* Fix(android): Detect the foreground app on devices with more than one display ([#423](https://github.com/mobile-next/mobilecli/pull/423)), thanks to [@akexorcist](https://github.com/akexorcist)
 
 ## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (2026-09-11)
 * Feat: Pinch to zoom with `mobilecli io pinch` and `device.io.pinch`, and a real multi-finger `device.io.gesture` on Android through the embedded agent ([#410](https://github.com/mobile-next/mobilecli/pull/410))
