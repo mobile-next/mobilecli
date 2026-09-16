@@ -595,22 +595,11 @@ func (s SimulatorDevice) Swipe(x1, y1, x2, y2, duration int) error {
 }
 
 func (s SimulatorDevice) GetClipboard() (string, error) {
-	// #nosec G204 -- udid is controlled, no shell interpretation
-	output, err := exec.Command("xcrun", "simctl", "pbpaste", s.ID()).Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get clipboard: %w", err)
-	}
-	return string(output), nil
+	return s.deviceKitClient.GetClipboard()
 }
 
 func (s SimulatorDevice) SetClipboard(text string) error {
-	// #nosec G204 -- udid is controlled, no shell interpretation
-	cmd := exec.Command("xcrun", "simctl", "pbcopy", s.ID())
-	cmd.Stdin = strings.NewReader(text)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to set clipboard: %w", err)
-	}
-	return nil
+	return s.deviceKitClient.SetClipboard(text)
 }
 
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
