@@ -229,6 +229,10 @@ func (r *RemoteDevice) SetOrientation(orientation string) error {
 	return r.fireRPC("device.io.orientation.set", params{"orientation": orientation})
 }
 
+func (r *RemoteDevice) SetAppearance(appearance string) error {
+	return r.fireRPC("device.settings.apply", params{"appearance": appearance})
+}
+
 func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }

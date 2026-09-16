@@ -1004,6 +1004,11 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.deviceKitClient.SetOrientation(orientation)
 }
 
+// SetAppearance switches the simulator between light and dark mode
+func (s SimulatorDevice) SetAppearance(appearance string) error {
+	return s.deviceKitClient.SetAppearance(appearance)
+}
+
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
 
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {

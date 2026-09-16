@@ -216,6 +216,12 @@ type AnimationConfigurable interface {
 	SetAnimationsEnabled(enabled bool) error
 }
 
+// AppearanceConfigurable is implemented by devices that can switch the system
+// appearance between light and dark mode.
+type AppearanceConfigurable interface {
+	SetAppearance(appearance string) error
+}
+
 // WebViewable is implemented by devices that support webview inspection and control.
 type WebViewable interface {
 	ListWebViews() ([]WebViewInfo, error)
