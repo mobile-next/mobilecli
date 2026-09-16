@@ -3,6 +3,7 @@
 * Fix: `mobilecli io longpress` accepts an element ref like `@e5`, the way `io tap` already did ([#413](https://github.com/mobile-next/mobilecli/pull/413))
 * Feat: Switch light/dark appearance with `mobilecli device settings apply --appearance=light|dark` ([#421](https://github.com/mobile-next/mobilecli/pull/421), [devicekit-ios#78](https://github.com/mobile-next/devicekit-ios/pull/78))
 * Fix(ios): Restore iOS 14 support, mirror swift concurrency runtime into runner below iOS 15 ([devicekit-ios#75](https://github.com/mobile-next/devicekit-ios/pull/75), [devicekit-ios#76](https://github.com/mobile-next/devicekit-ios/pull/76)), thanks to [@hakanor](https://github.com/hakanor)
+* Fix(ios): Read and write the simulator clipboard through the devicekit agent, since `simctl pbcopy` silently leaves the pasteboard empty on iOS 26.5 ([#425](https://github.com/mobile-next/mobilecli/pull/425))
 * Fix(android): Detect the foreground app on devices with more than one display ([#423](https://github.com/mobile-next/mobilecli/pull/423)), thanks to [@akexorcist](https://github.com/akexorcist)
 
 ## [1.0.10](https://github.com/mobile-next/mobilecli/releases/tag/1.0.10) (2026-09-11)
