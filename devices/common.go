@@ -120,6 +120,7 @@ type ScreenCaptureConfig struct {
 	OnProgress func(message string) // optional progress callback
 	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
+	StopChan   <-chan struct{}      // optional (avc only): stops this capture when closed, even while no frames are arriving
 }
 
 // StartAgentConfig contains configuration for agent startup operations

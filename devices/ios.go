@@ -9,12 +9,10 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
@@ -88,6 +86,7 @@ type IOSDevice struct {
 	locationSimulationService   *instruments.LocationSimulationService // open while an ios 17+ location override is held
 
 	avcWriteMu sync.Mutex // serializes control writes on avcStreamConn
+	avcStream  avcHub     // fans the single h264 stream out to every concurrent capture
 }
 
 func (d *IOSDevice) ID() string {
@@ -990,136 +989,143 @@ func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
 	return nil
 }
 
-func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
-	// handle avc format via DeviceKit
-	if config.Format == "avc" {
+// ensureDeviceKitAvcRunning returns the ports of a DeviceKit session ready to
+// stream H.264, starting it (and its broadcast) when it is not up yet.
+func (d *IOSDevice) ensureDeviceKitAvcRunning(config ScreenCaptureConfig) (*DeviceKitInfo, error) {
+	if config.OnProgress != nil {
+		config.OnProgress("Checking DeviceKit status")
+	}
+
+	// DeviceKit not running, start it normally
+	if !d.isDeviceKitRunning() {
 		if config.OnProgress != nil {
-			config.OnProgress("Checking DeviceKit status")
+			config.OnProgress("Starting DeviceKit for H.264 streaming")
 		}
 
-		var deviceKitInfo *DeviceKitInfo
-		var err error
-
-		// check if DeviceKit is already running
-		if d.isDeviceKitRunning() {
-			utils.Verbose("DeviceKit already running, reusing existing session")
-
-			// check if we need to create port forwarders
-			d.mu.Lock()
-			hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
-			hasStreamForwarder := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
-			d.mu.Unlock()
-
-			if hasHTTPForwarder && hasStreamForwarder {
-				// reuse existing forwarders
-				d.mu.Lock()
-				httpPort, _ := d.portForwarderDeviceKit.GetPorts()
-				streamPort, _ := d.portForwarderAvc.GetPorts()
-				d.mu.Unlock()
-
-				deviceKitInfo = &DeviceKitInfo{
-					HTTPPort:   httpPort,
-					StreamPort: streamPort,
-				}
-			} else {
-				// DeviceKit running but we need to create forwarders
-				deviceKitInfo, err = d.ensureDeviceKitPortForwarders()
-				if err != nil {
-					return fmt.Errorf("failed to create port forwarders: %w", err)
-				}
-			}
-
-			if config.OnProgress != nil {
-				config.OnProgress("Using existing DeviceKit session")
-			}
-		} else {
-			// DeviceKit not running, start it normally
-			if config.OnProgress != nil {
-				config.OnProgress("Starting DeviceKit for H.264 streaming")
-			}
-
-			// start DeviceKit
-			// Note: passing nil registry since this is internal call from StartScreenCapture
-			// ScreenCapture callers should have already registered the device via StartAgent
-			deviceKitInfo, err = d.StartDeviceKitAvc(nil)
-			if err != nil {
-				return fmt.Errorf("failed to start DeviceKit: %w", err)
-			}
-		}
-
-		// DeviceKit is confirmed running (either reused or freshly started and the
-		// broadcast picker was clicked) — safe to tell the caller capture is live.
-		if config.OnReady != nil {
-			config.OnReady()
-		}
-
-		if config.OnProgress != nil {
-			config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d", deviceKitInfo.StreamPort))
-		}
-
-		// connect to the TCP stream
-		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", deviceKitInfo.StreamPort))
+		// start DeviceKit
+		// Note: passing nil registry since this is internal call from StartScreenCapture
+		// ScreenCapture callers should have already registered the device via StartAgent
+		deviceKitInfo, err := d.StartDeviceKitAvc(nil)
 		if err != nil {
-			return fmt.Errorf("failed to connect to stream port: %w", err)
+			return nil, fmt.Errorf("failed to start DeviceKit: %w", err)
 		}
+		return deviceKitInfo, nil
+	}
 
-		// Expose the stream conn as the live encoder control channel. Control
-		// must ride this exact conn: the extension's TCPServer redirects video
-		// output to its newest client, so a separate control connection would
-		// steal the stream.
+	utils.Verbose("DeviceKit already running, reusing existing session")
+
+	// check if we need to create port forwarders
+	d.mu.Lock()
+	hasHTTPForwarder := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
+	hasStreamForwarder := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
+	d.mu.Unlock()
+
+	if !hasHTTPForwarder || !hasStreamForwarder {
+		// DeviceKit running but we need to create forwarders
+		deviceKitInfo, err := d.ensureDeviceKitPortForwarders()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create port forwarders: %w", err)
+		}
+		if config.OnProgress != nil {
+			config.OnProgress("Using existing DeviceKit session")
+		}
+		return deviceKitInfo, nil
+	}
+
+	// reuse existing forwarders
+	d.mu.Lock()
+	httpPort, _ := d.portForwarderDeviceKit.GetPorts()
+	streamPort, _ := d.portForwarderAvc.GetPorts()
+	d.mu.Unlock()
+
+	if config.OnProgress != nil {
+		config.OnProgress("Using existing DeviceKit session")
+	}
+	return &DeviceKitInfo{HTTPPort: httpPort, StreamPort: streamPort}, nil
+}
+
+// startAvcStream starts DeviceKit, dials its H.264 stream and reads it into
+// emit until the conn dies. It is the avcHub source for real iOS devices.
+func (d *IOSDevice) startAvcStream(config ScreenCaptureConfig, emit func([]byte), ended func(error)) (func(), error) {
+	deviceKitInfo, err := d.ensureDeviceKitAvcRunning(config)
+	if err != nil {
+		return nil, err
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress(fmt.Sprintf("Connecting to H.264 stream on localhost:%d", deviceKitInfo.StreamPort))
+	}
+
+	// connect to the TCP stream
+	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", deviceKitInfo.StreamPort))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to stream port: %w", err)
+	}
+
+	// Expose the stream conn as the live encoder control channel. Control
+	// must ride this exact conn: the extension's TCPServer redirects video
+	// output to its newest client, so a separate control connection would
+	// steal the stream.
+	d.mu.Lock()
+	d.avcStreamConn = conn
+	d.mu.Unlock()
+
+	// closing must be complete by the time the hub's stop() returns, and by the
+	// time ended() runs: the hub only ever allows one live stream per device,
+	// and a lingering conn would still be the extension's newest client.
+	closeStream := sync.OnceFunc(func() {
+		_ = conn.Close()
 		d.mu.Lock()
-		d.avcStreamConn = conn
-		d.mu.Unlock()
-		defer func() {
-			d.mu.Lock()
-			if d.avcStreamConn == conn {
-				d.avcStreamConn = nil
-			}
-			d.mu.Unlock()
-		}()
-
-		// setup signal handling for Ctrl+C
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-		// channel to signal when streaming is done
-		done := make(chan error, 1)
-
-		// stream data in a goroutine
-		go func() {
-			defer func() { _ = conn.Close() }()
-			buffer := make([]byte, 65536)
-			for {
-				n, err := conn.Read(buffer)
-				if err != nil {
-					if err != io.EOF {
-						done <- fmt.Errorf("error reading from stream: %w", err)
-					} else {
-						done <- nil
-					}
-					return
-				}
-
-				if n > 0 {
-					if !config.OnData(buffer[:n]) {
-						// client wants to stop the stream
-						done <- nil
-						return
-					}
-				}
-			}
-		}()
-
-		// wait for either signal or stream completion
-		select {
-		case <-sigChan:
-			_ = conn.Close()
-			utils.Verbose("stream closed by user")
-			return nil
-		case err := <-done:
-			utils.Verbose("stream ended")
-			return err
+		if d.avcStreamConn == conn {
+			d.avcStreamConn = nil
 		}
+		d.mu.Unlock()
+	})
+
+	go func() {
+		buffer := make([]byte, 65536)
+		var readErr error
+		for {
+			n, err := conn.Read(buffer)
+			if n > 0 {
+				emit(buffer[:n])
+			}
+			if err != nil {
+				if err != io.EOF {
+					readErr = fmt.Errorf("error reading from stream: %w", err)
+				}
+				break
+			}
+		}
+
+		closeStream()
+		ended(readErr)
+	}()
+
+	return closeStream, nil
+}
+
+func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	// handle avc format via DeviceKit. all concurrent captures share one
+	// broadcast: dialing a second conn would make the extension's TCPServer
+	// redirect the video to it and starve the first one.
+	if config.Format == "avc" {
+		cancel, stopWatching := watchStop(config.StopChan)
+		defer stopWatching()
+
+		err := d.avcStream.subscribe(avcSource{
+			start: func(emit func([]byte), ended func(error)) (func(), error) {
+				return d.startAvcStream(config, emit, ended)
+			},
+			// DeviceKit is confirmed running (either reused or freshly started and
+			// the broadcast picker was clicked) — safe to tell the caller capture
+			// is live. a late joiner is live right away.
+			ready:           config.OnReady,
+			requestKeyFrame: func() error { return RequestAvcKeyFrame(d) },
+		}, config.OnData, cancel)
+
+		utils.Verbose("stream ended")
+		return err
 	}
 
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg

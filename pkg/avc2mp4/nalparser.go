@@ -14,7 +14,7 @@ func ParseNALUnits(data []byte) []NALUnit {
 	i := 0
 
 	// find the first start code
-	i = findStartCode(data, i)
+	i = FindStartCode(data, i)
 	if i < 0 {
 		return nil
 	}
@@ -30,7 +30,7 @@ func ParseNALUnits(data []byte) []NALUnit {
 		nalStart := i
 
 		// find the next start code (or end of data)
-		next := findStartCode(data, i)
+		next := FindStartCode(data, i)
 		if next < 0 {
 			next = n
 		}
@@ -49,7 +49,9 @@ func ParseNALUnits(data []byte) []NALUnit {
 	return units
 }
 
-func findStartCode(data []byte, pos int) int {
+// FindStartCode returns the index of the first Annex B start code at or after
+// pos, or -1 when data holds none from there on.
+func FindStartCode(data []byte, pos int) int {
 	n := len(data)
 	for i := pos; i+2 < n; i++ {
 		if data[i] == 0x00 && data[i+1] == 0x00 {
