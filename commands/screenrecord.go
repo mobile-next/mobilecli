@@ -105,9 +105,9 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
 	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "real":
-		// real iOS devices route through DeviceKit + ReplayKit; screenRecordIOSDevice
+		// real iOS devices route through DeviceKit + ReplayKit; screenRecordAvc
 		// signals req.Ready itself once the broadcast picker is confirmed started.
-		return screenRecordIOSDevice(targetDevice, req, progress)
+		return screenRecordAvc(targetDevice, req, progress)
 	default:
 		err := fmt.Errorf("screen recording is not supported for this device type")
 		req.signalReady(err)
@@ -205,7 +205,11 @@ func (p *screenRecordProgress) downloaded(speedMBps float64) {
 	fmt.Fprintf(p.out, "\nDownloading done, %.3f MB/sec\n", speedMBps)
 }
 
-func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
+// screenRecordAvc records through the device's shared H.264 stream: subscribe,
+// spool the elementary stream to a temp .avc, then mux it to mp4. Used by real
+// iOS devices (DeviceKit + ReplayKit), so a concurrent screencapture and
+// screenrecord share one broadcast instead of stealing it from each other.
+func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
 	tempFile, err := os.CreateTemp("", "screenrecord-*.avc")
 	if err != nil {
 		req.signalReady(err)
@@ -241,6 +245,10 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 			_, writeErr := tempFile.Write(data)
 			return writeErr == nil
 		}, req.TimeLimit, req.StopChan),
+		// OnData only runs when a frame arrives, and a static screen emits very
+		// few; hand the stop channel down so leaving the shared stream doesn't
+		// wait for the next frame.
+		StopChan: req.StopChan,
 	})
 
 	progress.recordingEnded()
@@ -265,7 +273,12 @@ func screenRecordIOSDevice(targetDevice devices.ControllableDevice, req ScreenRe
 	}
 
 	if len(data) == 0 {
-		return NewErrorResponse(fmt.Errorf("no data captured"))
+		// a stop that lands before the stream ever went live detaches cleanly
+		// (nil error) without OnReady firing; whoever waits on Ready still
+		// needs an answer. no-op if OnReady already signaled.
+		err := fmt.Errorf("no data captured")
+		req.signalReady(err)
+		return NewErrorResponse(err)
 	}
 
 	outFile, err := os.Create(req.OutputPath)
