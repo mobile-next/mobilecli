@@ -1236,6 +1236,14 @@ type DeviceKitInfo struct {
 	StreamPort int `json:"streamPort"`
 }
 
+// dumpBroadcastPickerElements reads the accessibility tree directly. DumpSource
+// first probes the foreground app for a Flutter VM by injecting an agent over
+// LLDB; on the devicekit app that attach succeeds, pauses the app, and takes
+// ~20s, longer than the whole picker timeout. the picker is never Flutter.
+func (d *IOSDevice) dumpBroadcastPickerElements() ([]ScreenElement, error) {
+	return d.deviceKitClient.GetSourceElements()
+}
+
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
 // then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
@@ -1260,7 +1268,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource(DumpOptions{})
+			elements, err := d.dumpBroadcastPickerElements()
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1281,12 +1289,12 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 
 			// picker not open yet: tap the record button whenever the app screen is up
 			if hasText(elements, "Press to Start Broadcasting") {
-				buttons := filterButtons(elements)
-				if len(buttons) != 1 {
-					return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
+				recordButton, err := findRecordButton(elements)
+				if err != nil {
+					return err
 				}
-				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
-				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+				centerX := recordButton.Rect.X + recordButton.Rect.Width/2
+				centerY := recordButton.Rect.Y + recordButton.Rect.Height/2
 				utils.Verbose("Tapping record button at %d,%d", centerX, centerY)
 				if err = d.Tap(centerX, centerY); err != nil {
 					return fmt.Errorf("failed to tap broadcast button: %w", err)
@@ -1323,7 +1331,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource(DumpOptions{})
+			elements, err := d.dumpBroadcastPickerElements()
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1384,14 +1392,29 @@ func hasText(elements []ScreenElement, text string) bool {
 	return false
 }
 
-func filterButtons(elements []ScreenElement) []ScreenElement {
-	var buttons []ScreenElement
+// recordButtonName is what RPSystemBroadcastPickerView calls its button.
+const recordButtonName = "ModuleIcon"
+
+// findRecordButton picks the button that opens the broadcast picker on the
+// devicekit app's screen. the app has only that one, but iOS adds a "Return to
+// <app>" button to the status bar when the app was opened from another app, so
+// "the only button" is not reliable on its own.
+func findRecordButton(elements []ScreenElement) (*ScreenElement, error) {
+	var buttons []*ScreenElement
 	for i := range elements {
-		if elements[i].Type == "Button" {
-			buttons = append(buttons, elements[i])
+		if elements[i].Type != "Button" {
+			continue
 		}
+		if elements[i].Name != nil && *elements[i].Name == recordButtonName {
+			return &elements[i], nil
+		}
+		buttons = append(buttons, &elements[i])
 	}
-	return buttons
+
+	if len(buttons) != 1 {
+		return nil, fmt.Errorf("expected a %q button or exactly one button on 'Press to Start Broadcasting' screen, found %d", recordButtonName, len(buttons))
+	}
+	return buttons[0], nil
 }
 
 func (d *IOSDevice) ensureDeviceKitPortForwarders() (*DeviceKitInfo, error) {
@@ -1693,12 +1716,29 @@ func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duratio
 				continue
 			}
 
-			if activeApp.BundleID == bundleID {
+			if isAppOrItsBroadcastPickerInForeground(activeApp, bundleID) {
 				utils.Verbose("App %s is now in foreground", bundleID)
 				return nil
 			}
 		}
 	}
+}
+
+// the system broadcast picker is presented by SpringBoard, not by the app that
+// asked for it.
+const (
+	springBoardBundleID           = "com.apple.springboard"
+	broadcastPickerViewController = "CCUILabeledRoundButtonViewController"
+)
+
+// isAppOrItsBroadcastPickerInForeground also accepts the broadcast picker: the
+// devicekit app opens it as soon as it appears, usually before the first poll,
+// and from then on the app itself is never reported as the active one.
+func isAppOrItsBroadcastPickerInForeground(activeApp *devicekit.ActiveAppInfo, bundleID string) bool {
+	if activeApp.BundleID == bundleID {
+		return true
+	}
+	return activeApp.BundleID == springBoardBundleID && activeApp.ViewController == broadcastPickerViewController
 }
 
 // findAvailablePortInRange finds an available port in the specified range
