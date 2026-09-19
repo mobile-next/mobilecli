@@ -39,7 +39,6 @@ const (
 	portRangeEnd              = 8299
 	deviceKitHTTPPort         = 12004 // device-side HTTP server port
 	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
-	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
 	agentRunnerBundleID       = "com.mobilenext.devicekit-iosUITests.xctrunner"
 )
@@ -1236,6 +1235,14 @@ type DeviceKitInfo struct {
 	StreamPort int `json:"streamPort"`
 }
 
+// dumpBroadcastPickerElements reads the accessibility tree directly. DumpSource
+// first probes the foreground app for a Flutter VM by injecting an agent over
+// LLDB; on the devicekit app that attach succeeds, pauses the app, and takes
+// ~20s, longer than the whole picker timeout. the picker is never Flutter.
+func (d *IOSDevice) dumpBroadcastPickerElements() ([]ScreenElement, error) {
+	return d.deviceKitClient.GetSourceElements()
+}
+
 // clickStartBroadcastButton polls for the "BroadcastUploadExtension" button, taps it,
 // then polls for the "Start Broadcast" button and taps it
 func (d *IOSDevice) clickStartBroadcastButton() error {
@@ -1246,7 +1253,8 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	// tap then means the picker never opens and the old wait loop timed out.
 	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
 	var broadcastExtensionButton *ScreenElement
-	timeout := time.After(10 * time.Second)
+	// covers the app launch too, which used to have its own 5s foreground wait
+	timeout := time.After(15 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -1260,7 +1268,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource(DumpOptions{})
+			elements, err := d.dumpBroadcastPickerElements()
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1281,12 +1289,12 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 
 			// picker not open yet: tap the record button whenever the app screen is up
 			if hasText(elements, "Press to Start Broadcasting") {
-				buttons := filterButtons(elements)
-				if len(buttons) != 1 {
-					return fmt.Errorf("expected exactly one button on 'Press to Start Broadcasting' screen, found %d", len(buttons))
+				recordButton, err := findRecordButton(elements)
+				if err != nil {
+					return err
 				}
-				centerX := buttons[0].Rect.X + buttons[0].Rect.Width/2
-				centerY := buttons[0].Rect.Y + buttons[0].Rect.Height/2
+				centerX := recordButton.Rect.X + recordButton.Rect.Width/2
+				centerY := recordButton.Rect.Y + recordButton.Rect.Height/2
 				utils.Verbose("Tapping record button at %d,%d", centerX, centerY)
 				if err = d.Tap(centerX, centerY); err != nil {
 					return fmt.Errorf("failed to tap broadcast button: %w", err)
@@ -1323,7 +1331,7 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			}
 			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
 		case <-ticker.C:
-			elements, err := d.DumpSource(DumpOptions{})
+			elements, err := d.dumpBroadcastPickerElements()
 			if err != nil {
 				// continue trying on error
 				continue
@@ -1384,14 +1392,29 @@ func hasText(elements []ScreenElement, text string) bool {
 	return false
 }
 
-func filterButtons(elements []ScreenElement) []ScreenElement {
-	var buttons []ScreenElement
+// recordButtonName is what RPSystemBroadcastPickerView calls its button.
+const recordButtonName = "ModuleIcon"
+
+// findRecordButton picks the button that opens the broadcast picker on the
+// devicekit app's screen. the app has only that one, but iOS adds a "Return to
+// <app>" button to the status bar when the app was opened from another app, so
+// "the only button" is not reliable on its own.
+func findRecordButton(elements []ScreenElement) (*ScreenElement, error) {
+	var buttons []*ScreenElement
 	for i := range elements {
-		if elements[i].Type == "Button" {
-			buttons = append(buttons, elements[i])
+		if elements[i].Type != "Button" {
+			continue
 		}
+		if elements[i].Name != nil && *elements[i].Name == recordButtonName {
+			return &elements[i], nil
+		}
+		buttons = append(buttons, &elements[i])
 	}
-	return buttons
+
+	if len(buttons) != 1 {
+		return nil, fmt.Errorf("expected a %q button or exactly one button on 'Press to Start Broadcasting' screen, found %d", recordButtonName, len(buttons))
+	}
+	return buttons[0], nil
 }
 
 func (d *IOSDevice) ensureDeviceKitPortForwarders() (*DeviceKitInfo, error) {
@@ -1576,18 +1599,15 @@ func (d *IOSDevice) stopDeviceKitAvcForwarders() {
 	_ = d.portForwarderAvc.Stop()
 }
 
-// launchDeviceKitApp launches the DeviceKit app and waits for it to reach the foreground.
+// launchDeviceKitApp launches the DeviceKit app. it does not wait for the app to
+// reach the foreground: the app opens the system broadcast picker as soon as it
+// appears, and SpringBoard owns that picker, so the app itself is often never
+// reported as active. clickStartBroadcastButton's poll is the real readiness check.
 func (d *IOSDevice) launchDeviceKitApp(bundleId string) error {
 	utils.Verbose("Launching DeviceKit app: %s", bundleId)
 	if err := d.LaunchApp(bundleId, LaunchOptions{}); err != nil {
 		return fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
-
-	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
-	if err := d.waitForAppInForeground(bundleId, deviceKitAppLaunchTimeout); err != nil {
-		return fmt.Errorf("failed to wait for DeviceKit app: %w", err)
-	}
-
 	return nil
 }
 
@@ -1674,31 +1694,6 @@ func (d *IOSDevice) StartDeviceKitAvc(hook *ShutdownHook) (*DeviceKitInfo, error
 		HTTPPort:   localHTTPPort,
 		StreamPort: localStreamPort,
 	}, nil
-}
-
-// waitForAppInForeground polls WDA to check if the specified app is in foreground
-func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duration) error {
-	deadline := time.After(timeout)
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-deadline:
-			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
-		case <-ticker.C:
-			activeApp, err := d.deviceKitClient.GetActiveAppInfo()
-			if err != nil {
-				// continue trying on error
-				continue
-			}
-
-			if activeApp.BundleID == bundleID {
-				utils.Verbose("App %s is now in foreground", bundleID)
-				return nil
-			}
-		}
-	}
 }
 
 // findAvailablePortInRange finds an available port in the specified range
