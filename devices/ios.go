@@ -72,7 +72,8 @@ type IOSDevice struct {
 	OSVersion   string `json:"Version"`
 	ProductType string `json:"ProductType"`
 
-	mu                          sync.Mutex // protects fields below
+	mu                          sync.Mutex       // protects fields below
+	flutterCandidate            flutterCandidate // Info.plist verdict for the last foreground process
 	tunnelManager               *ios.TunnelManager
 	deviceKitClient             *devicekit.DeviceKitClient
 	mjpegClient                 *mjpeg.DeviceKitMjpegClient
