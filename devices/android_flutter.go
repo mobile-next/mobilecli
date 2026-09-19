@@ -3,6 +3,7 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -277,6 +278,22 @@ type vmInstanceRef struct {
 	ClassRef   *struct {
 		Name string `json:"name"`
 	} `json:"class"`
+}
+
+// doubleValue reads a Dart double. a debug (JIT) build reports kind Double with
+// the decimal text; a profile (AOT) build keeps double fields unboxed and the VM
+// service reports their raw IEEE-754 bits as kind Int.
+func (r *vmInstanceRef) doubleValue() (float64, bool) {
+	switch r.Kind {
+	case "Double":
+		v, err := strconv.ParseFloat(r.ValueAsStr, 64)
+		return v, err == nil
+	case "Int":
+		bits, err := strconv.ParseInt(r.ValueAsStr, 10, 64)
+		return math.Float64frombits(uint64(bits)), err == nil //nolint:gosec // reinterpreting the bit pattern, not converting a value
+	default:
+		return 0, false
+	}
 }
 
 func (r *vmInstanceRef) className() string {
@@ -569,7 +586,12 @@ func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
 				return
 			}
 			dx, dy := o.field("_dx"), o.field("_dy")
-			if dx != nil && dy != nil && dx.ValueAsStr == "0.0" && dy.ValueAsStr == "0.0" {
+			if dx == nil || dy == nil {
+				return
+			}
+			x, okX := dx.doubleValue()
+			y, okY := dy.doubleValue()
+			if okX && okY && x == 0 && y == 0 {
 				found[i] = id
 			}
 		}(i, inst.ID)
@@ -885,9 +907,9 @@ func (vm *flutterVM) offsetPair(objectID string) (float64, float64, bool) {
 	if dx == nil || dy == nil {
 		return 0, 0, false
 	}
-	x, err1 := strconv.ParseFloat(dx.ValueAsStr, 64)
-	y, err2 := strconv.ParseFloat(dy.ValueAsStr, 64)
-	if err1 != nil || err2 != nil {
+	x, okX := dx.doubleValue()
+	y, okY := dy.doubleValue()
+	if !okX || !okY {
 		return 0, 0, false
 	}
 	return x, y, true

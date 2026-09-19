@@ -33,6 +33,9 @@ import (
 
 // bonjour service types the Flutter tool adds to debug/profile builds so that
 // `flutter attach` can find the VM service; the second is what older Flutter versions called it.
+// how long to wait for a bonjour answer before falling back to LLDB.
+const dartVMServiceMDNSTimeout = 3 * time.Second
+
 var dartVMServiceTypes = []string{"_dartVmService._tcp", "_dartobservatory._tcp"}
 
 // flutterCandidate remembers the verdict for one process: its Info.plist cannot
@@ -60,32 +63,34 @@ func advertisesDartVMService(app installationproxy.AppInfo) bool {
 	return false
 }
 
-// foregroundAppMayBeFlutter decides whether injecting the agent is worth it.
-// when the answer cannot be determined it says yes, which is the old behaviour.
-func (d *IOSDevice) foregroundAppMayBeFlutter() bool {
+// foregroundFlutterCandidate decides whether looking for a Dart VM is worth it,
+// and names the foreground app when it knows it. when the answer cannot be
+// determined it says yes with no bundle id, which is the old probe-over-LLDB
+// behaviour.
+func (d *IOSDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
 	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
 	if err != nil || activeApp.ProcessID == 0 {
 		utils.Verbose("flutter: cannot tell the foreground app, probing anyway: %v", err)
-		return true
+		return "", true
 	}
 
 	d.mu.Lock()
 	cached := d.flutterCandidate
 	d.mu.Unlock()
 	if cached.pid == activeApp.ProcessID {
-		return cached.isCandidate
+		return activeApp.BundleID, cached.isCandidate
 	}
 
 	isCandidate, err := d.installedAppAdvertisesDartVMService(activeApp.BundleID)
 	if err != nil {
 		utils.Verbose("flutter: cannot read %s's Info.plist, probing anyway: %v", activeApp.BundleID, err)
-		return true
+		return activeApp.BundleID, true
 	}
 
 	d.mu.Lock()
 	d.flutterCandidate = flutterCandidate{pid: activeApp.ProcessID, isCandidate: isCandidate}
 	d.mu.Unlock()
-	return isCandidate
+	return activeApp.BundleID, isCandidate
 }
 
 // installedAppAdvertisesDartVMService looks the bundle up among user apps; system
@@ -116,11 +121,26 @@ func (d *IOSDevice) installedAppAdvertisesDartVMService(bundleID string) (bool, 
 // tryDumpFlutterSource returns the Flutter render tree for the foreground app,
 // or ok=false to signal the caller should use the accessibility dump.
 func (d *IOSDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
-	if !d.foregroundAppMayBeFlutter() {
-		utils.Verbose("flutter: foreground app does not advertise a Dart VM service, skipping the LLDB probe")
+	bundleID, mayBeFlutter := d.foregroundFlutterCandidate()
+	if !mayBeFlutter {
+		utils.Verbose("flutter: foreground app does not advertise a Dart VM service, skipping the probe")
 		return nil, false
 	}
 
+	// the engine advertises its VM service over bonjour, and that reaches the
+	// Mac over the usb link too: ~1s, no attach, the app keeps running.
+	if uri := d.dartVMServiceURIViaMDNS(bundleID); uri != "" {
+		elements, err := d.dumpFlutterSourceDevice(uri)
+		if err != nil {
+			// the agent could only hand us this same URI, so injecting it over
+			// LLDB would cost ~20s and fail the same way
+			utils.Verbose("flutter: render-tree dump failed, falling back: %v", err)
+			return nil, false
+		}
+		return elements, true
+	}
+
+	// slow path: inject the agent over LLDB (~20s, pauses the app) and ask it
 	raw, err := d.agentCall("device.flutter.vmServiceUri", nil)
 	if err != nil {
 		// Expected for non-Flutter apps ("not a flutter app") and when the
@@ -141,6 +161,24 @@ func (d *IOSDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
 		return nil, false
 	}
 	return elements, true
+}
+
+// dartVMServiceURIViaMDNS finds the VM service the way `flutter attach` and the
+// simulator path do, or returns "" when the app is not advertising one (it was
+// denied Local Network access, or the engine has publication turned off).
+// ponytail: the instance name is just the bundle id, so with several phones
+// running the same app the first answer may be another phone's. its port and
+// auth code then fail through this device's tunnel and the dump falls back to
+// the accessibility tree; resolve every answer and try each if farms hit this.
+func (d *IOSDevice) dartVMServiceURIViaMDNS(bundleID string) string {
+	if bundleID == "" {
+		return ""
+	}
+	uri := resolveDartVMServiceMDNS(bundleID, dartVMServiceMDNSTimeout)
+	if uri == "" {
+		utils.Verbose("flutter: %s is not advertising a Dart VM service over mDNS", bundleID)
+	}
+	return uri
 }
 
 // dumpFlutterSourceDevice forwards a local port to the device's VM service port

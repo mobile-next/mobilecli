@@ -71,3 +71,32 @@ func TestVMServiceURIPatternRejectsNonLoopback(t *testing.T) {
 		t.Error("expected a non-loopback VM service URI to be rejected")
 	}
 }
+
+// a debug (JIT) build reports a double field as kind Double with its decimal
+// text; a profile (AOT) build keeps the field unboxed and reports its raw
+// IEEE-754 bits as kind Int. these are real values from an iPhone profile build.
+func TestDoubleValueReadsBothJITAndAOTEncodings(t *testing.T) {
+	cases := []struct {
+		name string
+		ref  vmInstanceRef
+		want float64
+	}{
+		{"debug build double", vmInstanceRef{Kind: "Double", ValueAsStr: "207.0"}, 207.0},
+		{"debug build zero", vmInstanceRef{Kind: "Double", ValueAsStr: "0.0"}, 0},
+		{"profile build unboxed double", vmInstanceRef{Kind: "Int", ValueAsStr: "4641487181586628608"}, 207.0},
+		{"profile build unboxed zero", vmInstanceRef{Kind: "Int", ValueAsStr: "0"}, 0},
+		{"profile build negative", vmInstanceRef{Kind: "Int", ValueAsStr: "-4598175219545276416"}, -16.0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := c.ref.doubleValue()
+			if !ok || got != c.want {
+				t.Fatalf("doubleValue() = %v, %v; want %v", got, ok, c.want)
+			}
+		})
+	}
+
+	if _, ok := (&vmInstanceRef{Kind: "String", ValueAsStr: "hello"}).doubleValue(); ok {
+		t.Error("a non-numeric value must not be read as a double")
+	}
+}
