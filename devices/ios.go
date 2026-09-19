@@ -39,7 +39,6 @@ const (
 	portRangeEnd              = 8299
 	deviceKitHTTPPort         = 12004 // device-side HTTP server port
 	deviceKitStreamPort       = 12005 // device-side H.264 TCP stream port
-	deviceKitAppLaunchTimeout = 5 * time.Second
 	deviceKitBroadcastTimeout = 5 * time.Second
 	agentRunnerBundleID       = "com.mobilenext.devicekit-iosUITests.xctrunner"
 )
@@ -1254,7 +1253,8 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	// tap then means the picker never opens and the old wait loop timed out.
 	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
 	var broadcastExtensionButton *ScreenElement
-	timeout := time.After(10 * time.Second)
+	// covers the app launch too, which used to have its own 5s foreground wait
+	timeout := time.After(15 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -1599,18 +1599,15 @@ func (d *IOSDevice) stopDeviceKitAvcForwarders() {
 	_ = d.portForwarderAvc.Stop()
 }
 
-// launchDeviceKitApp launches the DeviceKit app and waits for it to reach the foreground.
+// launchDeviceKitApp launches the DeviceKit app. it does not wait for the app to
+// reach the foreground: the app opens the system broadcast picker as soon as it
+// appears, and SpringBoard owns that picker, so the app itself is often never
+// reported as active. clickStartBroadcastButton's poll is the real readiness check.
 func (d *IOSDevice) launchDeviceKitApp(bundleId string) error {
 	utils.Verbose("Launching DeviceKit app: %s", bundleId)
 	if err := d.LaunchApp(bundleId, LaunchOptions{}); err != nil {
 		return fmt.Errorf("failed to launch DeviceKit app: %w", err)
 	}
-
-	utils.Verbose("Waiting for DeviceKit app to be in foreground...")
-	if err := d.waitForAppInForeground(bundleId, deviceKitAppLaunchTimeout); err != nil {
-		return fmt.Errorf("failed to wait for DeviceKit app: %w", err)
-	}
-
 	return nil
 }
 
@@ -1697,48 +1694,6 @@ func (d *IOSDevice) StartDeviceKitAvc(hook *ShutdownHook) (*DeviceKitInfo, error
 		HTTPPort:   localHTTPPort,
 		StreamPort: localStreamPort,
 	}, nil
-}
-
-// waitForAppInForeground polls WDA to check if the specified app is in foreground
-func (d *IOSDevice) waitForAppInForeground(bundleID string, timeout time.Duration) error {
-	deadline := time.After(timeout)
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-deadline:
-			return fmt.Errorf("timeout waiting for app %s to be in foreground", bundleID)
-		case <-ticker.C:
-			activeApp, err := d.deviceKitClient.GetActiveAppInfo()
-			if err != nil {
-				// continue trying on error
-				continue
-			}
-
-			if isAppOrItsBroadcastPickerInForeground(activeApp, bundleID) {
-				utils.Verbose("App %s is now in foreground", bundleID)
-				return nil
-			}
-		}
-	}
-}
-
-// the system broadcast picker is presented by SpringBoard, not by the app that
-// asked for it.
-const (
-	springBoardBundleID           = "com.apple.springboard"
-	broadcastPickerViewController = "CCUILabeledRoundButtonViewController"
-)
-
-// isAppOrItsBroadcastPickerInForeground also accepts the broadcast picker: the
-// devicekit app opens it as soon as it appears, usually before the first poll,
-// and from then on the app itself is never reported as the active one.
-func isAppOrItsBroadcastPickerInForeground(activeApp *devicekit.ActiveAppInfo, bundleID string) bool {
-	if activeApp.BundleID == bundleID {
-		return true
-	}
-	return activeApp.BundleID == springBoardBundleID && activeApp.ViewController == broadcastPickerViewController
 }
 
 // findAvailablePortInRange finds an available port in the specified range

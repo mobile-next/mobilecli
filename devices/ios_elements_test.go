@@ -1,10 +1,6 @@
 package devices
 
-import (
-	"testing"
-
-	"github.com/mobile-next/mobilecli/devices/devicekit"
-)
+import "testing"
 
 func TestFlattenElementsIncludesNestedChildren(t *testing.T) {
 	name := "BroadcastUploadExtension"
@@ -80,29 +76,5 @@ func TestFindRecordButtonFailsWhenItCannotTellWhichButtonRecords(t *testing.T) {
 	_, err = findRecordButton([]ScreenElement{startBroadcastingLabel()})
 	if err == nil {
 		t.Error("expected an error when there is no button at all")
-	}
-}
-
-// the devicekit app taps its own picker button as soon as it appears, so by the
-// time we poll, the foreground is usually SpringBoard's broadcast picker and the
-// app itself is never reported as active
-func TestDeviceKitAppCountsAsLaunchedOnceItsBroadcastPickerIsShowing(t *testing.T) {
-	const deviceKit = "com.mobilenext.devicekit-h264"
-	picker := &devicekit.ActiveAppInfo{BundleID: "com.apple.springboard", ViewController: broadcastPickerViewController}
-	homeScreen := &devicekit.ActiveAppInfo{BundleID: "com.apple.springboard", ViewController: "SBIconController"}
-	theAppItself := &devicekit.ActiveAppInfo{BundleID: deviceKit}
-	settings := &devicekit.ActiveAppInfo{BundleID: "com.apple.Preferences"}
-
-	if !isAppOrItsBroadcastPickerInForeground(theAppItself, deviceKit) {
-		t.Error("the app in the foreground must count as launched")
-	}
-	if !isAppOrItsBroadcastPickerInForeground(picker, deviceKit) {
-		t.Error("the broadcast picker showing must count as launched")
-	}
-	if isAppOrItsBroadcastPickerInForeground(homeScreen, deviceKit) {
-		t.Error("the plain home screen must not count as launched")
-	}
-	if isAppOrItsBroadcastPickerInForeground(settings, deviceKit) {
-		t.Error("another app must not count as launched")
 	}
 }
