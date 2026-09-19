@@ -110,6 +110,9 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		for _, entry := range entries {
 			if strings.HasSuffix(entry.Name(), ".appex") || strings.HasSuffix(entry.Name(), ".xctest") {
 				pluginPath := filepath.Join(pluginsDir, entry.Name())
+				if err = signLooseDylibs(pluginPath, identity); err != nil {
+					return "", err
+				}
 				Verbose("Signing plugin: %s", entry.Name())
 				err = codesign(pluginPath, identity, entitlementsPath)
 				if err != nil {
@@ -117,6 +120,10 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 				}
 			}
 		}
+	}
+
+	if err = signLooseDylibs(appPath, identity); err != nil {
+		return "", err
 	}
 
 	Verbose("Signing main app bundle")
@@ -143,6 +150,40 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	}
 
 	return outputPath, nil
+}
+
+// looseDylibs lists the dylibs sitting directly in a bundle's root. Xcode debug
+// builds put the real code there (<Name>.debug.dylib next to a stub executable,
+// plus __preview.dylib). signing the bundle does not sign them, and dyld refuses
+// an unsigned one at launch: "mapped file has no cdhash, completely unsigned".
+func looseDylibs(bundlePath string) ([]string, error) {
+	entries, err := os.ReadDir(bundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bundle %s: %w", bundlePath, err)
+	}
+	var dylibs []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".dylib") {
+			dylibs = append(dylibs, filepath.Join(bundlePath, entry.Name()))
+		}
+	}
+	return dylibs, nil
+}
+
+// signLooseDylibs must run before the bundle itself is signed: code is signed
+// inside-out, and the bundle's seal covers these files.
+func signLooseDylibs(bundlePath, identity string) error {
+	dylibs, err := looseDylibs(bundlePath)
+	if err != nil {
+		return err
+	}
+	for _, dylib := range dylibs {
+		Verbose("Signing dylib: %s", filepath.Base(dylib))
+		if err := codesign(dylib, identity, ""); err != nil {
+			return fmt.Errorf("failed to sign dylib %s: %w", filepath.Base(dylib), err)
+		}
+	}
+	return nil
 }
 
 func findAppBundle(tempDir string) (string, error) {
