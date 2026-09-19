@@ -25,7 +25,14 @@ platform-specific part is getting the VM service URI (port + auth token).
 |---|---|---|---|
 | Android | app is debuggable and the injected agent finds `FlutterJNI` | agent calls `FlutterJNI.getVMServiceUri()` in-process | `adb forward` to the device port |
 | iOS simulator | app bundle contains `Frameworks/Flutter.framework` | mDNS `_dartVmService._tcp` (what `flutter attach` uses); simulator log as fallback | direct, the app runs on the Mac's loopback |
-| iOS device | injected agent finds a `FlutterViewController` on screen | agent reads `engine.publisher.url` in-process | port forward over the go-ios tunnel |
+| iOS device | app's Info.plist advertises `_dartVmService._tcp` (Flutter adds it to debug/profile builds) | mDNS `_dartVmService._tcp`, which also reaches the Mac over the USB link; the LLDB-injected agent reading `engine.publisher.url` is the fallback | port forward over the go-ios tunnel |
+
+On a real iOS device nothing is attached to the app unless mDNS finds no VM
+service: injecting the agent means attaching LLDB, which pauses the app and takes
+~20s. The app only advertises over mDNS once the user has allowed the Local
+Network prompt. The render-tree walk uses debug-only framework APIs
+(`debugDescribeChildren`, `debugSemantics`), so a profile build on an iOS device
+connects fine but yields no elements and falls back to the accessibility dump.
 
 Coordinates: Android is scaled from logical to physical pixels using the device
 density; iOS reports logical points, so no scaling.
