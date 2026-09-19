@@ -273,7 +273,12 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	}
 
 	if len(data) == 0 {
-		return NewErrorResponse(fmt.Errorf("no data captured"))
+		// a stop that lands before the stream ever went live detaches cleanly
+		// (nil error) without OnReady firing; whoever waits on Ready still
+		// needs an answer. no-op if OnReady already signaled.
+		err := fmt.Errorf("no data captured")
+		req.signalReady(err)
+		return NewErrorResponse(err)
 	}
 
 	outFile, err := os.Create(req.OutputPath)

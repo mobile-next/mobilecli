@@ -1070,6 +1070,14 @@ func (d *IOSDevice) startAvcStream(config ScreenCaptureConfig, emit func([]byte)
 	d.avcStreamConn = conn
 	d.mu.Unlock()
 
+	// zero keeps the extension's default. a failure is not worth losing the
+	// stream over: the encoder simply stays on its current bitrate.
+	if config.Bitrate > 0 {
+		if err := SetAvcBitrate(d, config.Bitrate); err != nil {
+			utils.Verbose("failed to apply initial avc bitrate %d: %v", config.Bitrate, err)
+		}
+	}
+
 	// closing must be complete by the time the hub's stop() returns, and by the
 	// time ended() runs: the hub only ever allows one live stream per device,
 	// and a lingering conn would still be the extension's newest client.
