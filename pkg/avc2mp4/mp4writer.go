@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/yapingcat/gomedia/go-mp4"
@@ -18,6 +19,7 @@ type ConvertResult struct {
 type accessUnit struct {
 	nalus       []NALUnit
 	timestampUs uint64
+	hasSlice    bool
 }
 
 const (
@@ -39,8 +41,11 @@ func Convert(avcData []byte, output io.WriteSeeker) (*ConvertResult, error) {
 		return nil, err
 	}
 
-	firstTs := units[0].timestampUs
-	lastTs := units[len(units)-1].timestampUs
+	// units are in decode order, which with B-frames is not presentation order
+	firstTs, lastTs := units[0].timestampUs, units[0].timestampUs
+	for _, au := range units {
+		firstTs, lastTs = min(firstTs, au.timestampUs), max(lastTs, au.timestampUs)
+	}
 	var duration time.Duration
 	const maxDurationMicros = uint64(math.MaxInt64) / uint64(time.Microsecond)
 	if delta := lastTs - firstTs; lastTs > firstTs && delta <= maxDurationMicros {
@@ -53,10 +58,21 @@ func Convert(avcData []byte, output io.WriteSeeker) (*ConvertResult, error) {
 	}, nil
 }
 
+// groupAccessUnits splits the stream into one access unit per picture. the
+// encoder emits our timecode SEI *before* the picture's slice, so a timestamp is
+// held until the next slice claims it. everything before the first SPS is
+// undecodable and dropped, as are pictures that never got a timestamp.
 func groupAccessUnits(nalus []NALUnit) []accessUnit {
 	var units []accessUnit
 	var current *accessUnit
+	var pendingTs uint64
 	seenSPS := false
+
+	flush := func() {
+		if current != nil && current.hasSlice && current.timestampUs > 0 {
+			units = append(units, *current)
+		}
+	}
 
 	for _, nalu := range nalus {
 		if nalu.Type == nalTypeSPS {
@@ -66,38 +82,59 @@ func groupAccessUnits(nalus []NALUnit) []accessUnit {
 			continue
 		}
 
-		// check if this NAL starts a new access unit
-		isSlice := nalu.Type == 1 || nalu.Type == 5
-		isSPS := nalu.Type == nalTypeSPS
-
-		if isSlice || isSPS {
-			if current != nil && current.timestampUs > 0 {
-				units = append(units, *current)
-			}
-			current = &accessUnit{}
-		}
-
-		if current == nil {
-			current = &accessUnit{}
-		}
-
-		// extract timestamp from our custom SEI
 		if nalu.Type == nalTypeSEI {
 			if ts, ok := ParseTimestamp(nalu.Data); ok {
-				current.timestampUs = ts
+				pendingTs = ts
 				continue // don't include custom SEI in muxed output
 			}
 		}
 
+		isSlice := nalu.Type == 1 || nalu.Type == 5
+		// a slice with no fresh timestamp is another slice of the same picture
+		isSamePicture := isSlice && pendingTs == 0
+		if current == nil || (current.hasSlice && !isSamePicture) {
+			flush()
+			current = &accessUnit{}
+		}
+
 		current.nalus = append(current.nalus, nalu)
+		if isSlice && !current.hasSlice {
+			current.hasSlice = true
+			current.timestampUs = pendingTs
+			pendingTs = 0
+		}
 	}
 
-	// flush last access unit
-	if current != nil && current.timestampUs > 0 {
-		units = append(units, *current)
-	}
-
+	flush()
 	return units
+}
+
+// sampleTimesMs returns pts and dts in milliseconds for units given in decode
+// order. with B-frames the encoder emits pictures out of presentation order, so
+// dts cannot simply equal pts: dts walks the sorted timestamps (monotonic), and
+// every pts is pushed back by the largest reorder delay so dts <= pts holds.
+// without reordering the delay is zero and dts == pts.
+func sampleTimesMs(units []accessUnit) (pts []uint64, dts []uint64) {
+	dts = make([]uint64, len(units))
+	for i, au := range units {
+		dts[i] = au.timestampUs
+	}
+	slices.Sort(dts)
+
+	first := dts[0]
+	var delayUs uint64
+	for i, au := range units {
+		if dts[i] > au.timestampUs {
+			delayUs = max(delayUs, dts[i]-au.timestampUs)
+		}
+	}
+
+	pts = make([]uint64, len(units))
+	for i, au := range units {
+		pts[i] = (au.timestampUs - first + delayUs) / 1000
+		dts[i] = (dts[i] - first) / 1000
+	}
+	return pts, dts
 }
 
 func writeMp4(units []accessUnit, output io.WriteSeeker) error {
@@ -108,14 +145,9 @@ func writeMp4(units []accessUnit, output io.WriteSeeker) error {
 
 	trackID := muxer.AddVideoTrack(mp4.MP4_CODEC_H264)
 
-	firstTs := units[0].timestampUs
-
-	for _, au := range units {
-		annexB := buildAnnexB(au.nalus)
-		ptsMs := (au.timestampUs - firstTs) / 1000
-		dtsMs := ptsMs // baseline profile, no B-frames
-
-		err := muxer.Write(trackID, annexB, ptsMs, dtsMs)
+	pts, dts := sampleTimesMs(units)
+	for i, au := range units {
+		err := muxer.Write(trackID, buildAnnexB(au.nalus), pts[i], dts[i])
 		if err != nil {
 			return fmt.Errorf("writing frame: %w", err)
 		}
