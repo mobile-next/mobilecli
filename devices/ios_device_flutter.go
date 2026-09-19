@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	iosutil "github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
@@ -21,13 +22,105 @@ import (
 //   - Reaching it: the VM service listens on the device's loopback, so we
 //     forward a local port to it through the same go-ios tunnel the agent uses.
 //
-// Detection is by attempt: a non-Flutter foreground app answers the RPC with
-// "not a flutter app", and we fall back to the accessibility dump. Like the
-// simulator, iOS reports layout in logical points, so dpr = 1.0.
+// Detection happens in two steps. Injecting the agent means attaching LLDB,
+// which pauses the app and takes ~20s on any debuggable app, so it is only
+// attempted when the foreground app's Info.plist advertises the Dart VM service
+// over bonjour — Flutter adds that to debug and profile builds, the only builds
+// that have a VM service to read. After that, detection is by attempt: a
+// non-Flutter app answers the RPC with "not a flutter app", and we fall back to
+// the accessibility dump. Like the simulator, iOS reports layout in logical
+// points, so dpr = 1.0.
+
+// bonjour service types the Flutter tool adds to debug/profile builds so that
+// `flutter attach` can find the VM service; the second is what older Flutter versions called it.
+var dartVMServiceTypes = []string{"_dartVmService._tcp", "_dartobservatory._tcp"}
+
+// flutterCandidate remembers the verdict for one process: its Info.plist cannot
+// change while it runs, and a reinstall gets a new pid.
+type flutterCandidate struct {
+	pid         int
+	isCandidate bool
+}
+
+// advertisesDartVMService reports whether an installed app's Info.plist declares
+// the Dart VM bonjour service.
+func advertisesDartVMService(app installationproxy.AppInfo) bool {
+	services, ok := app["NSBonjourServices"].([]any)
+	if !ok {
+		return false
+	}
+	for _, service := range services {
+		name, _ := service.(string)
+		for _, dartService := range dartVMServiceTypes {
+			if name == dartService {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// foregroundAppMayBeFlutter decides whether injecting the agent is worth it.
+// when the answer cannot be determined it says yes, which is the old behaviour.
+func (d *IOSDevice) foregroundAppMayBeFlutter() bool {
+	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
+	if err != nil || activeApp.ProcessID == 0 {
+		utils.Verbose("flutter: cannot tell the foreground app, probing anyway: %v", err)
+		return true
+	}
+
+	d.mu.Lock()
+	cached := d.flutterCandidate
+	d.mu.Unlock()
+	if cached.pid == activeApp.ProcessID {
+		return cached.isCandidate
+	}
+
+	isCandidate, err := d.installedAppAdvertisesDartVMService(activeApp.BundleID)
+	if err != nil {
+		utils.Verbose("flutter: cannot read %s's Info.plist, probing anyway: %v", activeApp.BundleID, err)
+		return true
+	}
+
+	d.mu.Lock()
+	d.flutterCandidate = flutterCandidate{pid: activeApp.ProcessID, isCandidate: isCandidate}
+	d.mu.Unlock()
+	return isCandidate
+}
+
+// installedAppAdvertisesDartVMService looks the bundle up among user apps; system
+// apps are not listed there and are never Flutter.
+func (d *IOSDevice) installedAppAdvertisesDartVMService(bundleID string) (bool, error) {
+	device, err := d.getEnhancedDevice()
+	if err != nil {
+		return false, fmt.Errorf("get enhanced device: %w", err)
+	}
+	svc, err := installationproxy.New(device)
+	if err != nil {
+		return false, fmt.Errorf("installationproxy: %w", err)
+	}
+	defer svc.Close()
+
+	apps, err := svc.BrowseUserApps()
+	if err != nil {
+		return false, fmt.Errorf("browse user apps: %w", err)
+	}
+	for _, app := range apps {
+		if app.CFBundleIdentifier() == bundleID {
+			return advertisesDartVMService(app), nil
+		}
+	}
+	return false, nil
+}
 
 // tryDumpFlutterSource returns the Flutter render tree for the foreground app,
 // or ok=false to signal the caller should use the accessibility dump.
 func (d *IOSDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
+	if !d.foregroundAppMayBeFlutter() {
+		utils.Verbose("flutter: foreground app does not advertise a Dart VM service, skipping the LLDB probe")
+		return nil, false
+	}
+
 	raw, err := d.agentCall("device.flutter.vmServiceUri", nil)
 	if err != nil {
 		// Expected for non-Flutter apps ("not a flutter app") and when the
