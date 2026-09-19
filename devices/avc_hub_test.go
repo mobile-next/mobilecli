@@ -218,6 +218,8 @@ type capture struct {
 	mu                  sync.Mutex
 	received            []byte
 	gate                chan struct{} // when set, onData waits on it before recording
+	entered             chan struct{} // closed the first time onData is called
+	enteredOnce         sync.Once
 	stopAfterFirstChunk bool
 	readyCalls          atomic.Int32
 	done                chan error
@@ -243,7 +245,7 @@ func startBlockedCapture(hub *avcHub, src avcSource) (*capture, func()) {
 }
 
 func newCapture() *capture {
-	return &capture{done: make(chan error, 1), cancel: make(chan struct{})}
+	return &capture{done: make(chan error, 1), cancel: make(chan struct{}), entered: make(chan struct{})}
 }
 
 func (c *capture) run(hub *avcHub, src avcSource) *capture {
@@ -261,7 +263,19 @@ func (c *capture) run(hub *avcHub, src avcSource) *capture {
 // wasReportedReady tells whether the hub told this capture its stream is live.
 func (c *capture) wasReportedReady() bool { return c.readyCalls.Load() > 0 }
 
+// waitUntilHandlingAChunk returns once the subscriber is inside onData, so a
+// test knows that chunk left the queue before it floods the rest.
+func (c *capture) waitUntilHandlingAChunk(t *testing.T) {
+	t.Helper()
+	select {
+	case <-c.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("subscriber never started handling a chunk")
+	}
+}
+
 func (c *capture) onData(chunk []byte) bool {
+	c.enteredOnce.Do(func() { close(c.entered) })
 	if c.gate != nil {
 		<-c.gate
 	}
@@ -470,15 +484,21 @@ func TestSlowSubscriberIsDroppedWithoutStallingTheOther(t *testing.T) {
 	source.waitForKeyFrameRequest(t)
 	source.feed(concat(spsNAL(), ppsNAL(), keyFrameNAL(1)))
 
-	// overflow the slow subscriber's queue while it sits inside onData
-	frames := make([][]byte, 0, avcSubscriberQueue+16)
-	for i := 0; i < avcSubscriberQueue+16; i++ {
-		frames = append(frames, deltaFrameNAL(byte(i)))
+	// overflow the slow subscriber's queue while it sits inside onData. feed in
+	// batches the fast subscriber can drain, or on a single cpu the feeder
+	// outruns it and the hub rightly drops both
+	const batch = 32
+	fed := len(keyFrameNAL(1))
+	for i := 0; i < avcSubscriberQueue+batch; i += batch {
+		frames := make([][]byte, batch)
+		for j := range frames {
+			frames[j] = deltaFrameNAL(byte(i + j))
+			fed += len(frames[j])
+		}
+		source.feed(frames...)
+		// the fast subscriber kept flowing the whole time
+		fast.waitForBytes(t, fed)
 	}
-	source.feed(frames...)
-
-	// the fast subscriber kept flowing the whole time
-	fast.waitForBytes(t, len(keyFrameNAL(1))+len(frames)*len(frames[0]))
 
 	releaseSlow()
 	if err := slow.waitUntilFinished(t); !errors.Is(err, errAvcSubscriberTooSlow) {
@@ -653,6 +673,7 @@ func TestADroppedSubscriberStopsWithoutDrainingItsStaleQueue(t *testing.T) {
 
 	firstChunk := concat(spsNAL(), ppsNAL(), keyFrameNAL(1))
 	source.feed(firstChunk)
+	slow.waitUntilHandlingAChunk(t)
 
 	backlog := make([][]byte, 0, avcSubscriberQueue+16)
 	for i := 0; i < avcSubscriberQueue+16; i++ {
