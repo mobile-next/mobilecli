@@ -104,6 +104,9 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 		FPS:        fps,
 		Bitrate:    req.Bitrate,
 		OnProgress: onProgress,
+		// OnData only runs when a frame arrives, and a static screen emits none:
+		// without this a client that disconnected stays subscribed to the stream
+		StopChan: ctx.Done(),
 		OnData: func(data []byte) bool {
 			if ctx.Err() != nil {
 				return false

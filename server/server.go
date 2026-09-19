@@ -1851,6 +1851,13 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		return fmt.Errorf("error starting agent: %w", err)
 	}
 
+	// a write only fails once a frame arrives; on a static screen a viewer that
+	// went away would otherwise stay subscribed to the stream. r is nil in tests.
+	var viewerGone <-chan struct{}
+	if r != nil {
+		viewerGone = r.Context().Done()
+	}
+
 	// start screen capture and stream to the response writer
 	err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
 		Format:     screenCaptureParams.Format,
@@ -1858,6 +1865,7 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		Scale:      scale,
 		FPS:        fps,
 		OnProgress: progressCallback,
+		StopChan:   viewerGone,
 		OnData: func(data []byte) bool {
 			_, writeErr := w.Write(data)
 			if writeErr != nil {
