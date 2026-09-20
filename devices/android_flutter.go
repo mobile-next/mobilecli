@@ -93,13 +93,9 @@ func (d *AndroidDevice) dumpFlutterSource(uri string) ([]types.ScreenElement, er
 	}
 	devicePort, token := m[1], m[2]
 
-	out, err := d.runAdbCommand("forward", "tcp:0", "tcp:"+devicePort)
+	localPort, err := d.addForward("tcp:" + devicePort)
 	if err != nil {
-		return nil, fmt.Errorf("adb forward to VM service: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	localPort, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return nil, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
+		return nil, fmt.Errorf("forward to VM service: %w", err)
 	}
 	defer d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", localPort))
 
