@@ -2,7 +2,6 @@ package com.mobilenext.mobilecli;
 
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
-import android.hardware.display.VirtualDisplay;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Handler;
@@ -83,7 +82,7 @@ public class MjpegServer {
 			}
 		}, new Handler(thread.getLooper()));
 
-		VirtualDisplay virtualDisplay = DisplayUtils.createVirtualDisplay(
+		DisplayUtils.DisplayMirror virtualDisplay = DisplayUtils.createVirtualDisplay(
 				"mjpeg.screen.capture", display.width, display.height, reader.getSurface());
 		if (virtualDisplay == null) {
 			System.err.println("Error: Failed to create virtual display");
