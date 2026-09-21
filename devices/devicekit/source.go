@@ -3,6 +3,7 @@ package devicekit
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,24 @@ func hasText(value *string) bool {
 	return value != nil && *value != ""
 }
 
+const elementTypeWebView = "WebView"
+
+// acceptedSourceTypes are the element types (XCUIElementType prefix stripped)
+// that filterSourceElements keeps.
+var acceptedSourceTypes = []string{
+	"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", elementTypeWebView,
+	// types that clients map to semantic roles (slider, progressbar,
+	// combobox, link, tab, header, alert, list, listitem)
+	"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+	"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+	"Cell", "Table", "CollectionView", "ScrollView",
+}
+
+// alwaysIncludedSourceTypes are kept even without a label, name or identifier.
+var alwaysIncludedSourceTypes = []string{
+	"TextField", "TextView", "SecureTextField", "Button", "Switch", "SearchField", elementTypeWebView, "Slider", "Picker", "PickerWheel",
+}
+
 // filterSourceElements converts a WDA source tree into ScreenElements,
 // preserving hierarchy: filtered descendants of an accepted element become its
 // Children, while descendants of rejected elements are hoisted to the nearest
@@ -51,38 +70,19 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		childElements = append(childElements, filterSourceElements(child)...)
 	}
 
-	acceptedTypes := []string{
-		"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView",
-		// types that clients map to semantic roles (slider, progressbar,
-		// combobox, link, tab, header, alert, list, listitem)
-		"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
-		"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
-		"Cell", "Table", "CollectionView", "ScrollView",
-	}
-
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
 
-	typeAccepted := false
-	for _, acceptedType := range acceptedTypes {
-		if elementType == acceptedType {
-			typeAccepted = true
-			break
-		}
-	}
-
 	// elements explicitly tagged with accessibilityIdentifier are always
 	// included, regardless of type, see https://github.com/mobile-next/mobilecli/issues/341
-	if hasText(source.RawIdentifier) {
-		typeAccepted = true
-	}
+	typeAccepted := slices.Contains(acceptedSourceTypes, elementType) || hasText(source.RawIdentifier)
 
 	if !typeAccepted || !isVisible(source.Rect) {
 		return childElements
 	}
 
 	hasIdentifier := hasText(source.Label) || hasText(source.Name) || hasText(source.RawIdentifier) || hasText(source.PlaceholderValue)
-	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView" || elementType == "Slider" || elementType == "Picker" || elementType == "PickerWheel"
+	alwaysInclude := slices.Contains(alwaysIncludedSourceTypes, elementType)
 	if !hasIdentifier && !alwaysInclude {
 		return childElements
 	}
@@ -109,9 +109,9 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	// WKWebView reports as several nested same-rect WebView wrappers; collapse
 	// them so a single element represents a single webview. Children are
 	// already collapsed bottom-up, so one merge per level unwinds the chain.
-	if element.Type == "WebView" && len(element.Children) == 1 {
+	if element.Type == elementTypeWebView && len(element.Children) == 1 {
 		child := element.Children[0]
-		if child.Type == "WebView" && child.Rect == element.Rect {
+		if child.Type == elementTypeWebView && child.Rect == element.Rect {
 			element.Children = child.Children
 		}
 	}

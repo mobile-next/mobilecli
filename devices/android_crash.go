@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// androidRuntimeTag is the logcat tag the runtime logs uncaught exceptions under.
+const androidRuntimeTag = "AndroidRuntime"
+
 // logcat -v year line format: YYYY-MM-DD HH:MM:SS.mmm  PID  TID LEVEL TAG     : message
 var logcatLineRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+\d+\s+(\w)\s+(\S+)\s*: (.*)$`)
 
@@ -94,7 +97,7 @@ func isNativeCrashStart(l *logcatLine) bool {
 }
 
 func isJavaCrashStart(l *logcatLine) bool {
-	return l.Level == "E" && l.Tag == "AndroidRuntime" && strings.HasPrefix(l.Message, "FATAL EXCEPTION:")
+	return l.Level == "E" && l.Tag == androidRuntimeTag && strings.HasPrefix(l.Message, "FATAL EXCEPTION:")
 }
 
 var nativePidRegex = regexp.MustCompile(`pid:\s*(\d+)`)
@@ -158,7 +161,7 @@ func parseJavaCrash(lines []string, start int) (*CrashReport, int) {
 		if parsed == nil {
 			break
 		}
-		if parsed.Tag != "AndroidRuntime" || parsed.PID != pid {
+		if parsed.Tag != androidRuntimeTag || parsed.PID != pid {
 			break
 		}
 
@@ -187,7 +190,7 @@ func parseJavaCrash(lines []string, start int) (*CrashReport, int) {
 func extractProcessFromStack(lines []string, start int, pid string) string {
 	for i := start + 1; i < len(lines); i++ {
 		parsed := parseLogcatLine(lines[i])
-		if parsed == nil || parsed.PID != pid || parsed.Tag != "AndroidRuntime" {
+		if parsed == nil || parsed.PID != pid || parsed.Tag != androidRuntimeTag {
 			break
 		}
 		if name := parseStackFrameOwner(parsed.Message); name != "" {

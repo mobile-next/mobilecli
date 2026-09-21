@@ -102,15 +102,15 @@ func (d *IOSDevice) Version() string {
 }
 
 func (d *IOSDevice) Platform() string {
-	return "ios"
+	return PlatformIOS
 }
 
 func (d *IOSDevice) DeviceType() string {
-	return "real"
+	return DeviceTypeReal
 }
 
 func (d *IOSDevice) State() string {
-	return "online"
+	return StateOnline
 }
 
 func getDeviceInfo(deviceEntry goios.DeviceEntry) (*IOSDevice, error) {
@@ -500,120 +500,129 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	_, err := d.deviceKitClient.GetStatus()
+	if _, err := d.deviceKitClient.GetStatus(); err == nil {
+		return nil
+	}
+	utils.Verbose("WebdriverAgent is not running, starting it")
+
+	agentBundleId, err := d.findInstalledAgentBundleID()
 	if err != nil {
-		utils.Verbose("WebdriverAgent is not running, starting it")
+		return err
+	}
 
-		// list apps on device
-		apps, err := d.ListApps(true)
-		if err != nil {
-			return fmt.Errorf("failed to list apps: %w", err)
+	config.reportProgress("Starting tunnel")
+
+	// start tunnel if needed (only for iOS 17+)
+	err = d.startTunnel()
+	if err != nil {
+		return err
+	}
+
+	err = d.ensureDeviceKitAgentForwarder()
+	if err != nil {
+		return err
+	}
+
+	// check if wda is already running, now that we have a port forwarder set up
+	status, err := d.deviceKitClient.GetStatus()
+	utils.Verbose("WebDriverAgent status %s", status)
+	if err == nil {
+		utils.Verbose("WebDriverAgent is already running")
+		return nil
+	}
+
+	return d.launchAgent(agentBundleId, config)
+}
+
+// findInstalledAgentBundleID returns the bundle id the agent is installed under.
+// the runner bundle id can carry a signing/team prefix when re-signed, so match
+// on suffix rather than exact equality.
+func (d *IOSDevice) findInstalledAgentBundleID() (string, error) {
+	apps, err := d.ListApps(true)
+	if err != nil {
+		return "", fmt.Errorf("failed to list apps: %w", err)
+	}
+
+	for _, app := range apps {
+		if strings.HasSuffix(app.PackageName, agentRunnerBundleID) {
+			utils.Verbose("agent is installed, launching it")
+			return app.PackageName, nil
 		}
+	}
 
-		// check if agent is installed. the runner bundle id can carry a signing/team
-		// prefix when re-signed, so match on suffix rather than exact equality.
-		agentBundleId := ""
-		for _, app := range apps {
-			if strings.HasSuffix(app.PackageName, agentRunnerBundleID) {
-				utils.Verbose("agent is installed, launching it")
-				agentBundleId = app.PackageName
-				break
-			}
-		}
+	return "", fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
+}
 
-		if agentBundleId == "" {
-			return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
-		}
+// ensureDeviceKitAgentForwarder sets up WDA port forwarding if not already running.
+func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
+	d.mu.Lock()
+	needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
+	d.mu.Unlock()
 
-		if config.OnProgress != nil {
-			config.OnProgress("Starting tunnel")
-		}
-
-		// start tunnel if needed (only for iOS 17+)
-		err = d.startTunnel()
-		if err != nil {
-			return err
-		}
-
-		// set up WDA port forwarding if not already running
+	if !needsPortForwarder {
 		d.mu.Lock()
-		needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
+		srcPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
 		d.mu.Unlock()
+		utils.Verbose("WDA port forwarder already running on port %d", srcPort)
 
-		if needsPortForwarder {
-			port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
-			if err != nil {
-				return fmt.Errorf("failed to find available port: %w", err)
-			}
-
-			forwarder := ios.NewPortForwarder(d.ID())
-			err = forwarder.Forward(port, deviceKitHTTPPort)
-			if err != nil {
-				return fmt.Errorf("failed to forward port: %w", err)
-			}
-
-			d.mu.Lock()
-			d.portForwarderDeviceKitAgent = forwarder
-			d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
-			d.mu.Unlock()
-
-			utils.Verbose("WDA port forwarder set up on port %d", port)
-		} else {
-			d.mu.Lock()
-			srcPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
-			d.mu.Unlock()
-			utils.Verbose("WDA port forwarder already running on port %d", srcPort)
-
-			// ensure deviceKitClient is set if not already
-			d.mu.Lock()
-			if d.deviceKitClient == nil {
-				d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", srcPort))
-			}
-			d.mu.Unlock()
+		// ensure deviceKitClient is set if not already
+		d.mu.Lock()
+		if d.deviceKitClient == nil {
+			d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", srcPort))
 		}
+		d.mu.Unlock()
+		return nil
+	}
 
-		// check if wda is already running, now that we have a port forwarder set up
-		status, err := d.deviceKitClient.GetStatus()
-		if err == nil {
-			utils.Verbose("WebDriverAgent is already running")
+	port, err := findAvailablePortInRange(portRangeStart, portRangeEnd)
+	if err != nil {
+		return fmt.Errorf("failed to find available port: %w", err)
+	}
+
+	forwarder := ios.NewPortForwarder(d.ID())
+	err = forwarder.Forward(port, deviceKitHTTPPort)
+	if err != nil {
+		return fmt.Errorf("failed to forward port: %w", err)
+	}
+
+	d.mu.Lock()
+	d.portForwarderDeviceKitAgent = forwarder
+	d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
+	d.mu.Unlock()
+
+	utils.Verbose("WDA port forwarder set up on port %d", port)
+	return nil
+}
+
+// launchAgent launches the agent using testmanagerd and waits for it to answer.
+func (d *IOSDevice) launchAgent(agentBundleId string, config StartAgentConfig) error {
+	config.reportProgress("Launching agent")
+
+	err := d.LaunchTestRunner(agentBundleId, agentBundleId, "devicekit-iosUITests.xctest")
+	if err != nil {
+		return fmt.Errorf("failed to launch agent: %w", err)
+	}
+
+	config.reportProgress("Waiting for agent to start")
+
+	err = d.deviceKitClient.WaitForAgent()
+	if err != nil {
+		return fmt.Errorf("failed to wait for agent: %w", err)
+	}
+
+	// background the agent if it's in the foreground
+	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
+	if err != nil {
+		return nil
+	}
+	utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
+
+	if activeApp.BundleID == agentBundleId {
+		utils.Verbose("agent is active, pressing HOME to background it")
+		if err := d.deviceKitClient.PressButton("HOME"); err != nil {
+			utils.Verbose("failed to press HOME: %v", err)
 		}
-
-		utils.Verbose("WebDriverAgent status %s", status)
-
-		if err != nil {
-			if config.OnProgress != nil {
-				config.OnProgress("Launching agent")
-			}
-
-			// launch agent using testmanagerd
-			err = d.LaunchTestRunner(agentBundleId, agentBundleId, "devicekit-iosUITests.xctest")
-			if err != nil {
-				return fmt.Errorf("failed to launch agent: %w", err)
-			}
-
-			if config.OnProgress != nil {
-				config.OnProgress("Waiting for agent to start")
-			}
-
-			err = d.deviceKitClient.WaitForAgent()
-			if err != nil {
-				return fmt.Errorf("failed to wait for agent: %w", err)
-			}
-
-			// background the agent if it's in the foreground
-			activeApp, err := d.deviceKitClient.GetActiveAppInfo()
-			if err == nil {
-				utils.Verbose("Active app: %s (%s)", activeApp.Name, activeApp.BundleID)
-
-				if activeApp.BundleID == agentBundleId {
-					utils.Verbose("agent is active, pressing HOME to background it")
-					if err := d.deviceKitClient.PressButton("HOME"); err != nil {
-						utils.Verbose("failed to press HOME: %v", err)
-					}
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}
+		time.Sleep(1 * time.Second)
 	}
 
 	return nil
@@ -1119,7 +1128,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// handle avc format via DeviceKit. all concurrent captures share one
 	// broadcast: dialing a second conn would make the extension's TCPServer
 	// redirect the video to it and starve the first one.
-	if config.Format == "avc" {
+	if config.Format == FormatAVC {
 		cancel, stopWatching := watchStop(config.StopChan)
 		defer stopWatching()
 
@@ -1268,22 +1277,39 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 	// the picker) is visible. A single up-front dump is not enough: right after launch
 	// the dump can error or catch the app before it rendered, and skipping the record
 	// tap then means the picker never opens and the old wait loop timed out.
-	utils.Verbose("Waiting for BroadcastUploadExtension button to appear...")
-	var broadcastExtensionButton *ScreenElement
-	// covers the app launch too, which used to have its own 5s foreground wait
-	timeout := time.After(15 * time.Second)
+	// the timeout covers the app launch too, which used to have its own 5s foreground wait
+	broadcastExtensionButton, err := d.waitForPickerButton("BroadcastUploadExtension", 15*time.Second, d.tapRecordButtonIfVisible)
+	if err != nil {
+		return err
+	}
+	if err := d.tapCenter(broadcastExtensionButton, "BroadcastUploadExtension"); err != nil {
+		return err
+	}
+
+	startBroadcastButton, err := d.waitForPickerButton("Start Broadcast", 10*time.Second, nil)
+	if err != nil {
+		return err
+	}
+	return d.tapCenter(startBroadcastButton, "Start Broadcast")
+}
+
+// waitForPickerButton polls the broadcast picker until an element named name
+// shows up. whileWaiting, when set, runs on every tick the button is still missing.
+func (d *IOSDevice) waitForPickerButton(name string, wait time.Duration, whileWaiting func([]ScreenElement) error) (*ScreenElement, error) {
+	utils.Verbose("Waiting for %s button to appear...", name)
+	timeout := time.After(wait)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	var lastElements []ScreenElement
-	for broadcastExtensionButton == nil {
+	for {
 		select {
 		case <-timeout:
 			dump, err := json.Marshal(lastElements)
 			if err != nil {
 				dump = []byte(err.Error())
 			}
-			return fmt.Errorf("timeout waiting for BroadcastUploadExtension button to appear, last element dump: %s", dump)
+			return nil, fmt.Errorf("timeout waiting for %s button to appear, last element dump: %s", name, dump)
 		case <-ticker.C:
 			elements, err := d.dumpBroadcastPickerElements()
 			if err != nil {
@@ -1293,90 +1319,44 @@ func (d *IOSDevice) clickStartBroadcastButton() error {
 			elements = flattenElements(elements)
 			lastElements = elements
 
-			// find the "BroadcastUploadExtension" button
 			for i := range elements {
-				if elements[i].Name != nil && *elements[i].Name == "BroadcastUploadExtension" {
-					broadcastExtensionButton = &elements[i]
-					break
+				if elements[i].Name != nil && *elements[i].Name == name {
+					utils.Verbose("%s button found", name)
+					return &elements[i], nil
 				}
 			}
-			if broadcastExtensionButton != nil {
-				break
-			}
 
-			// picker not open yet: tap the record button whenever the app screen is up
-			if hasText(elements, "Press to Start Broadcasting") {
-				recordButton, err := findRecordButton(elements)
-				if err != nil {
-					return err
-				}
-				centerX := recordButton.Rect.X + recordButton.Rect.Width/2
-				centerY := recordButton.Rect.Y + recordButton.Rect.Height/2
-				utils.Verbose("Tapping record button at %d,%d", centerX, centerY)
-				if err = d.Tap(centerX, centerY); err != nil {
-					return fmt.Errorf("failed to tap broadcast button: %w", err)
-				}
-			}
-		}
-	}
-
-	utils.Verbose("BroadcastUploadExtension button found")
-
-	// calculate center coordinates and tap
-	centerX := broadcastExtensionButton.Rect.X + broadcastExtensionButton.Rect.Width/2
-	centerY := broadcastExtensionButton.Rect.Y + broadcastExtensionButton.Rect.Height/2
-	utils.Verbose("Tapping BroadcastUploadExtension button at (%d, %d)", centerX, centerY)
-
-	if err := d.Tap(centerX, centerY); err != nil {
-		return fmt.Errorf("failed to tap BroadcastUploadExtension button: %w", err)
-	}
-
-	// now wait for "Start Broadcast" button to appear
-	utils.Verbose("Waiting for Start Broadcast button to appear...")
-	var startBroadcastButton *ScreenElement
-	timeout = time.After(10 * time.Second)
-	ticker = time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	lastElements = nil
-	for startBroadcastButton == nil {
-		select {
-		case <-timeout:
-			dump, err := json.Marshal(lastElements)
-			if err != nil {
-				dump = []byte(err.Error())
-			}
-			return fmt.Errorf("timeout waiting for Start Broadcast button to appear, last element dump: %s", dump)
-		case <-ticker.C:
-			elements, err := d.dumpBroadcastPickerElements()
-			if err != nil {
-				// continue trying on error
+			if whileWaiting == nil {
 				continue
 			}
-			elements = flattenElements(elements)
-			lastElements = elements
-
-			// find the "Start Broadcast" button
-			for i := range elements {
-				if elements[i].Name != nil && *elements[i].Name == "Start Broadcast" {
-					startBroadcastButton = &elements[i]
-					break
-				}
+			if err := whileWaiting(elements); err != nil {
+				return nil, err
 			}
 		}
 	}
+}
 
-	utils.Verbose("Start Broadcast button found")
+// tapRecordButtonIfVisible opens the picker: it taps the app's record button
+// whenever the app screen is up.
+func (d *IOSDevice) tapRecordButtonIfVisible(elements []ScreenElement) error {
+	if !hasText(elements, "Press to Start Broadcasting") {
+		return nil
+	}
+	recordButton, err := findRecordButton(elements)
+	if err != nil {
+		return err
+	}
+	return d.tapCenter(recordButton, "record")
+}
 
-	// calculate center coordinates and tap
-	centerX = startBroadcastButton.Rect.X + startBroadcastButton.Rect.Width/2
-	centerY = startBroadcastButton.Rect.Y + startBroadcastButton.Rect.Height/2
-	utils.Verbose("Tapping Start Broadcast button at (%d, %d)", centerX, centerY)
+func (d *IOSDevice) tapCenter(element *ScreenElement, name string) error {
+	centerX := element.Rect.X + element.Rect.Width/2
+	centerY := element.Rect.Y + element.Rect.Height/2
+	utils.Verbose("Tapping %s button at (%d, %d)", name, centerX, centerY)
 
 	if err := d.Tap(centerX, centerY); err != nil {
-		return fmt.Errorf("failed to tap Start Broadcast button: %w", err)
+		return fmt.Errorf("failed to tap %s button: %w", name, err)
 	}
-
 	return nil
 }
 
@@ -1766,6 +1746,21 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	return content, nil
 }
 
+func logEntryFromOsTrace(raw ostrace.LogEntry) LogEntry {
+	entry := LogEntry{
+		Timestamp: raw.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
+		Message:   raw.Message,
+		Level:     raw.LevelName,
+		PID:       int(raw.PID),
+		Process:   processNameFromPath(raw.Filename),
+	}
+	if raw.Label != nil {
+		entry.Subsystem = raw.Label.Subsystem
+		entry.Category = raw.Label.Category
+	}
+	return entry
+}
+
 func (d *IOSDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
@@ -1805,17 +1800,7 @@ func (d *IOSDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) e
 			raw, err := conn.ReadEntry()
 			result := readResult{err: err}
 			if err == nil {
-				result.entry = LogEntry{
-					Timestamp: raw.Timestamp.Format("2006-01-02 15:04:05.000000-0700"),
-					Message:   raw.Message,
-					Level:     raw.LevelName,
-					PID:       int(raw.PID),
-					Process:   processNameFromPath(raw.Filename),
-				}
-				if raw.Label != nil {
-					result.entry.Subsystem = raw.Label.Subsystem
-					result.entry.Category = raw.Label.Category
-				}
+				result.entry = logEntryFromOsTrace(raw)
 			}
 			select {
 			case <-done:

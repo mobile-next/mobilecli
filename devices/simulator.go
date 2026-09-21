@@ -23,6 +23,12 @@ import (
 	"howett.net/plist"
 )
 
+// simctl device states
+const (
+	simStateBooted   = "Booted"
+	simStateShutdown = "Shutdown"
+)
+
 const (
 	LOW_DEVICEKIT_PORT  = 13001
 	HIGH_DEVICEKIT_PORT = 13200
@@ -76,14 +82,14 @@ func parseSimulatorVersion(runtime string) string {
 
 func (s SimulatorDevice) ID() string         { return s.UDID }
 func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
-func (s SimulatorDevice) Platform() string   { return "ios" }
-func (s SimulatorDevice) DeviceType() string { return "simulator" }
+func (s SimulatorDevice) Platform() string   { return PlatformIOS }
+func (s SimulatorDevice) DeviceType() string { return DeviceTypeSimulator }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 func (s SimulatorDevice) State() string {
-	if s.Simulator.State == "Booted" {
-		return "online"
+	if s.Simulator.State == simStateBooted {
+		return StateOnline
 	}
-	return "offline"
+	return StateOffline
 }
 
 func (s SimulatorDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
@@ -169,9 +175,9 @@ func GetSimulators() ([]Simulator, error) {
 		// convert state integer to string
 		// state 1 = Shutdown (offline)
 		// state 3 = Booted (online)
-		stateStr := "Shutdown"
+		stateStr := simStateShutdown
 		if device.State == 3 {
-			stateStr = "Booted"
+			stateStr = simStateBooted
 		}
 
 		simulator := Simulator{
@@ -392,7 +398,7 @@ func (s *SimulatorDevice) Boot() error {
 		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
-	if state == "Booted" {
+	if state == simStateBooted {
 		return fmt.Errorf("simulator is already running")
 	}
 
@@ -404,7 +410,7 @@ func (s *SimulatorDevice) Boot() error {
 		}
 
 		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = "Booted"
+		s.Simulator.State = simStateBooted
 		return nil
 	}
 
@@ -421,7 +427,7 @@ func (s *SimulatorDevice) Boot() error {
 	}
 
 	utils.Verbose("Simulator booted successfully")
-	s.Simulator.State = "Booted"
+	s.Simulator.State = simStateBooted
 	return nil
 }
 
@@ -432,7 +438,7 @@ func (s *SimulatorDevice) Shutdown() error {
 		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
-	if state == "Shutdown" {
+	if state == simStateShutdown {
 		return fmt.Errorf("simulator is already offline")
 	}
 
@@ -443,68 +449,18 @@ func (s *SimulatorDevice) Shutdown() error {
 	}
 
 	utils.Verbose("Simulator shut down successfully")
-	s.Simulator.State = "Shutdown"
+	s.Simulator.State = simStateShutdown
 	return nil
 }
 
 func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
-	// check simulator state - it must be booted
-	state, err := s.getState()
-	if err != nil {
-		return fmt.Errorf("failed to get simulator state: %w", err)
+	if err := s.waitUntilBooted(config); err != nil {
+		return err
 	}
 
-	switch state {
-	case "Booted":
-		// already booted, continue to WDA
-	case "Shutdown":
-		// simulator is offline, user should boot it first
-		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
-	case "Booting":
-		// simulator is already booting, just wait for it to finish
-		if config.OnProgress != nil {
-			config.OnProgress("Waiting for Simulator to boot")
-		}
-
-		utils.Verbose("Simulator is booting, waiting for boot to complete...")
-		output, err := runSimctl("bootstatus", s.UDID)
-		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
-		}
-
-		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = "Booted"
-	case "ShuttingDown":
-		return fmt.Errorf("simulator is shutting down, please try again")
-	default:
-		return fmt.Errorf("unexpected simulator state: %s", state)
-	}
-
-	if currentPort, err := s.getDeviceKitPort(); err == nil {
-		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
-
-		// check if we already have a client pointing to the same port
-		expectedURL := fmt.Sprintf("localhost:%d", currentPort)
-		if s.deviceKitClient != nil {
-			// check if the existing client is already pointing to the same port
-			if _, err := s.deviceKitClient.GetStatus(); err == nil {
-				return nil // already connected to the right port
-			}
-		}
-
-		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
-
-		// create new client or update with new port
-		s.deviceKitClient = devicekit.NewDeviceKitClient(expectedURL)
-		if _, err := s.deviceKitClient.GetStatus(); err == nil {
-			// double check succeeded
-			return nil // Already running and accessible
-		}
-
-		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
-	} else {
-		utils.Verbose("Failed to get existing WDA port: %v", err)
+	isConnected, err := s.connectToRunningAgent()
+	if err != nil || isConnected {
+		return err
 	}
 
 	agentBundleID, err := s.findInstalledAgentBundleID()
@@ -516,10 +472,73 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s' to install it", s.UDID)
 	}
 
-	if config.OnProgress != nil {
-		config.OnProgress("Starting Agent")
+	config.reportProgress("Starting Agent")
+	return s.launchAgent(agentBundleID, config)
+}
+
+// waitUntilBooted checks simulator state - it must be booted before the agent can start.
+func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
+	switch state {
+	case simStateBooted:
+		// already booted, continue to WDA
+	case simStateShutdown:
+		// simulator is offline, user should boot it first
+		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
+	case "Booting":
+		// simulator is already booting, just wait for it to finish
+		config.reportProgress("Waiting for Simulator to boot")
+
+		utils.Verbose("Simulator is booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+		}
+
+		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = simStateBooted
+	case "ShuttingDown":
+		return fmt.Errorf("simulator is shutting down, please try again")
+	default:
+		return fmt.Errorf("unexpected simulator state: %s", state)
+	}
+
+	return nil
+}
+
+// connectToRunningAgent reports whether an agent left running by an earlier
+// mobilecli (it keeps running on the simulator between runs) is now connected.
+func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
+	currentPort, err := s.getDeviceKitPort()
+	if err != nil {
+		utils.Verbose("Failed to get existing WDA port: %v", err)
+		return false, nil
+	}
+
+	// reuse the existing client only if it points to the same port
+	if s.deviceKitClient != nil && s.deviceKitClient.Port() == currentPort {
+		if _, err := s.deviceKitClient.GetStatus(); err == nil {
+			return true, nil
+		}
+	}
+
+	utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
+
+	// create new client or update with new port
+	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", currentPort))
+	if _, err := s.deviceKitClient.GetStatus(); err == nil {
+		return true, nil
+	}
+
+	// TODO: it's running, but we failed to get status, we might as well kill the process and try again
+	return false, fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
+}
+
+func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentConfig) error {
 	// find available port
 	usePort, err := utils.FindAvailablePortInRange(LOW_DEVICEKIT_PORT, HIGH_DEVICEKIT_PORT)
 	if err != nil {
@@ -548,9 +567,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	// update WDA client to use the actual port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", usePort))
 
-	if config.OnProgress != nil {
-		config.OnProgress("Waiting for agent to start")
-	}
+	config.reportProgress("Waiting for agent to start")
 
 	err = s.deviceKitClient.WaitForAgentWithDiagnostics(func() (string, error) {
 		contents, err := os.ReadFile(hostStderrPath)
@@ -662,8 +679,8 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 		DeviceInfo: DeviceInfo{
 			ID:       s.UDID,
 			Name:     s.Simulator.Name,
-			Platform: "ios",
-			Type:     "simulator",
+			Platform: PlatformIOS,
+			Type:     DeviceTypeSimulator,
 			Version:  parseSimulatorVersion(s.Runtime),
 			State:    s.State(),
 			Model:    s.Simulator.DeviceType,
@@ -1059,25 +1076,25 @@ func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) b
 		return fmt.Errorf("failed to start log stream: %w", err)
 	}
 
+	// abort kills the stream; a failure after the caller cancelled is not an error
+	abort := func(format string, cause any) error {
+		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		if ctx.Err() != nil {
+			return nil
+		}
+		return fmt.Errorf(format, cause, waitErr)
+	}
+
 	decoder := json.NewDecoder(stdout)
 
 	// read opening '[' of the JSON array
 	token, err := decoder.Token()
 	if err != nil {
-		_ = cmd.Process.Kill()
-		waitErr := cmd.Wait()
-		if ctx.Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("failed to read opening token: %w (process exit: %v)", err, waitErr)
+		return abort("failed to read opening token: %w (process exit: %v)", err)
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '[' {
-		_ = cmd.Process.Kill()
-		waitErr := cmd.Wait()
-		if ctx.Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("expected '[', got %v (process exit: %v)", token, waitErr)
+		return abort("expected '[', got %v (process exit: %v)", token)
 	}
 
 	// decode entries one at a time until the stream ends
@@ -1088,12 +1105,7 @@ func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) b
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			_ = cmd.Process.Kill()
-			waitErr := cmd.Wait()
-			if ctx.Err() != nil {
-				return nil
-			}
-			return fmt.Errorf("failed to decode log entry: %w (process exit: %v)", err, waitErr)
+			return abort("failed to decode log entry: %w (process exit: %v)", err)
 		}
 
 		processName := processNameFromPath(raw.ProcessImagePath)

@@ -132,7 +132,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with .ipa files"))
 		}
 
-		if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+		if targetDevice.Platform() != devices.PlatformIOS || targetDevice.DeviceType() != devices.DeviceTypeReal {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
 		}
 

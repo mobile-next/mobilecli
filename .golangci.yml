@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 run:
   timeout: 5m
@@ -22,6 +22,13 @@ linters:
     - funlen
     - dupl
     - goconst
+  exclusions:
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - gosec
+          - revive
+          - goconst
   settings:
     revive:
       rules:
@@ -45,10 +52,5 @@ linters:
       check-blank: false
 
 issues:
-  exclude-rules:
-    - path: "_test\\.go"
-      linters:
-        - gosec
-        - revive
   max-issues-per-linter: 0
   max-same-issues: 0 

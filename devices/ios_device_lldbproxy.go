@@ -75,14 +75,6 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 
 	noAck := false
 
-	gdbChecksum := func(pkt string) byte {
-		var sum byte
-		for i := 0; i < len(pkt); i++ {
-			sum += pkt[i]
-		}
-		return sum
-	}
-
 	sendToLLDB := func(pkt string) {
 		ck := gdbChecksum(pkt)
 		var s string
@@ -93,35 +85,8 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 		c.Write([]byte(s)) //nolint:errcheck
 	}
 
-	recvFromLLDB := func() (string, error) {
-		buf := make([]byte, 1)
-		for {
-			if _, err := io.ReadFull(c, buf); err != nil {
-				return "", err
-			}
-			if buf[0] == '$' {
-				break
-			}
-		}
-		var pkt strings.Builder
-		for {
-			if _, err := io.ReadFull(c, buf); err != nil {
-				return "", err
-			}
-			if buf[0] == '#' {
-				break
-			}
-			pkt.WriteByte(buf[0])
-		}
-		cksumBuf := make([]byte, 2)
-		if _, err := io.ReadFull(c, cksumBuf); err != nil {
-			return "", err
-		}
-		return pkt.String(), nil
-	}
-
 	for {
-		pkt, err := recvFromLLDB()
+		pkt, err := readGDBPacket(c)
 		if err != nil {
 			return
 		}
@@ -175,4 +140,41 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 			noAck = true
 		}
 	}
+}
+
+func gdbChecksum(pkt string) byte {
+	var sum byte
+	for i := 0; i < len(pkt); i++ {
+		sum += pkt[i]
+	}
+	return sum
+}
+
+// readGDBPacket reads one "$pkt#XX" packet and returns pkt; bytes before the
+// '$' (acks) and the checksum are dropped.
+func readGDBPacket(r io.Reader) (string, error) {
+	buf := make([]byte, 1)
+	for {
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return "", err
+		}
+		if buf[0] == '$' {
+			break
+		}
+	}
+	var pkt strings.Builder
+	for {
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return "", err
+		}
+		if buf[0] == '#' {
+			break
+		}
+		pkt.WriteByte(buf[0])
+	}
+	cksumBuf := make([]byte, 2)
+	if _, err := io.ReadFull(r, cksumBuf); err != nil {
+		return "", err
+	}
+	return pkt.String(), nil
 }

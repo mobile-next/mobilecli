@@ -129,6 +129,13 @@ type StartAgentConfig struct {
 	Hook       *ShutdownHook        // optional shutdown hook for cleanup tracking
 }
 
+// reportProgress calls OnProgress when one was given.
+func (c StartAgentConfig) reportProgress(message string) {
+	if c.OnProgress != nil {
+		c.OnProgress(message)
+	}
+}
+
 // ScreenElementRect represents the rectangle coordinates and dimensions
 // Re-export types for backward compatibility
 type ScreenElementRect = types.ScreenElementRect
@@ -155,6 +162,25 @@ type DumpOptions struct {
 	// Full includes windows normally left out, such as the on-screen keyboard.
 	Full bool
 }
+
+// values returned by ControllableDevice.Platform, DeviceType and State
+const (
+	PlatformIOS     = "ios"
+	PlatformAndroid = "android"
+
+	DeviceTypeReal      = "real"
+	DeviceTypeSimulator = "simulator"
+	DeviceTypeEmulator  = "emulator"
+
+	StateOnline  = "online"
+	StateOffline = "offline"
+)
+
+// screen capture stream formats
+const (
+	FormatMJPEG = "mjpeg"
+	FormatAVC   = "avc"
+)
 
 type ControllableDevice interface {
 	ID() string
@@ -381,6 +407,18 @@ type FullDeviceInfo struct {
 }
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
+func deviceModel(d ControllableDevice) string {
+	switch device := d.(type) {
+	case *IOSDevice:
+		return device.ProductType
+	case *SimulatorDevice:
+		return device.Simulator.DeviceType
+	case *AndroidDevice:
+		return device.model
+	}
+	return ""
+}
+
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 	startTime := time.Now()
 	devices, err := GetAllControllableDevices(opts.IncludeOffline)
@@ -393,7 +431,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 		state := d.State()
 
 		// filter offline devices unless includeOffline is true
-		if !opts.IncludeOffline && state == "offline" {
+		if !opts.IncludeOffline && state == StateOffline {
 			continue
 		}
 
@@ -407,24 +445,6 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			continue
 		}
 
-		// get model for devices
-		model := ""
-		if d.Platform() == "ios" {
-			if d.DeviceType() == "real" {
-				if iosDevice, ok := d.(*IOSDevice); ok {
-					model = iosDevice.ProductType
-				}
-			} else if d.DeviceType() == "simulator" {
-				if simDevice, ok := d.(*SimulatorDevice); ok {
-					model = simDevice.Simulator.DeviceType
-				}
-			}
-		} else if d.Platform() == "android" {
-			if androidDevice, ok := d.(*AndroidDevice); ok {
-				model = androidDevice.model
-			}
-		}
-
 		deviceInfoList = append(deviceInfoList, DeviceInfo{
 			ID:       d.ID(),
 			Name:     d.Name(),
@@ -432,7 +452,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    state,
-			Model:    model,
+			Model:    deviceModel(d),
 		})
 	}
 	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))

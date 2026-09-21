@@ -404,6 +404,14 @@ func (h *avcHub) scanLocked(chunk []byte) ([]byte, int) {
 		pos = next
 	}
 
+	h.keepTailLocked(buf, pos, headAt)
+	return buf, idrAt
+}
+
+// keepTailLocked carries the unparsed end of buf over to the next chunk. pos is
+// where parsing stopped (-1 without any start code) and headAt where an
+// unfinished picture head began (-1 if none).
+func (h *avcHub) keepTailLocked(buf []byte, pos, headAt int) {
 	if pos < 0 {
 		// no start code yet: keep only what could be the head of one
 		pos = max(len(buf)-3, 0)
@@ -418,7 +426,6 @@ func (h *avcHub) scanLocked(chunk []byte) ([]byte, int) {
 		utils.Verbose("avc hub: dropping %d bytes without a start code", len(h.tail))
 		h.tail = nil
 	}
-	return buf, idrAt
 }
 
 // parameterSetsLocked returns the cached SPS and PPS a late joiner needs before

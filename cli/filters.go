@@ -7,6 +7,8 @@ import (
 	"github.com/mobile-next/mobilecli/commands"
 )
 
+const operatorEquals = "EQUALS"
+
 // parseVersionFilter parses a version flag value into a DeviceFilter.
 // Supports: ">=18", ">18", "<=20", "<20", "18.6.2" (exact match).
 func parseVersionFilter(value string) (commands.DeviceFilter, error) {
@@ -27,7 +29,7 @@ func parseVersionFilter(value string) (commands.DeviceFilter, error) {
 		f.Operator = "LESS_THAN"
 		f.Value = strings.TrimSpace(value[1:])
 	default:
-		f.Operator = "EQUALS"
+		f.Operator = operatorEquals
 		f.Value = value
 	}
 
@@ -48,7 +50,7 @@ func parseNameFilter(value string) (commands.DeviceFilter, error) {
 		f.Operator = "STARTS_WITH"
 		f.Value = strings.TrimSuffix(value, "*")
 	} else {
-		f.Operator = "EQUALS"
+		f.Operator = operatorEquals
 		f.Value = value
 	}
 
@@ -65,14 +67,14 @@ func buildAllocateFilters(platform, deviceType string, versions []string, name s
 
 	filters = append(filters, commands.DeviceFilter{
 		Attribute: "platform",
-		Operator:  "EQUALS",
+		Operator:  operatorEquals,
 		Value:     platform,
 	})
 
 	if deviceType != "" {
 		filters = append(filters, commands.DeviceFilter{
 			Attribute: "type",
-			Operator:  "EQUALS",
+			Operator:  operatorEquals,
 			Value:     deviceType,
 		})
 	}

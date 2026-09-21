@@ -30,6 +30,8 @@ const androidDiscoveryGetpropTimeout = 5 * time.Second
 
 // androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
 // on the device, shared by every feature that runs a class out of it
+const goosWindows = "windows"
+
 const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
 // defaultDisplayID is the display every launch is pinned to. Without it Android
@@ -122,15 +124,15 @@ func (d *AndroidDevice) Version() string {
 }
 
 func (d *AndroidDevice) Platform() string {
-	return "android"
+	return PlatformAndroid
 }
 
 func (d *AndroidDevice) DeviceType() string {
 	// check transportID for online devices, or state for offline
-	if strings.HasPrefix(d.transportID, "emulator-") || d.state == "offline" {
-		return "emulator"
+	if strings.HasPrefix(d.transportID, "emulator-") || d.state == StateOffline {
+		return DeviceTypeEmulator
 	} else {
-		return "real"
+		return DeviceTypeReal
 	}
 }
 
@@ -156,7 +158,7 @@ func getAndroidSdkPath() string {
 	}
 
 	// try default Android SDK location on Windows
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == goosWindows {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		if localAppData != "" {
 			defaultPath := filepath.Join(localAppData, "Android", "Sdk")
@@ -182,7 +184,7 @@ func getAdbPath() string {
 	sdkPath := getAndroidSdkPath()
 	if sdkPath != "" {
 		adbPath := filepath.Join(sdkPath, "platform-tools", "adb")
-		if runtime.GOOS == "windows" {
+		if runtime.GOOS == goosWindows {
 			adbPath += ".exe"
 		}
 
@@ -197,7 +199,7 @@ func getEmulatorPath() string {
 	sdkPath := getAndroidSdkPath()
 	if sdkPath != "" {
 		emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
-		if runtime.GOOS == "windows" {
+		if runtime.GOOS == goosWindows {
 			emulatorPath += ".exe"
 		}
 		if _, err := os.Stat(emulatorPath); err == nil {
@@ -206,7 +208,7 @@ func getEmulatorPath() string {
 	}
 
 	// best effort, look in path
-	return "emulator"
+	return DeviceTypeEmulator
 }
 
 // getAdbIdentifier returns the correct device identifier for adb commands
@@ -506,11 +508,11 @@ func (d *AndroidDevice) Reboot() error {
 
 // Shutdown shuts down the Android emulator
 func (d *AndroidDevice) Shutdown() error {
-	if d.DeviceType() != "emulator" {
+	if d.DeviceType() != DeviceTypeEmulator {
 		return fmt.Errorf("shutdown is only supported for emulators")
 	}
 
-	if d.state == "offline" {
+	if d.state == StateOffline {
 		return fmt.Errorf("emulator is already offline")
 	}
 
@@ -520,7 +522,7 @@ func (d *AndroidDevice) Shutdown() error {
 		return fmt.Errorf("failed to shutdown emulator: %w", err)
 	}
 
-	d.state = "offline"
+	d.state = StateOffline
 	d.transportID = ""
 	return nil
 }
@@ -626,7 +628,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 					transportID: transportID,
 					name:        getAndroidDeviceName(transportID, avdName, model),
 					version:     version,
-					state:       "online",
+					state:       StateOnline,
 					model:       model,
 				})
 			}
@@ -712,7 +714,7 @@ func GetAndroidDevices() ([]ControllableDevice, error) {
 
 func (d *AndroidDevice) StartAgent(config StartAgentConfig) error {
 	// if device is offline, return error - user should use 'device boot' command
-	if d.state == "offline" {
+	if d.state == StateOffline {
 		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
 	}
 
@@ -744,7 +746,7 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 
 			for _, device := range devices {
 				// check if this is our emulator by matching the AVD name
-				if device.Platform() == "android" && device.DeviceType() == "emulator" {
+				if device.Platform() == PlatformAndroid && device.DeviceType() == DeviceTypeEmulator {
 					// device.ID() now returns the AVD name for emulators
 					if device.ID() == avdName || matchesAVDName(avdName, device.Name()) {
 						// found our emulator, check if it's fully booted
@@ -768,7 +770,7 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 
 // Boot launches an offline Android emulator and waits for it to be ready
 func (d *AndroidDevice) Boot() error {
-	if d.state != "offline" {
+	if d.state != StateOffline {
 		return fmt.Errorf("emulator is already running")
 	}
 	utils.Verbose("Starting Android emulator: %s", d.id)
@@ -809,7 +811,7 @@ func (d *AndroidDevice) Boot() error {
 	// update our transport ID to the actual emulator-XXXX ID
 	// the device ID (d.id) is already set to the AVD name and should not change
 	d.transportID = deviceID
-	d.state = "online"
+	d.state = StateOnline
 	return nil
 }
 
@@ -1254,7 +1256,7 @@ func (d *AndroidDevice) GetAppContainerPath(packageName string) (string, error) 
 }
 
 func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
-	if config.Format != "mjpeg" && config.Format != "avc" {
+	if config.Format != FormatMJPEG && config.Format != FormatAVC {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
 	}
 
@@ -1263,7 +1265,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	}
 
 	serverClass := "com.mobilenext.mobilecli.MjpegServer"
-	if config.Format == "avc" {
+	if config.Format == FormatAVC {
 		serverClass = "com.mobilenext.mobilecli.AvcServer"
 	}
 
@@ -1275,7 +1277,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", "CLASSPATH="+androidDexPath, "app_process", "/", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
 
 	// bitrate only applies to AvcServer
-	if config.Format == "avc" && config.Bitrate > 0 {
+	if config.Format == FormatAVC && config.Bitrate > 0 {
 		cmdArgs = append(cmdArgs, "--bitrate", fmt.Sprintf("%d", config.Bitrate))
 	}
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
@@ -1475,6 +1477,73 @@ func setPlaceholderFromHint(element *types.ScreenElement, hint string) {
 	}
 }
 
+// androidNodeAttrs is what both node sources (uiautomator XML and the
+// DeviceServer dump) report about a node, in one shape.
+type androidNodeAttrs struct {
+	class       string
+	text        string
+	contentDesc string
+	hint        string
+	resourceID  string
+	clickable   bool
+	checkable   bool
+	focused     bool
+	disabled    bool
+	checked     bool
+	selected    bool
+	rect        types.ScreenElementRect
+}
+
+// isScreenElement reports whether the node is worth listing: it has text,
+// content-desc, hint, resource-id, or is interactable (clickable or checkable,
+// e.g. Flutter icon-only buttons), and has a positive width and height.
+func (a androidNodeAttrs) isScreenElement() bool {
+	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != ""
+	isInteractable := a.clickable || a.checkable
+	return (isLabeled || isInteractable) && a.rect.Width > 0 && a.rect.Height > 0
+}
+
+func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.ScreenElement {
+	element := types.ScreenElement{
+		Type:     a.class,
+		Text:     &a.text,
+		Rect:     a.rect,
+		Children: children,
+	}
+
+	// set placeholder from hint; text is left as the source reported it
+	setPlaceholderFromHint(&element, a.hint)
+
+	if a.contentDesc != "" {
+		element.Label = &a.contentDesc
+	}
+	if a.resourceID != "" {
+		element.Identifier = &a.resourceID
+	}
+
+	// states are only reported when they differ from the default
+	isTrue, isFalse := true, false
+	if a.focused {
+		element.Focused = &isTrue
+	}
+	if a.disabled {
+		element.Enabled = &isFalse
+	}
+	if a.checked {
+		element.Checked = &isTrue
+	}
+	if a.selected {
+		element.Selected = &isTrue
+	}
+
+	// default type if class is empty
+	if element.Type == "" {
+		element.Type = "text"
+	}
+
+	return element
+}
+
 // collectElements converts a uiautomator node tree into ScreenElements,
 // preserving hierarchy: collected descendants of an accepted element become
 // its Children, while descendants of rejected elements are hoisted to the
@@ -1485,69 +1554,27 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 		childElements = append(childElements, d.collectElements(childNode)...)
 	}
 
-	// only include the current node if it has text, content-desc, hint,
-	// resource-id, or is interactable (clickable or checkable)
-	if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" && node.Clickable != attrTrue && node.Checkable != attrTrue {
+	attrs := androidNodeAttrs{
+		class:       node.Class,
+		text:        node.Text,
+		contentDesc: node.ContentDesc,
+		hint:        node.Hint,
+		resourceID:  node.ResourceID,
+		clickable:   node.Clickable == attrTrue,
+		checkable:   node.Checkable == attrTrue,
+		focused:     node.Focused == attrTrue,
+		// uiautomator omits the attribute for some nodes, so treat "false"
+		// explicitly rather than "not true"
+		disabled: node.Enabled == "false",
+		checked:  node.Checked == attrTrue,
+		selected: node.Selected == attrTrue,
+		rect:     d.getScreenElementRect(node.Bounds),
+	}
+	if !attrs.isScreenElement() {
 		return childElements
 	}
 
-	// only include elements with positive width and height
-	rect := d.getScreenElementRect(node.Bounds)
-	if rect.Width <= 0 || rect.Height <= 0 {
-		return childElements
-	}
-
-	element := types.ScreenElement{
-		Type:     node.Class,
-		Text:     &node.Text,
-		Rect:     rect,
-		Children: childElements,
-	}
-
-	// set placeholder from hint; text is left as the source reported it
-	setPlaceholderFromHint(&element, node.Hint)
-
-	// set label from content-desc
-	if node.ContentDesc != "" {
-		element.Label = &node.ContentDesc
-	}
-
-	// set focused if true
-	if node.Focused == attrTrue {
-		focused := true
-		element.Focused = &focused
-	}
-
-	// set enabled if false; uiautomator omits the attribute for some nodes,
-	// so treat "false" explicitly rather than "not true"
-	if node.Enabled == "false" {
-		enabled := false
-		element.Enabled = &enabled
-	}
-
-	// set checked if true
-	if node.Checked == attrTrue {
-		checked := true
-		element.Checked = &checked
-	}
-
-	// set selected if true (single-select controls: tabs, chips, radio-style pickers)
-	if node.Selected == attrTrue {
-		selected := true
-		element.Selected = &selected
-	}
-
-	// set identifier from resource-id
-	if node.ResourceID != "" {
-		element.Identifier = &node.ResourceID
-	}
-
-	// default type if class is empty
-	if element.Type == "" {
-		element.Type = "text"
-	}
-
-	return []types.ScreenElement{element}
+	return []types.ScreenElement{attrs.toScreenElement(childElements)}
 }
 
 // collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
@@ -1558,59 +1585,31 @@ func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 	for _, node := range nodes {
 		childElements := collectUiNodeElements(node.Children)
 
-		// keep interactable nodes even when unlabeled (e.g. Flutter icon-only
-		// buttons), mirroring the uiautomator XML path in collectElements
-		if node.Text == "" && node.ContentDesc == "" && node.Hint == "" && node.ResourceID == "" && !node.Clickable && !node.Checkable {
+		attrs := androidNodeAttrs{
+			class:       node.Class,
+			text:        node.Text,
+			contentDesc: node.ContentDesc,
+			hint:        node.Hint,
+			resourceID:  node.ResourceID,
+			clickable:   node.Clickable,
+			checkable:   node.Checkable,
+			focused:     node.Focused,
+			disabled:    !node.Enabled,
+			checked:     node.Checked,
+			selected:    node.Selected,
+			rect: types.ScreenElementRect{
+				X:      node.Rect.X,
+				Y:      node.Rect.Y,
+				Width:  node.Rect.Width,
+				Height: node.Rect.Height,
+			},
+		}
+		if !attrs.isScreenElement() {
 			elements = append(elements, childElements...)
 			continue
 		}
-		if node.Rect.Width <= 0 || node.Rect.Height <= 0 {
-			elements = append(elements, childElements...)
-			continue
-		}
 
-		rect := types.ScreenElementRect{
-			X:      node.Rect.X,
-			Y:      node.Rect.Y,
-			Width:  node.Rect.Width,
-			Height: node.Rect.Height,
-		}
-
-		element := types.ScreenElement{
-			Type:     node.Class,
-			Text:     &node.Text,
-			Rect:     rect,
-			Children: childElements,
-		}
-
-		setPlaceholderFromHint(&element, node.Hint)
-		if node.ContentDesc != "" {
-			element.Label = &node.ContentDesc
-		}
-		if node.Focused {
-			focused := true
-			element.Focused = &focused
-		}
-		if !node.Enabled {
-			enabled := false
-			element.Enabled = &enabled
-		}
-		if node.Checked {
-			checked := true
-			element.Checked = &checked
-		}
-		if node.Selected {
-			selected := true
-			element.Selected = &selected
-		}
-		if node.ResourceID != "" {
-			element.Identifier = &node.ResourceID
-		}
-		if element.Type == "" {
-			element.Type = "text"
-		}
-
-		elements = append(elements, element)
+		elements = append(elements, attrs.toScreenElement(childElements))
 	}
 
 	return elements
@@ -1756,25 +1755,25 @@ func (d *AndroidDevice) GetOrientation() (string, error) {
 	// convert Android rotation values to string
 	switch rotation {
 	case 0, 2:
-		return "portrait", nil
+		return devicekit.OrientationPortrait, nil
 	case 1, 3:
-		return "landscape", nil
+		return devicekit.OrientationLandscape, nil
 	default:
-		return "portrait", nil // default to portrait
+		return devicekit.OrientationPortrait, nil // default to portrait
 	}
 }
 
 // SetOrientation sets the device orientation
 func (d *AndroidDevice) SetOrientation(orientation string) error {
-	if orientation != "portrait" && orientation != "landscape" {
+	if orientation != devicekit.OrientationPortrait && orientation != devicekit.OrientationLandscape {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}
 
 	var androidRotation int
 	switch orientation {
-	case "portrait":
+	case devicekit.OrientationPortrait:
 		androidRotation = 0
-	case "landscape":
+	case devicekit.OrientationLandscape:
 		androidRotation = 1 // landscape left
 	}
 

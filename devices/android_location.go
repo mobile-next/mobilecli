@@ -29,7 +29,7 @@ const (
 // SetLocation overrides the device location. Emulators go through the emulator
 // console; real devices need the on-device server holding a test provider open.
 func (d *AndroidDevice) SetLocation(lat, lon float64) error {
-	if d.DeviceType() == "emulator" {
+	if d.DeviceType() == DeviceTypeEmulator {
 		return d.setEmulatorLocation(lat, lon)
 	}
 
@@ -55,7 +55,7 @@ func (d *AndroidDevice) setEmulatorLocation(lat, lon float64) error {
 // ClearLocation restores the location the device reports on its own, which on
 // an emulator means the default it booted with.
 func (d *AndroidDevice) ClearLocation() error {
-	if d.DeviceType() == "emulator" {
+	if d.DeviceType() == DeviceTypeEmulator {
 		return d.SetLocation(emulatorDefaultLatitude, emulatorDefaultLongitude)
 	}
 
