@@ -143,10 +143,7 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 
 	for _, d := range allDevices {
 		if d.ID() == deviceID {
-			mu.Lock()
-			deviceCache[deviceID] = d
-			mu.Unlock()
-			return d, nil
+			return cacheDevice(d), nil
 		}
 	}
 
@@ -196,11 +193,21 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	}
 
 	// not in cache, use the new device instance and cache it
-	device := onlineDevices[0]
+	return cacheDevice(onlineDevices[0]), nil
+}
+
+// cacheDevice stores d unless a concurrent lookup already cached the same ID,
+// and returns whichever instance is in the cache. Every caller must end up with
+// the same instance: a device guards its on-device state with its own mutexes,
+// and those protect nothing if each request holds a different copy.
+func cacheDevice(d devices.ControllableDevice) devices.ControllableDevice {
 	mu.Lock()
-	deviceCache[device.ID()] = device
-	mu.Unlock()
-	return device, nil
+	defer mu.Unlock()
+	if cached, exists := deviceCache[d.ID()]; exists {
+		return cached
+	}
+	deviceCache[d.ID()] = d
+	return d
 }
 
 // EvictDevicesNotIn drops cached devices that a fresh scan no longer reports,

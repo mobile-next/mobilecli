@@ -26,6 +26,9 @@ const agentSubDir = "mobilecli"
 // pushTempFile writes data to a host temp file then pushes it to the device
 // at remotePath using adb push.
 func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
+	d.installMu.Lock()
+	defer d.installMu.Unlock()
+
 	tmp, err := os.CreateTemp("", "mobilecli-agent-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -77,6 +80,9 @@ func (d *AndroidDevice) getAppDataDir(pkg string) (string, error) {
 // over that inode discards its relocated pages: the next call into the mapped
 // agent jumps to a raw link-time address and the app dies with SIGSEGV.
 func (d *AndroidDevice) copyToAppDir(pkg, tmpPath, destPath, mode string) error {
+	d.installMu.Lock()
+	defer d.installMu.Unlock()
+
 	if out, err := d.runAdbCommand("shell", "run-as", pkg, "mkdir", "-p", destPath[:strings.LastIndex(destPath, "/")]); err != nil {
 		return fmt.Errorf("mkdir in app dir: %s: %w", strings.TrimSpace(string(out)), err)
 	}
