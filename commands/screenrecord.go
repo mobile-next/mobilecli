@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -144,7 +145,7 @@ func (p *screenRecordProgress) started() {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(p.out, "Screen recording has started\n")
+	_, _ = fmt.Fprintf(p.out, "Screen recording has started\n")
 }
 
 func (p *screenRecordProgress) startTicker() {
@@ -164,9 +165,9 @@ func (p *screenRecordProgress) startTicker() {
 				em, es := elapsed/60, elapsed%60
 				if p.timeLimit > 0 {
 					lm, ls := p.timeLimit/60, p.timeLimit%60
-					fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds (time limit %02d:%02d)", em, es, lm, ls)
+					_, _ = fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds (time limit %02d:%02d)", em, es, lm, ls)
 				} else {
-					fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds", em, es)
+					_, _ = fmt.Fprintf(p.out, "\rScreen recording for %02d:%02d seconds", em, es)
 				}
 			}
 		}
@@ -188,21 +189,21 @@ func (p *screenRecordProgress) recordingEnded() {
 	if !p.wasStarted {
 		return
 	}
-	fmt.Fprintf(p.out, "\nScreen recording ended, please wait while finalizing video\n")
+	_, _ = fmt.Fprintf(p.out, "\nScreen recording ended, please wait while finalizing video\n")
 }
 
 func (p *screenRecordProgress) downloadProgress(downloadedMB, totalMB float64) {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(p.out, "\rDownloading %.3f / %.3f MB", downloadedMB, totalMB)
+	_, _ = fmt.Fprintf(p.out, "\rDownloading %.3f / %.3f MB", downloadedMB, totalMB)
 }
 
 func (p *screenRecordProgress) downloaded(speedMBps float64) {
 	if p.silent {
 		return
 	}
-	fmt.Fprintf(p.out, "\nDownloading done, %.3f MB/sec\n", speedMBps)
+	_, _ = fmt.Fprintf(p.out, "\nDownloading done, %.3f MB/sec\n", speedMBps)
 }
 
 // screenRecordAvc records through the device's shared H.264 stream: subscribe,
@@ -216,7 +217,7 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		return NewErrorResponse(fmt.Errorf("error creating temp file: %w", err))
 	}
 	tempPath := tempFile.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 
 	// in CLI mode, prevent main.go's signal handler from calling os.Exit(0)
 	// before we finish converting. skip in server mode to avoid disrupting
@@ -257,7 +258,7 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	}
 
-	tempFile.Close()
+	err = errors.Join(err, tempFile.Close())
 
 	if err != nil {
 		// no-op if OnReady already fired above; covers failures that happen
@@ -285,9 +286,9 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error creating output file: %w", err))
 	}
-	defer outFile.Close()
 
 	result, err := avc2mp4.Convert(data, outFile)
+	err = errors.Join(err, outFile.Close())
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error converting to mp4: %w", err))
 	}

@@ -28,6 +28,9 @@ func DownloadFile(url, localPath string) error {
 	if _, err := io.Copy(file, resp.Body); err != nil {
 		return fmt.Errorf("failed to write file: %v", err)
 	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
 
 	return nil
 }

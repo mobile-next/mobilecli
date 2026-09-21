@@ -41,7 +41,8 @@ func TestIsPortAvailable_PortInUse(t *testing.T) {
 	defer func() { _ = listener.Close() }()
 
 	// Get the actual port that was assigned
-	addr := listener.Addr().(*net.TCPAddr)
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
 
 	// Test that the occupied port is reported as unavailable
 	assert.False(t, IsPortAvailable("127.0.0.1", addr.Port), "Port %d should be unavailable (in use)", addr.Port)

@@ -607,7 +607,9 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 				if activeApp.BundleID == agentBundleId {
 					utils.Verbose("agent is active, pressing HOME to background it")
-					_ = d.deviceKitClient.PressButton("HOME")
+					if err := d.deviceKitClient.PressButton("HOME"); err != nil {
+						utils.Verbose("failed to press HOME: %v", err)
+					}
 					time.Sleep(1 * time.Second)
 				}
 			}
@@ -1749,7 +1751,7 @@ func (d *IOSDevice) GetCrashReport(id string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	err = crashreport.DownloadReports(device, id, tmpDir)
 	if err != nil {

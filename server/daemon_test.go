@@ -58,7 +58,9 @@ func TestCLIStreamMethodsReportUnknownDeviceInsideEnvelope(t *testing.T) {
 func TestLineNotifierSendsOneNotificationPerLine(t *testing.T) {
 	var got []string
 	w := &lineNotifier{notify: func(v any) error {
-		got = append(got, string(v.(json.RawMessage)))
+		raw, ok := v.(json.RawMessage)
+		require.True(t, ok)
+		got = append(got, string(raw))
 		return nil
 	}}
 

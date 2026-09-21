@@ -46,6 +46,9 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	if err := destFile.Close(); err != nil {
+		return err
+	}
 
 	// Ensure the destination file has execute permissions if the source does
 	sourceInfo, err := os.Stat(src)

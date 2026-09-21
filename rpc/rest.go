@@ -72,7 +72,7 @@ func RESTCall(token, method, path string, body any, result any) error {
 	if err != nil {
 		return fmt.Errorf("failed to call fleet server: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
