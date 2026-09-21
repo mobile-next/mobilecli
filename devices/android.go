@@ -32,6 +32,12 @@ const androidDiscoveryGetpropTimeout = 5 * time.Second
 // on the device, shared by every feature that runs a class out of it
 const androidDexPath = "/data/local/tmp/mobilecli.dex"
 
+// defaultDisplayID is the display every launch is pinned to. Without it Android
+// picks the top focused display, or the one the app was last on, so on a device
+// with a second display an app can open where dump, screenshot and input (which
+// all work on the default display) never see it.
+const defaultDisplayID = "0"
+
 // AndroidDevice implements the ControllableDevice interface for Android devices
 // Parameter shapes for the DeviceServer methods this file calls; the JSON keys
 // are the ones agents/android/java/DeviceServer.java reads.
@@ -471,7 +477,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 		return err
 	}
 
-	output, err := d.runAdbCommand("shell", "am", "start", "-n", component)
+	output, err := d.runAdbCommand("shell", "am", "start", "--display", defaultDisplayID, "-n", component)
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
@@ -983,7 +989,7 @@ func (d *AndroidDevice) SendKeys(text string) error {
 }
 
 func (d *AndroidDevice) OpenURL(url string) error {
-	output, err := d.runAdbCommand("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url)
+	output, err := d.runAdbCommand("shell", "am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
 	if err != nil {
 		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
 	}
