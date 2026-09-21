@@ -2,6 +2,7 @@ package com.mobilenext.mobilecli;
 
 import android.app.UiAutomation;
 import android.graphics.Rect;
+import android.os.Build;
 import android.util.Log;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -34,6 +35,8 @@ class UiTreeSerializer {
 			}
 		}
 
+		clearNodeCache(automation);
+
 		List<AccessibilityNodeInfo> roots = new ArrayList<>();
 		for (AccessibilityWindowInfo window : automation.getWindows()) {
 			// The soft keyboard is noise for most callers: skip IME windows unless asked for a full dump.
@@ -61,6 +64,31 @@ class UiTreeSerializer {
 			return new JSONObject().put("hierarchy", array);
 		} finally {
 			for (AccessibilityNodeInfo root : roots) root.recycle();
+		}
+	}
+
+	// This connection is long-lived, so node reads are served from the framework's
+	// accessibility cache. A walk that races a content change (a Compose LazyRow
+	// swapping placeholders for items) can re-cache the old subtree after the
+	// invalidating event, leaving it stale for good. Always walk a fresh tree.
+	private static void clearNodeCache(UiAutomation automation) {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+			automation.clearCache();
+			return;
+		}
+		try {
+			Class<?> client = Class.forName("android.view.accessibility.AccessibilityInteractionClient");
+			Object instance = client.getMethod("getInstance").invoke(null);
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+				// Android 13 made the cache per-connection, a release before
+				// UiAutomation.clearCache() became public.
+				Object connectionId = UiAutomation.class.getMethod("getConnectionId").invoke(automation);
+				client.getMethod("clearCache", int.class).invoke(instance, connectionId);
+				return;
+			}
+			client.getMethod("clearCache").invoke(instance);
+		} catch (ReflectiveOperationException e) {
+			Log.w(TAG, "could not clear the accessibility cache; the dump may be stale", e);
 		}
 	}
 
