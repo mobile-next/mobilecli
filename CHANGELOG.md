@@ -1,3 +1,10 @@
+## [1.0.13](https://github.com/mobile-next/mobilecli/releases/tag/1.0.13) (2026-09-21)
+* Feat(ios): Keep slider, picker, alert, list and navigation elements in the UI dump ([#440](https://github.com/mobile-next/mobilecli/pull/440))
+* Fix(android): Launch apps and urls on the default display 0 ([#442](https://github.com/mobile-next/mobilecli/pull/442))
+* Fix(android): Clear the accessibility cache before dumping the UI tree ([#439](https://github.com/mobile-next/mobilecli/pull/439))
+* Fix(android): Fix crash when the in-app agent is installed twice ([#441](https://github.com/mobile-next/mobilecli/pull/441))
+* Fix(android): Concurrent on-device file installs are safe ([#445](https://github.com/mobile-next/mobilecli/pull/445))
+
 ## [1.0.12](https://github.com/mobile-next/mobilecli/releases/tag/1.0.12) (2026-09-21)
 * Fix: Recordings converted to mp4 are playable when the stream has B-frames; they used to decode as one frame lasting hundreds of hours ([#430](https://github.com/mobile-next/mobilecli/pull/430))
 * Fix: npm package license was set incorrectly, see LICENSE ([#427](https://github.com/mobile-next/mobilecli/pull/427))
