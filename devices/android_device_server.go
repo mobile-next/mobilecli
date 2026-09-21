@@ -149,9 +149,10 @@ func forwardOnFreePort(runAdb func(args ...string) ([]byte, error), target strin
 }
 
 // forwardArgs builds the adb arguments for a forward to target on a free local port that
-// we pick. "tcp:0" would let adb pick, but AWS Device Farm runs the adb server on another
-// host and tunnels each forwarded port by its number: it tunnels "0", which reaches nothing,
-// and every agent behind such a forward looks dead.
+// we pick. "tcp:0" would let adb pick, but that only works when the adb server runs on this
+// machine. With a remote adb server the port adb reports is opened on the other host, and
+// tooling that tunnels forwarded ports by their number has no number to tunnel, so every
+// agent behind such a forward looks dead.
 func forwardArgs(target string) ([]string, int, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

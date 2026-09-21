@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// AWS Device Farm runs the adb server on another host and tunnels each forwarded port by
-// its number, so "tcp:0" reaches nothing there. The port has to be named.
+// With a remote adb server, forwarded ports are tunnelled to this host by their number, so
+// "tcp:0" reaches nothing there. The port has to be named.
 func TestForwardNamesItsLocalPort(t *testing.T) {
 	args, port, err := forwardArgs("localabstract:mobilecli-server")
 
