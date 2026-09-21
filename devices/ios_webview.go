@@ -114,11 +114,14 @@ func writeIOSAgentDylib() (string, error) {
 		return "", fmt.Errorf("create temp dylib: %w", err)
 	}
 	if _, err := f.Write(agents.IOSAgentSimDylib); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", fmt.Errorf("write dylib: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write dylib: %w", err)
+	}
 	return f.Name(), nil
 }
 
@@ -199,7 +202,7 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer os.Remove(dylibPath)
+	defer func() { _ = os.Remove(dylibPath) }()
 
 	port, err := injectIOSAgent(pid, dylibPath)
 	if err != nil {

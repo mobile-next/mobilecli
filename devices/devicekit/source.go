@@ -35,6 +35,12 @@ func isVisible(rect sourceTreeElementRect) bool {
 	return rect.X >= 0 && rect.Y >= 0 && rect.Width > 0 && rect.Height > 0
 }
 
+// hasText reports whether an optional string attribute carries a value; an
+// empty string identifies an element no better than a missing one.
+func hasText(value *string) bool {
+	return value != nil && *value != ""
+}
+
 // filterSourceElements converts a WDA source tree into ScreenElements,
 // preserving hierarchy: filtered descendants of an accepted element become its
 // Children, while descendants of rejected elements are hoisted to the nearest
@@ -45,7 +51,14 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		childElements = append(childElements, filterSourceElements(child)...)
 	}
 
-	acceptedTypes := []string{"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
+	acceptedTypes := []string{
+		"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView",
+		// types that clients map to semantic roles (slider, progressbar,
+		// combobox, link, tab, header, alert, list, listitem)
+		"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+		"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+		"Cell", "Table", "CollectionView", "ScrollView",
+	}
 
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
@@ -60,7 +73,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 
 	// elements explicitly tagged with accessibilityIdentifier are always
 	// included, regardless of type, see https://github.com/mobile-next/mobilecli/issues/341
-	if source.RawIdentifier != nil && *source.RawIdentifier != "" {
+	if hasText(source.RawIdentifier) {
 		typeAccepted = true
 	}
 
@@ -68,8 +81,8 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		return childElements
 	}
 
-	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	hasIdentifier := hasText(source.Label) || hasText(source.Name) || hasText(source.RawIdentifier) || hasText(source.PlaceholderValue)
+	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView" || elementType == "Slider" || elementType == "Picker" || elementType == "PickerWheel"
 	if !hasIdentifier && !alwaysInclude {
 		return childElements
 	}

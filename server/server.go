@@ -329,7 +329,9 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	// slow device-side call can't trip the default WriteTimeout and close the
 	// connection mid-response (which the caller sees as an EOF).
 	if d, ok := extendedWriteDeadline(req.Method); ok {
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d)); err != nil {
+			utils.Verbose("failed to extend write deadline: %v", err)
+		}
 	}
 
 	if req.Method == "" {
@@ -359,7 +361,9 @@ func sendJSONRPCResponse(w http.ResponseWriter, id any, result any) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		utils.Verbose("failed to write response: %v", err)
+	}
 }
 
 func handleDevicesList(params json.RawMessage) (any, error) {
@@ -1409,12 +1413,16 @@ func sendJSONRPCError(w http.ResponseWriter, id any, code int, message string, d
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		utils.Verbose("failed to write response: %v", err)
+	}
 }
 
 func sendBanner(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(okResponse)
+	if err := json.NewEncoder(w).Encode(okResponse); err != nil {
+		utils.Verbose("failed to write response: %v", err)
+	}
 }
 
 // newJsonRpcNotification creates a JSON-RPC notification message
@@ -1686,7 +1694,9 @@ func handleLogsStream(w http.ResponseWriter, r *http.Request) {
 	defer sessionManager.RemoveSession(session.ID)
 
 	// set extended write deadline for long-running stream
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute)); err != nil {
+		utils.Verbose("failed to extend write deadline: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1717,7 +1727,9 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	defer sessionManager.RemoveSession(sessionID)
 
 	// set extended write deadline for long-running stream
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute)); err != nil {
+		utils.Verbose("failed to extend write deadline: %v", err)
+	}
 
 	// set streaming headers based on format
 	if session.Format == "mjpeg" {
@@ -1740,7 +1752,9 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
-			_, _ = flushWriter{w: w}.Write([]byte(mimeMessage))
+			if _, err := (flushWriter{w: w}).Write([]byte(mimeMessage)); err != nil {
+				utils.Verbose("failed to write status message: %v", err)
+			}
 		}
 	}
 
@@ -1761,7 +1775,9 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 
 func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.RawMessage) error {
 
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Minute)); err != nil {
+		utils.Verbose("failed to extend write deadline: %v", err)
+	}
 
 	var screenCaptureParams commands.ScreenCaptureRequest
 	if err := json.Unmarshal(params, &screenCaptureParams); err != nil {
@@ -1836,7 +1852,9 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 				return
 			}
 			mimeMessage := fmt.Sprintf("--BoundaryString\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s\r\n", len(statusJSON), statusJSON)
-			_, _ = w.Write([]byte(mimeMessage))
+			if _, err := w.Write([]byte(mimeMessage)); err != nil {
+				utils.Verbose("failed to write status message: %v", err)
+			}
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
@@ -1993,8 +2011,8 @@ func handleFsPull(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	tmp.Close()
-	defer os.Remove(tmpPath)
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	response := commands.FsPullCommand(commands.FsPullRequest{
 		DeviceID:   p.DeviceID,
@@ -2044,12 +2062,14 @@ func handleFsPush(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil, fmt.Errorf("failed to write temp file: %w", err)
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	}
 
 	response := commands.FsPushCommand(commands.FsPushRequest{
 		DeviceID:   p.DeviceID,

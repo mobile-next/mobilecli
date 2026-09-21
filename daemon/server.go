@@ -80,7 +80,10 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", opts.Paths.Socket, err)
 	}
-	_ = os.Chmod(opts.Paths.Socket, 0o600)
+	if err := os.Chmod(opts.Paths.Socket, 0o600); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("restrict %s: %w", opts.Paths.Socket, err)
+	}
 
 	s := &server{opts: opts, startedAt: time.Now(), shutdown: make(chan struct{})}
 	s.touch()

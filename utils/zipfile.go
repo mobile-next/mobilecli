@@ -47,7 +47,9 @@ func unzipFile(zipPath, destDir string) error {
 
 		// Create directory tree
 		if file.FileInfo().IsDir() {
-			_ = os.MkdirAll(path, 0750)
+			if err := os.MkdirAll(path, 0750); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -69,10 +71,11 @@ func unzipFile(zipPath, destDir string) error {
 			return err
 		}
 
-		defer func() { _ = outFile.Close() }()
-		defer func() { _ = rc.Close() }()
-
 		_, err = io.Copy(outFile, rc)
+		_ = rc.Close()
+		if closeErr := outFile.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return err
 		}

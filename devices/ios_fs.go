@@ -122,7 +122,7 @@ func (d *IOSDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) 
 	if err != nil {
 		return nil, fmt.Errorf("afc connect failed: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	names, err := client.List(remotePath)
 	if err != nil {

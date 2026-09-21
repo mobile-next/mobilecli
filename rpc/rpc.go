@@ -76,9 +76,9 @@ func Call(token, method string, params any, result any) error {
 		return fmt.Errorf("failed to connect to fleet server: %w", err)
 	}
 	defer func() {
-		conn.WriteMessage(websocket.CloseMessage,
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	req := Request{

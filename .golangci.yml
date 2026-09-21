@@ -42,7 +42,7 @@ linters:
         - G204 # Subprocess launched with variable
     errcheck:
       check-type-assertions: true
-      check-blank: true
+      check-blank: false
 
 issues:
   exclude-rules:

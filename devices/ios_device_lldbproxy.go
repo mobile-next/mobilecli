@@ -34,34 +34,40 @@ func startLLDBProxy(device goios.DeviceEntry, proxyPort, pid int) (int, func(), 
 	utils.Verbose("lldb-proxy: pre-attaching to pid %d", pid)
 	stopReply, err := devGDB.Request(fmt.Sprintf("vAttach;%x", pid))
 	if err != nil || !strings.HasPrefix(stopReply, "T") {
-		devConn.Close()
+		_ = devConn.Close()
 		return 0, nil, fmt.Errorf("lldb-proxy: vAttach pid %d: err=%v resp=%q", pid, err, stopReply)
 	}
 	utils.Verbose("lldb-proxy: pre-attached, stop=%q", stopReply)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		devConn.Close()
+		_ = devConn.Close()
 		return 0, nil, fmt.Errorf("listen for lldb proxy: %w", err)
 	}
-	localPort := ln.Addr().(*net.TCPAddr).Port
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = ln.Close()
+		_ = devConn.Close()
+		return 0, nil, fmt.Errorf("lldb proxy listener address is %T, not TCP", ln.Addr())
+	}
+	localPort := addr.Port
 	go func() {
-		defer ln.Close()
-		defer devConn.Close()
+		defer func() { _ = ln.Close() }()
+		defer func() { _ = devConn.Close() }()
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
 		lldbProxyConn(conn, devGDB, pid)
 	}()
-	return localPort, func() { ln.Close() }, nil
+	return localPort, func() { _ = ln.Close() }, nil
 }
 
 // lldbProxyConn is a GDB RSP bridge between LLDB and an already-attached
 // device debugserver. Handles negotiation packets locally, forwards all others
 // packet-by-packet with ack-mode translation (LLDB: no-ack; device: ack).
 func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// debugserver sends '+' immediately upon accepting a connection;
 	// LLDB waits for this before sending the first packet.
@@ -148,8 +154,8 @@ func lldbProxyConn(c net.Conn, devGDB *debugserver.GDBServer, pid int) {
 			return
 
 		case strings.HasPrefix(pkt, "D"):
-			devReply, _ := devGDB.Request(pkt)
-			utils.Verbose("lldb-proxy → LLDB (detach): %d bytes", len(devReply))
+			devReply, err := devGDB.Request(pkt)
+			utils.Verbose("lldb-proxy → LLDB (detach): %d bytes, err=%v", len(devReply), err)
 			sendToLLDB(devReply)
 			return
 

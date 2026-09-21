@@ -91,11 +91,18 @@ func TestInputParamsUseTheOpenRpcFieldNames(t *testing.T) {
 }
 
 // freePort returns a port with nothing listening on it.
+func tcpPort(t *testing.T, addr net.Addr) int {
+	t.Helper()
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	require.True(t, ok)
+	return tcpAddr.Port
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	port := listener.Addr().(*net.TCPAddr).Port
+	port := tcpPort(t, listener.Addr())
 	require.NoError(t, listener.Close())
 	return port
 }
@@ -111,7 +118,7 @@ func TestAgentRequestReportsAnErrorTheAgentItselfSentAsSomethingElse(t *testing.
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Method not found"}}`))
 	}))
 	defer agent.Close()
-	port := agent.Listener.Addr().(*net.TCPAddr).Port
+	port := tcpPort(t, agent.Listener.Addr())
 
 	_, err := agentRequest(port, "device.nonsense", nil)
 
@@ -124,7 +131,7 @@ func TestAgentRequestReportsATimeoutSeparatelyFromAnUnreachableAgent(t *testing.
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer slowAgent.Close()
-	port := slowAgent.Listener.Addr().(*net.TCPAddr).Port
+	port := tcpPort(t, slowAgent.Listener.Addr())
 
 	_, err := agentRequestWithTimeout(port, "device.dump.ui", nil, 10*time.Millisecond)
 

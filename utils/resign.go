@@ -439,7 +439,10 @@ func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
 		return "", fmt.Errorf("failed to write entitlements: %w", err)
 	}
 
-	_ = tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("failed to write entitlements: %w", err)
+	}
 	return tmpFile.Name(), nil
 }
 
