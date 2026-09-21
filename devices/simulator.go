@@ -25,9 +25,20 @@ import (
 
 // simctl device states
 const (
-	simStateBooted   = "Booted"
-	simStateShutdown = "Shutdown"
+	simStateShutdown     = "Shutdown"
+	simStateBooting      = "Booting"
+	simStateBooted       = "Booted"
+	simStateShuttingDown = "ShuttingDown"
 )
+
+// simStateNames maps the state integer in device.plist to its simctl name;
+// anything else (0 is Creating) counts as shut down.
+var simStateNames = map[int]string{
+	1: simStateShutdown,
+	2: simStateBooting,
+	3: simStateBooted,
+	4: simStateShuttingDown,
+}
 
 const (
 	LOW_DEVICEKIT_PORT  = 13001
@@ -172,12 +183,9 @@ func GetSimulators() ([]Simulator, error) {
 			continue
 		}
 
-		// convert state integer to string
-		// state 1 = Shutdown (offline)
-		// state 3 = Booted (online)
-		stateStr := simStateShutdown
-		if device.State == 3 {
-			stateStr = simStateBooted
+		stateStr, ok := simStateNames[device.State]
+		if !ok {
+			stateStr = simStateShutdown
 		}
 
 		simulator := Simulator{
@@ -402,7 +410,7 @@ func (s *SimulatorDevice) Boot() error {
 		return fmt.Errorf("simulator is already running")
 	}
 
-	if state == "Booting" {
+	if state == simStateBooting {
 		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
@@ -489,7 +497,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 	case simStateShutdown:
 		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
-	case "Booting":
+	case simStateBooting:
 		// simulator is already booting, just wait for it to finish
 		config.reportProgress("Waiting for Simulator to boot")
 
@@ -501,7 +509,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = simStateBooted
-	case "ShuttingDown":
+	case simStateShuttingDown:
 		return fmt.Errorf("simulator is shutting down, please try again")
 	default:
 		return fmt.Errorf("unexpected simulator state: %s", state)
@@ -519,8 +527,8 @@ func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 		return false, nil
 	}
 
-	// check if the existing client is already pointing to the same port
-	if s.deviceKitClient != nil {
+	// reuse the existing client only if it points to the same port
+	if s.deviceKitClient != nil && s.deviceKitClient.Port() == currentPort {
 		if _, err := s.deviceKitClient.GetStatus(); err == nil {
 			return true, nil
 		}

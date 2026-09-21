@@ -119,8 +119,11 @@ func signAppBundle(appPath, identity, entitlementsPath string) error {
 func signFrameworks(appPath, identity string) error {
 	frameworksDir := filepath.Join(appPath, "Frameworks")
 	entries, err := os.ReadDir(frameworksDir)
-	if err != nil {
+	if os.IsNotExist(err) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read Frameworks directory: %w", err)
 	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".framework") && !strings.HasSuffix(entry.Name(), ".dylib") {
@@ -138,8 +141,11 @@ func signFrameworks(appPath, identity string) error {
 func signPlugins(appPath, identity, entitlementsPath string) error {
 	pluginsDir := filepath.Join(appPath, "PlugIns")
 	entries, err := os.ReadDir(pluginsDir)
-	if err != nil {
+	if os.IsNotExist(err) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read PlugIns directory: %w", err)
 	}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".appex") && !strings.HasSuffix(entry.Name(), ".xctest") {
