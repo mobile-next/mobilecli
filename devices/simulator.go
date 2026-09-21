@@ -25,20 +25,9 @@ import (
 
 // simctl device states
 const (
-	simStateShutdown     = "Shutdown"
-	simStateBooting      = "Booting"
-	simStateBooted       = "Booted"
-	simStateShuttingDown = "ShuttingDown"
+	simStateBooted   = "Booted"
+	simStateShutdown = "Shutdown"
 )
-
-// simStateNames maps the state integer in device.plist to its simctl name;
-// anything else (0 is Creating) counts as shut down.
-var simStateNames = map[int]string{
-	1: simStateShutdown,
-	2: simStateBooting,
-	3: simStateBooted,
-	4: simStateShuttingDown,
-}
 
 const (
 	LOW_DEVICEKIT_PORT  = 13001
@@ -183,9 +172,12 @@ func GetSimulators() ([]Simulator, error) {
 			continue
 		}
 
-		stateStr, ok := simStateNames[device.State]
-		if !ok {
-			stateStr = simStateShutdown
+		// convert state integer to string
+		// state 1 = Shutdown (offline)
+		// state 3 = Booted (online)
+		stateStr := simStateShutdown
+		if device.State == 3 {
+			stateStr = simStateBooted
 		}
 
 		simulator := Simulator{
@@ -410,7 +402,7 @@ func (s *SimulatorDevice) Boot() error {
 		return fmt.Errorf("simulator is already running")
 	}
 
-	if state == simStateBooting {
+	if state == "Booting" {
 		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
 		output, err := runSimctl("bootstatus", s.UDID)
 		if err != nil {
@@ -497,7 +489,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 	case simStateShutdown:
 		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
-	case simStateBooting:
+	case "Booting":
 		// simulator is already booting, just wait for it to finish
 		config.reportProgress("Waiting for Simulator to boot")
 
@@ -509,7 +501,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 
 		utils.Verbose("Simulator booted successfully")
 		s.Simulator.State = simStateBooted
-	case simStateShuttingDown:
+	case "ShuttingDown":
 		return fmt.Errorf("simulator is shutting down, please try again")
 	default:
 		return fmt.Errorf("unexpected simulator state: %s", state)
