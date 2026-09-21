@@ -115,14 +115,37 @@ func (d *AndroidDevice) startDeviceServer() (int, error) {
 // addForward creates a host TCP forward to target (e.g.
 // "localabstract:devicekit") on a freshly assigned local port and returns it.
 func (d *AndroidDevice) addForward(target string) (int, error) {
-	args, port, err := forwardArgs(target)
-	if err != nil {
-		return 0, err
+	return forwardOnFreePort(d.runAdbCommand, target)
+}
+
+// forwardAttempts bounds the retries when adb can't bind the port we picked.
+const forwardAttempts = 3
+
+// adbPortTakenMessage is what adb prints when the local port of a forward is in use.
+const adbPortTakenMessage = "cannot bind"
+
+// forwardOnFreePort forwards a free local port to target and returns the port. The port
+// was free when we probed it, but adb binds it a moment later and, with a remote adb
+// server, on another host, so a taken port is retried on a new one.
+func forwardOnFreePort(runAdb func(args ...string) ([]byte, error), target string) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt < forwardAttempts; attempt++ {
+		args, port, err := forwardArgs(target)
+		if err != nil {
+			return 0, err
+		}
+
+		out, err := runAdb(args...)
+		if err == nil {
+			return port, nil
+		}
+
+		lastErr = fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
+		if !strings.Contains(string(out), adbPortTakenMessage) {
+			return 0, lastErr
+		}
 	}
-	if out, err := d.runAdbCommand(args...); err != nil {
-		return 0, fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return port, nil
+	return 0, lastErr
 }
 
 // forwardArgs builds the adb arguments for a forward to target on a free local port that
