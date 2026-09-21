@@ -1,6 +1,5 @@
 package com.mobilenext.mobilecli;
 
-import android.hardware.display.VirtualDisplay;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
@@ -160,7 +159,7 @@ public class AvcServer {
 			throw e;
 		}
 
-		VirtualDisplay virtualDisplay = DisplayUtils.createVirtualDisplay(
+		DisplayUtils.DisplayMirror virtualDisplay = DisplayUtils.createVirtualDisplay(
 				"avc.screen.capture", width, height, codec.createInputSurface());
 		if (virtualDisplay == null) {
 			codec.release();
