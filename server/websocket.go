@@ -133,7 +133,7 @@ func NewWebSocketHandler(enableCORS bool) http.HandlerFunc {
 			log.Printf("WebSocket upgrade failed: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		wsConn := &wsConnection{conn: conn, handlerSem: make(chan struct{}, wsMaxConcurrentHandlers)}
 		configureConnection(conn)
@@ -243,16 +243,16 @@ func handleWSMethodCall(wsConn *wsConnection, req JSONRPCRequest) {
 	}()
 }
 
-func (wsc *wsConnection) sendResponse(id any, result any) error {
+func (wsc *wsConnection) sendResponse(id any, result any) {
 	response := JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
 		Result:  result,
 		ID:      id,
 	}
-	return wsc.sendJSON(response)
+	wsc.sendOrLog(response)
 }
 
-func (wsc *wsConnection) sendError(id any, code int, message string, data any) error {
+func (wsc *wsConnection) sendError(id any, code int, message string, data any) {
 	response := JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
 		Error: map[string]any{
@@ -262,7 +262,14 @@ func (wsc *wsConnection) sendError(id any, code int, message string, data any) e
 		},
 		ID: id,
 	}
-	return wsc.sendJSON(response)
+	wsc.sendOrLog(response)
+}
+
+// sendOrLog is for replies nobody can act on failing: the client is usually gone.
+func (wsc *wsConnection) sendOrLog(v any) {
+	if err := wsc.sendJSON(v); err != nil {
+		utils.Verbose("websocket send failed: %v", err)
+	}
 }
 
 func (wsc *wsConnection) sendJSON(v any) error {

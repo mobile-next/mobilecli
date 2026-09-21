@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -291,7 +292,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -314,7 +315,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("upload failed with status %d", resp.StatusCode)
@@ -350,7 +351,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -360,7 +361,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	deadline := time.NewTimer(1 * time.Minute)
 	var onProgress func(float64, float64)
@@ -378,6 +379,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	start := time.Now()
 	written, err := io.Copy(f, body)
 	deadline.Stop()
+	err = errors.Join(err, f.Close())
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}

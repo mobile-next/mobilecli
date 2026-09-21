@@ -1358,7 +1358,9 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 	}
 
 	// clean up device
-	_, _ = d.runAdbCommand("shell", "rm", remotePath)
+	if _, err := d.runAdbCommand("shell", "rm", remotePath); err != nil {
+		utils.Verbose("failed to remove remote file: %v", err)
+	}
 
 	return nil
 }

@@ -60,7 +60,7 @@ func TestWebSocket_ValidRequest(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := newJSONRPCRequest("devices.list")
 
@@ -78,7 +78,7 @@ func TestWebSocket_MissingJSONRPCVersion(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := JSONRPCRequest{
 		JSONRPC: "1.0",
@@ -93,7 +93,8 @@ func TestWebSocket_MissingJSONRPCVersion(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgInvalidJSONRPC, errorMap["data"])
@@ -104,7 +105,7 @@ func TestWebSocket_MissingID(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -119,7 +120,8 @@ func TestWebSocket_MissingID(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgIDRequired, errorMap["data"])
@@ -130,7 +132,7 @@ func TestWebSocket_MissingMethod(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := newJSONRPCRequest("")
 
@@ -140,7 +142,8 @@ func TestWebSocket_MissingMethod(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(ErrCodeInvalidRequest), errorMap["code"])
 	assert.Equal(t, errTitleInvalidReq, errorMap["message"])
 	assert.Equal(t, errMsgMethodRequired, errorMap["data"])
@@ -151,7 +154,7 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := newJSONRPCRequest("nonexistent_method")
 
@@ -161,7 +164,8 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	assert.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(ErrCodeMethodNotFound), errorMap["code"])
 	assert.Equal(t, "Method not found", errorMap["message"])
 }
@@ -175,7 +179,7 @@ func expectJSONRPCErrorForMessage(t *testing.T, messageType int, payload string,
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	require.NoError(t, conn.WriteMessage(messageType, []byte(payload)))
 
@@ -184,7 +188,8 @@ func expectJSONRPCErrorForMessage(t *testing.T, messageType int, payload string,
 	assert.Equal(t, "2.0", resp.JSONRPC)
 	require.NotNil(t, resp.Error)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(wantCode), errorMap["code"])
 	assert.Equal(t, wantMessage, errorMap["message"])
 	assert.Equal(t, wantData, errorMap["data"])
@@ -205,7 +210,7 @@ func TestWebSocket_MultipleRequests(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	for i := 1; i <= 3; i++ {
 		req := newJSONRPCRequest("devices.list")
@@ -225,7 +230,7 @@ func TestWebSocket_PingPong(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	pongReceived := make(chan bool, 1)
 
@@ -267,7 +272,7 @@ func TestWebSocket_CORSEnabled(t *testing.T) {
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	require.NoError(t, err, "should connect with CORS enabled")
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := newJSONRPCRequest("devices.list")
 
@@ -316,7 +321,7 @@ func TestWebSocket_StringID(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -476,7 +481,7 @@ func TestWebSocket_ConcurrentConnections(t *testing.T) {
 	for i := 0; i < numConnections; i++ {
 		go func(id int) {
 			conn := connectWebSocket(t, wsURL)
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			req := JSONRPCRequest{
 				JSONRPC: "2.0",
@@ -489,7 +494,7 @@ func TestWebSocket_ConcurrentConnections(t *testing.T) {
 			resp := readJSONRPCResponse(t, conn)
 
 			assert.Equal(t, "2.0", resp.JSONRPC)
-			assert.Equal(t, id, int(resp.ID.(float64)))
+			assert.Equal(t, float64(id), resp.ID)
 			assert.Nil(t, resp.Error)
 
 			done <- true
@@ -512,7 +517,7 @@ func TestWebSocket_ReadDeadline(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// send request to establish connection
 	req := newJSONRPCRequest("devices.list")
@@ -528,7 +533,7 @@ func TestWebSocket_ReadDeadline(t *testing.T) {
 	req.ID = 2
 	sendJSONRPCRequest(t, conn, req)
 	resp = readJSONRPCResponse(t, conn)
-	assert.Equal(t, 2, int(resp.ID.(float64)))
+	assert.Equal(t, float64(2), resp.ID)
 	assert.Nil(t, resp.Error)
 }
 
@@ -540,7 +545,7 @@ func BenchmarkWebSocket_SingleRequest(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := newJSONRPCRequest("devices.list")
 
@@ -571,7 +576,7 @@ func BenchmarkWebSocket_ConcurrentRequests(b *testing.B) {
 			b.Errorf("failed to connect: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		req := JSONRPCRequest{
 			JSONRPC: "2.0",
@@ -612,7 +617,7 @@ func TestWSConnection_SendError(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// trigger an error by sending invalid method
 	req := JSONRPCRequest{
@@ -630,7 +635,8 @@ func TestWSConnection_SendError(t *testing.T) {
 	assert.NotNil(t, resp.Error)
 	assert.Nil(t, resp.Result)
 
-	errorMap := resp.Error.(map[string]any)
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, float64(ErrCodeMethodNotFound), errorMap["code"])
 	assert.Contains(t, fmt.Sprint(errorMap["message"]), "Method not found")
 }
@@ -640,7 +646,7 @@ func TestWSConnection_SendResponse(t *testing.T) {
 	defer server.Close()
 
 	conn := connectWebSocket(t, wsURL)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",

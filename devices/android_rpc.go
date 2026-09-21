@@ -65,7 +65,7 @@ func agentRequestWithTimeout(port int, method string, params any, timeout time.D
 		}
 		return nil, fmt.Errorf("%w on port %d: %v", errAgentUnreachable, port, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -95,7 +95,7 @@ func isAgentReady(port int) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return true
 }
 

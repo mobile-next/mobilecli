@@ -563,7 +563,9 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return string(contents), nil
 	})
 	if err != nil {
-		_ = s.TerminateApp(agentBundleID)
+		if err := s.TerminateApp(agentBundleID); err != nil {
+			utils.Verbose("failed to terminate agent: %v", err)
+		}
 		return err
 	}
 
@@ -714,21 +716,26 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
+	// SIGINT lets simctl finalize the MP4; kill it if the signal can't be delivered
+	interrupt := func() {
+		if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+			utils.Verbose("failed to interrupt simctl recordVideo: %v", err)
+			_ = cmd.Process.Kill()
+		}
+	}
+
 	// if time limit is set, stop recording after the specified duration
 	var timer *time.Timer
 	if timeLimit > 0 {
-		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, func() {
-			_ = cmd.Process.Signal(syscall.SIGINT)
-		})
+		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, interrupt)
 	}
 
 	select {
 	case <-sigChan:
-		// forward SIGINT to simctl so it finalizes the MP4
-		_ = cmd.Process.Signal(syscall.SIGINT)
+		interrupt()
 		<-done
 	case <-stopChan:
-		_ = cmd.Process.Signal(syscall.SIGINT)
+		interrupt()
 		<-done
 	case <-done:
 	}
@@ -945,7 +952,9 @@ func (s SimulatorDevice) ClearApp(bundleID string) error {
 		return fmt.Errorf("refusing to clear unexpected container path: %s", containerPath)
 	}
 
-	_ = s.TerminateApp(bundleID)
+	if err := s.TerminateApp(bundleID); err != nil {
+		utils.Info("failed to terminate %s before clearing its data: %v", bundleID, err)
+	}
 
 	entries, err := os.ReadDir(containerPath)
 	if err != nil {

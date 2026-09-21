@@ -97,7 +97,11 @@ func (d *AndroidDevice) dumpFlutterSource(uri string) ([]types.ScreenElement, er
 	if err != nil {
 		return nil, fmt.Errorf("forward to VM service: %w", err)
 	}
-	defer d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", localPort))
+	defer func() {
+		if _, err := d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", localPort)); err != nil {
+			utils.Info("failed to remove adb forward tcp:%d: %v", localPort, err)
+		}
+	}()
 
 	// The device port is now reachable at the forwarded local port.
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/%s/ws", localPort, token)
@@ -162,7 +166,7 @@ func dialFlutterVM(wsURL string) (*flutterVM, error) {
 }
 
 func (vm *flutterVM) close() {
-	vm.conn.Close()
+	_ = vm.conn.Close()
 }
 
 func (vm *flutterVM) readLoop() {
@@ -240,10 +244,16 @@ func (vm *flutterVM) call(method string, params map[string]any) (json.RawMessage
 	if params != nil {
 		req["params"] = params
 	}
-	payload, _ := json.Marshal(req)
+	payload, err := json.Marshal(req)
+	if err != nil {
+		vm.mu.Lock()
+		delete(vm.pending, id)
+		vm.mu.Unlock()
+		return nil, fmt.Errorf("encode vm service call %q: %w", method, err)
+	}
 
 	vm.writeMu.Lock()
-	err := vm.conn.WriteMessage(websocket.TextMessage, payload)
+	err = vm.conn.WriteMessage(websocket.TextMessage, payload)
 	vm.writeMu.Unlock()
 	if err != nil {
 		vm.mu.Lock()

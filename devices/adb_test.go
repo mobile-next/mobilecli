@@ -18,7 +18,10 @@ func startFakeADBServer(t *testing.T, handler func(conn net.Conn)) (host string,
 		t.Fatalf("listen: %v", err)
 	}
 
-	addr := ln.Addr().(*net.TCPAddr)
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener address is %T, not TCP", ln.Addr())
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -79,7 +82,7 @@ func serveTransportThenService(t *testing.T, serial, service, output string) fun
 	t.Helper()
 
 	return func(conn net.Conn) {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		got := readADBService(t, conn)
 		if got != "host:transport:"+serial {
@@ -118,7 +121,7 @@ func TestADB_Shell_UsesTransportOnSameConnection(t *testing.T) {
 
 func TestADB_TrackDevices_StreamsFramesAndStopsOnCancel(t *testing.T) {
 	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		got := readADBService(t, conn)
 		if got != "host:track-devices" {
@@ -167,7 +170,7 @@ func TestADB_TrackDevices_StreamsFramesAndStopsOnCancel(t *testing.T) {
 
 func TestADB_ResponseLimit(t *testing.T) {
 	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		_ = readADBService(t, conn) // host:transport:...
 		writeOKAY(t, conn)

@@ -214,7 +214,10 @@ COMMON FLAGS:
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		token, _ := getRemoteToken()
+		token, err := getRemoteToken()
+		if err != nil {
+			utils.Verbose("no remote token: %v", err)
+		}
 		if token != "" {
 			commands.SetFleetConfig(token)
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -31,13 +32,15 @@ func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write temp file: %w", err)
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
 
 	// push to a sibling then rename: a process that has the old file mapped
 	// (a running DeviceServer or capture stream) keeps its inode instead of
@@ -105,7 +108,9 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 		return "", fmt.Errorf("push .dex: %w", err)
 	}
 	// remove stale dex before copying (dex is immutable once loaded)
-	d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/mobilecli.dex")
+	if _, err := d.runAdbCommand("shell", "run-as", pkg, "rm", "-f", agentDir+"/mobilecli.dex"); err != nil {
+		utils.Verbose("failed to remove stale dex: %v", err)
+	}
 	if err := d.copyToAppDir(pkg, androidDexPath, agentDir+"/mobilecli.dex", "444"); err != nil {
 		return "", fmt.Errorf("install .dex: %w", err)
 	}
