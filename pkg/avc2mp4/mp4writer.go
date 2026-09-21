@@ -62,6 +62,11 @@ func Convert(avcData []byte, output io.WriteSeeker) (*ConvertResult, error) {
 // encoder emits our timecode SEI *before* the picture's slice, so a timestamp is
 // held until the next slice claims it. everything before the first SPS is
 // undecodable and dropped, as are pictures that never got a timestamp.
+// isMuxable reports whether the unit holds a picture and knows when to show it.
+func (u *accessUnit) isMuxable() bool {
+	return u != nil && u.hasSlice && u.timestampUs > 0
+}
+
 func groupAccessUnits(nalus []NALUnit) []accessUnit {
 	var units []accessUnit
 	var current *accessUnit
@@ -69,7 +74,7 @@ func groupAccessUnits(nalus []NALUnit) []accessUnit {
 	seenSPS := false
 
 	flush := func() {
-		if current != nil && current.hasSlice && current.timestampUs > 0 {
+		if current.isMuxable() {
 			units = append(units, *current)
 		}
 	}

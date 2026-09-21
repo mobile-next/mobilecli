@@ -83,7 +83,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	}
 
 	switch {
-	case targetDevice.Platform() == "android":
+	case targetDevice.Platform() == devices.PlatformAndroid:
 		dev, ok := targetDevice.(*devices.AndroidDevice)
 		if !ok {
 			err := fmt.Errorf("expected android device")
@@ -94,7 +94,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 		return screenRecordNative(func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
-	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator":
+	case targetDevice.Platform() == devices.PlatformIOS && targetDevice.DeviceType() == devices.DeviceTypeSimulator:
 		dev, ok := targetDevice.(*devices.SimulatorDevice)
 		if !ok {
 			err := fmt.Errorf("expected simulator device")
@@ -105,7 +105,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 		return screenRecordNative(func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
-	case targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "real":
+	case targetDevice.Platform() == devices.PlatformIOS && targetDevice.DeviceType() == devices.DeviceTypeReal:
 		// real iOS devices route through DeviceKit + ReplayKit; screenRecordAvc
 		// signals req.Ready itself once the broadcast picker is confirmed started.
 		return screenRecordAvc(targetDevice, req, progress)

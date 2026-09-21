@@ -26,6 +26,9 @@ import (
 // works on a normally-launched app (no `flutter run`). Each render object's
 // global position comes from invoking RenderBox.localToGlobal(Offset.zero).
 
+// dartKindNull is the VM service kind of an instance ref holding null.
+const dartKindNull = "Null"
+
 const flutterVMCallTimeout = 15 * time.Second
 
 // vmServiceURIPattern extracts port and token from http://127.0.0.1:PORT/TOKEN/
@@ -434,7 +437,7 @@ func (vm *flutterVM) enableSemantics(bindingClassID string) string {
 	if err != nil {
 		return ""
 	}
-	if vm.invokeString(binding, "get:semanticsEnabled") == "true" {
+	if vm.invokeString(binding, "get:semanticsEnabled") == attrTrue {
 		return "" // already on (e.g. iOS with an active a11y client)
 	}
 	handle, err := vm.invoke(binding, "ensureSemantics", nil)
@@ -697,22 +700,23 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 	if !sem.hasContent() {
 		return
 	}
-	if sem.label != "" {
-		label := sem.label
-		el.Label = &label
+	setIfNotEmpty(&el.Label, sem.label)
+	setIfNotEmpty(&el.Value, sem.value)
+	setIfNotEmpty(&el.Identifier, sem.identifier)
+	setIfNotEmpty(&el.Placeholder, sem.hint)
+	applySemanticsState(el, sem)
+	if role := sem.role(); role != "" {
+		el.Type = role
 	}
-	if sem.value != "" {
-		value := sem.value
-		el.Value = &value
+}
+
+func setIfNotEmpty(dst **string, value string) {
+	if value != "" {
+		*dst = &value
 	}
-	if sem.identifier != "" {
-		identifier := sem.identifier
-		el.Identifier = &identifier
-	}
-	if sem.hint != "" {
-		hint := sem.hint
-		el.Placeholder = &hint
-	}
+}
+
+func applySemanticsState(el *types.ScreenElement, sem *flutterSemantics) {
 	// Checkable state: checkbox/radio use isChecked, switches use isToggled. Always
 	// emit it (true or false) so a control's state is unambiguous.
 	if state := sem.checked; state != nil {
@@ -737,26 +741,31 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 		f := false
 		el.Enabled = &f
 	}
-	// Type refinement to roles mobilewright's getByRole understands. A checked- or
-	// toggled-state keeps the node identifiable as a control even when off.
+}
+
+// role refines the element type to roles mobilewright's getByRole understands,
+// or "" to keep the type as is. A checked- or toggled-state keeps the node
+// identifiable as a control even when off.
+func (sem *flutterSemantics) role() string {
 	switch {
 	case sem.isTextField:
-		el.Type = "TextField"
+		return "TextField"
 	case sem.isButton:
-		el.Type = "Button"
+		return "Button"
 	case sem.checked != nil && sem.inRadioGroup:
-		el.Type = "Radio"
+		return "Radio"
 	case sem.checked != nil:
-		el.Type = "Checkbox"
+		return "Checkbox"
 	case sem.toggled != nil:
-		el.Type = "Switch"
+		return "Switch"
 	case sem.isSlider:
-		el.Type = "Slider"
+		return "Slider"
 	case sem.isLink:
-		el.Type = "Link"
+		return "Link"
 	case sem.isHeader:
-		el.Type = "Header"
+		return "Header"
 	}
+	return ""
 }
 
 // readNodeSemantics reads the accessibility metadata attached to a render
@@ -765,13 +774,13 @@ func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
 func (vm *flutterVM) readNodeSemantics(renderNodeID string) *flutterSemantics {
 	sem := &flutterSemantics{}
 	sn, err := vm.invoke(renderNodeID, "get:debugSemantics", nil)
-	if err != nil || sn == nil || sn.ID == "" || sn.Kind == "Null" {
+	if err != nil || sn == nil || sn.ID == "" || sn.Kind == dartKindNull {
 		return sem
 	}
 	sem.label = vm.invokeString(sn.ID, "get:label")
 	sem.value = vm.invokeString(sn.ID, "get:value")
 	sem.identifier = vm.invokeString(sn.ID, "get:identifier")
-	sem.mergesDescendants = vm.invokeString(sn.ID, "get:mergeAllDescendantsIntoThisNode") == "true"
+	sem.mergesDescendants = vm.invokeString(sn.ID, "get:mergeAllDescendantsIntoThisNode") == attrTrue
 
 	data, err := vm.invoke(sn.ID, "getSemanticsData", nil)
 	if err != nil || data == nil || data.ID == "" {
@@ -814,17 +823,17 @@ func (vm *flutterVM) invokeString(target, selector string) string {
 
 func fieldIsTrue(o *vmInstance, name string) bool {
 	f := o.field(name)
-	return f != nil && f.ValueAsStr == "true"
+	return f != nil && f.ValueAsStr == attrTrue
 }
 
 // triState resolves a SemanticsFlags tri-state member to a *bool. In this Flutter
 // version these are enums (Tristate{true,false,none}, CheckedState{checked,
 // unchecked,mixed}); older versions expose plain bools. none/mixed → nil.
 func (vm *flutterVM) triState(ref *vmInstanceRef) *bool {
-	if ref == nil || ref.ID == "" || ref.Kind == "Null" {
+	if ref == nil || ref.ID == "" || ref.Kind == dartKindNull {
 		return nil
 	}
-	if ref.ValueAsStr == "true" {
+	if ref.ValueAsStr == attrTrue {
 		t := true
 		return &t
 	}
@@ -864,7 +873,7 @@ func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
 			continue
 		}
 		val, err := vm.invoke(node.ID, "get:value", nil)
-		if err != nil || val.ID == "" || val.Kind == "Null" {
+		if err != nil || val.ID == "" || val.Kind == dartKindNull {
 			continue
 		}
 		// debugDescribeChildren only lists children, but guard anyway.

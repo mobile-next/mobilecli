@@ -65,7 +65,7 @@ Name supports wildcard prefix matching:
 		}
 
 		response := commands.FleetAllocateCommand(req)
-		if response.Status == "error" {
+		if response.Status == statusError {
 			printJson(response)
 			return fmt.Errorf("%s", response.Error)
 		}
@@ -148,7 +148,7 @@ var remoteListDevicesCmd = &cobra.Command{
 
 		response := commands.FleetListDevicesCommand(req)
 		printJson(response)
-		if response.Status == "error" {
+		if response.Status == statusError {
 			return fmt.Errorf("%s", response.Error)
 		}
 
@@ -175,7 +175,7 @@ var remoteReleaseCmd = &cobra.Command{
 
 		response := commands.FleetReleaseCommand(req)
 		printJson(response)
-		if response.Status == "error" {
+		if response.Status == statusError {
 			return fmt.Errorf("%s", response.Error)
 		}
 

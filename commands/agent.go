@@ -75,7 +75,7 @@ func AgentStatusCommand(req DeviceIDRequest) *CommandResponse {
 	if err != nil {
 		return NewErrorResponse(err)
 	}
-	if device.Platform() == "android" {
+	if device.Platform() == devices.PlatformAndroid {
 		return noAgentNeededResponse()
 	}
 	agent := findInstalledAgent(device)
@@ -91,7 +91,7 @@ func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
 	if err != nil {
 		return NewErrorResponse(err)
 	}
-	if device.Platform() == "android" {
+	if device.Platform() == devices.PlatformAndroid {
 		return noAgentNeededResponse()
 	}
 
@@ -127,11 +127,11 @@ func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
 
 func installAgent(device devices.ControllableDevice, provisioningProfile string) error {
 	switch device.Platform() {
-	case "ios":
+	case devices.PlatformIOS:
 		switch device.DeviceType() {
-		case "simulator":
+		case devices.DeviceTypeSimulator:
 			return installAgentOnSimulator(device)
-		case "real":
+		case devices.DeviceTypeReal:
 			if provisioningProfile == "" {
 				return fmt.Errorf("--provisioning-profile is required for real iOS devices")
 			}
@@ -150,7 +150,7 @@ func AgentUninstallCommand(req DeviceIDRequest) *CommandResponse {
 	if err != nil {
 		return NewErrorResponse(err)
 	}
-	if device.Platform() == "android" {
+	if device.Platform() == devices.PlatformAndroid {
 		return noAgentNeededResponse()
 	}
 
@@ -167,14 +167,14 @@ func AgentUninstallCommand(req DeviceIDRequest) *CommandResponse {
 }
 
 func agentPackageForPlatform(platform string) string {
-	if platform == "ios" {
+	if platform == devices.PlatformIOS {
 		return iosRunnerBundleID
 	}
 	return ""
 }
 
 func agentVersionForPlatform(platform string) string {
-	if platform == "ios" {
+	if platform == devices.PlatformIOS {
 		return agentVersionIOS
 	}
 	return ""
@@ -279,7 +279,7 @@ func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledApp
 // On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
 // suffix match is used; other platforms require an exact match.
 func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
-	if platform == "ios" {
+	if platform == devices.PlatformIOS {
 		return strings.HasSuffix(installedPackage, agentPackage)
 	}
 	return installedPackage == agentPackage

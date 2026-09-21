@@ -89,48 +89,76 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
-	// re-sign embedded frameworks
-	frameworksDir := filepath.Join(appPath, "Frameworks")
-	if entries, err := os.ReadDir(frameworksDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".framework") || strings.HasSuffix(entry.Name(), ".dylib") {
-				frameworkPath := filepath.Join(frameworksDir, entry.Name())
-				Verbose("Signing framework: %s", entry.Name())
-				err = codesign(frameworkPath, identity, "")
-				if err != nil {
-					return "", fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
-				}
-			}
-		}
-	}
-
-	// re-sign app extensions and xctest bundles
-	pluginsDir := filepath.Join(appPath, "PlugIns")
-	if entries, err := os.ReadDir(pluginsDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".appex") || strings.HasSuffix(entry.Name(), ".xctest") {
-				pluginPath := filepath.Join(pluginsDir, entry.Name())
-				if err = signLooseDylibs(pluginPath, identity); err != nil {
-					return "", err
-				}
-				Verbose("Signing plugin: %s", entry.Name())
-				err = codesign(pluginPath, identity, entitlementsPath)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
-				}
-			}
-		}
-	}
-
-	if err = signLooseDylibs(appPath, identity); err != nil {
+	if err = signAppBundle(appPath, identity, entitlementsPath); err != nil {
 		return "", err
 	}
 
-	Verbose("Signing main app bundle")
-	if err = codesign(appPath, identity, entitlementsPath); err != nil {
-		return "", fmt.Errorf("failed to sign app bundle: %w", err)
+	return repackageIPA(tempDir)
+}
+
+// signAppBundle signs inside out: frameworks, then plugins, then the app itself.
+func signAppBundle(appPath, identity, entitlementsPath string) error {
+	if err := signFrameworks(appPath, identity); err != nil {
+		return err
+	}
+	if err := signPlugins(appPath, identity, entitlementsPath); err != nil {
+		return err
+	}
+	if err := signLooseDylibs(appPath, identity); err != nil {
+		return err
 	}
 
+	Verbose("Signing main app bundle")
+	if err := codesign(appPath, identity, entitlementsPath); err != nil {
+		return fmt.Errorf("failed to sign app bundle: %w", err)
+	}
+	return nil
+}
+
+// signFrameworks re-signs embedded frameworks; an app without a Frameworks dir has none.
+func signFrameworks(appPath, identity string) error {
+	frameworksDir := filepath.Join(appPath, "Frameworks")
+	entries, err := os.ReadDir(frameworksDir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".framework") && !strings.HasSuffix(entry.Name(), ".dylib") {
+			continue
+		}
+		Verbose("Signing framework: %s", entry.Name())
+		if err := codesign(filepath.Join(frameworksDir, entry.Name()), identity, ""); err != nil {
+			return fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+// signPlugins re-signs app extensions and xctest bundles; an app without a PlugIns dir has none.
+func signPlugins(appPath, identity, entitlementsPath string) error {
+	pluginsDir := filepath.Join(appPath, "PlugIns")
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".appex") && !strings.HasSuffix(entry.Name(), ".xctest") {
+			continue
+		}
+		pluginPath := filepath.Join(pluginsDir, entry.Name())
+		if err := signLooseDylibs(pluginPath, identity); err != nil {
+			return err
+		}
+		Verbose("Signing plugin: %s", entry.Name())
+		if err := codesign(pluginPath, identity, entitlementsPath); err != nil {
+			return fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+// repackageIPA zips the Payload dir under tempDir into a new temp IPA and returns its path.
+func repackageIPA(tempDir string) (string, error) {
 	outputIPA, err := os.CreateTemp("", "resigned_*.ipa")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp IPA file: %w", err)

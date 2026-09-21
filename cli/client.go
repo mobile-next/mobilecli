@@ -15,6 +15,9 @@ import (
 )
 
 // defaultDaemonIdleTimeout is how long an auto-started daemon lives without requests.
+// statusError is the envelope status of a failed command.
+const statusError = "error"
+
 const defaultDaemonIdleTimeout = 30 * time.Minute
 
 // daemonSpawnArgs are the argv used to auto-start the daemon from this binary.
@@ -89,7 +92,7 @@ func envelopeError(raw json.RawMessage) error {
 		return fmt.Errorf("invalid response from daemon: %w", err)
 	}
 	switch env.Status {
-	case "error":
+	case statusError:
 		return errors.New(env.Error)
 	case "fail":
 		// e.g. agent status/uninstall with no agent installed: the envelope

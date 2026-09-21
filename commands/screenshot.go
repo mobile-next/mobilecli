@@ -13,6 +13,11 @@ import (
 	"github.com/mobile-next/mobilecli/types"
 )
 
+const (
+	formatPNG  = "png"
+	formatJPEG = "jpeg"
+)
+
 // ScreenshotRequest represents the parameters for taking a screenshot
 type ScreenshotRequest struct {
 	DeviceID   string                   `json:"deviceId"`
@@ -82,8 +87,8 @@ func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) 
 
 	timestamp := time.Now().Format("20060102150405")
 	safeDeviceID := strings.ReplaceAll(deviceID, ":", "_")
-	extension := "png"
-	if format == "jpeg" {
+	extension := formatPNG
+	if format == formatJPEG {
 		extension = "jpg"
 	}
 	fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
@@ -121,17 +126,17 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 
 	// Set default format
 	if req.Format == "" {
-		req.Format = "png"
+		req.Format = formatPNG
 	}
 
 	// Validate format
 	req.Format = strings.ToLower(req.Format)
-	if req.Format != "png" && req.Format != "jpeg" {
+	if req.Format != formatPNG && req.Format != formatJPEG {
 		return NewErrorResponse(fmt.Errorf("invalid format '%s'. Supported formats are 'png' and 'jpeg'", req.Format))
 	}
 
 	// Validate JPEG quality
-	if req.Format == "jpeg" {
+	if req.Format == formatJPEG {
 		if req.Quality < 1 || req.Quality > 100 {
 			req.Quality = 90 // Default quality
 		}
