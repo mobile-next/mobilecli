@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // WebViewInfo describes an embedded WebView found inside a running app.
@@ -25,10 +28,7 @@ const agentSubDir = "mobilecli"
 
 // pushTempFile writes data to a host temp file then pushes it to the device
 // at remotePath using adb push.
-func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
-	d.installMu.Lock()
-	defer d.installMu.Unlock()
-
+func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) (err error) {
 	tmp, err := os.CreateTemp("", "mobilecli-agent-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -46,7 +46,16 @@ func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
 	// push to a sibling then rename: a process that has the old file mapped
 	// (a running DeviceServer or capture stream) keeps its inode instead of
 	// seeing the bytes change underneath it
-	staging := remotePath + ".tmp"
+	staging, err := stagingPathFor(remotePath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			d.removeStaging(staging)
+		}
+	}()
+
 	out, err := d.runAdbCommand("push", tmp.Name(), staging)
 	if err != nil {
 		return fmt.Errorf("adb push to %s: %s: %w", staging, strings.TrimSpace(string(out)), err)
@@ -55,6 +64,30 @@ func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) error {
 		return fmt.Errorf("move %s into place: %s: %w", remotePath, strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+// stagingPathFor returns a sibling of dest that no other install is using.
+//
+// A fixed "<dest>.tmp" is shared by every install of that file, so two at once
+// move or chmod each other's staging file away. A lock would only cover this
+// process, and a mobilewright server and a CLI are two. A name nobody else has
+// needs no lock.
+func stagingPathFor(dest string) (string, error) {
+	suffix := make([]byte, 8)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", fmt.Errorf("name staging file for %s: %w", dest, err)
+	}
+	return dest + "." + hex.EncodeToString(suffix) + ".tmp", nil
+}
+
+// removeStaging deletes a staging file left by a failed install, since its
+// name is never reused and nothing would overwrite it. runAs is the optional
+// "run-as <pkg>" prefix for a file inside an app's data directory.
+func (d *AndroidDevice) removeStaging(staging string, runAs ...string) {
+	args := append(append([]string{"shell"}, runAs...), "rm", "-f", staging)
+	if out, err := d.runAdbCommand(args...); err != nil {
+		utils.Verbose("failed to remove staging file %s: %s: %v", staging, strings.TrimSpace(string(out)), err)
+	}
 }
 
 // getAppDataDir returns the data directory of the given package by running
@@ -79,15 +112,21 @@ func (d *AndroidDevice) getAppDataDir(pkg string) (string, error) {
 // still have the previous file mapped (an agent attached earlier), and writing
 // over that inode discards its relocated pages: the next call into the mapped
 // agent jumps to a raw link-time address and the app dies with SIGSEGV.
-func (d *AndroidDevice) copyToAppDir(pkg, tmpPath, destPath, mode string) error {
-	d.installMu.Lock()
-	defer d.installMu.Unlock()
-
+func (d *AndroidDevice) copyToAppDir(pkg, tmpPath, destPath, mode string) (err error) {
 	if out, err := d.runAdbCommand("shell", "run-as", pkg, "mkdir", "-p", destPath[:strings.LastIndex(destPath, "/")]); err != nil {
 		return fmt.Errorf("mkdir in app dir: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	staging := destPath + ".tmp"
-	if out, err := d.runAdbCommand("shell", "run-as", pkg, "cp", "-f", tmpPath, staging); err != nil {
+	staging, err := stagingPathFor(destPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			d.removeStaging(staging, "run-as", pkg)
+		}
+	}()
+
+	if out, err := d.runAdbCommand("shell", "run-as", pkg, "cp", tmpPath, staging); err != nil {
 		return fmt.Errorf("cp to app dir: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	if out, err := d.runAdbCommand("shell", "run-as", pkg, "chmod", mode, staging); err != nil {

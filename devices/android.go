@@ -107,11 +107,6 @@ type AndroidDevice struct {
 	// host port of the DeviceServer once it's known to be up and current
 	serverMu   sync.Mutex
 	serverPort int
-
-	// serializes file installs onto the device. Each one stages to a fixed
-	// "<dest>.tmp" and renames it into place, so two concurrent installs of the
-	// same file would move or chmod each other's staging file away.
-	installMu sync.Mutex
 }
 
 func (d *AndroidDevice) ID() string {
