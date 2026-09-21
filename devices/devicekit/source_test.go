@@ -408,3 +408,61 @@ func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 		t.Errorf("expected leaf element to have nil Children, got %+v", output[0].Children)
 	}
 }
+
+func TestFilterSourceElementsIncludesTypesBehindSemanticRoles(t *testing.T) {
+	// Clients map these types to semantic roles (slider, progressbar, alert,
+	// combobox, list, listitem, tab, link, header). A labeled element of any
+	// of them must survive filtering, or the role can never match on iOS.
+	roleTypes := []string{
+		"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+		"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+		"Cell", "Table", "CollectionView", "ScrollView",
+	}
+
+	for _, roleType := range roleTypes {
+		output := filterSourceElements(sourceTreeElement{
+			Type:  "XCUIElementType" + roleType,
+			Label: strPtr("labeled"),
+			Rect:  visibleRect(0, 100, 300, 44),
+		})
+
+		if len(output) != 1 || output[0].Type != roleType {
+			t.Errorf("expected a labeled %s to be included, got %+v", roleType, output)
+		}
+	}
+}
+
+func TestFilterSourceElementsIncludesUnlabeledAdjustableControls(t *testing.T) {
+	// Sliders and pickers are interactive yet often carry no label, so they
+	// are always included, like TextField and Switch.
+	for _, controlType := range []string{"Slider", "Picker", "PickerWheel"} {
+		output := filterSourceElements(sourceTreeElement{
+			Type: "XCUIElementType" + controlType,
+			Rect: visibleRect(0, 100, 300, 44),
+		})
+
+		if len(output) != 1 || output[0].Type != controlType {
+			t.Errorf("expected an unlabeled %s to be included, got %+v", controlType, output)
+		}
+	}
+}
+
+func TestFilterSourceElementsStillDropsUnlabeledContainers(t *testing.T) {
+	// Unlabeled containers stay out of the dump to keep it small; their
+	// children are hoisted as before.
+	output := filterSourceElements(sourceTreeElement{
+		Type: "XCUIElementTypeTable",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Join"),
+				Rect:  visibleRect(338, 194, 31, 20),
+			},
+		},
+	})
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected only the hoisted Button, got %+v", output)
+	}
+}

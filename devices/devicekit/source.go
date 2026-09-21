@@ -45,7 +45,14 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		childElements = append(childElements, filterSourceElements(child)...)
 	}
 
-	acceptedTypes := []string{"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
+	acceptedTypes := []string{
+		"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView",
+		// types that clients map to semantic roles (slider, progressbar,
+		// combobox, link, tab, header, alert, list, listitem)
+		"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+		"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+		"Cell", "Table", "CollectionView", "ScrollView",
+	}
 
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
@@ -69,7 +76,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 	}
 
 	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView" || elementType == "Slider" || elementType == "Picker" || elementType == "PickerWheel"
 	if !hasIdentifier && !alwaysInclude {
 		return childElements
 	}
