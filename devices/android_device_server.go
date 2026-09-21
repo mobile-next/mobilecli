@@ -134,9 +134,14 @@ func forwardArgs(target string) ([]string, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("find a free local port: %w", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		return nil, 0, fmt.Errorf("release local port %d: %w", port, err)
+	addr, isTCP := listener.Addr().(*net.TCPAddr)
+	closeErr := listener.Close()
+	if !isTCP {
+		return nil, 0, fmt.Errorf("find a free local port: unexpected address %v", listener.Addr())
+	}
+	port := addr.Port
+	if closeErr != nil {
+		return nil, 0, fmt.Errorf("release local port %d: %w", port, closeErr)
 	}
 	return []string{"forward", fmt.Sprintf("tcp:%d", port), target}, port, nil
 }
