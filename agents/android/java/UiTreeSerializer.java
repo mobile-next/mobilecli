@@ -79,6 +79,13 @@ class UiTreeSerializer {
 		try {
 			Class<?> client = Class.forName("android.view.accessibility.AccessibilityInteractionClient");
 			Object instance = client.getMethod("getInstance").invoke(null);
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+				// Android 13 made the cache per-connection, a release before
+				// UiAutomation.clearCache() became public.
+				Object connectionId = UiAutomation.class.getMethod("getConnectionId").invoke(automation);
+				client.getMethod("clearCache", int.class).invoke(instance, connectionId);
+				return;
+			}
 			client.getMethod("clearCache").invoke(instance);
 		} catch (ReflectiveOperationException e) {
 			Log.w(TAG, "could not clear the accessibility cache; the dump may be stale", e);
