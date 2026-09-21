@@ -8,6 +8,8 @@ import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
 
+import java.lang.reflect.Method;
+
 /** Display info and virtual display creation via hidden APIs (no Context needed). */
 class DisplayUtils {
 
@@ -52,6 +54,9 @@ class DisplayUtils {
 	/** A running mirror of the default display; release() stops it. */
 	interface DisplayMirror {
 		void release();
+
+		/** Has the display drawn into the surface once more, even if nothing on screen changed. */
+		void refresh();
 	}
 
 	/** Mirrors the default display into surface without MediaProjection; null on failure. */
@@ -59,10 +64,32 @@ class DisplayUtils {
 		try {
 			// hidden static DisplayManager.createVirtualDisplay(String name, int width,
 			// int height, int displayIdToMirror, Surface surface)
-			VirtualDisplay display = (VirtualDisplay) DisplayManager.class
-					.getMethod("createVirtualDisplay", String.class, int.class, int.class, int.class, Surface.class)
-					.invoke(null, name, width, height, Display.DEFAULT_DISPLAY, surface);
-			return display::release;
+			Method create = DisplayManager.class
+					.getMethod("createVirtualDisplay", String.class, int.class, int.class, int.class, Surface.class);
+			return new DisplayMirror() {
+				private VirtualDisplay display = newDisplay();
+
+				private VirtualDisplay newDisplay() throws Exception {
+					return (VirtualDisplay) create.invoke(null, name, width, height, Display.DEFAULT_DISPLAY, surface);
+				}
+
+				@Override
+				public synchronized void release() {
+					display.release();
+				}
+
+				@Override
+				public synchronized void refresh() {
+					// a new display is drawn once when it appears; giving the old one its
+					// surface again draws nothing (seen on a Pixel 7, Android 14)
+					try {
+						display.release();
+						display = newDisplay();
+					} catch (Exception e) {
+						Log.w(TAG, "Failed to refresh the virtual display", e);
+					}
+				}
+			};
 		} catch (NoSuchMethodException e) {
 			// Android 12 and 13 don't have that method (seen on Pixel 6, Galaxy A53, Pixel 7a).
 			// They still have SurfaceControl.createDisplay, which Android 14 removed.
@@ -81,6 +108,38 @@ class DisplayUtils {
 	}
 
 	private static DisplayMirror mirrorWithSurfaceControl(String name, int width, int height, Surface surface) throws Exception {
+		return new DisplayMirror() {
+			private IBinder display = createMirrorDisplay(name, width, height, surface);
+
+			@Override
+			public synchronized void release() {
+				destroyDisplay(display);
+			}
+
+			@Override
+			public synchronized void refresh() {
+				// a new display is composed once when it appears; re-applying the same
+				// surface to the old one changes nothing and draws nothing
+				try {
+					IBinder fresh = createMirrorDisplay(name, width, height, surface);
+					destroyDisplay(display);
+					display = fresh;
+				} catch (Exception e) {
+					Log.w(TAG, "Failed to refresh the mirror display", e);
+				}
+			}
+		};
+	}
+
+	private static void destroyDisplay(IBinder display) {
+		try {
+			Class.forName("android.view.SurfaceControl").getMethod("destroyDisplay", IBinder.class).invoke(null, display);
+		} catch (Exception e) {
+			Log.w(TAG, "Failed to destroy the mirror display", e);
+		}
+	}
+
+	private static IBinder createMirrorDisplay(String name, int width, int height, Surface surface) throws Exception {
 		Object dm = displayManager();
 		Object info = dm.getClass().getMethod("getDisplayInfo", int.class).invoke(dm, Display.DEFAULT_DISPLAY);
 		Class<?> infoClass = info.getClass();
@@ -101,12 +160,6 @@ class DisplayUtils {
 			sc.getMethod("closeTransaction").invoke(null);
 		}
 
-		return () -> {
-			try {
-				sc.getMethod("destroyDisplay", IBinder.class).invoke(null, display);
-			} catch (Exception e) {
-				Log.w(TAG, "Failed to destroy the mirror display", e);
-			}
-		};
+		return display;
 	}
 }
