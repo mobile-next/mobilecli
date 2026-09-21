@@ -65,15 +65,7 @@ func (d *AndroidDevice) ensureControlForward() (int, error) {
 	if port := d.findForward(target); port != 0 {
 		return port, nil
 	}
-	out, err := d.runAdbCommand("forward", "tcp:0", target)
-	if err != nil {
-		return 0, fmt.Errorf("adb forward control socket: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
-	}
-	return port, nil
+	return d.addForward(target)
 }
 
 // findForward returns the host TCP port of an existing adb forward for this

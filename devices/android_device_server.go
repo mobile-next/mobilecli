@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"net"
 	"strings"
 	"time"
 
@@ -115,15 +115,58 @@ func (d *AndroidDevice) startDeviceServer() (int, error) {
 // addForward creates a host TCP forward to target (e.g.
 // "localabstract:devicekit") on a freshly assigned local port and returns it.
 func (d *AndroidDevice) addForward(target string) (int, error) {
-	out, err := d.runAdbCommand("forward", "tcp:0", target)
-	if err != nil {
-		return 0, fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
+	return forwardOnFreePort(d.runAdbCommand, target)
+}
+
+// forwardAttempts bounds the retries when adb can't bind the port we picked.
+const forwardAttempts = 3
+
+// adbPortTakenMessage is what adb prints when the local port of a forward is in use.
+const adbPortTakenMessage = "cannot bind"
+
+// forwardOnFreePort forwards a free local port to target and returns the port. The port
+// was free when we probed it, but adb binds it a moment later and, with a remote adb
+// server, on another host, so a taken port is retried on a new one.
+func forwardOnFreePort(runAdb func(args ...string) ([]byte, error), target string) (int, error) {
+	var lastErr error
+	for attempt := 0; attempt < forwardAttempts; attempt++ {
+		args, port, err := forwardArgs(target)
+		if err != nil {
+			return 0, err
+		}
+
+		out, err := runAdb(args...)
+		if err == nil {
+			return port, nil
+		}
+
+		lastErr = fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
+		if !strings.Contains(string(out), adbPortTakenMessage) {
+			return 0, lastErr
+		}
 	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	return 0, lastErr
+}
+
+// forwardArgs builds the adb arguments for a forward to target on a free local port that
+// we pick. "tcp:0" would let adb pick, but AWS Device Farm runs the adb server on another
+// host and tunnels each forwarded port by its number: it tunnels "0", which reaches nothing,
+// and every agent behind such a forward looks dead.
+func forwardArgs(target string) ([]string, int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 0, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
+		return nil, 0, fmt.Errorf("find a free local port: %w", err)
 	}
-	return port, nil
+	addr, isTCP := listener.Addr().(*net.TCPAddr)
+	closeErr := listener.Close()
+	if !isTCP {
+		return nil, 0, fmt.Errorf("find a free local port: unexpected address %v", listener.Addr())
+	}
+	port := addr.Port
+	if closeErr != nil {
+		return nil, 0, fmt.Errorf("release local port %d: %w", port, closeErr)
+	}
+	return []string{"forward", fmt.Sprintf("tcp:%d", port), target}, port, nil
 }
 
 // removeForward tears down a host TCP forward created by this device, best

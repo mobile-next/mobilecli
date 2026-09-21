@@ -116,15 +116,7 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 // forwardWebViewSocket creates an adb forward from a random local TCP port to
 // the agent's local abstract socket and returns the assigned port.
 func (d *AndroidDevice) forwardWebViewSocket(pkg string) (int, error) {
-	out, err := d.runAdbCommand("forward", "tcp:0", "localabstract:mobilecli."+pkg)
-	if err != nil {
-		return 0, fmt.Errorf("adb forward: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, fmt.Errorf("unexpected adb forward output %q: %w", strings.TrimSpace(string(out)), err)
-	}
-	return port, nil
+	return d.addForward("localabstract:mobilecli." + pkg)
 }
 
 // getProcessPID returns the PID of the running process for the given package.
