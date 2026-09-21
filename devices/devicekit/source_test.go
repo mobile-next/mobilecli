@@ -466,3 +466,26 @@ func TestFilterSourceElementsStillDropsUnlabeledContainers(t *testing.T) {
 		t.Fatalf("expected only the hoisted Button, got %+v", output)
 	}
 }
+
+func TestFilterSourceElementsTreatsEmptyIdentifiersAsAbsent(t *testing.T) {
+	// A container whose label/name/placeholder are present but empty is as
+	// anonymous as one without them: drop it and hoist its children.
+	output := filterSourceElements(sourceTreeElement{
+		Type:             "XCUIElementTypeTable",
+		Label:            strPtr(""),
+		Name:             strPtr(""),
+		PlaceholderValue: strPtr(""),
+		Rect:             visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Join"),
+				Rect:  visibleRect(338, 194, 31, 20),
+			},
+		},
+	})
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected only the hoisted Button, got %+v", output)
+	}
+}
