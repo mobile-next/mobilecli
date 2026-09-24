@@ -546,6 +546,37 @@ func TestLateJoinerReceivesTheTimecodeThatPrecedesItsKeyFrame(t *testing.T) {
 	expectBytes(t, late.waitForBytes(t, len(wantLate)), wantLate, "late joiner starts at its key frame's head")
 }
 
+// a recording stopped and started again at once, while a live view keeps the
+// source running, must begin with parameter sets and a key frame even when
+// the encoder does not repeat SPS/PPS in front of it
+func TestARecordingRestartedWhileTheLiveViewStaysStartsDecodable(t *testing.T) {
+	hub, source := &avcHub{}, newFakeAvcSource()
+
+	liveView := startCapture(hub, source.source())
+	source.waitUntilStarted(t)
+	source.feed(concat(spsNAL(), ppsNAL(), timecodeNAL(1), keyFrameNAL(1), timecodeNAL(2), deltaFrameNAL(2)))
+	liveView.waitForBytes(t, 1)
+
+	recording := startCapture(hub, source.source())
+	source.waitForKeyFrameRequest(t)
+	source.feed(concat(timecodeNAL(3), keyFrameNAL(3), timecodeNAL(4)))
+	recording.waitForBytes(t, 1)
+	recording.interrupt()
+	if err := recording.waitUntilFinished(t); err != nil {
+		t.Fatalf("stopped recording returned %v, want nil", err)
+	}
+	source.expectStillRunning(t)
+
+	restarted := startCapture(hub, source.source())
+	source.waitForKeyFrameRequest(t)
+	source.feed(deltaFrameNAL(4)) // mid-GOP, undecodable on its own
+	source.feed(concat(timecodeNAL(5), keyFrameNAL(5), timecodeNAL(6)))
+	source.feed(deltaFrameNAL(6)) // completes the trailing NAL unit
+
+	want := concat(spsNAL(), ppsNAL(), timecodeNAL(5), keyFrameNAL(5), timecodeNAL(6), deltaFrameNAL(6))
+	expectBytes(t, restarted.waitForBytes(t, len(want)), want, "restarted recording")
+}
+
 func TestSourceErrorEndsEverySubscriber(t *testing.T) {
 	hub, source := &avcHub{}, newFakeAvcSource()
 
