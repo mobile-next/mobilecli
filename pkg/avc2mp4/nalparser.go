@@ -1,5 +1,11 @@
 package avc2mp4
 
+import (
+	"errors"
+	"fmt"
+	"io"
+)
+
 // NALUnit represents a single H.264 NAL unit
 type NALUnit struct {
 	Type byte   // nal_unit_type (lower 5 bits of first byte)
@@ -64,4 +70,118 @@ func FindStartCode(data []byte, pos int) int {
 		}
 	}
 	return -1
+}
+
+// scanChunkSize is how much ScanNALUnits reads at a time.
+const scanChunkSize = 64 << 10
+
+// MaxNALSize bounds one NAL unit while scanning, so a file without start codes
+// cannot be pulled into memory whole.
+const MaxNALSize = 64 << 20
+
+// NALSplitter cuts an Annex B stream that arrives in arbitrary chunks into
+// whole NAL units, holding back only the unit that is still incomplete. It
+// finds the same units as ParseNALUnits would on the whole stream.
+type NALSplitter struct {
+	buf      []byte
+	resumeAt int // where the search for the end of the first unit resumes
+}
+
+// Write appends the next chunk of the stream.
+func (s *NALSplitter) Write(chunk []byte) {
+	s.buf = append(s.buf, chunk...)
+}
+
+// Next returns the next complete NAL unit, with its start code, or nil when
+// the buffered bytes do not finish one yet. The returned slice is never
+// written to again.
+func (s *NALSplitter) Next() []byte {
+	start := FindStartCode(s.buf, 0)
+	if start < 0 {
+		// nothing decodable yet; keep only what could begin a start code
+		s.buf = s.buf[max(len(s.buf)-3, 0):]
+		s.resumeAt = 0
+		return nil
+	}
+	if start > 0 {
+		s.buf = s.buf[start:]
+		s.resumeAt = 0
+	}
+
+	body := startCodeLength(s.buf)
+	end := FindStartCode(s.buf, max(body, s.resumeAt))
+	if end < 0 {
+		// a start code can straddle the next chunk, so look back 3 bytes
+		s.resumeAt = max(body, len(s.buf)-3)
+		return nil
+	}
+
+	unit := s.buf[:end:end]
+	s.buf = s.buf[end:]
+	s.resumeAt = 0
+	return unit
+}
+
+// Flush returns what is left at the end of the stream: the last unit, which
+// no start code closed, or nil when there is none.
+func (s *NALSplitter) Flush() []byte {
+	rest := s.buf
+	s.buf, s.resumeAt = nil, 0
+	if FindStartCode(rest, 0) != 0 || len(rest) <= startCodeLength(rest) {
+		return nil
+	}
+	return rest
+}
+
+// Buffered reports how many bytes are held back for the next unit.
+func (s *NALSplitter) Buffered() int {
+	return len(s.buf)
+}
+
+// startCodeLength returns the length of the start code data begins with.
+func startCodeLength(data []byte) int {
+	if data[2] == 0x01 {
+		return 3
+	}
+	return 4
+}
+
+// ScanNALUnits reads an Annex B stream from r and calls fn for every NAL unit
+// in order, holding at most one unit in memory. Data is a fresh copy.
+func ScanNALUnits(r io.Reader, fn func(NALUnit) error) error {
+	var splitter NALSplitter
+	chunk := make([]byte, scanChunkSize)
+
+	for {
+		n, readErr := r.Read(chunk)
+		splitter.Write(chunk[:n])
+		for unit := splitter.Next(); unit != nil; unit = splitter.Next() {
+			if err := emitNALUnit(unit, fn); err != nil {
+				return err
+			}
+		}
+		if splitter.Buffered() > MaxNALSize {
+			return fmt.Errorf("NAL unit larger than %d bytes", MaxNALSize)
+		}
+
+		if errors.Is(readErr, io.EOF) {
+			return emitNALUnit(splitter.Flush(), fn)
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+}
+
+// emitNALUnit hands one raw unit (with its start code) to fn, skipping units
+// without a payload the way ParseNALUnits does.
+func emitNALUnit(raw []byte, fn func(NALUnit) error) error {
+	if raw == nil {
+		return nil
+	}
+	data := raw[startCodeLength(raw):]
+	if len(data) == 0 {
+		return nil
+	}
+	return fn(NALUnit{Type: data[0] & 0x1F, Data: data})
 }
