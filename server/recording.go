@@ -37,8 +37,18 @@ type RecordingSession struct {
 	StartedAt time.Time
 	StopChan  chan struct{}
 	Ready     chan error // signaled once: nil once recording is confirmed live, or an error if it failed to start
-	Done      chan *commands.CommandResponse
 	stopped   bool // true after StopChan has been closed
+
+	// finished is closed once result is set, so every waiter (stop, a
+	// retried stop, shutdown, a timed-out start) reads the same result
+	finished chan struct{}
+	result   *commands.CommandResponse
+}
+
+// finish stores the recorder's result and wakes every waiter. Called once.
+func (s *RecordingSession) finish(resp *commands.CommandResponse) {
+	s.result = resp
+	close(s.finished)
 }
 
 // RecordingResult is one stopped recording's result: the recorder's
@@ -114,16 +124,19 @@ func (rm *recordingManager) register(id, deviceID, output string) (*RecordingSes
 		StartedAt: time.Now(),
 		StopChan:  make(chan struct{}),
 		Ready:     make(chan error, 1),
-		Done:      make(chan *commands.CommandResponse, 1),
+		finished:  make(chan struct{}),
 	}
 	rm.sessions[id] = s
 	return s, nil
 }
 
-func (rm *recordingManager) remove(id string) {
+// remove forgets s, unless its id already belongs to a newer recording.
+func (rm *recordingManager) remove(s *RecordingSession) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	delete(rm.sessions, id)
+	if rm.sessions[s.ID] == s {
+		delete(rm.sessions, s.ID)
+	}
 }
 
 func (rm *recordingManager) active() bool {
@@ -209,7 +222,7 @@ func (rm *recordingManager) start(p ScreenRecordParams) (ScreenRecordStartResult
 	}
 
 	go func() {
-		session.Done <- rm.record(req)
+		session.finish(rm.record(req))
 	}()
 
 	if err := rm.awaitStart(session); err != nil {
@@ -227,13 +240,14 @@ func (rm *recordingManager) awaitStart(session *RecordingSession) error {
 	select {
 	case readyErr := <-session.Ready:
 		if readyErr != nil {
-			rm.remove(session.ID)
+			rm.remove(session)
 			return fmt.Errorf("failed to start recording: %w", readyErr)
 		}
 		return nil
-	case resp := <-session.Done:
+	case <-session.finished:
+		resp := session.result
 		// recording finished (or failed) before ever confirming it was live
-		rm.remove(session.ID)
+		rm.remove(session)
 		if resp.Status == statusError {
 			return fmt.Errorf("%s", resp.Error)
 		}
@@ -244,12 +258,12 @@ func (rm *recordingManager) awaitStart(session *RecordingSession) error {
 		// so it cannot overlap a subsequent capture
 		if _, stopErr := rm.stopByID(session.ID, ""); stopErr == nil {
 			select {
-			case <-session.Done:
+			case <-session.finished:
 			case <-time.After(recordingFinalizeTimeout):
 			}
 		}
 
-		rm.remove(session.ID)
+		rm.remove(session)
 		return fmt.Errorf("timed out waiting for recording to start")
 	}
 }
@@ -306,11 +320,12 @@ func (rm *recordingManager) awaitResults(ctx context.Context, sessions []*Record
 
 // awaitResult waits for a stopped session to finish writing, then forgets it.
 func (rm *recordingManager) awaitResult(ctx context.Context, s *RecordingSession) (RecordingResult, error) {
-	defer rm.remove(s.ID)
+	defer rm.remove(s)
 
 	result := RecordingResult{RecordingID: s.ID}
 	select {
-	case resp := <-s.Done:
+	case <-s.finished:
+		resp := s.result
 		if resp.Status == statusError {
 			return result, fmt.Errorf("%s", resp.Error)
 		}
