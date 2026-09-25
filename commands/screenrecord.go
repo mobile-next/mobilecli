@@ -90,8 +90,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 			req.signalReady(err)
 			return NewErrorResponse(err)
 		}
-		req.signalReady(nil)
-		return screenRecordNative(func() error {
+		return screenRecordExclusive(dev.ID(), func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
 	case targetDevice.Platform() == devices.PlatformIOS && targetDevice.DeviceType() == devices.DeviceTypeSimulator:
@@ -101,8 +100,7 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 			req.signalReady(err)
 			return NewErrorResponse(err)
 		}
-		req.signalReady(nil)
-		return screenRecordNative(func() error {
+		return screenRecordExclusive(dev.ID(), func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
 	case targetDevice.Platform() == devices.PlatformIOS && targetDevice.DeviceType() == devices.DeviceTypeReal:
@@ -306,6 +304,20 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		FrameCount: result.FrameCount,
 		Duration:   result.Duration.Round(time.Millisecond).String(),
 	})
+}
+
+// screenRecordExclusive runs a native recorder, which serves one recording
+// per device at a time; a second concurrent recording is refused.
+func screenRecordExclusive(deviceID string, record func() error, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
+	release, err := claimNativeRecorder(deviceID)
+	if err != nil {
+		req.signalReady(err)
+		return NewErrorResponse(err)
+	}
+	defer release()
+
+	req.signalReady(nil)
+	return screenRecordNative(record, req, progress)
 }
 
 func screenRecordNative(record func() error, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
