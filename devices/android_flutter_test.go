@@ -11,7 +11,7 @@ import (
 func TestVisitFailsOnceTheConnectionIsGone(t *testing.T) {
 	vm := newVMWithDeadConnection()
 
-	if _, err := vm.visit("someRenderObject", "RenderParagraph", nil); err == nil {
+	if _, err := vm.visit("someRenderObject", "RenderParagraph", nil, ""); err == nil {
 		t.Error("expected visit to fail after the connection died, got nil error")
 	}
 }
@@ -98,5 +98,19 @@ func TestDoubleValueReadsBothJITAndAOTEncodings(t *testing.T) {
 
 	if _, ok := (&vmInstanceRef{Kind: "String", ValueAsStr: "hello"}).doubleValue(); ok {
 		t.Error("a non-numeric value must not be read as a double")
+	}
+}
+
+func TestInnermostStringKeyReadsTheNearestKeyInTheCreatorChain(t *testing.T) {
+	cases := map[string]string{
+		"Semantics ← _ButtonStyleState ← ElevatedButton-[<'login-button'>] ← Column-[<'form'>] ← ⋯": "login-button",
+		"RenderParagraph ← Text ← Padding ← ⋯":                                                      "",
+		"Padding-[<42>] ← Row-[GlobalKey#1a2b3] ← ListTile-[<'row 1'>] ← ⋯":                         "row 1",
+		"Text-[<'it'>]": "it",
+	}
+	for chain, want := range cases {
+		if got := innermostStringKey(chain); got != want {
+			t.Errorf("innermostStringKey(%q) = %q, want %q", chain, got, want)
+		}
 	}
 }
