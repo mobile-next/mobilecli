@@ -37,7 +37,7 @@ type RecordingSession struct {
 	StartedAt time.Time
 	StopChan  chan struct{}
 	Ready     chan error // signaled once: nil once recording is confirmed live, or an error if it failed to start
-	stopped   bool // true after StopChan has been closed
+	stopped   bool       // true after StopChan has been closed
 
 	// finished is closed once result is set, so every waiter (stop, a
 	// retried stop, shutdown, a timed-out start) reads the same result
