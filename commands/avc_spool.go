@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/mobile-next/mobilecli/pkg/avc2mp4"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // avcSizeLimit is the safety stop for one recording's AVC input. The muxed
@@ -23,7 +24,10 @@ type avcSpool struct {
 	written  int64
 	splitter avc2mp4.NALSplitter
 	full     bool
-	err      error
+	// oversized is set when a unit grew past what the muxer's scanner accepts
+	// before its closing start code arrived; that unit is dropped.
+	oversized bool
+	err       error
 }
 
 func newAvcSpool(out io.Writer, limit int64) *avcSpool {
@@ -33,7 +37,7 @@ func newAvcSpool(out io.Writer, limit int64) *avcSpool {
 // write spools the next chunk. It returns false once capture should stop: the
 // size limit was reached or the disk write failed. Later chunks are ignored.
 func (s *avcSpool) write(chunk []byte) bool {
-	if s.full || s.err != nil {
+	if s.full || s.oversized || s.err != nil {
 		return false
 	}
 
@@ -43,6 +47,13 @@ func (s *avcSpool) write(chunk []byte) bool {
 			return false
 		}
 	}
+
+	// bound the unit still waiting for its start code, or it grows without limit
+	if s.splitter.Buffered() > avc2mp4.MaxNALSize {
+		s.oversized = true
+		utils.Info("screen recording stopped: a NAL unit exceeded %d bytes", avc2mp4.MaxNALSize)
+		return false
+	}
 	return true
 }
 
@@ -50,7 +61,7 @@ func (s *avcSpool) write(chunk []byte) bool {
 // limit already ended the recording. It returns the first write error.
 func (s *avcSpool) finish() error {
 	rest := s.splitter.Flush()
-	if rest != nil && !s.full && s.err == nil {
+	if rest != nil && !s.full && !s.oversized && s.err == nil {
 		s.writeUnit(rest)
 	}
 	return s.err

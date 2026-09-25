@@ -75,9 +75,9 @@ func FindStartCode(data []byte, pos int) int {
 // scanChunkSize is how much ScanNALUnits reads at a time.
 const scanChunkSize = 64 << 10
 
-// maxNALSize bounds one NAL unit while scanning, so a file without start codes
+// MaxNALSize bounds one NAL unit while scanning, so a file without start codes
 // cannot be pulled into memory whole.
-const maxNALSize = 64 << 20
+const MaxNALSize = 64 << 20
 
 // NALSplitter cuts an Annex B stream that arrives in arbitrary chunks into
 // whole NAL units, holding back only the unit that is still incomplete. It
@@ -160,8 +160,8 @@ func ScanNALUnits(r io.Reader, fn func(NALUnit) error) error {
 				return err
 			}
 		}
-		if splitter.Buffered() > maxNALSize {
-			return fmt.Errorf("NAL unit larger than %d bytes", maxNALSize)
+		if splitter.Buffered() > MaxNALSize {
+			return fmt.Errorf("NAL unit larger than %d bytes", MaxNALSize)
 		}
 
 		if errors.Is(readErr, io.EOF) {

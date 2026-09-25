@@ -154,3 +154,28 @@ func TestAStreamStoppedBySizeLimitStillMuxesEveryPictureThatFit(t *testing.T) {
 		t.Fatalf("expected the 5 pictures that fit, got %d", frames)
 	}
 }
+
+func TestSpoolStopsWhenAnUnterminatedUnitOutgrowsTheScannerLimit(t *testing.T) {
+	pictures := bytes.Join(oneSecondOfPictures(5_000_000, 10), nil)
+	var file bytes.Buffer
+	spool := newAvcSpool(&file, avcSizeLimit)
+	spoolEverything(spool, pictures)
+
+	// a unit whose closing start code never arrives
+	spool.write(withStartCode([]byte{0x41}))
+	chunk := bytes.Repeat([]byte{0xFF}, 64<<10)
+	accepted := true
+	for fed := 0; accepted && fed <= avc2mp4.MaxNALSize; fed += len(chunk) {
+		accepted = spool.write(chunk)
+	}
+
+	if accepted {
+		t.Fatal("the spool kept buffering a unit past the scanner limit")
+	}
+	if err := spool.finish(); err != nil {
+		t.Fatalf("finish failed: %v", err)
+	}
+	if !bytes.Equal(file.Bytes(), pictures) {
+		t.Fatalf("expected only the whole units before the oversized one, got %d of %d bytes", file.Len(), len(pictures))
+	}
+}
