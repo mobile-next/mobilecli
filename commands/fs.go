@@ -27,12 +27,12 @@ func FsPushCommand(req FsPushRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("cannot stat local file %s: %w", req.LocalPath, err))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	fs, _, err := findFileSystem(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.PushFile(req.LocalPath, req.RemotePath); err != nil {
+	if err := fs.PushFile(req.LocalPath, req.RemotePath); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to push file: %w", err))
 	}
 
@@ -55,12 +55,12 @@ func FsPullCommand(req FsPullRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("local path is required"))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	fs, _, err := findFileSystem(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.PullFile(req.RemotePath, req.LocalPath); err != nil {
+	if err := fs.PullFile(req.RemotePath, req.LocalPath); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to pull file: %w", err))
 	}
 
@@ -76,12 +76,12 @@ type FsListRequest struct {
 }
 
 func FsListCommand(req FsListRequest) *CommandResponse {
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	fs, _, err := findFileSystem(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	entries, err := device.ListFiles(req.BundleID, req.RemotePath)
+	entries, err := fs.ListFiles(req.BundleID, req.RemotePath)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to list files: %w", err))
 	}
@@ -101,12 +101,12 @@ func FsMkdirCommand(req FsMkdirRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	fs, _, err := findFileSystem(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.Mkdir(req.BundleID, req.RemotePath, req.Parents); err != nil {
+	if err := fs.Mkdir(req.BundleID, req.RemotePath, req.Parents); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to create directory: %w", err))
 	}
 
@@ -127,12 +127,12 @@ func FsRmCommand(req FsRmRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("remote path is required"))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	fs, _, err := findFileSystem(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	if err := device.Rm(req.BundleID, req.RemotePath, req.Recursive); err != nil {
+	if err := fs.Rm(req.BundleID, req.RemotePath, req.Recursive); err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to remove: %w", err))
 	}
 

@@ -204,30 +204,42 @@ type ControllableDevice interface {
 	SetClipboard(text string) error
 	PressKeys(combos []KeyCombo) error
 	PressButton(key string) error
-	LaunchApp(bundleID string, opts LaunchOptions) error
-	TerminateApp(bundleID string) error
 	OpenURL(url string) error
-	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
-	GetForegroundApp() (*ForegroundAppInfo, error)
-	InstallApp(path string) error
-	UninstallApp(packageName string) (*InstalledAppInfo, error)
-	ClearApp(bundleID string) error
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
 	DumpSource(opts DumpOptions) ([]ScreenElement, error)
 	DumpSourceRaw(opts DumpOptions) (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
+}
+
+// AppManager is implemented by devices that can install, launch and inspect apps.
+type AppManager interface {
+	LaunchApp(bundleID string, opts LaunchOptions) error
+	TerminateApp(bundleID string) error
+	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
+	GetForegroundApp() (*ForegroundAppInfo, error)
+	InstallApp(path string) error
+	UninstallApp(packageName string) (*InstalledAppInfo, error)
+	ClearApp(bundleID string) error
+	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// CrashReporter is implemented by devices that expose crash reports.
+type CrashReporter interface {
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
-	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
+}
 
+// FileSystem is implemented by devices that expose file access, scoped to an
+// app container where the platform requires it.
+type FileSystem interface {
 	PushFile(localPath, remotePath string) error
 	PullFile(remotePath, localPath string) error
 	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
 	Mkdir(bundleID, remotePath string, parents bool) error
 	Rm(bundleID, remotePath string, recursive bool) error
-	GetAppContainerPath(bundleID string) (string, error)
 }
 
 // LocationSettable is implemented by devices that can simulate a GPS location.
@@ -478,3 +490,20 @@ type ForegroundAppInfo struct {
 	// Android, view controller class on iOS.
 	Activity string `json:"activity,omitempty"`
 }
+
+// Every built-in device supports the optional capabilities; a missing method
+// on one of them fails here at compile time instead of at a type assertion.
+var (
+	_ AppManager    = (*AndroidDevice)(nil)
+	_ AppManager    = (*IOSDevice)(nil)
+	_ AppManager    = (*SimulatorDevice)(nil)
+	_ AppManager    = (*RemoteDevice)(nil)
+	_ CrashReporter = (*AndroidDevice)(nil)
+	_ CrashReporter = (*IOSDevice)(nil)
+	_ CrashReporter = (*SimulatorDevice)(nil)
+	_ CrashReporter = (*RemoteDevice)(nil)
+	_ FileSystem    = (*AndroidDevice)(nil)
+	_ FileSystem    = (*IOSDevice)(nil)
+	_ FileSystem    = (*SimulatorDevice)(nil)
+	_ FileSystem    = (*RemoteDevice)(nil)
+)

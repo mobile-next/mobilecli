@@ -23,12 +23,12 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.LaunchApp(req.BundleID, devices.LaunchOptions{Locales: req.Locales, Activity: req.Activity})
+	err = apps.LaunchApp(req.BundleID, devices.LaunchOptions{Locales: req.Locales, Activity: req.Activity})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
 	}
@@ -44,12 +44,12 @@ func TerminateAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.TerminateApp(req.BundleID)
+	err = apps.TerminateApp(req.BundleID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to terminate app on device %s: %v", targetDevice.ID(), err))
 	}
@@ -66,17 +66,17 @@ type ListAppsRequest struct {
 
 // ListAppsCommand lists installed apps on a device
 func ListAppsCommand(req ListAppsRequest) *CommandResponse {
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	apps, err := targetDevice.ListApps(true)
+	installed, err := apps.ListApps(true)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to list apps on device %s: %v", targetDevice.ID(), err))
 	}
 
-	return NewSuccessResponse(apps)
+	return NewSuccessResponse(installed)
 }
 
 // ForegroundAppRequest represents the parameters for getting the foreground app
@@ -91,7 +91,12 @@ func ForegroundAppCommand(req ForegroundAppRequest) *CommandResponse {
 		return NewErrorResponse(err)
 	}
 
-	app, err := targetDevice.GetForegroundApp()
+	apps, err := requireCapability[devices.AppManager](targetDevice, "app management")
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+
+	app, err := apps.GetForegroundApp()
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to get foreground app on device %s: %v", targetDevice.ID(), err))
 	}
@@ -119,7 +124,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("path is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
@@ -145,7 +150,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 		installPath = resignedPath
 	}
 
-	err = targetDevice.InstallApp(installPath)
+	err = apps.InstallApp(installPath)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to install app on device %s: %w", targetDevice.ID(), err))
 	}
@@ -175,12 +180,12 @@ func AppPathCommand(req AppPathRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
 	}
 
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, device, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	path, err := device.GetAppContainerPath(req.BundleID)
+	path, err := apps.GetAppContainerPath(req.BundleID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to get app path on device %s: %w", device.ID(), err))
 	}
@@ -200,12 +205,12 @@ func ClearAppCommand(req ClearAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
 	}
 
-	err = targetDevice.ClearApp(req.BundleID)
+	err = apps.ClearApp(req.BundleID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to clear app on device %s: %w", targetDevice.ID(), err))
 	}
@@ -225,12 +230,12 @@ func UninstallAppCommand(req UninstallAppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("package name is required"))
 	}
 
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	apps, targetDevice, err := findAppManager(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	appInfo, err := targetDevice.UninstallApp(req.PackageName)
+	appInfo, err := apps.UninstallApp(req.PackageName)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to uninstall app on device %s: %v", targetDevice.ID(), err))
 	}

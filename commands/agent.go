@@ -69,9 +69,25 @@ func agentStatusResponse(message string, agent *devices.InstalledAppInfo) *Comma
 	})
 }
 
+// agentDevice is a device whose on-device agent can be installed and inspected.
+type agentDevice interface {
+	devices.ControllableDevice
+	devices.AppManager
+}
+
+// findAgentDevice resolves a device by ID (or auto-selects one) and asserts it
+// can manage apps, which agent install/uninstall requires.
+func findAgentDevice(deviceID string) (agentDevice, error) {
+	device, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return requireCapability[agentDevice](device, "agent management")
+}
+
 // AgentStatusCommand reports whether the on-device agent is installed.
 func AgentStatusCommand(req DeviceIDRequest) *CommandResponse {
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := findAgentDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
@@ -87,7 +103,7 @@ func AgentStatusCommand(req DeviceIDRequest) *CommandResponse {
 
 // AgentInstallCommand downloads, verifies and installs the on-device agent.
 func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := findAgentDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
@@ -125,7 +141,7 @@ func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
 	return agentStatusResponse("Agent installed successfully", agent)
 }
 
-func installAgent(device devices.ControllableDevice, provisioningProfile string) error {
+func installAgent(device agentDevice, provisioningProfile string) error {
 	switch device.Platform() {
 	case devices.PlatformIOS:
 		switch device.DeviceType() {
@@ -146,7 +162,7 @@ func installAgent(device devices.ControllableDevice, provisioningProfile string)
 
 // AgentUninstallCommand removes the on-device agent.
 func AgentUninstallCommand(req DeviceIDRequest) *CommandResponse {
-	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	device, err := findAgentDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
@@ -180,7 +196,7 @@ func agentVersionForPlatform(platform string) string {
 	return ""
 }
 
-func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
+func downloadAndInstallAgent(device agentDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
 	utils.Verbose("downloading agent from %s", agentURL)
 	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
 		return fmt.Errorf("failed to download agent: %w", err)
@@ -220,7 +236,7 @@ func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPat
 	return waitForAgentInstalled(device)
 }
 
-func installAgentOnSimulator(device devices.ControllableDevice) error {
+func installAgentOnSimulator(device agentDevice) error {
 	var arch string
 	if runtime.GOARCH == "amd64" {
 		arch = "x86_64"
@@ -240,7 +256,7 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
-func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfile string) error {
+func installAgentOnRealIOS(device agentDevice, provisioningProfile string) error {
 	filename := "devicekit-ios-runner.ipa"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
 
@@ -260,7 +276,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfil
 	})
 }
 
-func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledAppInfo {
+func findInstalledAgent(device agentDevice) *devices.InstalledAppInfo {
 	agentPackage := agentPackageForPlatform(device.Platform())
 
 	apps, err := device.ListApps(false)
@@ -285,11 +301,11 @@ func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
 	return installedPackage == agentPackage
 }
 
-func isAgentInstalled(device devices.ControllableDevice) bool {
+func isAgentInstalled(device agentDevice) bool {
 	return findInstalledAgent(device) != nil
 }
 
-func waitForAgentInstalled(device devices.ControllableDevice) error {
+func waitForAgentInstalled(device agentDevice) error {
 	startTime := time.Now()
 	for {
 		if isAgentInstalled(device) {
