@@ -144,3 +144,49 @@ func TestShutdownDuringAStopGetsTheResultToo(t *testing.T) {
 	assert.NoError(t, errs[0], "stop")
 	assert.NoError(t, errs[1], "shutdown")
 }
+
+func TestAStopThatTimesOutKeepsTheRecordingUntilItFinishes(t *testing.T) {
+	release := useRecorderThatFinishesWith(t, commands.ScreenRecordResponse{})
+	mustStartRecording(t, "slow", "/tmp/slow.mp4")
+	session, err := recorder.stopByID("slow", "")
+	require.NoError(t, err)
+	expired, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = recorder.awaitResult(expired, session)
+	require.ErrorContains(t, err, "timeout")
+	_, err = startRecording(t, "slow", "/tmp/slow-again.mp4")
+	assert.ErrorContains(t, err, "already in progress", "the id was freed while its recorder still runs")
+
+	release()
+	assert.Eventually(t, func() bool { return !recorder.active() }, quickly, 10*time.Millisecond)
+}
+
+// endsOnItsOwn is a recorder that stops by itself right after going live, as
+// the size safety stop or a time limit ends a recording.
+func endsOnItsOwn(req commands.ScreenRecordRequest) *commands.CommandResponse {
+	req.Ready <- nil
+	return commands.NewSuccessResponse(commands.ScreenRecordResponse{Output: req.OutputPath, EndReason: "size_limit"})
+}
+
+func TestARecordingThatEndedOnItsOwnWaitsForAStopToReadIt(t *testing.T) {
+	previous := recorder
+	recorder = newRecordingManager(endsOnItsOwn, func(string) (string, error) { return fakeDeviceID, nil })
+	t.Cleanup(func() { recorder = previous })
+	mustStartRecording(t, "self-ended", "/tmp/self-ended.mp4")
+	require.Eventually(t, func() bool { return recordingHasExited(t, "self-ended") }, quickly, 10*time.Millisecond)
+
+	result, err := recorder.stopOne("self-ended", "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "size_limit", result.EndReason)
+	assert.False(t, recorder.active(), "a read recording is forgotten")
+}
+
+func recordingHasExited(t *testing.T, id string) bool {
+	t.Helper()
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	s, ok := recorder.sessions[id]
+	return ok && s.exited
+}

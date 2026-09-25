@@ -319,3 +319,12 @@ func TestShutdownStopsEveryRecording(t *testing.T) {
 
 	assert.False(t, recorder.active())
 }
+
+func TestStartingASecondRecordingIntoTheSameFileFails(t *testing.T) {
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "first", outputPath(dir, "same.mp4"))
+
+	_, err := startRecording(t, "second", outputPath(dir, "same.mp4"))
+
+	assert.ErrorContains(t, err, "already being recorded")
+}

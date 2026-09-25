@@ -38,6 +38,7 @@ type RecordingSession struct {
 	StopChan  chan struct{}
 	Ready     chan error // signaled once: nil once recording is confirmed live, or an error if it failed to start
 	stopped   bool       // true after StopChan has been closed
+	exited    bool       // true once the recorder returned; guarded by the manager's mu
 
 	// finished is closed once result is set, so every waiter (stop, a
 	// retried stop, shutdown, a timed-out start) reads the same result
@@ -117,6 +118,13 @@ func (rm *recordingManager) register(id, deviceID, output string) (*RecordingSes
 		return nil, fmt.Errorf("recording %q is already in progress", id)
 	}
 
+	// two recorders writing one file would truncate each other's output
+	for _, s := range rm.sessions {
+		if s.Output == output {
+			return nil, fmt.Errorf("%q is already being recorded by recording %q", output, s.ID)
+		}
+	}
+
 	s := &RecordingSession{
 		ID:        id,
 		DeviceID:  deviceID,
@@ -134,6 +142,36 @@ func (rm *recordingManager) register(id, deviceID, output string) (*RecordingSes
 func (rm *recordingManager) remove(s *RecordingSession) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
+	rm.removeLocked(s)
+}
+
+// A session leaves the registry only once its recorder exited and it was
+// stopped, whichever comes second, so its id and output are never reused
+// while it still writes. A recording that ended on its own (time or size
+// limit) stays until a stop reads its result.
+
+// recorderExited marks s's recorder as returned.
+func (rm *recordingManager) recorderExited(s *RecordingSession) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	s.exited = true
+	if s.stopped {
+		rm.removeLocked(s)
+	}
+}
+
+// abandon stops s for a start that gave up on it.
+func (rm *recordingManager) abandon(s *RecordingSession) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	signalStopLocked(s)
+	if s.exited {
+		rm.removeLocked(s)
+	}
+}
+
+// removeLocked is remove for a caller holding rm.mu.
+func (rm *recordingManager) removeLocked(s *RecordingSession) {
 	if rm.sessions[s.ID] == s {
 		delete(rm.sessions, s.ID)
 	}
@@ -170,8 +208,7 @@ func (rm *recordingManager) stopByID(id, deviceID string) (*RecordingSession, er
 }
 
 // stopMatching signals every recording on deviceID to stop, or every
-// recording when deviceID is empty. The sessions stay registered until their
-// results are read.
+// recording when deviceID is empty.
 func (rm *recordingManager) stopMatching(deviceID string) ([]*RecordingSession, error) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
@@ -223,6 +260,7 @@ func (rm *recordingManager) start(p ScreenRecordParams) (ScreenRecordStartResult
 
 	go func() {
 		session.finish(rm.record(req))
+		rm.recorderExited(session)
 	}()
 
 	if err := rm.awaitStart(session); err != nil {
@@ -240,30 +278,22 @@ func (rm *recordingManager) awaitStart(session *RecordingSession) error {
 	select {
 	case readyErr := <-session.Ready:
 		if readyErr != nil {
-			rm.remove(session)
+			rm.abandon(session)
 			return fmt.Errorf("failed to start recording: %w", readyErr)
 		}
 		return nil
 	case <-session.finished:
-		resp := session.result
 		// recording finished (or failed) before ever confirming it was live
-		rm.remove(session)
+		rm.abandon(session)
+		resp := session.result
 		if resp.Status == statusError {
 			return fmt.Errorf("%s", resp.Error)
 		}
 		return fmt.Errorf("recording ended before it was confirmed started")
 	case <-time.After(screenRecordReadyTimeout):
 		// the command goroutine may still be starting (or even recording);
-		// ask it to stop and wait for it to exit before freeing the session,
-		// so it cannot overlap a subsequent capture
-		if _, stopErr := rm.stopByID(session.ID, ""); stopErr == nil {
-			select {
-			case <-session.finished:
-			case <-time.After(recordingFinalizeTimeout):
-			}
-		}
-
-		rm.remove(session)
+		// stop it. The session is freed once the recorder exits.
+		rm.abandon(session)
 		return fmt.Errorf("timed out waiting for recording to start")
 	}
 }
@@ -318,13 +348,12 @@ func (rm *recordingManager) awaitResults(ctx context.Context, sessions []*Record
 	return results
 }
 
-// awaitResult waits for a stopped session to finish writing, then forgets it.
+// awaitResult waits for a stopped session to finish writing.
 func (rm *recordingManager) awaitResult(ctx context.Context, s *RecordingSession) (RecordingResult, error) {
-	defer rm.remove(s)
-
 	result := RecordingResult{RecordingID: s.ID}
 	select {
 	case <-s.finished:
+		rm.remove(s)
 		resp := s.result
 		if resp.Status == statusError {
 			return result, fmt.Errorf("%s", resp.Error)
