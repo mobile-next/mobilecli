@@ -102,9 +102,12 @@ func (s *fakeSharedStream) record(req commands.ScreenRecordRequest) *commands.Co
 }
 
 // useRecorderOnFakeStream swaps the server's recorder for one that records
-// the fake shared stream, for the duration of the test.
-func useRecorderOnFakeStream(t *testing.T) {
+// the fake shared stream, for the duration of the test. It returns the
+// directory for the test's output files, created before the stop cleanup is
+// registered so the recordings stop before the directory is removed.
+func useRecorderOnFakeStream(t *testing.T) (outputDir string) {
 	t.Helper()
+	outputDir = t.TempDir()
 	stream := startFakeSharedStream(t)
 	previous := recorder
 	recorder = newRecordingManager(stream.record, func(string) (string, error) { return fakeDeviceID, nil })
@@ -112,6 +115,7 @@ func useRecorderOnFakeStream(t *testing.T) {
 		recorder.stopAllForShutdown()
 		recorder = previous
 	})
+	return outputDir
 }
 
 func rpcParams(t *testing.T, fields map[string]any) json.RawMessage {
@@ -162,9 +166,8 @@ func asStopOneResult(t *testing.T, result any) RecordingResult {
 	return stopped
 }
 
-func outputPath(t *testing.T, name string) string {
-	t.Helper()
-	return filepath.Join(t.TempDir(), name)
+func outputPath(dir, name string) string {
+	return filepath.Join(dir, name)
 }
 
 func fileSize(path string) int64 {
@@ -199,8 +202,8 @@ func jsonKeys(t *testing.T, value any) []string {
 }
 
 func TestTwoConcurrentRecordingsOnASharedStreamBothProduceFiles(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	first, second := outputPath(t, "first.mp4"), outputPath(t, "second.mp4")
+	dir := useRecorderOnFakeStream(t)
+	first, second := outputPath(dir, "first.mp4"), outputPath(dir, "second.mp4")
 
 	mustStartRecording(t, "first", first)
 	mustStartRecording(t, "second", second)
@@ -219,8 +222,8 @@ func TestTwoConcurrentRecordingsOnASharedStreamBothProduceFiles(t *testing.T) {
 }
 
 func TestStoppingOneRecordingByIDLeavesTheOtherRunning(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	first, second := outputPath(t, "first.mp4"), outputPath(t, "second.mp4")
+	dir := useRecorderOnFakeStream(t)
+	first, second := outputPath(dir, "first.mp4"), outputPath(dir, "second.mp4")
 	mustStartRecording(t, "first", first)
 	mustStartRecording(t, "second", second)
 
@@ -235,9 +238,9 @@ func TestStoppingOneRecordingByIDLeavesTheOtherRunning(t *testing.T) {
 }
 
 func TestStopWithoutAnIDStopsEveryRecording(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	mustStartRecording(t, "first", outputPath(t, "first.mp4"))
-	mustStartRecording(t, "second", outputPath(t, "second.mp4"))
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "first", outputPath(dir, "first.mp4"))
+	mustStartRecording(t, "second", outputPath(dir, "second.mp4"))
 
 	result, err := stopRecording(t, map[string]any{})
 	require.NoError(t, err)
@@ -247,17 +250,17 @@ func TestStopWithoutAnIDStopsEveryRecording(t *testing.T) {
 }
 
 func TestStartWithARecordingIDAlreadyRunningFails(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	mustStartRecording(t, "same", outputPath(t, "first.mp4"))
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "same", outputPath(dir, "first.mp4"))
 
-	_, err := startRecording(t, "same", outputPath(t, "second.mp4"))
+	_, err := startRecording(t, "same", outputPath(dir, "second.mp4"))
 
 	assert.ErrorContains(t, err, "already in progress")
 }
 
 func TestStopWithAnUnknownRecordingIDFails(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	mustStartRecording(t, "known", outputPath(t, "first.mp4"))
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "known", outputPath(dir, "first.mp4"))
 
 	_, err := stopRecording(t, map[string]any{"recordingId": "unknown"})
 
@@ -274,17 +277,17 @@ func TestStopWhenNothingIsRecordingReportsNoRecording(t *testing.T) {
 }
 
 func TestStartWithoutARecordingIDGeneratesOne(t *testing.T) {
-	useRecorderOnFakeStream(t)
+	dir := useRecorderOnFakeStream(t)
 
-	started := mustStartRecording(t, "", outputPath(t, "first.mp4"))
+	started := mustStartRecording(t, "", outputPath(dir, "first.mp4"))
 
 	assert.Len(t, started.RecordingID, len("00000000-0000-0000-0000-000000000000"))
 	assert.Equal(t, "recording", started.Status)
 }
 
 func TestStopWithoutAnIDKeepsTheSingleRecordingResponseShape(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	output := outputPath(t, "only.mp4")
+	dir := useRecorderOnFakeStream(t)
+	output := outputPath(dir, "only.mp4")
 	started := mustStartRecording(t, "", output)
 
 	result, err := stopRecording(t, map[string]any{"deviceId": fakeDeviceID})
@@ -298,8 +301,8 @@ func TestStopWithoutAnIDKeepsTheSingleRecordingResponseShape(t *testing.T) {
 }
 
 func TestStopOnAnotherDeviceLeavesThisDevicesRecordings(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	mustStartRecording(t, "first", outputPath(t, "first.mp4"))
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "first", outputPath(dir, "first.mp4"))
 
 	_, err := stopRecording(t, map[string]any{"deviceId": "other-device"})
 
@@ -308,9 +311,9 @@ func TestStopOnAnotherDeviceLeavesThisDevicesRecordings(t *testing.T) {
 }
 
 func TestShutdownStopsEveryRecording(t *testing.T) {
-	useRecorderOnFakeStream(t)
-	mustStartRecording(t, "first", outputPath(t, "first.mp4"))
-	mustStartRecording(t, "second", outputPath(t, "second.mp4"))
+	dir := useRecorderOnFakeStream(t)
+	mustStartRecording(t, "first", outputPath(dir, "first.mp4"))
+	mustStartRecording(t, "second", outputPath(dir, "second.mp4"))
 
 	StopRecordingForShutdown()
 
