@@ -18,6 +18,7 @@ type ScreenElement struct {
 	Value       *string           `json:"value,omitempty"`
 	Placeholder *string           `json:"placeholder,omitempty"`
 	Identifier  *string           `json:"identifier,omitempty"`
+	Key         *string           `json:"key,omitempty"` // flutter debug builds: nearest enclosing widget Key('...')
 	Rect        ScreenElementRect `json:"rect"`
 	Focused     *bool             `json:"focused,omitempty"`  // android tv, and ios when hasFocus is reported
 	Enabled     *bool             `json:"enabled,omitempty"`  // only set when false

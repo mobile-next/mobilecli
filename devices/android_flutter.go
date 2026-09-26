@@ -284,7 +284,10 @@ type vmInstanceRef struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"` // populated for Class objects (the class name)
 	ValueAsStr string `json:"valueAsString"`
-	ClassRef   *struct {
+	// ValueAsStrTruncated is set when a long String's valueAsString was cut short;
+	// getObject on it returns the full value.
+	ValueAsStrTruncated bool `json:"valueAsStringIsTruncated"`
+	ClassRef            *struct {
 		Name string `json:"name"`
 	} `json:"class"`
 }
@@ -485,7 +488,7 @@ func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) 
 	utils.Verbose("flutter: bootstrap (classes+root+offset.zero) took %s", time.Since(t0))
 
 	t1 := time.Now()
-	els, err := vm.visit(rootID, rootRenderClass, nil)
+	els, err := vm.visit(rootID, rootRenderClass, nil, "")
 	utils.Verbose("flutter: tree walk took %s", time.Since(t1))
 	if err != nil {
 		return nil, err
@@ -622,9 +625,15 @@ func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
 // A per-node RPC failure is not an error here — plenty of render objects
 // legitimately refuse localToGlobal or describe no children — but a dead
 // connection is, and it must not masquerade as an empty subtree.
-func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]types.ScreenElement, error) {
+func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics, key string) ([]types.ScreenElement, error) {
 	if err := vm.fatalErr(); err != nil {
 		return nil, err
+	}
+
+	// Like semantics, the nearest enclosing widget Key is threaded down to the
+	// leaves it covers.
+	if k := vm.readWidgetKey(nodeID); k != "" {
+		key = k
 	}
 
 	// A render object that forms a semantics boundary carries the label/flags on
@@ -634,13 +643,18 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]t
 	// Adopt it for this subtree so the content leaves beneath (where Flutter has
 	// merged the label away) inherit it.
 	if s := vm.readNodeSemantics(nodeID); s.hasContent() {
+		// Semantics(identifier: …) wrapping a control is its own id-only node
+		// above the control's node — keep the id unless the inner node sets one.
+		if s.identifier == "" && sem != nil {
+			s.identifier = sem.identifier
+		}
 		sem = s
 		// A control or a merging boundary is one accessible element (its label and
 		// widgets belong together), so emit it once here and don't descend —
 		// otherwise its content leaves (a text field's label row, editable area and
 		// container; a checkbox's label and box) each emit separately.
 		if s.isControl() || s.mergesDescendants {
-			return vm.emitLeaf(nodeID, className, sem), nil
+			return vm.emitLeaf(nodeID, className, sem, key), nil
 		}
 	}
 
@@ -656,7 +670,7 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]t
 			wg.Add(1)
 			go func(i int, k renderChild) {
 				defer wg.Done()
-				results[i], errs[i] = vm.visit(k.id, k.class, sem)
+				results[i], errs[i] = vm.visit(k.id, k.class, sem, key)
 			}(i, k)
 		}
 		wg.Wait()
@@ -672,12 +686,12 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics) ([]t
 		return children, nil
 	}
 
-	return vm.emitLeaf(nodeID, className, sem), nil
+	return vm.emitLeaf(nodeID, className, sem, key), nil
 }
 
 // emitLeaf builds the ScreenElement for a single node (a render leaf, or a
 // merging semantics boundary), or returns nil if it has no on-screen size.
-func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics) []types.ScreenElement {
+func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics, key string) []types.ScreenElement {
 	rect, ok := vm.globalRect(nodeID)
 	if !ok || rect.Width <= 0 || rect.Height <= 0 {
 		return nil
@@ -690,6 +704,7 @@ func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics) [
 		el.Text = &text
 	}
 	applySemantics(&el, sem)
+	setIfNotEmpty(&el.Key, key)
 	return []types.ScreenElement{el}
 }
 
