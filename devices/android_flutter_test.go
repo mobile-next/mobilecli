@@ -107,6 +107,7 @@ func TestInnermostStringKeyReadsTheNearestKeyInTheCreatorChain(t *testing.T) {
 		"RenderParagraph ← Text ← Padding ← ⋯":                                                      "",
 		"Padding-[<42>] ← Row-[GlobalKey#1a2b3] ← ListTile-[<'row 1'>] ← ⋯":                         "row 1",
 		"Text-[<'it'>]": "it",
+		"Semantics ← Chip-[<'tags ← nested'>] ← Column-[<'form'>] ← ⋯": "tags ← nested",
 	}
 	for chain, want := range cases {
 		if got := innermostStringKey(chain); got != want {
