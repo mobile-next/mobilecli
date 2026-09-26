@@ -775,6 +775,8 @@ type ScreenRecordParams struct {
 	DeviceID  string `json:"deviceId"`
 	Output    string `json:"output"`
 	TimeLimit int    `json:"timeLimit"`
+	// RecordingID names the recording for a later stop; generated when empty
+	RecordingID string `json:"recordingId,omitempty"`
 }
 
 func handleIoButton(params json.RawMessage) (any, error) {
@@ -1181,12 +1183,6 @@ func handleAppsUninstall(params json.RawMessage) (any, error) {
 	return commandResult(response)
 }
 
-// screenRecordReadyTimeout bounds how long handleScreenRecord waits for the
-// recording to be confirmed live before giving up. Sized generously above a
-// worst-case cold DeviceKit start on real iOS devices (WDA/app launch +
-// two 10s broadcast-picker button polls + the 5s post-click TCP wait).
-const screenRecordReadyTimeout = 60 * time.Second
-
 func handleScreenRecord(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, output")
@@ -1194,101 +1190,30 @@ func handleScreenRecord(params json.RawMessage) (any, error) {
 
 	var p ScreenRecordParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, output", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, output, recordingId (optional)", err)
 	}
 
-	if p.Output == "" {
-		return nil, fmt.Errorf("'output' is required")
-	}
-
-	session, err := recorder.start(p.Output)
-	if err != nil {
-		return nil, err
-	}
-
-	req := commands.ScreenRecordRequest{
-		DeviceID:   p.DeviceID,
-		OutputPath: p.Output,
-		TimeLimit:  p.TimeLimit,
-		StopChan:   session.StopChan,
-		Ready:      session.Ready,
-		Silent:     true,
-	}
-
-	go func() {
-		resp := commands.ScreenRecordCommand(req)
-		session.Done <- resp
-	}()
-
-	// Don't ack until the recording is actually confirmed live. On real iOS
-	// devices this waits for the ReplayKit broadcast picker to be clicked, so
-	// callers never race a still-starting recording with device commands.
-	select {
-	case readyErr := <-session.Ready:
-		if readyErr != nil {
-			recorder.clear()
-			return nil, fmt.Errorf("failed to start recording: %w", readyErr)
-		}
-		return map[string]any{
-			"status": "recording",
-			"output": p.Output,
-		}, nil
-	case resp := <-session.Done:
-		// recording finished (or failed) before ever confirming it was live
-		recorder.clear()
-		if resp.Status == statusError {
-			return nil, fmt.Errorf("%s", resp.Error)
-		}
-		return nil, fmt.Errorf("recording ended before it was confirmed started")
-	case <-time.After(screenRecordReadyTimeout):
-		// the command goroutine may still be starting (or even recording);
-		// ask it to stop and wait for it to exit before freeing the session,
-		// so it cannot overlap a subsequent capture
-		if _, stopErr := recorder.stop(); stopErr == nil {
-			select {
-			case <-session.Done:
-			case <-time.After(30 * time.Second):
-			}
-		}
-
-		recorder.clear()
-		return nil, fmt.Errorf("timed out waiting for recording to start")
-	}
+	return recorder.start(p)
 }
 
 // ScreenRecordStopParams represents the parameters for stopping a screen recording
 type ScreenRecordStopParams struct {
-	DeviceID string `json:"deviceId"`
+	DeviceID    string `json:"deviceId"`
+	RecordingID string `json:"recordingId,omitempty"`
 }
 
 func handleScreenRecordStop(params json.RawMessage) (any, error) {
-	session, err := recorder.stop()
-	if err != nil {
-		return nil, err
-	}
-	defer recorder.clear()
-
-	// wait for recording to finalize with a timeout
-	select {
-	case resp := <-session.Done:
-		if resp.Status == statusError {
-			return nil, fmt.Errorf("%s", resp.Error)
+	var p ScreenRecordStopParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId (optional), recordingId (optional)", err)
 		}
-		return enrichWithDuration(resp.Data, session.StartedAt), nil
-	case <-time.After(30 * time.Second):
-		return nil, fmt.Errorf("timeout waiting for recording to finalize")
 	}
-}
 
-func enrichWithDuration(data any, startedAt time.Time) any {
-	m, ok := data.(commands.ScreenRecordResponse)
-	if !ok {
-		return data
+	if p.RecordingID != "" {
+		return recorder.stopOne(p.RecordingID, p.DeviceID)
 	}
-	if m.Duration == "" {
-		m.Duration = time.Since(startedAt).Round(time.Millisecond).String()
-	}
-	return m
+	return recorder.stopAll(p.DeviceID)
 }
 
 type CrashesListParams struct {

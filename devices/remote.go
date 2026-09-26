@@ -493,9 +493,10 @@ func (pr *progressReader) updateProgress(n int) {
 }
 
 func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <-chan struct{}, cb *ScreenRecordCallbacks) error {
-	_, err := rpcCall[struct {
-		Status string `json:"status"`
-		Output string `json:"output"`
+	started, err := rpcCall[struct {
+		Status      string `json:"status"`
+		Output      string `json:"output"`
+		RecordingID string `json:"recordingId"`
 	}](r, "device.screenrecord", params{
 		"output":    outputPath,
 		"timeLimit": timeLimit,
@@ -537,7 +538,7 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 		Status   string `json:"status"`
 		Duration int    `json:"duration"`
 		URL      string `json:"url"`
-	}](r, "device.screenrecord.stop", params{})
+	}](r, "device.screenrecord.stop", recordingStopParams(started.RecordingID))
 	if err != nil {
 		return err
 	}
@@ -550,6 +551,15 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 	}
 
 	return nil
+}
+
+// recordingStopParams stops only this recording when the remote named it;
+// remotes that predate recording ids get a plain stop.
+func recordingStopParams(recordingID string) params {
+	if recordingID == "" {
+		return params{}
+	}
+	return params{"recordingId": recordingID}
 }
 
 func (r *RemoteDevice) StartScreenCapture(config ScreenCaptureConfig) error {
