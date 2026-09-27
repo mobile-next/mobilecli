@@ -1,3 +1,9 @@
+## [1.0.14](https://github.com/mobile-next/mobilecli/releases/tag/1.0.14) (2026-09-27)
+* Feat(ios): concurrent screen recordings per device ([#450](https://github.com/mobile-next/mobilecli/pull/450))
+* Feat(screenrecord): stream the muxer instead of loading entire mp4 into memory, stop before 4GB limit ([#449](https://github.com/mobile-next/mobilecli/pull/449))
+* Feat(flutter): report widget Key and keep wrapper Semantics identifier ([#451](https://github.com/mobile-next/mobilecli/pull/451))
+* Feat(flutter): keep the creator-chain separator inside a string widget key ([#453](https://github.com/mobile-next/mobilecli/pull/453))
+
 ## [1.0.13](https://github.com/mobile-next/mobilecli/releases/tag/1.0.13) (2026-09-21)
 * Feat(ios): Keep slider, picker, alert, list and navigation elements in the UI dump ([#440](https://github.com/mobile-next/mobilecli/pull/440))
 * Fix(android): Launch apps and urls on the default display 0 ([#442](https://github.com/mobile-next/mobilecli/pull/442))
