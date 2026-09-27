@@ -101,8 +101,16 @@ class UiTreeSerializer {
 		if (range == null || range.getType() == RANGE_TYPE_INDETERMINATE) {
 			return false;
 		}
-		float current = range.getCurrent();
-		return !Float.isNaN(current) && !Float.isInfinite(current);
+		return isFinite(range.getMin()) && isFinite(range.getMax()) && isFinite(range.getCurrent());
+	}
+
+	private static boolean isFinite(float value) {
+		return !Float.isNaN(value) && !Float.isInfinite(value);
+	}
+
+	// via Float.toString so 0.1f is sent as 0.1, not 0.10000000149011612
+	private static double exact(float value) {
+		return Double.parseDouble(Float.toString(value));
 	}
 
 	private static String str(CharSequence cs) {
@@ -149,8 +157,10 @@ class UiTreeSerializer {
 		// Sliders, progress bars and rating bars report their position here.
 		AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
 		if (hasPosition(range)) {
-			// via Float.toString so 0.1f is sent as 0.1, not 0.10000000149011612
-			obj.put("range-current", Double.parseDouble(Float.toString(range.getCurrent())));
+			obj.put("range", new JSONObject()
+					.put("min", exact(range.getMin()))
+					.put("max", exact(range.getMax()))
+					.put("current", exact(range.getCurrent())));
 		}
 
 		JSONArray children = new JSONArray();

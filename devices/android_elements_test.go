@@ -2,6 +2,7 @@ package devices
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -589,25 +590,31 @@ func screenElementValue(e types.ScreenElement) string {
 	return *e.Value
 }
 
-func sliderNode(rangeCurrent *float64) uiNode {
+func sliderNode(sliderRange *types.ScreenElementRange) uiNode {
 	return uiNode{
-		Class:        "android.widget.SeekBar",
-		ContentDesc:  "slider",
-		ResourceID:   "com.mobilenext.playground:id/slider",
-		RangeCurrent: rangeCurrent,
-		Rect:         uiRect{X: 79, Y: 1760, Width: 922, Height: 47},
+		Class:       "android.widget.SeekBar",
+		ContentDesc: "slider",
+		ResourceID:  "com.mobilenext.playground:id/slider",
+		Range:       sliderRange,
+		Rect:        uiRect{X: 79, Y: 1760, Width: 922, Height: 47},
 	}
 }
 
-// A slider or progress bar reports its position through the accessibility
-// node's RangeInfo; it must surface as the element's value.
-func TestCollectUiNodeElementsSliderPositionBecomesValue(t *testing.T) {
-	position := 50.0
+func rangeOf(min, max, current float64) *types.ScreenElementRange {
+	return &types.ScreenElementRange{Min: min, Max: max, Current: current}
+}
 
-	output := collectUiNodeElements([]uiNode{sliderNode(&position)})
+// A slider or progress bar reports its position through the accessibility
+// node's RangeInfo; it must surface as the element's range, and its current
+// position as the element's value.
+func TestCollectUiNodeElementsSliderReportsRangeAndValue(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{sliderNode(rangeOf(0, 100, 50))})
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Range == nil || *output[0].Range != *rangeOf(0, 100, 50) {
+		t.Errorf("expected range {0 100 50}, got %+v", output[0].Range)
 	}
 	if got := screenElementValue(output[0]); got != "50" {
 		t.Errorf("expected value %q, got %q", "50", got)
@@ -615,32 +622,32 @@ func TestCollectUiNodeElementsSliderPositionBecomesValue(t *testing.T) {
 }
 
 func TestCollectUiNodeElementsKeepsFractionalRangeValue(t *testing.T) {
-	position := 0.75
-
-	output := collectUiNodeElements([]uiNode{sliderNode(&position)})
+	output := collectUiNodeElements([]uiNode{sliderNode(rangeOf(0, 1, 0.75))})
 
 	if got := screenElementValue(output[0]); got != "0.75" {
 		t.Errorf("expected value %q, got %q", "0.75", got)
 	}
 }
 
-func TestCollectUiNodeElementsLeavesValueUnsetWithoutRange(t *testing.T) {
+func TestCollectUiNodeElementsLeavesRangeAndValueUnsetWithoutRange(t *testing.T) {
 	output := collectUiNodeElements([]uiNode{sliderNode(nil)})
 
+	if output[0].Range != nil {
+		t.Errorf("expected no range, got %+v", output[0].Range)
+	}
 	if output[0].Value != nil {
 		t.Errorf("expected no value, got %q", *output[0].Value)
 	}
 }
 
-// A progress bar usually has no label or id, but its value alone makes it
+// A progress bar usually has no label or id, but its range alone makes it
 // worth listing so tests can assert on it.
 func TestCollectUiNodeElementsKeepsUnlabeledNodeWithRange(t *testing.T) {
-	position := 30.0
 	nodes := []uiNode{
 		{
-			Class:        "android.widget.ProgressBar",
-			RangeCurrent: &position,
-			Rect:         uiRect{X: 79, Y: 1900, Width: 922, Height: 16},
+			Class: "android.widget.ProgressBar",
+			Range: rangeOf(0, 100, 30),
+			Rect:  uiRect{X: 79, Y: 1900, Width: 922, Height: 16},
 		},
 	}
 
@@ -654,14 +661,25 @@ func TestCollectUiNodeElementsKeepsUnlabeledNodeWithRange(t *testing.T) {
 	}
 }
 
-func TestUiNodeDecodesRangeCurrentFromAgentJson(t *testing.T) {
+func TestUiNodeDecodesRangeFromAgentJson(t *testing.T) {
 	var node uiNode
-	if err := json.Unmarshal([]byte(`{"class":"android.widget.SeekBar","range-current":42.0}`), &node); err != nil {
+	if err := json.Unmarshal([]byte(`{"class":"android.widget.SeekBar","range":{"min":0,"max":100,"current":42}}`), &node); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if node.RangeCurrent == nil || *node.RangeCurrent != 42 {
-		t.Errorf("expected range-current 42, got %v", node.RangeCurrent)
+	if node.Range == nil || *node.Range != *rangeOf(0, 100, 42) {
+		t.Errorf("expected range {0 100 42}, got %+v", node.Range)
+	}
+}
+
+func TestScreenElementRangeIsOmittedFromJsonWhenAbsent(t *testing.T) {
+	output, err := json.Marshal(types.ScreenElement{Type: "android.widget.Button"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if strings.Contains(string(output), "range") {
+		t.Errorf("expected no range key, got %s", output)
 	}
 }
 

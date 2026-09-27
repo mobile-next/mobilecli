@@ -1442,8 +1442,8 @@ type uiNode struct {
 	Visible     bool     `json:"visible"`
 	Rect        uiRect   `json:"rect"`
 	Children    []uiNode `json:"children"`
-	// current position of a slider, progress bar or rating bar, from the node's RangeInfo
-	RangeCurrent *float64 `json:"range-current,omitempty"`
+	// a slider, progress bar or rating bar's RangeInfo
+	Range *types.ScreenElementRange `json:"range"`
 	// text can be typed into the node (EditText and the like)
 	Editable bool `json:"editable"`
 }
@@ -1496,8 +1496,9 @@ type androidNodeAttrs struct {
 	checked     bool
 	selected    bool
 	rect        types.ScreenElementRect
-	// value is the node's current range position, "" when it has none
-	value string
+	// value is a slider's position or a text field's content, "" when it has none
+	value       string
+	sliderRange *types.ScreenElementRange
 }
 
 // isScreenElement reports whether the node is worth listing: it has text,
@@ -1529,6 +1530,7 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 	if a.value != "" {
 		element.Value = &a.value
 	}
+	element.Range = a.sliderRange
 
 	// states are only reported when they differ from the default
 	isTrue, isFalse := true, false
@@ -1590,8 +1592,8 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 // the content of a text field. For a text field it is copied, not moved, so
 // anything reading text keeps working.
 func nodeValue(node uiNode) string {
-	if node.RangeCurrent != nil {
-		return rangeValue(node.RangeCurrent)
+	if node.Range != nil {
+		return rangeValue(node.Range.Current)
 	}
 	if node.Editable {
 		return node.Text
@@ -1601,11 +1603,8 @@ func nodeValue(node uiNode) string {
 
 // rangeValue formats a RangeInfo position the way it reads on screen:
 // 50 rather than 50.0, and 0.75 kept as is.
-func rangeValue(current *float64) string {
-	if current == nil {
-		return ""
-	}
-	return strconv.FormatFloat(*current, 'f', -1, 64)
+func rangeValue(current float64) string {
+	return strconv.FormatFloat(current, 'f', -1, 64)
 }
 
 // collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
@@ -1629,6 +1628,7 @@ func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 			checked:     node.Checked,
 			selected:    node.Selected,
 			value:       nodeValue(node),
+			sliderRange: node.Range,
 			rect: types.ScreenElementRect{
 				X:      node.Rect.X,
 				Y:      node.Rect.Y,
