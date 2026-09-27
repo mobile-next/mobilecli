@@ -128,9 +128,17 @@ class UiTreeSerializer {
 				.put("password", node.isPassword())
 				.put("selected", node.isSelected())
 				.put("visible", node.isVisibleToUser())
+				.put("editable", node.isEditable())
 				.put("rect", new JSONObject()
 						.put("x", bounds.left).put("y", bounds.top)
 						.put("width", bounds.width()).put("height", bounds.height()));
+
+		// Sliders, progress bars and rating bars report their position here.
+		AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
+		if (range != null) {
+			// via Float.toString so 0.1f is sent as 0.1, not 0.10000000149011612
+			obj.put("range-current", Double.parseDouble(Float.toString(range.getCurrent())));
+		}
 
 		JSONArray children = new JSONArray();
 		for (int i = 0; i < node.getChildCount(); i++) {

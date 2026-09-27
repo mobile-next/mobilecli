@@ -1442,6 +1442,10 @@ type uiNode struct {
 	Visible     bool     `json:"visible"`
 	Rect        uiRect   `json:"rect"`
 	Children    []uiNode `json:"children"`
+	// current position of a slider, progress bar or rating bar, from the node's RangeInfo
+	RangeCurrent *float64 `json:"range-current,omitempty"`
+	// text can be typed into the node (EditText and the like)
+	Editable bool `json:"editable"`
 }
 
 type uiHierarchy struct {
@@ -1492,13 +1496,15 @@ type androidNodeAttrs struct {
 	checked     bool
 	selected    bool
 	rect        types.ScreenElementRect
+	// value is the node's current range position, "" when it has none
+	value string
 }
 
 // isScreenElement reports whether the node is worth listing: it has text,
 // content-desc, hint, resource-id, or is interactable (clickable or checkable,
 // e.g. Flutter icon-only buttons), and has a positive width and height.
 func (a androidNodeAttrs) isScreenElement() bool {
-	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != ""
+	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != "" || a.value != ""
 	isInteractable := a.clickable || a.checkable
 	return (isLabeled || isInteractable) && a.rect.Width > 0 && a.rect.Height > 0
 }
@@ -1519,6 +1525,9 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 	}
 	if a.resourceID != "" {
 		element.Identifier = &a.resourceID
+	}
+	if a.value != "" {
+		element.Value = &a.value
 	}
 
 	// states are only reported when they differ from the default
@@ -1577,6 +1586,28 @@ func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenE
 	return []types.ScreenElement{attrs.toScreenElement(childElements)}
 }
 
+// nodeValue is what ios reports as a node's value: a slider's position, or
+// the content of a text field. For a text field it is copied, not moved, so
+// anything reading text keeps working.
+func nodeValue(node uiNode) string {
+	if node.RangeCurrent != nil {
+		return rangeValue(node.RangeCurrent)
+	}
+	if node.Editable {
+		return node.Text
+	}
+	return ""
+}
+
+// rangeValue formats a RangeInfo position the way it reads on screen:
+// 50 rather than 50.0, and 0.75 kept as is.
+func rangeValue(current *float64) string {
+	if current == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*current, 'f', -1, 64)
+}
+
 // collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
 // preserving hierarchy the same way collectElements does.
 func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
@@ -1597,6 +1628,7 @@ func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 			disabled:    !node.Enabled,
 			checked:     node.Checked,
 			selected:    node.Selected,
+			value:       nodeValue(node),
 			rect: types.ScreenElementRect{
 				X:      node.Rect.X,
 				Y:      node.Rect.Y,

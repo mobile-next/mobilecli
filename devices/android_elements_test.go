@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -578,5 +579,150 @@ func TestCollectUiNodeElementsKeepsUnlabeledClickableNode(t *testing.T) {
 	}
 	if output[0].Children[0].Rect.X != 1112 {
 		t.Errorf("expected child rect x=1112, got %+v", output[0].Children[0].Rect)
+	}
+}
+
+func screenElementValue(e types.ScreenElement) string {
+	if e.Value == nil {
+		return ""
+	}
+	return *e.Value
+}
+
+func sliderNode(rangeCurrent *float64) uiNode {
+	return uiNode{
+		Class:        "android.widget.SeekBar",
+		ContentDesc:  "slider",
+		ResourceID:   "com.mobilenext.playground:id/slider",
+		RangeCurrent: rangeCurrent,
+		Rect:         uiRect{X: 79, Y: 1760, Width: 922, Height: 47},
+	}
+}
+
+// A slider or progress bar reports its position through the accessibility
+// node's RangeInfo; it must surface as the element's value.
+func TestCollectUiNodeElementsSliderPositionBecomesValue(t *testing.T) {
+	position := 50.0
+
+	output := collectUiNodeElements([]uiNode{sliderNode(&position)})
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if got := screenElementValue(output[0]); got != "50" {
+		t.Errorf("expected value %q, got %q", "50", got)
+	}
+}
+
+func TestCollectUiNodeElementsKeepsFractionalRangeValue(t *testing.T) {
+	position := 0.75
+
+	output := collectUiNodeElements([]uiNode{sliderNode(&position)})
+
+	if got := screenElementValue(output[0]); got != "0.75" {
+		t.Errorf("expected value %q, got %q", "0.75", got)
+	}
+}
+
+func TestCollectUiNodeElementsLeavesValueUnsetWithoutRange(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{sliderNode(nil)})
+
+	if output[0].Value != nil {
+		t.Errorf("expected no value, got %q", *output[0].Value)
+	}
+}
+
+// A progress bar usually has no label or id, but its value alone makes it
+// worth listing so tests can assert on it.
+func TestCollectUiNodeElementsKeepsUnlabeledNodeWithRange(t *testing.T) {
+	position := 30.0
+	nodes := []uiNode{
+		{
+			Class:        "android.widget.ProgressBar",
+			RangeCurrent: &position,
+			Rect:         uiRect{X: 79, Y: 1900, Width: 922, Height: 16},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected the unlabeled progress bar to be kept, got %+v", output)
+	}
+	if got := screenElementValue(output[0]); got != "30" {
+		t.Errorf("expected value %q, got %q", "30", got)
+	}
+}
+
+func TestUiNodeDecodesRangeCurrentFromAgentJson(t *testing.T) {
+	var node uiNode
+	if err := json.Unmarshal([]byte(`{"class":"android.widget.SeekBar","range-current":42.0}`), &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if node.RangeCurrent == nil || *node.RangeCurrent != 42 {
+		t.Errorf("expected range-current 42, got %v", node.RangeCurrent)
+	}
+}
+
+func textFieldNode(text string) uiNode {
+	return uiNode{
+		Class:       "android.widget.EditText",
+		Text:        text,
+		Hint:        "Text Field",
+		ContentDesc: "text_field",
+		ResourceID:  "com.mobilenext.playground:id/text_field",
+		Editable:    true,
+		Rect:        uiRect{X: 42, Y: 404, Width: 996, Height: 131},
+	}
+}
+
+// iOS reports a text field's content as value; android reports it as text.
+// Copy it to value too, keeping text, so getValue() works on both platforms
+// without changing anything that reads text.
+func TestCollectUiNodeElementsCopiesEditableTextToValue(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{textFieldNode("Hello World")})
+
+	if got := screenElementValue(output[0]); got != "Hello World" {
+		t.Errorf("expected value %q, got %q", "Hello World", got)
+	}
+	if got := screenElementText(output[0]); got != "Hello World" {
+		t.Errorf("expected text to stay %q, got %q", "Hello World", got)
+	}
+}
+
+func TestCollectUiNodeElementsLeavesValueUnsetForEmptyEditable(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{textFieldNode("")})
+
+	if output[0].Value != nil {
+		t.Errorf("expected no value for an empty field, got %q", *output[0].Value)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Text Field" {
+		t.Errorf("expected placeholder %q, got %q", "Text Field", got)
+	}
+}
+
+func TestCollectUiNodeElementsDoesNotCopyTextOfNonEditableNode(t *testing.T) {
+	label := uiNode{
+		Class: "android.widget.TextView",
+		Text:  "Toggle",
+		Rect:  uiRect{X: 42, Y: 1200, Width: 300, Height: 60},
+	}
+
+	output := collectUiNodeElements([]uiNode{label})
+
+	if output[0].Value != nil {
+		t.Errorf("expected no value for a static label, got %q", *output[0].Value)
+	}
+}
+
+func TestUiNodeDecodesEditableFromAgentJson(t *testing.T) {
+	var node uiNode
+	if err := json.Unmarshal([]byte(`{"class":"android.widget.EditText","editable":true}`), &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !node.Editable {
+		t.Errorf("expected editable to be decoded")
 	}
 }
