@@ -92,6 +92,19 @@ class UiTreeSerializer {
 		}
 	}
 
+	// RangeInfo.RANGE_TYPE_INDETERMINATE, added in API 36; we compile against 35
+	private static final int RANGE_TYPE_INDETERMINATE = 3;
+
+	// An indeterminate progress bar has no position, and JSONObject.put throws on
+	// NaN or infinity, which would abort the whole dump.
+	private static boolean hasPosition(AccessibilityNodeInfo.RangeInfo range) {
+		if (range == null || range.getType() == RANGE_TYPE_INDETERMINATE) {
+			return false;
+		}
+		float current = range.getCurrent();
+		return !Float.isNaN(current) && !Float.isInfinite(current);
+	}
+
 	private static String str(CharSequence cs) {
 		return cs == null ? "" : cs.toString();
 	}
@@ -135,7 +148,7 @@ class UiTreeSerializer {
 
 		// Sliders, progress bars and rating bars report their position here.
 		AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
-		if (range != null) {
+		if (hasPosition(range)) {
 			// via Float.toString so 0.1f is sent as 0.1, not 0.10000000149011612
 			obj.put("range-current", Double.parseDouble(Float.toString(range.getCurrent())));
 		}
