@@ -106,6 +106,13 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		Children: childElements,
 	}
 
+	// a switch reports its state only as value "1" / "0"; report it as
+	// checked too, like android, which only sets it when true
+	if elementType == "Switch" && source.Value != nil && *source.Value == "1" {
+		isChecked := true
+		element.Checked = &isChecked
+	}
+
 	// WKWebView reports as several nested same-rect WebView wrappers; collapse
 	// them so a single element represents a single webview. Children are
 	// already collapsed bottom-up, so one merge per level unwinds the chain.

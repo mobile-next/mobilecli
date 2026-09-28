@@ -92,6 +92,27 @@ class UiTreeSerializer {
 		}
 	}
 
+	// RangeInfo.RANGE_TYPE_INDETERMINATE, added in API 36; we compile against 35
+	private static final int RANGE_TYPE_INDETERMINATE = 3;
+
+	// An indeterminate progress bar has no position, and JSONObject.put throws on
+	// NaN or infinity, which would abort the whole dump.
+	private static boolean hasPosition(AccessibilityNodeInfo.RangeInfo range) {
+		if (range == null || range.getType() == RANGE_TYPE_INDETERMINATE) {
+			return false;
+		}
+		return isFinite(range.getMin()) && isFinite(range.getMax()) && isFinite(range.getCurrent());
+	}
+
+	private static boolean isFinite(float value) {
+		return !Float.isNaN(value) && !Float.isInfinite(value);
+	}
+
+	// via Float.toString so 0.1f is sent as 0.1, not 0.10000000149011612
+	private static double exact(float value) {
+		return Double.parseDouble(Float.toString(value));
+	}
+
 	private static String str(CharSequence cs) {
 		return cs == null ? "" : cs.toString();
 	}
@@ -128,9 +149,19 @@ class UiTreeSerializer {
 				.put("password", node.isPassword())
 				.put("selected", node.isSelected())
 				.put("visible", node.isVisibleToUser())
+				.put("editable", node.isEditable())
 				.put("rect", new JSONObject()
 						.put("x", bounds.left).put("y", bounds.top)
 						.put("width", bounds.width()).put("height", bounds.height()));
+
+		// Sliders, progress bars and rating bars report their position here.
+		AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
+		if (hasPosition(range)) {
+			obj.put("range", new JSONObject()
+					.put("min", exact(range.getMin()))
+					.put("max", exact(range.getMax()))
+					.put("current", exact(range.getCurrent())));
+		}
 
 		JSONArray children = new JSONArray();
 		for (int i = 0; i < node.getChildCount(); i++) {

@@ -489,3 +489,57 @@ func TestFilterSourceElementsTreatsEmptyIdentifiersAsAbsent(t *testing.T) {
 		t.Fatalf("expected only the hoisted Button, got %+v", output)
 	}
 }
+
+func toggleSwitch(value string) sourceTreeElement {
+	return sourceTreeElement{
+		Type:          "XCUIElementTypeSwitch",
+		Label:         strPtr("Toggle switch"),
+		RawIdentifier: strPtr("toggle"),
+		Value:         strPtr(value),
+		Rect:          visibleRect(16, 428, 370, 52),
+	}
+}
+
+func isChecked(e types.ScreenElement) bool {
+	return e.Checked != nil && *e.Checked
+}
+
+// iOS reports a switch's state only as value "1" / "0"; it must also surface
+// as checked, the way Android reports it, so toBeChecked() works on both.
+func TestFilterSourceElementsMarksSwitchThatIsOnAsChecked(t *testing.T) {
+	output := filterSourceElements(toggleSwitch("1"))
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if !isChecked(output[0]) {
+		t.Errorf("expected checked, got %+v", output[0].Checked)
+	}
+	if output[0].Value == nil || *output[0].Value != "1" {
+		t.Errorf("expected value to stay %q, got %+v", "1", output[0].Value)
+	}
+}
+
+func TestFilterSourceElementsLeavesSwitchThatIsOffUnchecked(t *testing.T) {
+	output := filterSourceElements(toggleSwitch("0"))
+
+	if output[0].Checked != nil {
+		t.Errorf("expected checked to be unset, got %v", *output[0].Checked)
+	}
+}
+
+// A value of "1" means nothing about checked state on non-switch elements.
+func TestFilterSourceElementsDoesNotMarkNonSwitchAsChecked(t *testing.T) {
+	field := sourceTreeElement{
+		Type:          "XCUIElementTypeTextField",
+		RawIdentifier: strPtr("quantity"),
+		Value:         strPtr("1"),
+		Rect:          visibleRect(16, 200, 370, 44),
+	}
+
+	output := filterSourceElements(field)
+
+	if output[0].Checked != nil {
+		t.Errorf("expected checked to be unset, got %v", *output[0].Checked)
+	}
+}
