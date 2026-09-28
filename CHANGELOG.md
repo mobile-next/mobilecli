@@ -1,3 +1,11 @@
+## [1.0.15](https://github.com/mobile-next/mobilecli/releases/tag/1.0.15) (2026-09-28)
+* Feat: `mobilecli device fold` to fold and unfold foldable devices like iPhone Duo and Pixel Fold ([#457](https://github.com/mobile-next/mobilecli/pull/457), [devicekit-ios#81](https://github.com/mobile-next/devicekit-ios/pull/81))
+* Feat: add `mobilecli auth status` which is safe for agents to run ([#460](https://github.com/mobile-next/mobilecli/pull/460))
+* Feat: report slider, text field and switch state consistently on android and ios ([#455](https://github.com/mobile-next/mobilecli/pull/455))
+* Fix(ios): background the test runner on iOS 27 simulators ([devicekit-ios#84](https://github.com/mobile-next/devicekit-ios/pull/84))
+* Fix(ios): use portrait screen size when mapping landscape tap and swipe coordinates ([devicekit-ios#83](https://github.com/mobile-next/devicekit-ios/pull/83)), thanks to [@hakanor](https://github.com/hakanor)
+* Fix(ios): screenshot the active screen on foldable simulators ([devicekit-ios#82](https://github.com/mobile-next/devicekit-ios/pull/82))
+
 ## [1.0.14](https://github.com/mobile-next/mobilecli/releases/tag/1.0.14) (2026-09-27)
 * Feat(ios): concurrent screen recordings per device ([#450](https://github.com/mobile-next/mobilecli/pull/450))
 * Feat(screenrecord): stream the muxer instead of loading entire mp4 into memory, stop before 4GB limit ([#449](https://github.com/mobile-next/mobilecli/pull/449))
