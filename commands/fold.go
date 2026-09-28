@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -30,7 +31,7 @@ func parseFoldAngle(state string) (float64, error) {
 	}
 
 	angle, err := strconv.ParseFloat(state, 64)
-	if err != nil || angle < 0 || angle > 180 {
+	if err != nil || math.IsNaN(angle) || angle < 0 || angle > 180 {
 		return 0, fmt.Errorf("invalid fold state '%s', must be 'folded', 'half-open', 'open' or an angle between 0 and 180", state)
 	}
 
