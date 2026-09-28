@@ -20,6 +20,7 @@ JSON-RPC API for mobile device automation and control
 - [device.crashes.get](#devicecrashesget)
 - [device.crashes.list](#devicecrasheslist)
 - [device.dump.ui](#devicedumpui)
+- [device.fold.set](#devicefoldset)
 - [device.fs.ls](#devicefsls)
 - [device.fs.mkdir](#devicefsmkdir)
 - [device.fs.pull](#devicefspull)
@@ -42,6 +43,7 @@ JSON-RPC API for mobile device automation and control
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
+- [device.settings.apply](#devicesettingsapply)
 - [device.shutdown](#deviceshutdown)
 - [device.url](#deviceurl)
 - [device.webview.content](#devicewebviewcontent)
@@ -537,6 +539,40 @@ UI hierarchy data
     "deviceId": "string",
     "format": "json",
     "full": false
+  },
+  "id": 1
+}
+```
+
+
+### device.fold.set
+
+**Fold or unfold a foldable device**
+
+Sets the hinge of a foldable device. Supported on foldable iOS simulators and Android emulators
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `state` | `string` | ✓ | 'folded' (0), 'half-open' (90), 'open' (180), or an angle in degrees between 0 and 180 |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.fold.set",
+  "params": {
+    "deviceId": "string",
+    "state": "string"
   },
   "id": 1
 }
@@ -1338,6 +1374,42 @@ Screenshot data
       "width": 0,
       "height": 0
     }
+  },
+  "id": 1
+}
+```
+
+
+### device.settings.apply
+
+**Apply device settings**
+
+Applies device-level settings. Only the settings provided are changed
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `animations` | enum: `on, off` |  | Toggle system animations (Android only) |
+| `appearance` | enum: `light, dark` |  | System appearance |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.settings.apply",
+  "params": {
+    "deviceId": "string",
+    "animations": "on",
+    "appearance": "light"
   },
   "id": 1
 }

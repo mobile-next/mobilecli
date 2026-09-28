@@ -33,6 +33,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.io.orientation.get":             handleIoOrientationGet,
 		"device.io.orientation.set":             handleIoOrientationSet,
 		"device.boot":                           handleDeviceBoot,
+		"device.fold.set":                       handleFoldSet,
 		"device.shutdown":                       handleDeviceShutdown,
 		"device.reboot":                         handleDeviceReboot,
 		"device.location.set":                   handleLocationSet,
