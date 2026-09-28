@@ -24,7 +24,7 @@ func TestAFoldAngleCanBeGivenInDegrees(t *testing.T) {
 }
 
 func TestFoldAnglesOutsideZeroTo180AreRejected(t *testing.T) {
-	for _, state := range []string{"-1", "181", "sideways", ""} {
+	for _, state := range []string{"-1", "181", "NaN", "sideways", ""} {
 		_, err := parseFoldAngle(state)
 
 		assert.Error(t, err, "expected %q to be rejected", state)
