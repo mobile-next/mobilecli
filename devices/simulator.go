@@ -1019,6 +1019,11 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.deviceKitClient.SetOrientation(orientation)
 }
 
+// SetHingeAngle folds or unfolds a foldable simulator (e.g. iPhone Duo)
+func (s SimulatorDevice) SetHingeAngle(angle float64) error {
+	return s.deviceKitClient.SetHingeAngle(angle)
+}
+
 // SetAppearance switches the simulator between light and dark mode
 func (s SimulatorDevice) SetAppearance(appearance string) error {
 	return s.deviceKitClient.SetAppearance(appearance)

@@ -47,6 +47,7 @@ func CLIRegistry() map[string]CLIHandler {
 		"cli.device.shutdown":        adapt(ShutdownCommand),
 		"cli.device.orientation.get": adapt(OrientationGetCommand),
 		"cli.device.orientation.set": adapt(OrientationSetCommand),
+		"cli.device.fold":            adapt(FoldCommand),
 		"cli.device.settings.apply":  adapt(ApplySettingsCommand),
 		"cli.device.crashes.list":    adapt(func(r DeviceIDRequest) *CommandResponse { return CrashesListCommand(r.DeviceID) }),
 		"cli.device.crashes.get":     adapt(func(r CrashesGetRequest) *CommandResponse { return CrashesGetCommand(r.DeviceID, r.ID) }),

@@ -1792,6 +1792,22 @@ func (d *AndroidDevice) SetOrientation(orientation string) error {
 	return nil
 }
 
+// SetHingeAngle folds or unfolds a foldable emulator by setting its hinge sensor:
+// 0 is folded, 180 is fully open. Real devices have no emulator console and fail here.
+func (d *AndroidDevice) SetHingeAngle(angle float64) error {
+	output, err := d.runAdbCommand("emu", "sensor", "set", "hinge-angle0", strconv.FormatFloat(angle, 'f', -1, 64))
+	if err != nil {
+		return fmt.Errorf("failed to set hinge angle (only foldable emulators are supported): %v", err)
+	}
+
+	// the emulator console reports failures as "KO: <reason>" with a zero exit code
+	if strings.Contains(string(output), "KO:") {
+		return fmt.Errorf("failed to set hinge angle (is this a foldable emulator?): %s", strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
+
 // SetAnimationsEnabled toggles the three global animation scales. Setting them
 // to 0 disables animations for stable screenshots; 1 restores the defaults.
 func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {

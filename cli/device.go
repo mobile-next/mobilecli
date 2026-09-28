@@ -67,6 +67,21 @@ var orientationSetCmd = &cobra.Command{
 	},
 }
 
+var deviceFoldCmd = &cobra.Command{
+	Use:   "fold [folded|half-open|open|degrees]",
+	Short: "Fold or unfold a foldable device",
+	Long:  `Sets the hinge of a foldable device to "folded" (0°), "half-open" (90°), "open" (180°), or an angle between 0 and 180. Supported on foldable iOS simulators and Android emulators.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FoldRequest{
+			DeviceID: deviceId,
+			State:    args[0],
+		}
+
+		return runViaDaemon("cli.device.fold", req)
+	},
+}
+
 var deviceBootCmd = &cobra.Command{
 	Use:   "boot",
 	Short: "Boot a simulator or emulator",
@@ -132,6 +147,7 @@ func init() {
 	deviceCmd.AddCommand(deviceBootCmd)
 	deviceCmd.AddCommand(deviceShutdownCmd)
 	deviceCmd.AddCommand(orientationCmd)
+	deviceCmd.AddCommand(deviceFoldCmd)
 	deviceCmd.AddCommand(settingsCmd)
 
 	// add orientation subcommands
@@ -148,6 +164,7 @@ func init() {
 	deviceShutdownCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to shutdown")
 	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
+	deviceFoldCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to fold or unfold")
 	settingsApplyCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to apply settings to")
 	settingsApplyCmd.Flags().StringVar(&settingsAnimations, "animations", "", "Toggle system animations: 'on' or 'off'")
 	settingsApplyCmd.Flags().StringVar(&settingsAppearance, "appearance", "", "System appearance: 'light' or 'dark'")
