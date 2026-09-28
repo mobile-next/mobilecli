@@ -259,9 +259,29 @@ var authTokenCmd = &cobra.Command{
 	},
 }
 
+var authStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show whether you are logged in",
+	Long:  `Shows whether you are logged in, without printing the auth token.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := loadTokenWithTimeout()
+		if errors.Is(err, keyring.ErrNotFound) {
+			fmt.Println("Not logged in")
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get auth token: %w", err)
+		}
+
+		fmt.Println("mobilenext.ai")
+		fmt.Println("  - Logged in to mobilenext.ai")
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(authCmd)
-	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd)
+	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd, authStatusCmd)
 	authLoginCmd.Flags().StringVar(&authProvider, "provider", "mobilenext", "authentication provider (supported values: \"mobilenext\")")
 	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL and code instead of opening a browser")
 }

@@ -153,7 +153,7 @@ mobilecli auth login
 mobilecli auth login --insecure-storage
 
 # verify
-mobilecli auth token
+mobilecli auth status
 ```
 
 Token lookup order: `MOBILECLI_TOKEN` env var, then the OS keyring (or the credentials file with `--insecure-storage`). In CI, set `MOBILECLI_TOKEN` instead of logging in. Not logged in and no token means every `remote` command fails; ask the user to run `mobilecli auth login`.
