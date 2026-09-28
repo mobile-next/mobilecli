@@ -89,3 +89,9 @@ func TestFoldSetRejectsInvalidStateBeforeLookingUpDevice(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid fold state")
 }
+
+func TestFoldSetRequiresDeviceID(t *testing.T) {
+	_, err := DaemonDispatch(context.Background(), "device.fold.set", json.RawMessage(`{"state":"open"}`), noNotify)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'deviceId' is required")
+}

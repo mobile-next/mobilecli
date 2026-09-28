@@ -909,6 +909,10 @@ func handleFoldSet(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, state", err)
 	}
 
+	if req.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
 	response := commands.FoldCommand(req)
 	return okResult(response)
 }
