@@ -5,6 +5,8 @@
 * Fix(ios): background the test runner on iOS 27 simulators ([devicekit-ios#84](https://github.com/mobile-next/devicekit-ios/pull/84))
 * Fix(ios): use portrait screen size when mapping landscape tap and swipe coordinates ([devicekit-ios#83](https://github.com/mobile-next/devicekit-ios/pull/83)), thanks to [@hakanor](https://github.com/hakanor)
 * Fix(ios): screenshot the active screen on foldable simulators ([devicekit-ios#82](https://github.com/mobile-next/devicekit-ios/pull/82))
+* Fix(ios): tap, swipe and gestures on unfolded foldable simulators, and ui dump frames on the unfolded screen ([devicekit-ios#88](https://github.com/mobile-next/devicekit-ios/pull/88))
+* Fix(ios): don't offset ui dump frames when the app is rotated to landscape ([devicekit-ios#86](https://github.com/mobile-next/devicekit-ios/pull/86))
 
 ## [1.0.14](https://github.com/mobile-next/mobilecli/releases/tag/1.0.14) (2026-09-27)
 * Feat(ios): concurrent screen recordings per device ([#450](https://github.com/mobile-next/mobilecli/pull/450))
