@@ -83,3 +83,15 @@ func TestMessageNotifierWrapsWritesAsMessages(t *testing.T) {
 
 	assert.Equal(t, []any{daemon.StreamProgress{Progress: "\rRecording 00:01"}}, got)
 }
+
+func TestFoldSetRejectsInvalidStateBeforeLookingUpDevice(t *testing.T) {
+	_, err := DaemonDispatch(context.Background(), "device.fold.set", json.RawMessage(`{"deviceId":"__nope__","state":"sideways"}`), noNotify)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid fold state")
+}
+
+func TestFoldSetRequiresDeviceID(t *testing.T) {
+	_, err := DaemonDispatch(context.Background(), "device.fold.set", json.RawMessage(`{"state":"open"}`), noNotify)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'deviceId' is required")
+}

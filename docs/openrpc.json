@@ -682,6 +682,36 @@
       }
     },
     {
+      "name": "device.fold.set",
+      "summary": "Fold or unfold a foldable device",
+      "description": "Sets the hinge of a foldable device. Supported on foldable iOS simulators and Android emulators",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "state",
+          "description": "'folded' (0), 'half-open' (90), 'open' (180), or an angle in degrees between 0 and 180",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.location.set",
       "summary": "Override device location",
       "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",

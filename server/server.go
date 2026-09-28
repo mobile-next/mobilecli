@@ -899,6 +899,24 @@ func handleIoOrientationSet(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+func handleFoldSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, state")
+	}
+
+	var req commands.FoldRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, state", err)
+	}
+
+	if req.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	response := commands.FoldCommand(req)
+	return okResult(response)
+}
+
 func handleLocationSet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, latitude, longitude")
