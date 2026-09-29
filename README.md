@@ -78,6 +78,20 @@ mobilecli devices --include-offline
 
 **Note**: Offline emulators and simulators can be booted using the `mobilecli device boot` command.
 
+### Default Device 🎯
+
+Set `MOBILECLI_DEVICE` to skip `--device` on every command. An explicit `--device` still takes precedence.
+
+```bash
+export MOBILECLI_DEVICE=<device-id>
+
+# Taps on $MOBILECLI_DEVICE
+mobilecli io tap 100,200
+
+# Overrides $MOBILECLI_DEVICE for this command only
+mobilecli io tap --device <other-device-id> 100,200
+```
+
 ### Take Screenshots 📸
 
 ```bash
