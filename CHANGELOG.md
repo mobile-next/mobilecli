@@ -1,4 +1,7 @@
-## Unreleased
+## [1.0.16](https://github.com/mobile-next/mobilecli/releases/tag/1.0.16) (2026-09-29)
+* Feat: add `mobilecli completion` to generate shell completion scripts ([#468](https://github.com/mobile-next/mobilecli/pull/468))
+* Feat: add `mobilecli snapshot`, an alias of `dump ui --format text` ([#467](https://github.com/mobile-next/mobilecli/pull/467))
+* Feat: default `--device` to the `MOBILECLI_DEVICE` environment variable ([#466](https://github.com/mobile-next/mobilecli/pull/466))
 * Fix(ios): tap, swipe and gestures on folded foldable simulators, and taps on the unfolded home screen ([devicekit-ios#89](https://github.com/mobile-next/devicekit-ios/pull/89))
 
 ## [1.0.15](https://github.com/mobile-next/mobilecli/releases/tag/1.0.15) (2026-09-28)
