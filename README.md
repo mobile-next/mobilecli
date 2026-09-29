@@ -80,7 +80,9 @@ mobilecli devices --include-offline
 
 ### Default Device 🎯
 
-Set `MOBILECLI_DEVICE` to skip `--device` on every command. An explicit `--device` still takes precedence.
+When only one device is online, mobilecli selects it automatically and `--device` isn't needed.
+
+With several devices online, set `MOBILECLI_DEVICE` to skip `--device` on every command. An explicit `--device` still takes precedence.
 
 ```bash
 export MOBILECLI_DEVICE=<device-id>
