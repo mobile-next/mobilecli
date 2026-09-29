@@ -179,7 +179,7 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	}
 
 	if len(onlineDevices) > 1 {
-		err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
+		err = fmt.Errorf("multiple devices found (%d), please specify --device or MOBILECLI_DEVICE with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
 		return nil, err
 	}
 
