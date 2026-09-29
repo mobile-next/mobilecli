@@ -211,9 +211,6 @@ COMMON FLAGS:
   --device <id>        Device ID (from 'mobilecli devices' command)
   -v, --verbose        Enable verbose output
   --help               Show help for any command`,
-	CompletionOptions: cobra.CompletionOptions{
-		HiddenDefaultCmd: true,
-	},
 	Version:       utils.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,

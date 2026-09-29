@@ -55,6 +55,20 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 npm install -g mobilecli@latest
 ```
 
+#### Shell Completion ⌨️
+```bash
+# zsh
+echo 'source <(mobilecli completion zsh)' >> ~/.zshrc
+
+# bash 4.1+ (requires bash-completion; macOS ships bash 3.2)
+echo 'source <(mobilecli completion bash)' >> ~/.bashrc
+
+# fish
+mobilecli completion fish > ~/.config/fish/completions/mobilecli.fish
+```
+
+Run `mobilecli completion --help` for PowerShell and other options.
+
 ### Agent Setup 🤖
 
 Install `mobilecli` and add the skill so your coding agent knows how to use it:
