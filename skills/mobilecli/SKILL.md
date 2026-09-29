@@ -45,11 +45,11 @@ mobilecli device boot --device <device-id>
 
 # 3. Launch the app and dump the UI in one go. Every element gets a ref like @e5.
 mobilecli apps launch com.example.myapp --device <device-id> && \
-  mobilecli dump ui --device <device-id> --format text
+  mobilecli snapshot --device <device-id>
 
 # 4. Act on a ref, then re-dump to verify. Chain with && so one bash call does both.
 mobilecli io tap @e5 --device <device-id> && \
-  mobilecli dump ui --device <device-id> --format text
+  mobilecli snapshot --device <device-id>
 
 # 5. Confirm visually when needed
 mobilecli screenshot --device <device-id> --output screenshot.png
@@ -63,10 +63,10 @@ Each `mobilecli` invocation is a separate process, so chain related steps with `
 # fill a login form and check the result with one bash call
 mobilecli io tap @e3 --device <id> && mobilecli io text "user@example.com" --device <id> && \
 mobilecli io tap @e4 --device <id> && mobilecli io text "secret" --device <id> && \
-mobilecli io tap @e7 --device <id> && sleep 1 && mobilecli dump ui --device <id> --format text
+mobilecli io tap @e7 --device <id> && sleep 1 && mobilecli snapshot --device <id>
 ```
 
-Refs (`@e1`, `@e2`, ...) are numbered by the most recent `dump ui`. Any tap, text entry, or navigation can change the tree, so re-dump before reusing a ref. Prefer `--format text` for reading, and the default JSON when you need `rect` coordinates or need to script over the output.
+Refs (`@e1`, `@e2`, ...) are numbered by the most recent `snapshot` or `dump ui`. Any tap, text entry, or navigation can change the tree, so re-dump before reusing a ref. Prefer `snapshot` (text) for reading, and `dump ui` (JSON) when you need `rect` coordinates or need to script over the output.
 
 ---
 
@@ -90,7 +90,7 @@ graph TD
 1. **Find & Target Device**: Run `mobilecli devices` to see online devices and simulators. If only one device is online, it is automatically selected; otherwise, pass the device ID to the `--device <id>` flag.
 2. **Launch App**: Use `mobilecli apps launch <bundle-id>` to bring the target application to the foreground.
 3. **Capture State**:
-   - Dump the UI tree: `mobilecli dump ui` to locate elements programmatically.
+   - Dump the UI tree: `mobilecli snapshot` to locate elements, or `mobilecli dump ui` for JSON with `rect` coordinates.
    - Take a screenshot: `mobilecli screenshot` to visually confirm what is displayed.
 4. **Interact**: Tap the element's ref from the dump (`mobilecli io tap @e5`), or compute the center of its `rect` and tap `x,y`. Then `mobilecli io text` for input.
 5. **Repeat or Debug**: Verify the changes in a new UI dump or screenshot, handle popups, and check crash reports if the app terminates.
@@ -101,11 +101,11 @@ graph TD
 
 > [!IMPORTANT]
 > **Prefer refs over coordinates**:
-> `mobilecli io tap @e5` taps the center of element 5 from the latest `dump ui`. Only fall back to coordinates when you need a point that is not an element (e.g. swipe start/end). If you do, use the center of the element's `rect`: `centerX = x + width/2`, `centerY = y + height/2`. Refs are invalidated by any UI change, so re-dump before reusing them.
+> `mobilecli io tap @e5` taps the center of element 5 from the latest `snapshot` or `dump ui`. Only fall back to coordinates when you need a point that is not an element (e.g. swipe start/end). If you do, use the center of the element's `rect`: `centerX = x + width/2`, `centerY = y + height/2`. Refs are invalidated by any UI change, so re-dump before reusing them.
 
 > [!TIP]
 > **Chain steps with `&&`**:
-> Run action + verification in one bash call: `mobilecli io tap @e5 --device <id> && mobilecli dump ui --device <id> --format text`. Fewer round-trips, and the chain stops at the first failing step.
+> Run action + verification in one bash call: `mobilecli io tap @e5 --device <id> && mobilecli snapshot --device <id>`. Fewer round-trips, and the chain stops at the first failing step.
 
 > [!WARNING]
 > **Release remote devices**:
@@ -127,7 +127,7 @@ Here is a quick reference table mapping standard user actions to `mobilecli` com
 
 | User Action | CLI Command | Description |
 | :--- | :--- | :--- |
-| **Tap** | `mobilecli io tap @e5` or `mobilecli io tap <x,y>` | Single touch on a ref from `dump ui`, or at coordinates |
+| **Tap** | `mobilecli io tap @e5` or `mobilecli io tap <x,y>` | Single touch on a ref from `snapshot` or `dump ui`, or at coordinates |
 | **Long Press** | `mobilecli io longpress <x,y \| @ref> --duration <ms>` | Press and hold for a duration |
 | **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | Drag from start to end coordinates |
 | **Pinch** | `mobilecli io pinch [x,y] --direction in\|out` | Two-finger zoom out (`in`) or in (`out`), around x,y or the screen center |
@@ -172,7 +172,7 @@ mobilecli remote allocate --platform android --version 14 --wait
 mobilecli devices
 mobilecli apps install ./app.ipa --device <remote-id> && \
   mobilecli apps launch com.example.app --device <remote-id> && \
-  mobilecli dump ui --device <remote-id> --format text
+  mobilecli snapshot --device <remote-id>
 
 # always release when done, devices are billed while allocated
 mobilecli remote release --device <remote-id>

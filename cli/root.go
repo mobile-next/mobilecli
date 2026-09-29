@@ -200,6 +200,9 @@ UTILITIES:
   # Dump UI tree
   mobilecli dump ui --device <device-id>
 
+  # Dump UI tree as text (alias of 'dump ui --format text')
+  mobilecli snapshot --device <device-id>
+
   # Start HTTP server
   mobilecli server start --listen localhost:12000 --cors
 

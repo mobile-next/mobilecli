@@ -53,8 +53,19 @@ var dumpUICmd = &cobra.Command{
 	},
 }
 
+var snapshotCmd = &cobra.Command{
+	Use:   "snapshot",
+	Short: "Dump UI tree from a device as text",
+	Long:  `Alias of 'dump ui --format text'.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dumpUIFormat = "text"
+		return dumpUICmd.RunE(cmd, args)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(dumpCmd)
+	rootCmd.AddCommand(snapshotCmd)
 
 	// add dump subcommands
 	dumpCmd.AddCommand(dumpUICmd)
@@ -63,4 +74,7 @@ func init() {
 	dumpUICmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
 	dumpUICmd.Flags().StringVar(&dumpUIFormat, "format", "", "Output format: 'text' for indented element lines, 'raw' for unprocessed tree from agent (Default: json)")
 	dumpUICmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard")
+
+	snapshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
+	snapshotCmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard")
 }
