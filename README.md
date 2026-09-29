@@ -103,6 +103,22 @@ mobilecli screenshot --device <device-id> --output screenshot.png
 mobilecli screenshot --device <device-id> --output -
 ```
 
+### UI Tree 🌳
+
+```bash
+# Dump the UI tree as indented text, each element with a ref like @e5
+mobilecli snapshot --device <device-id>
+
+# Same as snapshot
+mobilecli dump ui --device <device-id> --format text
+
+# Dump the UI tree as JSON, including each element's rect
+mobilecli dump ui --device <device-id>
+
+# Tap an element by its ref from the latest dump
+mobilecli io tap --device <device-id> @e5
+```
+
 ### Stream Screen 🎥
 
 ```bash
