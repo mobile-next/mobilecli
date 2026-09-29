@@ -1,3 +1,6 @@
+## Unreleased
+* Fix(ios): tap, swipe and gestures on folded foldable simulators, and taps on the unfolded home screen ([devicekit-ios#89](https://github.com/mobile-next/devicekit-ios/pull/89))
+
 ## [1.0.15](https://github.com/mobile-next/mobilecli/releases/tag/1.0.15) (2026-09-28)
 * Feat: `mobilecli device fold` to fold and unfold foldable devices like iPhone Duo and Pixel Fold ([#457](https://github.com/mobile-next/mobilecli/pull/457), [devicekit-ios#81](https://github.com/mobile-next/devicekit-ios/pull/81))
 * Feat: add `mobilecli auth status` which is safe for agents to run ([#460](https://github.com/mobile-next/mobilecli/pull/460))
