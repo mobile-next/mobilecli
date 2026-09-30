@@ -1005,7 +1005,7 @@ func (d *AndroidDevice) SendKeys(text string) error {
 }
 
 func (d *AndroidDevice) OpenURL(url string) error {
-	output, err := d.runAdbCommand("shell", "am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
+	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
 	if err != nil {
 		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
 	}
