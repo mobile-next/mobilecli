@@ -52,6 +52,15 @@ const SETTINGS_SEARCH_PACKAGE = 'com.google.android.settings.intelligence';
 // com.android.launcher3 — match on the shared substring instead of pinning one
 const LAUNCHER_PACKAGE_PATTERN = /launcher/i;
 
+// every `apps` subcommand that hands its package name to the device shell
+const APPS_COMMANDS_TAKING_A_PACKAGE = ['launch', 'terminate', 'path', 'clear'];
+
+// not installed anywhere, so the commands under test have nothing real to stop or clear
+const ABSENT_PACKAGE = 'com.mobilenext.notinstalled';
+
+// world-writable for the shell user, which is who a smuggled command would run as
+const SMUGGLED_MARKER_DIR = '/sdcard/Download';
+
 type Device = {
 	id: string;
 	name: string;
@@ -253,6 +262,26 @@ test.describe('Android Tests', () => {
 			const names = entries.map((e: any) => e.name);
 			expect(names).not.toContain('mobilecli-test');
 		});
+	});
+
+	test.describe('a package name carrying a shell command', () => {
+		for (const subcommand of APPS_COMMANDS_TAKING_A_PACKAGE) {
+			test(`apps ${subcommand} should not run the command on the device`, () => {
+				test.skip(!device, 'No Android device found');
+
+				const marker = `mobilecli-smuggled-by-apps-${subcommand}`;
+				const packageName = packageNameSmuggling(`touch ${SMUGGLED_MARKER_DIR}/${marker}`);
+				runIgnoringItsOutcome(['apps', subcommand, packageName, '--device', device!.id]);
+
+				const smuggledCommandRan = fileNamesIn(device!.id, SMUGGLED_MARKER_DIR).includes(marker);
+				if (smuggledCommandRan) {
+					// a leftover marker would fail the next run even once the bug is gone
+					fsRm(device!.id, `${SMUGGLED_MARKER_DIR}/${marker}`, false);
+				}
+
+				expect(smuggledCommandRan, `apps ${subcommand} ran a command smuggled into the package name`).toBe(false);
+			});
+		}
 	});
 
 	test.describe('agent commands', () => {
@@ -606,6 +635,26 @@ function uninstallPlaygroundIfPresent(deviceId: string): void {
 	} catch {
 		// already absent
 	}
+}
+
+// a package name that ends the intended command and starts another one, the way
+// an unquoted argument would be read by the device shell
+function packageNameSmuggling(command: string): string {
+	return `${ABSENT_PACKAGE}; ${command}`;
+}
+
+// some commands reject a bogus package and others accept it; either is fine for a
+// test that only cares about what reached the device shell
+function runIgnoringItsOutcome(args: string[]): void {
+	try {
+		mobilecliJson(args);
+	} catch {
+		// the outcome is asserted on the device, not on the envelope
+	}
+}
+
+function fileNamesIn(deviceId: string, remoteDir: string): string[] {
+	return fsList(deviceId, remoteDir).map((entry: any) => entry.name);
 }
 
 function launchApp(deviceId: string, packageName: string): void {

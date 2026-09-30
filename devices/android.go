@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/mobile-next/mobilecli/agents"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
@@ -225,6 +226,19 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	cmdArgs := append([]string{"-s", deviceID}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
+}
+
+// adbShellArgs returns the `adb` arguments that run argv as one command on the
+// device. adb joins everything after `shell` with spaces and hands the result to
+// the device's sh, so each argument is quoted here: a package name or any other
+// caller-supplied value stays a single word instead of being read as shell syntax.
+func adbShellArgs(argv ...string) []string {
+	return []string{"shell", shellescape.QuoteCommand(argv)}
+}
+
+// runAdbShell runs argv on the device, for commands that carry caller-supplied values.
+func (d *AndroidDevice) runAdbShell(argv ...string) ([]byte, error) {
+	return d.runAdbCommand(adbShellArgs(argv...)...)
 }
 
 // getDisplayCount counts the number of displays on the device
@@ -443,7 +457,7 @@ func parseResolveActivityOutput(output string) string {
 }
 
 func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error) {
-	output, err := d.runAdbCommand("shell", "cmd", "package", "resolve-activity", "--brief", bundleID)
+	output, err := d.runAdbShell("cmd", "package", "resolve-activity", "--brief", bundleID)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve launcher activity for %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
@@ -462,7 +476,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 			}
 		}
 		localeArg := strings.Join(opts.Locales, ",")
-		output, err := d.runAdbCommand("shell", "cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
+		output, err := d.runAdbShell("cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
 		if err != nil {
 			return fmt.Errorf("failed to set app locales for %s: %w\nOutput: %s", bundleID, err, string(output))
 		}
@@ -479,7 +493,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 		return err
 	}
 
-	output, err := d.runAdbCommand("shell", "am", "start", "--display", defaultDisplayID, "-n", component)
+	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-n", component)
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
@@ -488,7 +502,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 }
 
 func (d *AndroidDevice) TerminateApp(bundleID string) error {
-	output, err := d.runAdbCommand("shell", "am", "force-stop", bundleID)
+	output, err := d.runAdbShell("am", "force-stop", bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to terminate app %s: %v\nOutput: %s", bundleID, err, string(output))
 	}
@@ -1226,7 +1240,7 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
-	output, err := d.runAdbCommand("shell", "pm", "path", packageName)
+	output, err := d.runAdbShell("pm", "path", packageName)
 	if err != nil {
 		// best effort (pm path will return error code 1)
 		return "", nil
@@ -1240,7 +1254,7 @@ func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 }
 
 func (d *AndroidDevice) GetAppContainerPath(packageName string) (string, error) {
-	output, err := d.runAdbCommand("shell", "pm", "dump", packageName)
+	output, err := d.runAdbShell("pm", "dump", packageName)
 	if err != nil {
 		return "", fmt.Errorf("pm dump failed: %w", err)
 	}
@@ -1744,7 +1758,7 @@ func (d *AndroidDevice) InstallApp(path string) error {
 }
 
 func (d *AndroidDevice) ClearApp(bundleID string) error {
-	output, err := d.runAdbCommand("shell", "pm", "clear", bundleID)
+	output, err := d.runAdbShell("pm", "clear", bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}

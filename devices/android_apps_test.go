@@ -50,3 +50,14 @@ func TestAppNameForFallsBackWhenLabelIsEmpty(t *testing.T) {
 		t.Errorf("got %q, want the package name back", got)
 	}
 }
+
+func Test_adbShellArgs_keepsAPackageNameFromBecomingASecondCommand(t *testing.T) {
+	args := adbShellArgs("am", "force-stop", "com.example; touch /sdcard/x")
+
+	// adb joins everything after `shell` with spaces and lets the device's sh parse
+	// it, so the whole command must arrive as one pre-quoted argument
+	want := []string{"shell", `am force-stop 'com.example; touch /sdcard/x'`}
+	if len(args) != len(want) || args[0] != want[0] || args[1] != want[1] {
+		t.Errorf("got %q, want %q", args, want)
+	}
+}
