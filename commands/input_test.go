@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -27,5 +28,18 @@ func TestFindElementByRefSearchesNestedChildren(t *testing.T) {
 
 	if findElementByRef(elements, "@e99") != nil {
 		t.Fatal("expected @e99 to be missing")
+	}
+}
+
+func TestLongPressCommandRejectsANegativeDuration(t *testing.T) {
+	// no such device: a negative duration must be turned away before any device or
+	// agent is involved, because the ios agent crashes when it is handed one
+	response := LongPressCommand(LongPressRequest{DeviceID: "no-such-device", X: 10, Y: 10, Duration: -100})
+
+	if response.Status != "error" {
+		t.Fatalf("expected an error response, got status %q", response.Status)
+	}
+	if !strings.Contains(response.Error, "duration must not be negative") {
+		t.Errorf("expected the error to name the duration, got %q", response.Error)
 	}
 }

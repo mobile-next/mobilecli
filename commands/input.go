@@ -198,6 +198,12 @@ func LongPressCommand(req LongPressRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
 	}
 
+	// turned away here, not left to the device: the ios agent crashes when it is
+	// asked to lift a finger before it touched down
+	if req.Duration < 0 {
+		return NewErrorResponse(fmt.Errorf("duration must not be negative, got %dms", req.Duration))
+	}
+
 	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)

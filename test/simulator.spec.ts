@@ -266,6 +266,14 @@ test.describe('iOS Simulator Tests', () => {
 				expect(() => mobilecli(['io', 'clipboard', 'set', '--device', simulatorId])).toThrow();
 			});
 
+			test('should reject a long press with a negative duration', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				// the agent used to be handed the negative duration and crash on it, which
+				// surfaced here as a dropped connection instead of an explanation
+				expect(longPressError(simulatorId, 200, 400, -100)).toContain('duration must not be negative');
+			});
+
 			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
@@ -809,6 +817,23 @@ function tap(simulatorId: string, x: number, y: number): void {
 
 function pressButton(simulatorId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', simulatorId]);
+}
+
+// runs a long press that is expected to fail and returns the error message
+function longPressError(simulatorId: string, x: number, y: number, durationMs: number): string {
+	try {
+		mobilecli(['io', 'longpress', `${x},${y}`, `--duration=${durationMs}`, '--device', simulatorId]);
+	} catch (error: unknown) {
+		// a timeout or a missing binary fails without printing an envelope, and
+		// parsing that as json would bury the real cause
+		const stdout = (error as {stdout?: string}).stdout ?? '';
+		if (stdout.trim() === '') {
+			throw error;
+		}
+		return expectErrorEnvelope(JSON.parse(stdout));
+	}
+
+	throw new Error(`long press for ${durationMs}ms unexpectedly succeeded`);
 }
 
 function setClipboard(simulatorId: string, text: string): void {
