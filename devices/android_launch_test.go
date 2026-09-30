@@ -124,3 +124,14 @@ func Test_buildLaunchComponent(t *testing.T) {
 		})
 	}
 }
+
+func Test_adbShellArgs_keepsEveryQueryParameterOfAURL(t *testing.T) {
+	args := adbShellArgs("am", "start", "-d", "https://example.com/?first=1&second=2")
+
+	// unquoted, the device's sh reads `&` as "run in the background" and the url
+	// reaches `am` cut off at the first parameter
+	want := []string{"shell", `am start -d 'https://example.com/?first=1&second=2'`}
+	if len(args) != len(want) || args[0] != want[0] || args[1] != want[1] {
+		t.Errorf("got %q, want %q", args, want)
+	}
+}

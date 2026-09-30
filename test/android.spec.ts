@@ -310,6 +310,23 @@ test.describe('Android Tests', () => {
 		});
 	});
 
+	test.describe('url with more than one query parameter', () => {
+		// playground owns this deep link and prints its `name` parameter on screen, so
+		// what the device received is readable without a browser or the network
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test('should deliver every query parameter, not only the first', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a greeting left on screen by an earlier run must not satisfy this one
+			terminateApp(device!.id, PLAYGROUND_PACKAGE);
+
+			mobilecli(['url', playgroundLoginLinkFor('Alice'), '--device', device!.id]);
+
+			await expectTextOnScreen(device!.id, playgroundGreetingFor('Alice'));
+		});
+	});
+
 	test.describe.serial('webview', () => {
 		// the playground webview screen is the one embedded webview we control on
 		// both platforms. a real handset would be left on an arbitrary screen.
@@ -790,6 +807,16 @@ async function expectLauncherToBeInForeground(deviceId: string): Promise<void> {
 async function expectTextOnScreen(deviceId: string, text: string): Promise<void> {
 	await eventually(() => allTextsIn(dumpUI(deviceId)),
 		`"${text}" never appeared on screen`).toContain(text);
+}
+
+// `name` deliberately comes second: the device shell used to cut the url at the
+// first `&`, which left the app greeting its default guest
+function playgroundLoginLinkFor(name: string): string {
+	return `playground://login-successful?source=mobilecli&name=${name}`;
+}
+
+function playgroundGreetingFor(name: string): string {
+	return `You have successfully logged in to the native app, ${name}!`;
 }
 
 function getAppContainerPath(deviceId: string, packageName: string): string {

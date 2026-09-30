@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/mobile-next/mobilecli/agents"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
@@ -225,6 +226,19 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	cmdArgs := append([]string{"-s", deviceID}, args...)
 	cmd := exec.Command(getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
+}
+
+// adbShellArgs returns the `adb` arguments that run argv as one command on the
+// device. adb joins everything after `shell` with spaces and hands the result to
+// the device's sh, so each argument is quoted here: a package name or any other
+// caller-supplied value stays a single word instead of being read as shell syntax.
+func adbShellArgs(argv ...string) []string {
+	return []string{"shell", shellescape.QuoteCommand(argv)}
+}
+
+// runAdbShell runs argv on the device, for commands that carry caller-supplied values.
+func (d *AndroidDevice) runAdbShell(argv ...string) ([]byte, error) {
+	return d.runAdbCommand(adbShellArgs(argv...)...)
 }
 
 // getDisplayCount counts the number of displays on the device
@@ -991,7 +1005,7 @@ func (d *AndroidDevice) SendKeys(text string) error {
 }
 
 func (d *AndroidDevice) OpenURL(url string) error {
-	output, err := d.runAdbCommand("shell", "am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
+	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
 	if err != nil {
 		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
 	}
