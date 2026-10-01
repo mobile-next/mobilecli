@@ -245,7 +245,7 @@ mobilecli apps install <path> --device <device-id>
 # Uninstall an app
 mobilecli apps uninstall <bundle-id> --device <device-id>
 
-# Clear app data (cache, preferences, databases) without uninstalling
+# Clear app data (cache, preferences, databases) and reset permissions, without uninstalling
 # Supported on Android and iOS Simulator
 mobilecli apps clear <bundle-id> --device <device-id>
 ```
