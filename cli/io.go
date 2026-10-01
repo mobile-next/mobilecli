@@ -246,7 +246,7 @@ func init() {
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
 	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
-	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 200, "pixels each finger travels")
+	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 0, "pixels each finger travels (0 = auto, scaled to the screen)")
 	ioPinchCmd.Flags().IntVar(&pinchDuration, "duration", 300, "duration of the finger movement in milliseconds")
 	cobra.CheckErr(ioPinchCmd.MarkFlagRequired("direction"))
 }

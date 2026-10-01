@@ -57,8 +57,10 @@ func TestPinchAppliesDefaultDistanceAndDuration(t *testing.T) {
 	actions, err := pinchActions(640, 1428, PinchDirectionOut, 0, 0)
 	require.NoError(t, err)
 
+	// with no distance given, the travel auto-scales to the center so the inner
+	// finger stays on-screen
 	leftStart, leftEnd := fingerPath(t, actions, 0)
-	assert.Equal(t, defaultPinchDistance, leftStart-leftEnd)
+	assert.Equal(t, autoPinchDistance(640), leftStart-leftEnd)
 
 	for _, a := range actions {
 		if a.Type == pointerMove && a.Duration != 0 {

@@ -43,3 +43,28 @@ func TestLongPressCommandRejectsANegativeDuration(t *testing.T) {
 		t.Errorf("expected the error to name the duration, got %q", response.Error)
 	}
 }
+
+func TestAutoPinchDistanceKeepsInnerFingerOnScreen(t *testing.T) {
+	// For a centered pinch, far = pinchStartGap + distance must not pass the
+	// left edge (x - far >= 0). The old fixed default of 200 failed at x≈201.
+	for _, x := range []int{201, 180, 300, 540, 640} {
+		d := autoPinchDistance(x)
+		far := pinchStartGap + d
+		if x-far < 0 {
+			t.Errorf("autoPinchDistance(%d)=%d -> far=%d puts the inner finger at x=%d (off-screen left)", x, d, far, x-far)
+		}
+		if d < minPinchDistance {
+			t.Errorf("autoPinchDistance(%d)=%d is below the minimum %d", x, d, minPinchDistance)
+		}
+	}
+}
+
+func TestPinchActionsAutoDistanceSucceedsAtNarrowCenter(t *testing.T) {
+	// A default pinch centered on a 402pt-wide screen (x=201) used to error with
+	// "past the left edge"; with the auto distance it must build valid actions.
+	for _, dir := range []string{PinchDirectionOut, PinchDirectionIn} {
+		if _, err := pinchActions(201, 437, dir, 0, 0); err != nil {
+			t.Errorf("pinchActions at a narrow center (%s) returned error: %v", dir, err)
+		}
+	}
+}
