@@ -38,21 +38,35 @@ func (s *SimulatorDevice) GetAppContainerPath(bundleID string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func (s *SimulatorDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
-	if remotePath == "" {
-		if bundleID != "" {
-			var err error
-			remotePath, err = s.GetAppContainerPath(bundleID)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			root, err := s.simulatorDeviceRoot()
-			if err != nil {
-				return nil, err
-			}
-			remotePath = filepath.Join(root, "data")
+// resolveContainerRelativePath turns a (bundleID, remotePath) pair into an
+// absolute path inside the simulator's device directory. When a bundle id is
+// given, remotePath is taken as relative to that app's data container (so
+// `fs ls <bundle> /Documents` lists the app's Documents, as the help shows); an
+// empty remotePath yields the container root. With no bundle id, an empty
+// remotePath defaults to the device's data directory and any other path is used
+// as-is.
+func (s *SimulatorDevice) resolveContainerRelativePath(bundleID, remotePath string) (string, error) {
+	if bundleID != "" {
+		container, err := s.GetAppContainerPath(bundleID)
+		if err != nil {
+			return "", err
 		}
+		return filepath.Join(container, filepath.Clean("/"+remotePath)), nil
+	}
+	if remotePath == "" {
+		root, err := s.simulatorDeviceRoot()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(root, "data"), nil
+	}
+	return remotePath, nil
+}
+
+func (s *SimulatorDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
+	remotePath, err := s.resolveContainerRelativePath(bundleID, remotePath)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.validatePath(remotePath); err != nil {
@@ -119,6 +133,10 @@ func (s *SimulatorDevice) PushFile(localPath, remotePath string) error {
 }
 
 func (s *SimulatorDevice) Mkdir(bundleID, remotePath string, parents bool) error {
+	remotePath, err := s.resolveContainerRelativePath(bundleID, remotePath)
+	if err != nil {
+		return err
+	}
 	if err := s.validatePath(remotePath); err != nil {
 		return err
 	}
@@ -129,6 +147,10 @@ func (s *SimulatorDevice) Mkdir(bundleID, remotePath string, parents bool) error
 }
 
 func (s *SimulatorDevice) Rm(bundleID, remotePath string, recursive bool) error {
+	remotePath, err := s.resolveContainerRelativePath(bundleID, remotePath)
+	if err != nil {
+		return err
+	}
 	if err := s.validatePath(remotePath); err != nil {
 		return err
 	}

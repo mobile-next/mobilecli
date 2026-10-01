@@ -606,6 +606,26 @@ test.describe('iOS Simulator Tests', () => {
 					expect(names).not.toContain('mobilecli-test');
 				});
 
+				// the documented form: `fs ls <bundle-id> <path>` with a path relative
+				// to the container, not the absolute host container path
+				test('should address the container by bundle id and a relative path', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					// <bundle> /Documents matches the absolute container listing
+					const byBundle = mobilecli(['fs', 'ls', packageName, '/Documents', '--device', simulatorId]).data;
+					const byPath = fsList(simulatorId, `${containerPath}/Documents`);
+					expect(byBundle.map((e: any) => e.name).sort()).toEqual(byPath.map((e: any) => e.name).sort());
+
+					// create and remove a directory through the bundle+relative form
+					const relName = `mobilecli-rel-${Date.now()}`;
+					mobilecli(['fs', 'mkdir', packageName, `/Documents/${relName}`, '--device', simulatorId]);
+					expect(fsList(simulatorId, `${containerPath}/Documents`).map((e: any) => e.name)).toContain(relName);
+					mobilecli(['fs', 'rm', packageName, `/Documents/${relName}`, '-r', '--device', simulatorId]);
+
+					// a .. in the relative path must not climb out of the container
+					expect(() => mobilecli(['fs', 'ls', packageName, '/../../../../../../etc', '--device', simulatorId])).toThrow();
+				});
+
 				test('should prevent escaping the app container sandbox', async () => {
 					test.skip(!simulatorId, 'simulator not found');
 					const localDest = path.join(os.tmpdir(), `mobilecli-pull-app-${Date.now()}.txt`);
