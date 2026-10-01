@@ -35,6 +35,7 @@ test-e2e: build-cover
 	trap 'GOCOVERDIR=$(CURDIR)/test/coverage ./mobilecli daemon stop >/dev/null 2>&1 || true' EXIT; \
 	(cd test && npm run test:server); \
 	(cd test && npm run test:daemon); \
+	(cd test && npm run test:launcher); \
 	(cd test && npm run test:ios-simulator); \
 	(cd test && npm run test:android); \
 	(cd test && npm run test:emulator)
