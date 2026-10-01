@@ -228,6 +228,14 @@ func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+// runAdbCommandContext is runAdbCommand for callers on a deadline: adb is
+// killed when ctx ends instead of being waited for.
+func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+	return cmd.CombinedOutput()
+}
+
 // adbShellArgs returns the `adb` arguments that run argv as one command on the
 // device. adb joins everything after `shell` with spaces and hands the result to
 // the device's sh, so each argument is quoted here: a package name or any other

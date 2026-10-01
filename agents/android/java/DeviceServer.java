@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Persistent device server via app_process. Keeps one connected UiAutomation
@@ -23,14 +24,31 @@ import java.security.MessageDigest;
  *
  * Usage:
  *   adb shell CLASSPATH=/data/local/tmp/mobilecli.dex nohup app_process / \
- *     com.mobilenext.mobilecli.DeviceServer &
+ *     com.mobilenext.mobilecli.DeviceServer [--idle-timeout-ms=N] &
  *   adb forward tcp:0 localabstract:mobilecli-server
+ *
+ * While it runs it holds the device's only UiAutomation, which kills every
+ * other UiAutomator client (uiautomator dump, Appium). It exits on its own
+ * after --idle-timeout-ms without a request, so a host that went away without
+ * stopping it does not keep the device from other tools for good.
  *
  * Must be run as the shell or root user.
  */
 public class DeviceServer {
 
 	static final String SOCKET_NAME = "mobilecli-server";
+
+	private static final String IDLE_TIMEOUT_ARG = "--idle-timeout-ms=";
+	private static final long DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+	private static final long IDLE_CHECK_INTERVAL_MS = 1000;
+
+	// elapsedRealtime keeps counting while the device sleeps, so an abandoned
+	// device that dozed through the timeout exits as soon as it wakes
+	private static volatile long lastRequestAt = SystemClock.elapsedRealtime();
+
+	// a request still being served is not idle time: exiting in the middle of a
+	// gesture leaves its finger down in the input dispatcher for good
+	private static final AtomicInteger activeRequests = new AtomicInteger();
 
 	// sha256 of the dex this process was started from, so the host can tell a
 	// server left over from an older mobilecli build and restart it
@@ -42,6 +60,7 @@ public class DeviceServer {
 			UiAutomationFactory.configureForWindowRetrieval(automation);
 
 			new JsonRpcSocketServer(SOCKET_NAME, (method, params) -> dispatch(automation, method, params)).startDaemon();
+			startIdleWatchdog(idleTimeoutMs(args));
 
 			// the accessibility framework posts callbacks to the main looper
 			Looper.loop();
@@ -52,7 +71,53 @@ public class DeviceServer {
 		}
 	}
 
+	static long idleTimeoutMs(String[] args) {
+		for (String arg : args) {
+			if (arg.startsWith(IDLE_TIMEOUT_ARG)) {
+				try {
+					long value = Long.parseLong(arg.substring(IDLE_TIMEOUT_ARG.length()));
+					if (value > 0) return value;
+				} catch (NumberFormatException ignored) {
+					// fall through to the default
+				}
+			}
+		}
+		return DEFAULT_IDLE_TIMEOUT_MS;
+	}
+
+	// exits the process once no request has arrived for idleTimeoutMs. a daemon
+	// thread, so it never keeps the process alive on its own
+	private static void startIdleWatchdog(long idleTimeoutMs) {
+		Thread watchdog = new Thread(() -> {
+			while (true) {
+				try {
+					Thread.sleep(Math.min(IDLE_CHECK_INTERVAL_MS, idleTimeoutMs));
+				} catch (InterruptedException e) {
+					return;
+				}
+				if (activeRequests.get() == 0 && SystemClock.elapsedRealtime() - lastRequestAt >= idleTimeoutMs) {
+					System.err.println("idle for " + idleTimeoutMs + "ms, exiting");
+					System.exit(0);
+				}
+			}
+		}, "idle-watchdog");
+		watchdog.setDaemon(true);
+		watchdog.start();
+	}
+
 	private static Object dispatch(UiAutomation automation, String method, JSONObject params) throws Exception {
+		activeRequests.incrementAndGet();
+		try {
+			return dispatchMethod(automation, method, params);
+		} finally {
+			// the timestamp moves before the count drops, so the watchdog never
+			// sees an idle server with a stale timestamp
+			lastRequestAt = SystemClock.elapsedRealtime();
+			activeRequests.decrementAndGet();
+		}
+	}
+
+	private static Object dispatchMethod(UiAutomation automation, String method, JSONObject params) throws Exception {
 		JSONObject p = params == null ? new JSONObject() : params;
 		switch (method) {
 			case "device.version":
