@@ -18,16 +18,78 @@ func (s *SimulatorDevice) simulatorDeviceRoot() (string, error) {
 }
 
 // validatePath ensures the given path is within the simulator's device directory.
+//
+// A simulator's "device" filesystem is just directories on the Mac, so every fs
+// operation is a host os.* call. validatePath is the only boundary stopping those
+// calls from reaching the rest of the Mac, which makes it security-sensitive: a
+// lexical prefix check is not enough, because a symlink inside the sandbox can
+// point outside it and os.* follows it. We therefore resolve symlinks before
+// comparing, so neither a symlinked leaf (an existing fs push/pull target) nor a
+// symlinked parent (e.g. Documents/x -> /etc used by fs ls/pull/push) can escape.
 func (s *SimulatorDevice) validatePath(path string) error {
 	root, err := s.simulatorDeviceRoot()
 	if err != nil {
 		return err
 	}
-	clean := filepath.Clean(path)
-	if clean != root && !strings.HasPrefix(clean, root+string(filepath.Separator)) {
+	return validatePathWithinRoot(root, path)
+}
+
+// validatePathWithinRoot reports whether path resolves to a location inside root,
+// resolving symlinks in both so the check reflects what the OS will actually open
+// rather than the textual path. It is a package-level function with no device
+// state so the boundary can be unit-tested against real temp directories.
+func validatePathWithinRoot(root, path string) error {
+	// Canonicalize the root. It normally exists; if it cannot be resolved (an
+	// offline or unknown device) fall back to the cleaned path so legitimate
+	// paths under it are still accepted.
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolvedRoot = filepath.Clean(root)
+	}
+
+	resolved, err := resolveWithinExisting(path)
+	if err != nil {
+		return fmt.Errorf("path '%s' is outside the simulator device directory", path)
+	}
+
+	if resolved != resolvedRoot && !strings.HasPrefix(resolved, resolvedRoot+string(filepath.Separator)) {
 		return fmt.Errorf("path '%s' is outside the simulator device directory", path)
 	}
 	return nil
+}
+
+// resolveWithinExisting returns the canonical absolute form of p, resolving any
+// symlinks in the portion of p that already exists on disk. The trailing
+// components that do not exist yet (as when fs push or fs mkdir creates them) are
+// cleaned and re-appended to the resolved ancestor. A symlink can only be
+// traversed where it exists, so resolving the longest existing ancestor is enough
+// to catch an escape through either the leaf or any parent, while still allowing
+// not-yet-created targets.
+func resolveWithinExisting(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+
+	var missing []string
+	cur := abs
+	for {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			// Nothing along the path exists; no symlink can have been traversed,
+			// so the cleaned absolute path is already canonical.
+			return abs, nil
+		}
+		missing = append(missing, filepath.Base(cur))
+		cur = parent
+	}
 }
 
 func (s *SimulatorDevice) GetAppContainerPath(bundleID string) (string, error) {

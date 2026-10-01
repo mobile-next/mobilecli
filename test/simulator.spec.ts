@@ -620,6 +620,51 @@ test.describe('iOS Simulator Tests', () => {
 						expect(fs.existsSync(localDest)).toBe(false);
 					}
 				});
+
+				// A simulator's filesystem is the Mac's filesystem, so a symlink planted
+				// inside the container (as any app under test could do) points at a real
+				// host path. The sandbox check must resolve symlinks, not just compare the
+				// textual path, or fs becomes an arbitrary host read/write primitive.
+				test('should prevent escaping the sandbox through a symlink', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const linkDir = `${containerPath}/Documents/mobilecli-symlink-${Date.now()}`;
+					const etcLink = `${linkDir}/etc`;   // -> /etc (read escape)
+					const tmpLink = `${linkDir}/tmp`;   // -> /tmp (write escape)
+					fs.mkdirSync(linkDir, {recursive: true});
+					fs.symlinkSync('/etc', etcLink);
+					fs.symlinkSync(os.tmpdir(), tmpLink);
+
+					const localDest = path.join(os.tmpdir(), `mobilecli-symlink-pull-${Date.now()}.txt`);
+					const escapedWrite = path.join(os.tmpdir(), `mobilecli-symlink-write-${Date.now()}.txt`);
+					const localSrc = writeTempFile('should never land outside the sandbox');
+
+					try {
+						// read escape: pull a host file through a symlinked leaf and parent
+						for (const remote of [etcLink, `${etcLink}/hosts`]) {
+							expect(() => fsPull(simulatorId, remote, localDest)).toThrow();
+							expect(fs.existsSync(localDest)).toBe(false);
+						}
+
+						// read escape via ls through the symlink
+						expect(() => fsList(simulatorId, etcLink)).toThrow();
+
+						// write escape: push to a host path through a symlinked parent
+						expect(() => fsPush(simulatorId, localSrc, `${tmpLink}/${path.basename(escapedWrite)}`)).toThrow();
+						expect(fs.existsSync(escapedWrite)).toBe(false);
+
+						// a legitimate file that lives inside the container still works
+						const insideFile = `${linkDir}/inside.txt`;
+						fsPush(simulatorId, localSrc, insideFile);
+						const names = fsList(simulatorId, linkDir).map((e: any) => e.name);
+						expect(names).toContain('inside.txt');
+					} finally {
+						fs.rmSync(linkDir, {recursive: true, force: true});
+						fs.rmSync(localSrc, {force: true});
+						fs.rmSync(localDest, {force: true});
+						fs.rmSync(escapedWrite, {force: true});
+					}
+				});
 			});
 		});
 	});
