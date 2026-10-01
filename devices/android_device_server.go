@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -48,9 +49,10 @@ const deviceServerIdleTimeoutEnv = "MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT"
 // as the daemon is being used, the server stays warm.
 const defaultDeviceServerIdleTimeout = 30 * time.Minute
 
-// deviceServerStopTimeout bounds how long StopDeviceServersInUse waits for a
-// server to be gone after telling it to stop.
-const deviceServerStopTimeout = 2 * time.Second
+// deviceServerStopTimeout bounds a whole stopDeviceServer, adb commands
+// included: a device that stopped answering must not hold up the daemon's
+// shutdown, or the other devices waiting their turn behind it.
+const deviceServerStopTimeout = 5 * time.Second
 
 // deviceServersInUse remembers every device whose DeviceServer this process
 // has talked to. While a server runs it holds the device's only UiAutomation
@@ -103,14 +105,20 @@ func StopDeviceServersInUse() error {
 // right away. The forward and the remembered port go with it.
 func (d *AndroidDevice) stopDeviceServer() error {
 	utils.Verbose("stopping device server on %s", d.getAdbIdentifier())
-	if out, err := d.runAdbCommand("shell", deviceServerKillCommand); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), deviceServerStopTimeout)
+	defer cancel()
+
+	if out, err := d.runAdbCommandContext(ctx, "shell", deviceServerKillCommand); err != nil {
 		return fmt.Errorf("stop device server: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	deadline := time.Now().Add(deviceServerStopTimeout)
-	for d.isDeviceServerProcessRunning() {
-		if time.Now().After(deadline) {
+	for {
+		running, err := d.isDeviceServerProcessRunning(ctx)
+		if err != nil {
 			return fmt.Errorf("device server still running %s after being told to stop", deviceServerStopTimeout)
+		}
+		if !running {
+			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -125,10 +133,14 @@ func (d *AndroidDevice) stopDeviceServer() error {
 }
 
 // isDeviceServerProcessRunning asks the device shell; the bracket keeps pgrep
-// from matching its own command line.
-func (d *AndroidDevice) isDeviceServerProcessRunning() bool {
-	_, err := d.runAdbCommand("shell", "pgrep -f '[c]om.mobilenext.mobilecli.DeviceServer'")
-	return err == nil
+// from matching its own command line. pgrep exits 1 when nothing matches, so
+// only a context that ran out is reported as an error.
+func (d *AndroidDevice) isDeviceServerProcessRunning(ctx context.Context) (bool, error) {
+	_, err := d.runAdbCommandContext(ctx, "shell", "pgrep -f '[c]om.mobilenext.mobilecli.DeviceServer'")
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	return err == nil, nil
 }
 
 // ensureDeviceServerReady returns the port of a DeviceServer that is running,

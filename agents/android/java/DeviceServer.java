@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Persistent device server via app_process. Keeps one connected UiAutomation
@@ -41,7 +42,13 @@ public class DeviceServer {
 	private static final long DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 	private static final long IDLE_CHECK_INTERVAL_MS = 1000;
 
-	private static volatile long lastRequestAt = SystemClock.uptimeMillis();
+	// elapsedRealtime keeps counting while the device sleeps, so an abandoned
+	// device that dozed through the timeout exits as soon as it wakes
+	private static volatile long lastRequestAt = SystemClock.elapsedRealtime();
+
+	// a request still being served is not idle time: exiting in the middle of a
+	// gesture leaves its finger down in the input dispatcher for good
+	private static final AtomicInteger activeRequests = new AtomicInteger();
 
 	// sha256 of the dex this process was started from, so the host can tell a
 	// server left over from an older mobilecli build and restart it
@@ -88,7 +95,7 @@ public class DeviceServer {
 				} catch (InterruptedException e) {
 					return;
 				}
-				if (SystemClock.uptimeMillis() - lastRequestAt >= idleTimeoutMs) {
+				if (activeRequests.get() == 0 && SystemClock.elapsedRealtime() - lastRequestAt >= idleTimeoutMs) {
 					System.err.println("idle for " + idleTimeoutMs + "ms, exiting");
 					System.exit(0);
 				}
@@ -99,7 +106,18 @@ public class DeviceServer {
 	}
 
 	private static Object dispatch(UiAutomation automation, String method, JSONObject params) throws Exception {
-		lastRequestAt = SystemClock.uptimeMillis();
+		activeRequests.incrementAndGet();
+		try {
+			return dispatchMethod(automation, method, params);
+		} finally {
+			// the timestamp moves before the count drops, so the watchdog never
+			// sees an idle server with a stale timestamp
+			lastRequestAt = SystemClock.elapsedRealtime();
+			activeRequests.decrementAndGet();
+		}
+	}
+
+	private static Object dispatchMethod(UiAutomation automation, String method, JSONObject params) throws Exception {
 		JSONObject p = params == null ? new JSONObject() : params;
 		switch (method) {
 			case "device.version":

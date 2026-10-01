@@ -321,17 +321,46 @@ test.describe('Android Tests', () => {
 			expect(uiautomatorDumpSucceeds(serial), 'uiautomator dump was killed after daemon stop').toBe(true);
 		});
 
+		test('device server should finish a request that outlasts its idle timeout', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a slow, short scroll of the settings list: the one gesture that can be
+			// stretched over seconds without opening or pulling down anything
+			clearSettingsTask(device!.id);
+			launchApp(device!.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+			const {width, height} = screenSizeOf(device!.id);
+			const x = Math.floor(width / 2);
+			const from = Math.floor(height * 0.7);
+			const to = Math.floor(height * 0.6);
+
+			const home = makePrivateDaemonHome();
+			try {
+				const env = {MOBILECLI_HOME: home, MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`};
+				startDeviceServerWithShortIdle(device!.id, serial, env);
+
+				// three times the idle timeout, so the watchdog is sure to look while the
+				// request runs: the server must not count a request it is still serving
+				// as idle time and exit in the middle of it, which would also leave the
+				// finger down in the input dispatcher. mobilecli relaunches a vanished
+				// server and retries, so the proof is the server's pid, not the outcome
+				const serverBefore = deviceServerPid(serial);
+				const swipeMs = DEVICE_SERVER_SHORT_IDLE_SECONDS * 3 * 1000;
+				mobilecliWithEnv(['io', 'swipe', `${x},${from},${x},${to}`, '--duration', String(swipeMs), '--device', device!.id], env);
+				expect(deviceServerPid(serial), 'the device server was replaced during the request').toBe(serverBefore);
+			} finally {
+				mobilecliWithEnv(['daemon', 'stop'], {MOBILECLI_HOME: home});
+				fs.rmSync(home, {recursive: true, force: true});
+			}
+		});
+
 		test('device server should exit on its own once idle', async () => {
 			test.skip(!device, 'No Android device found');
 
 			const home = makePrivateDaemonHome();
 			try {
-				// a daemon of its own, so the short idle only applies to the server it starts
-				mobilecliWithEnv(['dump', 'ui', '--device', device!.id], {
-					MOBILECLI_HOME: home,
-					MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`,
-				});
-				expect(isDeviceServerRunning(serial)).toBe(true);
+				const env = {MOBILECLI_HOME: home, MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`};
+				startDeviceServerWithShortIdle(device!.id, serial, env);
 
 				await eventually(() => isDeviceServerRunning(serial), 'the device server never went idle').toBe(false);
 				expect(uiautomatorDumpSucceeds(serial)).toBe(true);
@@ -671,6 +700,20 @@ function mobilecliWithEnv(args: string[], extraEnv: NodeJS.ProcessEnv): any {
 	return parsed;
 }
 
+function screenSizeOf(deviceId: string): Dimensions {
+	const info = mobilecliJson(['device', 'info', '--device', deviceId]).data.device;
+	return {width: info.screenSize.width, height: info.screenSize.height};
+}
+
+// an earlier test may already have stopped it, which is not a failure here
+function stopSharedDaemonIfRunning(): void {
+	try {
+		mobilecliWithEnv(['daemon', 'stop'], {});
+	} catch {
+		// not running
+	}
+}
+
 function makePrivateDaemonHome(): string {
 	return fs.mkdtempSync(path.join(DAEMON_HOME_ROOT, 'mcli-idle-'));
 }
@@ -710,8 +753,28 @@ function adbShell(serial: string, command: string): {ok: boolean; output: string
 	}
 }
 
+// a daemon of its own, started with env, launches the server the test wants. the
+// shared daemon's server must be gone first, or the new daemon adopts it instead,
+// and that one was started with the default idle timeout
+function startDeviceServerWithShortIdle(deviceId: string, serial: string, env: NodeJS.ProcessEnv): void {
+	stopSharedDaemonIfRunning();
+	expect(isDeviceServerRunning(serial), 'daemon stop left the device server behind').toBe(false);
+
+	mobilecliWithEnv(['dump', 'ui', '--device', deviceId], env);
+	expect(deviceServerCommandLine(serial)).toContain(`--idle-timeout-ms=${DEVICE_SERVER_SHORT_IDLE_SECONDS * 1000}`);
+}
+
 function isDeviceServerRunning(serial: string): boolean {
-	return adbShell(serial, `pgrep -f '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).ok;
+	return deviceServerPid(serial) !== undefined;
+}
+
+function deviceServerPid(serial: string): number | undefined {
+	const result = adbShell(serial, `pgrep -f '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`);
+	return result.ok ? Number(result.output.trim()) : undefined;
+}
+
+function deviceServerCommandLine(serial: string): string {
+	return adbShell(serial, `pgrep -af '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).output;
 }
 
 // brackets around the first letter keep pgrep from matching its own command line
