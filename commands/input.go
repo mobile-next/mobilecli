@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
@@ -249,8 +250,17 @@ func TextCommand(req TextRequest) *CommandResponse {
 }
 
 // ButtonCommand presses a hardware button on the specified device
+// normalizeButtonName canonicalizes a hardware button name so the command is
+// case-insensitive, as the help documents ("Button names are case-insensitive").
+// The per-platform button maps are keyed by upper-case names (HOME, VOLUME_UP),
+// so upper-casing here lets "home" and "Home" resolve the same as "HOME".
+func normalizeButtonName(name string) string {
+	return strings.ToUpper(strings.TrimSpace(name))
+}
+
 func ButtonCommand(req ButtonRequest) *CommandResponse {
-	if req.Button == "" {
+	button := normalizeButtonName(req.Button)
+	if button == "" {
 		return NewErrorResponse(fmt.Errorf("button name is required"))
 	}
 
@@ -259,13 +269,13 @@ func ButtonCommand(req ButtonRequest) *CommandResponse {
 		return NewErrorResponse(err)
 	}
 
-	err = targetDevice.PressButton(req.Button)
+	err = targetDevice.PressButton(button)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to press button on device %s: %v", targetDevice.ID(), err))
 	}
 
 	return NewSuccessResponse(MessageResult{
-		Message: fmt.Sprintf("Pressed button '%s' on device %s", req.Button, targetDevice.ID()),
+		Message: fmt.Sprintf("Pressed button '%s' on device %s", button, targetDevice.ID()),
 	})
 }
 
