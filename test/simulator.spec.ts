@@ -288,6 +288,38 @@ test.describe('iOS Simulator Tests', () => {
 				expect(longPressError(simulatorId, 200, 400, -100)).toContain('duration must not be negative');
 			});
 
+			test('should list only this simulator\'s crash reports, not the host\'s', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				// ~/Library/Logs/DiagnosticReports is shared with the host, so the
+				// listing must include simulator reports (is_simulated + this UDID) and
+				// exclude host-process crashes. Plant one of each and check.
+				const reportsDir = path.join(os.homedir(), 'Library', 'Logs', 'DiagnosticReports');
+				fs.mkdirSync(reportsDir, {recursive: true});
+				// crash report filenames must be <process>-YYYY-MM-DD-HHMMSS.ips
+				const d = new Date();
+				const pad = (n: number) => String(n).padStart(2, '0');
+				const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+				const rnd = Math.floor(Math.random() * 1e6);
+				const simReport = path.join(reportsDir, `mobilecliSim${rnd}-${stamp}.ips`);
+				const hostReport = path.join(reportsDir, `mobilecliHost${rnd}-${stamp}.ips`);
+				fs.writeFileSync(simReport,
+					`{"is_simulated":1,"app_name":"mobilecli-sim-${stamp}","bug_type":"309"}\n` +
+					`{"coalitionName":"com.apple.CoreSimulator.SimDevice.${simulatorId}"}`);
+				fs.writeFileSync(hostReport,
+					`{"app_name":"mobilecli-host-${stamp}","bug_type":"309"}\n{"coalitionName":"mobilecli-host"}`);
+
+				try {
+					const ids = mobilecli(['device', 'crashes', 'list', '--device', simulatorId])
+						.data.map((c: any) => c.id);
+					expect(ids).toContain(path.basename(simReport));
+					expect(ids).not.toContain(path.basename(hostReport));
+				} finally {
+					fs.rmSync(simReport, {force: true});
+					fs.rmSync(hostReport, {force: true});
+				}
+			});
+
 			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
