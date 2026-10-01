@@ -14,14 +14,15 @@ var deviceLogsCmd = &cobra.Command{
 	Long: `Streams real-time logs from a device. Press Ctrl+C to stop.
 
 Filters use key=value (include) or key!=value (exclude) syntax.
-Multiple --filter flags are ANDed together.
+Multiple --filter flags are ANDed together. Matching is case-insensitive;
+'message' matches as a substring, every other key matches the whole value.
 
 Supported keys: pid, process, tag, level, subsystem, category, message
 
 Examples:
   mobilecli device logs --filter tag=ActivityManager
   mobilecli device logs --filter process!=SpringBoard
-  mobilecli device logs --filter level=Error --filter process=backboardd`,
+  mobilecli device logs --filter level=error --filter message=timeout`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := commands.ParseLogFilters(logsFilters); err != nil {
 			return err
