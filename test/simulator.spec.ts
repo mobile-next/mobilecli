@@ -48,10 +48,24 @@ type Dimensions = {
 	height: number;
 };
 
+type EvalExample = {
+	expression: string;
+	result: string | null;
+};
+
 const TEST_SERVER_URL = 'http://localhost:12001';
 
 // ships on every simulator image and is never a debug build
 const IOS_SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
+
+// webkit hands each of these back as a value a json writer refuses. the expected
+// result is what JSON.stringify makes of it, which is what the android agent answers.
+const EVAL_RESULTS_JSON_CANNOT_REPRESENT: EvalExample[] = [
+	{expression: '1/0', result: null},
+	{expression: 'NaN', result: null},
+	{expression: 'new Date(0)', result: '1970-01-01T00:00:00.000Z'},
+	{expression: 'new Date(NaN)', result: null},
+];
 
 test.describe('iOS Simulator Tests', () => {
 	[/*'16',*/ /*'17', '18',*/ '26'].forEach((iosVersion) => {
@@ -483,6 +497,17 @@ test.describe('iOS Simulator Tests', () => {
 					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, webViewId), WEBVIEW_DONE_URL);
 				});
 
+				// last in the group: the agent runs inside the app, so a crash here would
+				// take the webview down with it and fail every test placed after this one
+				test('should evaluate values json cannot represent without crashing the app', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					// each value travels inside an array: a bare null result is left out of
+					// the envelope altogether, and mobilecli() rejects an ok envelope without data
+					for (const {expression, result} of EVAL_RESULTS_JSON_CANNOT_REPRESENT) {
+						expect(webViewEval(simulatorId, webViewId, `[${expression}]`), `webview eval ${expression}`).toEqual([result]);
+					}
+				});
 			});
 
 			// its own describe, not a test inside the playground group above: `webview list`
