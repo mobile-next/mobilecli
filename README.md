@@ -507,6 +507,8 @@ mobilecli daemon start --idle-timeout 0
 
 The CLI and daemon talk JSON-RPC over a unix domain socket in `~/.mobilecli/` (override with `MOBILECLI_HOME`); the daemon's log is `~/.mobilecli/daemon.log`. A daemon left over from an older mobilecli version is restarted automatically. `auth login` and `auth logout` stop a running daemon so it picks up the new credentials.
 
+On Android, the daemon keeps a small server running on the device (`com.mobilenext.mobilecli.DeviceServer`) that holds the device's only UiAutomation connection, so other UiAutomator clients such as `uiautomator dump` or Appium cannot run alongside it. The daemon stops that server when it exits, so `mobilecli daemon stop` hands the device back to other tools; the server also exits by itself after 30 minutes without requests (`MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT=5m` shortens that).
+
 ## HTTP API 🔌
 
 ***mobilecli*** provides an http interface for all the functionality that is available through command line. The server is a thin front for the daemon above, so HTTP clients and the CLI share one set of devices and tunnels.

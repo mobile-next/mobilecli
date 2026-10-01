@@ -61,6 +61,17 @@ const ABSENT_PACKAGE = 'com.mobilenext.notinstalled';
 // world-writable for the shell user, which is who a smuggled command would run as
 const SMUGGLED_MARKER_DIR = '/sdcard/Download';
 
+// the on-device server mobilecli talks to (agents/android/java/DeviceServer.java)
+const DEVICE_SERVER_CLASS = 'com.mobilenext.mobilecli.DeviceServer';
+
+// well inside the poll window of eventually(), with room for the server to notice
+const DEVICE_SERVER_SHORT_IDLE_SECONDS = 2;
+
+const UIAUTOMATOR_DUMP_FILE = '/sdcard/mobilecli-test-uiautomator.xml';
+
+// macOS's os.tmpdir() is too long for a unix socket path
+const DAEMON_HOME_ROOT = process.platform === 'darwin' ? '/tmp' : os.tmpdir();
+
 type Device = {
 	id: string;
 	name: string;
@@ -282,6 +293,53 @@ test.describe('Android Tests', () => {
 				expect(smuggledCommandRan, `apps ${subcommand} ran a command smuggled into the package name`).toBe(false);
 			});
 		}
+	});
+
+	test.describe('device server lifetime', () => {
+		// the DeviceServer mobilecli keeps on the device holds its only UiAutomation,
+		// and every other UiAutomator client is killed while it does. it must not
+		// outlive the daemon that uses it, or stay around forever when nothing does.
+		let serial: string;
+
+		test.beforeAll(() => {
+			if (device) serial = adbSerialOf(device);
+		});
+
+		test.afterEach(() => {
+			if (device) removeUiautomatorDumpFile(serial);
+		});
+
+		test('uiautomator dump should succeed after daemon stop', () => {
+			test.skip(!device, 'No Android device found');
+
+			dumpUI(device!.id);
+			expect(isDeviceServerRunning(serial), 'dump ui left no device server behind').toBe(true);
+
+			mobilecliWithEnv(['daemon', 'stop'], {});
+
+			expect(isDeviceServerRunning(serial), 'the device server outlived the daemon').toBe(false);
+			expect(uiautomatorDumpSucceeds(serial), 'uiautomator dump was killed after daemon stop').toBe(true);
+		});
+
+		test('device server should exit on its own once idle', async () => {
+			test.skip(!device, 'No Android device found');
+
+			const home = makePrivateDaemonHome();
+			try {
+				// a daemon of its own, so the short idle only applies to the server it starts
+				mobilecliWithEnv(['dump', 'ui', '--device', device!.id], {
+					MOBILECLI_HOME: home,
+					MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`,
+				});
+				expect(isDeviceServerRunning(serial)).toBe(true);
+
+				await eventually(() => isDeviceServerRunning(serial), 'the device server never went idle').toBe(false);
+				expect(uiautomatorDumpSucceeds(serial)).toBe(true);
+			} finally {
+				mobilecliWithEnv(['daemon', 'stop'], {MOBILECLI_HOME: home});
+				fs.rmSync(home, {recursive: true, force: true});
+			}
+		});
 	});
 
 	test.describe('agent commands', () => {
@@ -596,6 +654,80 @@ function mobilecli(args: string[]): any {
 		if (error.stdout) console.log(`stdout: ${error.stdout}`);
 		throw error;
 	}
+}
+
+// for the few tests that need a daemon of their own, or a setting that only an
+// environment variable carries into the daemon. daemon commands answer with a
+// bare ok envelope, so unlike mobilecli() this does not insist on data
+function mobilecliWithEnv(args: string[], extraEnv: NodeJS.ProcessEnv): any {
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {...coverageEnv(), ...extraEnv},
+	});
+	const parsed = JSON.parse(output);
+	expect(parsed.status, `${args.join(' ')}: ${output}`).toBe('ok');
+	return parsed;
+}
+
+function makePrivateDaemonHome(): string {
+	return fs.mkdtempSync(path.join(DAEMON_HOME_ROOT, 'mcli-idle-'));
+}
+
+// mobilecli names an emulator by its avd, adb by its serial, so the tests that
+// reach the device through adb need the serial of the device under test
+function adbSerialOf(device: Device): string {
+	if (device.type === 'real') {
+		return device.id;
+	}
+	const serials = adb([], ['devices']).split('\n')
+		.filter(line => line.startsWith('emulator-'))
+		.map(line => line.split('\t')[0]);
+	const serial = serials.find(candidate => adb(['-s', candidate], ['emu', 'avd', 'name']).split('\n')[0].trim() === device.id);
+	if (!serial) {
+		throw new Error(`no running emulator is the avd ${device.id} (emulators: ${serials.join(', ')})`);
+	}
+	return serial;
+}
+
+function adbPath(): string {
+	const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
+	const bundled = sdk ? path.join(sdk, 'platform-tools', 'adb') : '';
+	return bundled && fs.existsSync(bundled) ? bundled : 'adb';
+}
+
+function adb(selector: string[], args: string[]): string {
+	return execFileSync(adbPath(), [...selector, ...args], {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']});
+}
+
+// a command the device shell runs, reporting its exit status instead of throwing
+function adbShell(serial: string, command: string): {ok: boolean; output: string} {
+	try {
+		return {ok: true, output: adb(['-s', serial], ['shell', command])};
+	} catch (error: any) {
+		return {ok: false, output: `${error.stdout ?? ''}${error.stderr ?? ''}`};
+	}
+}
+
+function isDeviceServerRunning(serial: string): boolean {
+	return adbShell(serial, `pgrep -f '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).ok;
+}
+
+// brackets around the first letter keep pgrep from matching its own command line
+function pgrepPatternFor(name: string): string {
+	return `[${name[0]}]${name.slice(1)}`;
+}
+
+// uiautomator is the client an outside tool would be: it is killed (137) while
+// another process holds the device's UiAutomation
+function uiautomatorDumpSucceeds(serial: string): boolean {
+	const result = adbShell(serial, `uiautomator dump ${UIAUTOMATOR_DUMP_FILE}`);
+	return result.ok && result.output.includes('dumped to');
+}
+
+function removeUiautomatorDumpFile(serial: string): void {
+	adbShell(serial, `rm -f ${UIAUTOMATOR_DUMP_FILE}`);
 }
 
 function mobilecliJson(args: string[]): any {

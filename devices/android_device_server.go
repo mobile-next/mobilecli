@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mobile-next/mobilecli/agents"
@@ -23,6 +25,13 @@ type dumpUiParams struct {
 // deviceServerClass is the persistent on-device server (agents/android/java/DeviceServer.java).
 const deviceServerClass = "com.mobilenext.mobilecli.DeviceServer"
 
+// deviceServerKillCommand stops the server and whatever older mobilecli
+// versions left holding the UiAutomation (the UiDumpServer and the devicekit
+// instrumentation). Killing the server also drops any mock-location test
+// providers it held, so the mock_location appop granted for them goes back too.
+const deviceServerKillCommand = "pkill -f '[D]eviceServer'; pkill -f '[U]iDumpServer'; pkill -f 'com.mobilenext.[d]evicekit'; " +
+	"appops set " + shellPackage + " android:mock_location default; true"
+
 // deviceServerTarget is the localabstract socket DeviceServer binds once
 // launched. Reusing one persistent process avoids paying process-fork and
 // UiAutomation-connect cost on every call.
@@ -30,6 +39,97 @@ const deviceServerTarget = "localabstract:mobilecli-server"
 
 // dumpUiWaitUntilIdleMs is how long a dump waits for the UI to settle.
 const dumpUiWaitUntilIdleMs = 2000
+
+// deviceServerIdleTimeoutEnv overrides how long a DeviceServer nobody talks to
+// stays up before it exits on its own (a Go duration, e.g. "5m").
+const deviceServerIdleTimeoutEnv = "MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT"
+
+// defaultDeviceServerIdleTimeout matches the daemon's own idle timeout: as long
+// as the daemon is being used, the server stays warm.
+const defaultDeviceServerIdleTimeout = 30 * time.Minute
+
+// deviceServerStopTimeout bounds how long StopDeviceServersInUse waits for a
+// server to be gone after telling it to stop.
+const deviceServerStopTimeout = 2 * time.Second
+
+// deviceServersInUse remembers every device whose DeviceServer this process
+// has talked to. While a server runs it holds the device's only UiAutomation
+// and every other UiAutomator client is killed, so the daemon stops these on
+// its way out instead of leaving them behind.
+var deviceServersInUse = struct {
+	sync.Mutex
+	devices map[string]*AndroidDevice
+}{devices: map[string]*AndroidDevice{}}
+
+func deviceServerIdleTimeout() time.Duration {
+	value := os.Getenv(deviceServerIdleTimeoutEnv)
+	if value == "" {
+		return defaultDeviceServerIdleTimeout
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		utils.Verbose("ignoring %s=%q: not a positive duration", deviceServerIdleTimeoutEnv, value)
+		return defaultDeviceServerIdleTimeout
+	}
+	return timeout
+}
+
+func rememberDeviceServerInUse(d *AndroidDevice) {
+	deviceServersInUse.Lock()
+	defer deviceServersInUse.Unlock()
+	deviceServersInUse.devices[d.getAdbIdentifier()] = d
+}
+
+// StopDeviceServersInUse stops the DeviceServer on every device this process
+// has used one on, giving the devices' UiAutomation back to other tools. The
+// daemon runs it when it shuts down.
+func StopDeviceServersInUse() error {
+	deviceServersInUse.Lock()
+	servers := deviceServersInUse.devices
+	deviceServersInUse.devices = map[string]*AndroidDevice{}
+	deviceServersInUse.Unlock()
+
+	var errs []error
+	for _, d := range servers {
+		if err := d.stopDeviceServer(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", d.getAdbIdentifier(), err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// stopDeviceServer kills the server on the device and waits for it to be gone,
+// so a caller that stops the daemon can hand the device to another UI tool
+// right away. The forward and the remembered port go with it.
+func (d *AndroidDevice) stopDeviceServer() error {
+	utils.Verbose("stopping device server on %s", d.getAdbIdentifier())
+	if out, err := d.runAdbCommand("shell", deviceServerKillCommand); err != nil {
+		return fmt.Errorf("stop device server: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	deadline := time.Now().Add(deviceServerStopTimeout)
+	for d.isDeviceServerProcessRunning() {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("device server still running %s after being told to stop", deviceServerStopTimeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	d.serverMu.Lock()
+	defer d.serverMu.Unlock()
+	if d.serverPort != 0 {
+		d.removeForward(d.serverPort)
+		d.serverPort = 0
+	}
+	return nil
+}
+
+// isDeviceServerProcessRunning asks the device shell; the bracket keeps pgrep
+// from matching its own command line.
+func (d *AndroidDevice) isDeviceServerProcessRunning() bool {
+	_, err := d.runAdbCommand("shell", "pgrep -f '[c]om.mobilenext.mobilecli.DeviceServer'")
+	return err == nil
+}
 
 // ensureDeviceServerReady returns the port of a DeviceServer that is running,
 // forwarded and built from this binary's dex, starting it if needed.
@@ -51,6 +151,7 @@ func (d *AndroidDevice) ensureDeviceServerReady() (int, error) {
 		return 0, err
 	}
 	d.serverPort = port
+	rememberDeviceServerInUse(d)
 	return port, nil
 }
 
@@ -83,14 +184,13 @@ func (d *AndroidDevice) startDeviceServer() (int, error) {
 	// legacy devicekit instrumentation from older mobilecli versions) would block
 	// the new one from connecting, so clear both first. This runs as its own adb
 	// shell so pkill -f can't match the launch command line below (or itself).
-	// Killing the server also drops any mock-location test providers it held,
-	// so the mock_location appop granted for them goes back too.
-	_, _ = d.runAdbCommand("shell", "pkill -f '[D]eviceServer'; pkill -f '[U]iDumpServer'; pkill -f 'com.mobilenext.[d]evicekit'; "+
-		"appops set "+shellPackage+" android:mock_location default; true")
+	_, _ = d.runAdbCommand("shell", deviceServerKillCommand)
 
 	// nohup+& detaches the server from this adb shell session so it survives
-	// after this command returns.
-	launchCmd := fmt.Sprintf("CLASSPATH=%s nohup app_process / %s >/dev/null 2>&1 &", androidDexPath, deviceServerClass)
+	// after this command returns. The server exits by itself once idle, so a
+	// daemon that dies without stopping it does not leave it behind for good.
+	launchCmd := fmt.Sprintf("CLASSPATH=%s nohup app_process / %s --idle-timeout-ms=%d >/dev/null 2>&1 &",
+		androidDexPath, deviceServerClass, deviceServerIdleTimeout().Milliseconds())
 	if out, err := d.runAdbCommand("shell", launchCmd); err != nil {
 		return 0, fmt.Errorf("launch device server: %s: %w", strings.TrimSpace(string(out)), err)
 	}

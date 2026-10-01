@@ -90,6 +90,8 @@ func runDaemon() error {
 
 	hook := devices.NewShutdownHook()
 	commands.SetShutdownHook(hook)
+	// a DeviceServer left on an android device keeps its UiAutomation from every other tool
+	hook.Register("android device servers", devices.StopDeviceServersInUse)
 	// not being logged in is normal; anything else (unreadable keyring) is
 	// worth a line in the daemon log since remote devices silently vanish
 	if token, err := loadTokenWithTimeout(); err == nil {
