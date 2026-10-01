@@ -4,7 +4,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import {
+	grantPrivacyPermission,
 	printAllLogsFromSimulator,
+	privacyServicesDecidedFor,
 	shutdownSimulator,
 } from './simctl';
 import {randomUUID} from "node:crypto";
@@ -664,6 +666,21 @@ test.describe('iOS Simulator Tests', () => {
 						fs.rmSync(localDest, {force: true});
 						fs.rmSync(escapedWrite, {force: true});
 					}
+				});
+			});
+
+			test.describe('apps clear (com.mobilenext.playground)', () => {
+				test('should reset privacy permissions so the app asks again', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					grantPrivacyPermission(simulatorId, 'camera', PLAYGROUND_PACKAGE);
+					grantPrivacyPermission(simulatorId, 'microphone', PLAYGROUND_PACKAGE);
+					expect(privacyServicesDecidedFor(simulatorId, PLAYGROUND_PACKAGE)).toEqual(
+						expect.arrayContaining(['kTCCServiceCamera', 'kTCCServiceMicrophone']));
+
+					mobilecli(['apps', 'clear', PLAYGROUND_PACKAGE, '--device', simulatorId]);
+
+					expect(privacyServicesDecidedFor(simulatorId, PLAYGROUND_PACKAGE)).toEqual([]);
 				});
 			});
 		});
