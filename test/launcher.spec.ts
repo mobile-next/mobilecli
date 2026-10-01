@@ -17,14 +17,16 @@ const BINARY_NAME = path.basename(PLATFORM_PACKAGE.replace('@mobilenext/', '')) 
 // exit code the stand-in binary uses once it has been told to terminate
 const BINARY_EXIT_CODE_AFTER_SIGTERM = 3;
 
-// stands in for the native binary. it reports its pid, then stays alive until it
-// is told to terminate, and says so before exiting with a code of its own
+// stands in for the native binary. it stays alive until it is told to terminate,
+// and says so before exiting with a code of its own. the pid is announced only
+// once the handler is in place, because the announcement is what the tests take
+// as permission to send signals
 const STAND_IN_BINARY = `#!/usr/bin/env node
-process.stdout.write('pid ' + process.pid + '\\n');
 process.on('SIGTERM', () => {
 	process.stdout.write('binary got SIGTERM\\n');
 	process.exit(${BINARY_EXIT_CODE_AFTER_SIGTERM});
 });
+process.stdout.write('pid ' + process.pid + '\\n');
 setInterval(() => {}, 1000);
 `;
 
@@ -44,6 +46,9 @@ type RunningLauncher = {
 };
 
 test.describe('npm launcher', () => {
+	// windows has no signals to forward: kill() there ends the launcher outright
+	test.skip(process.platform === 'win32', 'posix signal semantics');
+
 	let installed: InstalledLauncher;
 	let running: RunningLauncher | undefined;
 
@@ -113,7 +118,9 @@ async function startLauncher(installed: InstalledLauncher): Promise<RunningLaunc
 		output += chunk.toString();
 	});
 
-	const exited = new Promise<ExitStatus>((resolve) => launcher.on('exit', (code, signal) => resolve({code, signal})));
+	// 'close' rather than 'exit': it also waits for the shared stdout pipe to drain,
+	// so everything the binary wrote has been read before the tests look at it
+	const exited = new Promise<ExitStatus>((resolve) => launcher.once('close', (code, signal) => resolve({code, signal})));
 
 	const binaryPid = await pidAnnouncedBy(launcher);
 	return {launcher, binaryPid, output: () => output, exited};
