@@ -573,6 +573,37 @@ test.describe('Android Tests', () => {
 
 	});
 
+	// its own describe: it puts another screen on top of the webview screen, which would
+	// break the shared state the playground tests above set up once in their beforeAll
+	test.describe('webview behind another screen of the app', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			// a relaunch resumes whatever screen the app was left on, so start it afresh
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+			await openPlaygroundWebViewScreen(device.id);
+			await expectWebViewToAppear(device.id);
+			expect(visibleWebViews(device.id), 'the webview on screen is visible').not.toHaveLength(0);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			// drop the screens stacked here, so the next launch starts from the menu alone
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+		});
+
+		test('should report a webview covered by another screen as not visible', async () => {
+			test.skip(!device, 'No Android device found');
+
+			await coverWebViewScreenWithLoginSuccessfulScreen(device!.id);
+
+			// the screen underneath is hidden a moment after the new one has drawn over it
+			await eventually(() => visibleWebViews(device!.id).length, 'the covered webview stayed visible').toBe(0);
+			expect(listWebViews(device!.id).length, 'the covered webview is still alive').toBeGreaterThan(0);
+		});
+	});
+
 	// its own describe, not a test inside the playground group above: `webview list`
 	// reads the foreground app, so this launches a different app and would break the
 	// shared state the playground tests set up once in their beforeAll
@@ -983,6 +1014,17 @@ function webViewCommandError(deviceId: string, args: string[]): string {
 	}
 
 	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+}
+
+// the deep link opens its screen on top of whatever the app is showing, and the
+// webview screen stays alive underneath it
+async function coverWebViewScreenWithLoginSuccessfulScreen(deviceId: string): Promise<void> {
+	mobilecli(['url', playgroundLoginLinkFor('Alice'), '--device', deviceId]);
+	await expectTextOnScreen(deviceId, playgroundGreetingFor('Alice'));
+}
+
+function visibleWebViews(deviceId: string): WebViewInfo[] {
+	return (listWebViews(deviceId) as WebViewInfo[]).filter(webView => webView.isVisible);
 }
 
 function listWebViews(deviceId: string): unknown[] {
