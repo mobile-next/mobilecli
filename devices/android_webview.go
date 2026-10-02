@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -25,6 +26,8 @@ type WebViewInfo struct {
 }
 
 const agentSubDir = "mobilecli"
+
+var errAppNotDebuggable = errors.New("webview injection requires a debug build")
 
 // pushTempFile writes data to a host temp file then pushes it to the device
 // at remotePath using adb push.
@@ -230,7 +233,7 @@ func (d *AndroidDevice) ensureAgentReady(pkg string) (int, error) {
 
 	// no existing forward: full setup
 	if !d.isAppDebuggable(pkg) {
-		return 0, fmt.Errorf("webview injection requires a debug build: %s is not debuggable", pkg)
+		return 0, fmt.Errorf("%w: %s is not debuggable", errAppNotDebuggable, pkg)
 	}
 
 	agentDir, err := d.installWebViewKit(pkg)
@@ -272,9 +275,9 @@ func (d *AndroidDevice) attachAgentAndWait(pkg string, port int, agentDir string
 	return nil
 }
 
-// getWebViewPort resolves the foreground app and ensures the agent is ready,
-// returning the local TCP port to use for RPC calls.
-func (d *AndroidDevice) getWebViewPort() (int, error) {
+// webViews resolves the foreground app and returns what drives its webviews:
+// the agent injected into a debuggable app, or the DevTools server of a browser.
+func (d *AndroidDevice) webViews() (WebViewable, error) {
 	// Foreground detection can momentarily fail right after a launch or in-app
 	// navigation — mCurrentFocus is briefly null during the window transition —
 	// so retry for a short while instead of failing on the first miss.
@@ -287,19 +290,119 @@ func (d *AndroidDevice) getWebViewPort() (int, error) {
 			break
 		}
 		if time.Now().After(deadline) {
-			return 0, fmt.Errorf("could not determine foreground app: %w", err)
+			return nil, fmt.Errorf("could not determine foreground app: %w", err)
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	return d.ensureAgentReady(foreground.PackageName)
+
+	port, err := d.ensureAgentReady(foreground.PackageName)
+	if err == nil {
+		return agentWebViews{port: port}, nil
+	}
+	if errors.Is(err, errAppNotDebuggable) {
+		if browser, found := d.devtoolsBrowserOf(foreground.PackageName); found {
+			return browser, nil
+		}
+	}
+	return nil, err
+}
+
+// devtoolsBrowserOf returns the DevTools server of pkg, if it runs one.
+func (d *AndroidDevice) devtoolsBrowserOf(pkg string) (cdpBrowser, bool) {
+	out, err := d.runAdbCommand("shell", "cat", "/proc/net/unix")
+	if err != nil {
+		utils.Verbose("failed to list unix sockets: %s: %v", strings.TrimSpace(string(out)), err)
+		return cdpBrowser{}, false
+	}
+	return findDevtoolsBrowser(pkg, devtoolsSocketNames(string(out)), d.connectDevtoolsSocket)
+}
+
+// connectDevtoolsSocket forwards a local port to a DevTools socket, reusing an
+// existing forward. release undoes a forward that this call created.
+func (d *AndroidDevice) connectDevtoolsSocket(socket string) (cdpBrowser, func(), error) {
+	target := "localabstract:" + socket
+	if port := d.findForward(target); port != 0 {
+		return cdpBrowser{addr: fmt.Sprintf("127.0.0.1:%d", port)}, func() {}, nil
+	}
+	port, err := d.addForward(target)
+	if err != nil {
+		return cdpBrowser{}, nil, err
+	}
+	return cdpBrowser{addr: fmt.Sprintf("127.0.0.1:%d", port)}, func() { d.removeForward(port) }, nil
 }
 
 func (d *AndroidDevice) ListWebViews() ([]WebViewInfo, error) {
-	port, err := d.getWebViewPort()
+	webviews, err := d.webViews()
 	if err != nil {
 		return nil, err
 	}
-	result, err := agentRequest(port, "device.webview.list", nil)
+	return webviews.ListWebViews()
+}
+
+func (d *AndroidDevice) WebViewGoto(webviewID, url string) error {
+	webviews, err := d.webViews()
+	if err != nil {
+		return err
+	}
+	return webviews.WebViewGoto(webviewID, url)
+}
+
+func (d *AndroidDevice) WebViewReload(webviewID string) error {
+	webviews, err := d.webViews()
+	if err != nil {
+		return err
+	}
+	return webviews.WebViewReload(webviewID)
+}
+
+func (d *AndroidDevice) WebViewGoBack(webviewID string) error {
+	webviews, err := d.webViews()
+	if err != nil {
+		return err
+	}
+	return webviews.WebViewGoBack(webviewID)
+}
+
+func (d *AndroidDevice) WebViewGoForward(webviewID string) error {
+	webviews, err := d.webViews()
+	if err != nil {
+		return err
+	}
+	return webviews.WebViewGoForward(webviewID)
+}
+
+func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
+	webviews, err := d.webViews()
+	if err != nil {
+		return "", err
+	}
+	return webviews.WebViewContent(webviewID)
+}
+
+func (d *AndroidDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
+	webviews, err := d.webViews()
+	if err != nil {
+		return nil, err
+	}
+	return webviews.WebViewEvaluate(webviewID, expression, args)
+}
+
+func (d *AndroidDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
+	webviews, err := d.webViews()
+	if err != nil {
+		return err
+	}
+	return webviews.WebViewWaitForLoadState(webviewID, state, timeoutMs)
+}
+
+// agentWebViews drives the embedded webviews of a debuggable app through the
+// agent injected into it, which listens on a forwarded local port.
+type agentWebViews struct {
+	port int
+}
+
+func (a agentWebViews) ListWebViews() ([]WebViewInfo, error) {
+	result, err := agentRequest(a.port, "device.webview.list", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -310,44 +413,28 @@ func (d *AndroidDevice) ListWebViews() ([]WebViewInfo, error) {
 	return webviews, nil
 }
 
-func (d *AndroidDevice) WebViewGoto(webviewID, url string) error {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goto", map[string]any{"id": webviewID, "url": url})
+func (a agentWebViews) WebViewGoto(webviewID, url string) error {
+	_, err := agentRequest(a.port, "device.webview.goto", map[string]any{"id": webviewID, "url": url})
 	return err
 }
 
-func (d *AndroidDevice) WebViewReload(webviewID string) error {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.reload", map[string]any{"id": webviewID})
+func (a agentWebViews) WebViewReload(webviewID string) error {
+	_, err := agentRequest(a.port, "device.webview.reload", map[string]any{"id": webviewID})
 	return err
 }
 
-func (d *AndroidDevice) WebViewGoBack(webviewID string) error {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goBack", map[string]any{"id": webviewID})
+func (a agentWebViews) WebViewGoBack(webviewID string) error {
+	_, err := agentRequest(a.port, "device.webview.goBack", map[string]any{"id": webviewID})
 	return err
 }
 
-func (d *AndroidDevice) WebViewGoForward(webviewID string) error {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return err
-	}
-	_, err = agentRequest(port, "device.webview.goForward", map[string]any{"id": webviewID})
+func (a agentWebViews) WebViewGoForward(webviewID string) error {
+	_, err := agentRequest(a.port, "device.webview.goForward", map[string]any{"id": webviewID})
 	return err
 }
 
-func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
-	result, err := d.WebViewEvaluate(webviewID, "return document.documentElement.outerHTML", nil)
+func (a agentWebViews) WebViewContent(webviewID string) (string, error) {
+	result, err := a.WebViewEvaluate(webviewID, "return document.documentElement.outerHTML", nil)
 	if err != nil {
 		return "", err
 	}
@@ -358,18 +445,10 @@ func (d *AndroidDevice) WebViewContent(webviewID string) (string, error) {
 	return content, nil
 }
 
-func (d *AndroidDevice) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return nil, err
-	}
-	return webViewEvaluate(port, webviewID, expression, args)
+func (a agentWebViews) WebViewEvaluate(webviewID, expression string, args []any) (any, error) {
+	return webViewEvaluate(a.port, webviewID, expression, args)
 }
 
-func (d *AndroidDevice) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
-	port, err := d.getWebViewPort()
-	if err != nil {
-		return err
-	}
-	return webViewWaitForLoadState(port, webviewID, state, timeoutMs)
+func (a agentWebViews) WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error {
+	return webViewWaitForLoadState(a.port, webviewID, state, timeoutMs)
 }

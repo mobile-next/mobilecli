@@ -337,6 +337,8 @@ Example output for `agent status`:
 
 Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
 
+On Android the same commands also drive the tabs of Chrome when it is the foreground app, over the Chrome DevTools Protocol. Chrome freezes the tabs it is not showing, so only the visible tab (`isVisible: true`) answers `eval` and the commands built on it.
+
 ```bash
 # List embedded webviews in the foreground app
 mobilecli webview list --device <device-id>
