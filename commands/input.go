@@ -71,8 +71,12 @@ const (
 	PinchDirectionIn  = "in"
 	PinchDirectionOut = "out"
 
-	defaultPinchDistance   = 200
 	defaultPinchDurationMs = 300
+
+	// minPinchDistance is the smallest travel an auto-scaled pinch uses, so a
+	// pinch centered close to the left edge still moves a little rather than
+	// collapsing to nothing.
+	minPinchDistance = 20
 
 	// pinchStartGap is how far from the center each finger touches down (or
 	// lifts, for "in"), so the two fingers never share a point.
@@ -94,9 +98,23 @@ const (
 // the far edges to the device: the screen size mobilecli can read is the
 // natural-orientation one, so checking against it would refuse valid pinches
 // on a rotated screen.
+// autoPinchDistance picks a travel that keeps the inner finger on-screen when no
+// distance is given. The binding constraint is the left edge (far = pinchStartGap
+// + distance must not exceed x), so a fixed default like 200 overflowed a pinch
+// centered at x≈200 on a narrow phone. Deriving it from x scales with the screen
+// without needing the screen size (which mobilecli only knows in the natural
+// orientation), and leaves the far edges to the device like the rest of pinch.
+func autoPinchDistance(x int) int {
+	d := (x - pinchStartGap) * 4 / 5
+	if d < minPinchDistance {
+		d = minPinchDistance
+	}
+	return d
+}
+
 func pinchActions(x, y int, direction string, distance, duration int) ([]devicekit.TapAction, error) {
 	if distance <= 0 {
-		distance = defaultPinchDistance
+		distance = autoPinchDistance(x)
 	}
 	if duration <= 0 {
 		duration = defaultPinchDurationMs
