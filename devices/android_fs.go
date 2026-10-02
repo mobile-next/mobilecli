@@ -14,6 +14,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// androidContainerPath turns a bundle id and a path relative to that app's data
+// container into an absolute /data/user/0/<pkg>/... path. An empty relative path
+// yields the container root. Living under /data/user/ is what makes
+// buildShellCommand wrap the operation in `run-as <pkg>`, which is how a
+// debuggable app's own files are reached; a bare "/files" would otherwise be
+// read as an absolute device path and fail.
+func androidContainerPath(bundleID, remotePath string) string {
+	base := "/data/user/0/" + bundleID
+	rel := strings.TrimPrefix(remotePath, "/")
+	if rel == "" {
+		return base
+	}
+	return base + "/" + rel
+}
+
 // androidPackageName extracts the package name from a /data/user/<uid>/<package>/... path.
 func androidPackageName(remotePath string) (string, error) {
 	parts := strings.SplitN(remotePath, "/", 6)
@@ -92,7 +107,9 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
-	if remotePath == "" {
+	if bundleID != "" {
+		remotePath = androidContainerPath(bundleID, remotePath)
+	} else if remotePath == "" {
 		remotePath = "/"
 	}
 
@@ -192,6 +209,9 @@ func androidParseLsLine(line, dirPath string) *FileEntry {
 }
 
 func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
+	if bundleID != "" {
+		remotePath = androidContainerPath(bundleID, remotePath)
+	}
 	parts := []string{"mkdir"}
 	if parents {
 		parts = append(parts, "-p")
@@ -206,6 +226,9 @@ func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 }
 
 func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
+	if bundleID != "" {
+		remotePath = androidContainerPath(bundleID, remotePath)
+	}
 	parts := []string{"rm"}
 	if recursive {
 		parts = append(parts, "-rf")
