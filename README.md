@@ -337,6 +337,8 @@ Example output for `agent status`:
 
 Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
 
+On a real iOS device the same commands also drive the tabs of Safari when it is the foreground app, through the device's Web Inspector service. This needs **Settings > Apps > Safari > Advanced > Web Inspector** turned on. Only the tab Safari is showing (`isVisible: true`) is sure to answer `eval` and the commands built on it.
+
 ```bash
 # List embedded webviews in the foreground app
 mobilecli webview list --device <device-id>

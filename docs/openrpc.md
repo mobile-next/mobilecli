@@ -1664,7 +1664,7 @@ Operation result
 
 **List webviews**
 
-Returns all embedded webviews currently visible in the foreground app on the device. Browser apps (Safari, Chrome) are not included.
+Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Safari on a real iOS device, returns its tabs instead. Chrome is not included.
 
 #### Parameters
 
