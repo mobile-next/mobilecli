@@ -1514,7 +1514,7 @@
     {
       "name": "device.webview.list",
       "summary": "List webviews",
-      "description": "Returns all embedded webviews currently visible in the foreground app on the device. Browser apps (Safari, Chrome) are not included.",
+      "description": "Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Chrome on Android, returns its tabs instead. Safari is not included.",
       "params": [
         {
           "name": "deviceId",
