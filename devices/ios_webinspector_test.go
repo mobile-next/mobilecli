@@ -45,9 +45,14 @@ type fakeWebInspector struct {
 	pages map[string][]fakeInspectorPage
 	// answer returns the result of a protocol command, or a protocol error message
 	answer func(call fakeInspectorCall) (result any, protocolError string)
+	// frozenPages accept commands without ever answering them, as the tabs
+	// safari is not showing do
+	frozenPages map[uint64]bool
 
-	mu    sync.Mutex
-	calls []fakeInspectorCall
+	mu          sync.Mutex
+	calls       []fakeInspectorCall
+	connections []net.Conn
+	client      *webInspectorClient
 }
 
 var (
@@ -58,8 +63,10 @@ var (
 
 func startFakeWebInspector(t *testing.T, apps ...fakeInspectorApp) *fakeWebInspector {
 	t.Helper()
-	inspector := &fakeWebInspector{t: t, apps: apps, pages: map[string][]fakeInspectorPage{}}
+	inspector := &fakeWebInspector{t: t, apps: apps, pages: map[string][]fakeInspectorPage{}, frozenPages: map[uint64]bool{}}
 	inspector.answer = func(fakeInspectorCall) (any, string) { return map[string]any{}, "" }
+	inspector.client = &webInspectorClient{dial: inspector.dial}
+	t.Cleanup(inspector.client.close)
 	return inspector
 }
 
@@ -72,11 +79,28 @@ func safariShowing(t *testing.T, pages ...fakeInspectorPage) *fakeWebInspector {
 }
 
 func (f *fakeWebInspector) safari() safariWebViews {
-	return safariWebViews{dial: f.dial}
+	return safariWebViews{inspector: f.client}
+}
+
+func (f *fakeWebInspector) connectionCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.connections)
+}
+
+// loseConnection drops the connection from the device side, as happens when
+// the device is unplugged or its web inspector restarts
+func (f *fakeWebInspector) loseConnection() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_ = f.connections[len(f.connections)-1].Close()
 }
 
 func (f *fakeWebInspector) dial() (io.ReadWriteCloser, error) {
 	client, device := net.Pipe()
+	f.mu.Lock()
+	f.connections = append(f.connections, device)
+	f.mu.Unlock()
 	go f.serve(device)
 	return client, nil
 }
@@ -173,23 +197,34 @@ func (f *fakeWebInspector) answerCommand(send func(string, map[string]any), send
 	}
 	_ = json.Unmarshal([]byte(outer.Params.Message), &command)
 
+	f.sendToInspector(send, sender, map[string]any{"id": outer.ID, "result": map[string]any{}})
+	if f.frozenPages[pageID] {
+		return
+	}
+	answerToTarget := func(reply map[string]any) {
+		inner, _ := json.Marshal(reply)
+		f.sendToInspector(send, sender, map[string]any{
+			"method": "Target.dispatchMessageFromTarget",
+			"params": map[string]any{"targetId": outer.Params.TargetID, "message": string(inner)},
+		})
+	}
+	// the sign of life a tab is asked for before anything else is not a call a test cares about
+	if command.Method == "Runtime.evaluate" && command.Params["expression"] == safariSignOfLife {
+		answerToTarget(map[string]any{"id": command.ID, "result": map[string]any{"result": map[string]any{"type": "number", "value": 1}, "wasThrown": false}})
+		return
+	}
+
 	call := fakeInspectorCall{PageID: pageID, Method: command.Method, Params: command.Params}
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
 	f.mu.Unlock()
-
-	f.sendToInspector(send, sender, map[string]any{"id": outer.ID, "result": map[string]any{}})
 
 	result, protocolError := f.answer(call)
 	reply := map[string]any{"id": command.ID, "result": result}
 	if protocolError != "" {
 		reply = map[string]any{"id": command.ID, "error": map[string]any{"code": -32601, "message": protocolError}}
 	}
-	inner, _ := json.Marshal(reply)
-	f.sendToInspector(send, sender, map[string]any{
-		"method": "Target.dispatchMessageFromTarget",
-		"params": map[string]any{"targetId": outer.Params.TargetID, "message": string(inner)},
-	})
+	answerToTarget(reply)
 }
 
 func (f *fakeWebInspector) callsOf(method string) []fakeInspectorCall {
@@ -451,21 +486,81 @@ func TestSafariProtocolErrorFailsTheCommand(t *testing.T) {
 	}
 }
 
-func TestSafariCommandOnATabThatNeverAnswersFailsSayingSo(t *testing.T) {
+// Safari does not keep the tabs it is not showing running, and such a tab
+// accepts a command without ever answering it.
+func TestSafariCommandOnATabThatDoesNotAnswerFailsQuicklySayingSo(t *testing.T) {
 	inspector := safariShowing(t, examplePage)
-	tabIsFrozen := make(chan struct{})
-	t.Cleanup(func() { close(tabIsFrozen) })
-	inspector.answer = func(fakeInspectorCall) (any, string) {
-		<-tabIsFrozen
-		return map[string]any{}, ""
-	}
+	inspector.frozenPages[examplePage.ID] = true
 	safari := inspector.safari()
-	safari.commandTimeout = 200 * time.Millisecond
+	safari.livenessTimeout = 200 * time.Millisecond
 
 	_, err := safari.WebViewEvaluate("2", "return 1", nil)
 
-	if err == nil || err.Error() != "webview 2 did not answer Runtime.evaluate within 200ms" {
+	expected := "webview 2 did not answer within 200ms; it is probably a background tab, which safari does not keep running"
+	if err == nil || err.Error() != expected {
 		t.Fatalf("expected an explanation of the timeout, got %v", err)
+	}
+}
+
+func TestTabThatDoesNotAnswerIsListedAsNotVisible(t *testing.T) {
+	backgroundTab := fakeInspectorPage{ID: 1, Type: "WIRTypeWebPage", URL: "https://example.org/"}
+	inspector := safariShowing(t, backgroundTab, examplePage)
+	inspector.frozenPages[backgroundTab.ID] = true
+	inspector.evaluatesTo(true)
+
+	webviews, err := inspector.safari().ListWebViews()
+
+	if err != nil {
+		t.Fatalf("ListWebViews: %v", err)
+	}
+	if len(webviews) != 2 || webviews[0].IsVisible || !webviews[1].IsVisible {
+		t.Fatalf("expected only the answering tab to be visible, got %+v", webviews)
+	}
+}
+
+// The web inspector stalls a new connection for seconds after one was closed,
+// so the connection is kept and shared.
+func TestCommandsShareOneConnectionToTheWebInspector(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.evaluatesTo("Example Domain")
+	safari := inspector.safari()
+
+	for range 3 {
+		if _, err := safari.WebViewEvaluate("2", "document.title", nil); err != nil {
+			t.Fatalf("WebViewEvaluate: %v", err)
+		}
+	}
+
+	if connections := inspector.connectionCount(); connections != 1 {
+		t.Fatalf("expected a single connection, got %d", connections)
+	}
+}
+
+func TestCommandConnectsAgainAfterTheConnectionWasLost(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.evaluatesTo("Example Domain")
+	safari := inspector.safari()
+	if _, err := safari.WebViewEvaluate("2", "document.title", nil); err != nil {
+		t.Fatalf("WebViewEvaluate: %v", err)
+	}
+
+	inspector.loseConnection()
+	waitUntilTheClientNoticed(t, inspector.client)
+	title, err := safari.WebViewEvaluate("2", "document.title", nil)
+
+	if err != nil || title != "Example Domain" {
+		t.Fatalf("expected the command to work on a new connection, got %v, %v", title, err)
+	}
+}
+
+func waitUntilTheClientNoticed(t *testing.T, client *webInspectorClient) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !client.session.isClosed() {
+		if time.Now().After(deadline) {
+			t.Fatal("the client never noticed the lost connection")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

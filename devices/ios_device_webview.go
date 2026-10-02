@@ -32,7 +32,8 @@ func (d *IOSDevice) safariInForeground() (safariWebViews, bool) {
 	if activeApp.BundleID != safariBundleID {
 		return safariWebViews{}, false
 	}
-	return safariWebViews{dial: func() (io.ReadWriteCloser, error) { return dialWebInspector(d.Udid) }}, true
+	inspector := webInspectorOf(d.Udid, func() (io.ReadWriteCloser, error) { return dialDeviceWebInspector(d.Udid) })
+	return safariWebViews{inspector: inspector}, true
 }
 
 func (d *IOSDevice) ListWebViews() ([]WebViewInfo, error) {
