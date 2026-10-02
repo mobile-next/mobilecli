@@ -982,11 +982,10 @@ func (d *AndroidDevice) SendKeys(text string) error {
 		return nil
 	}
 
-	switch text {
-	case "\b":
+	// a line break is typed like any other character, not pressed as the enter
+	// button: typed keys keep the device in touch mode, a pressed button does not
+	if text == "\b" {
 		return d.PressButton("BACKSPACE")
-	case "\n":
-		return d.PressButton("ENTER")
 	}
 
 	if isAscii(text) {
