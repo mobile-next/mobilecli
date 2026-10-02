@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -173,6 +174,29 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
+// safariInForeground returns what drives the tabs of Safari, when Safari is the
+// app in front. Safari cannot take the agent, so its tabs are driven through the
+// web inspector of the simulator instead (see ios_webinspector.go). Not knowing
+// the foreground app leaves it to the injected agent, which reports why.
+func (s *SimulatorDevice) safariInForeground() (safariWebViews, bool) {
+	if s.deviceKitClient == nil {
+		if err := s.StartAgent(StartAgentConfig{}); err != nil {
+			utils.Verbose("could not start DeviceKit to look up the foreground app: %v", err)
+			return safariWebViews{}, false
+		}
+	}
+	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
+	if err != nil {
+		utils.Verbose("could not look up the foreground app: %v", err)
+		return safariWebViews{}, false
+	}
+	if activeApp.BundleID != safariBundleID {
+		return safariWebViews{}, false
+	}
+	inspector := webInspectorOf(s.UDID, func() (io.ReadWriteCloser, error) { return dialSimulatorWebInspector(s.UDID) })
+	return safariWebViews{inspector: inspector}, true
+}
+
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
@@ -232,16 +256,25 @@ func (s *SimulatorDevice) webViewAction(wvID, method string) error {
 
 // WebViewReload reloads the page in the given webview.
 func (s *SimulatorDevice) WebViewReload(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewReload(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.reload")
 }
 
 // WebViewGoBack navigates the given webview back in history.
 func (s *SimulatorDevice) WebViewGoBack(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoBack(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.goBack")
 }
 
 // WebViewGoForward navigates the given webview forward in history.
 func (s *SimulatorDevice) WebViewGoForward(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoForward(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.goForward")
 }
 
@@ -261,6 +294,9 @@ func (s *SimulatorDevice) WebViewContent(wvID string) (string, error) {
 // WebViewWaitForLoadState blocks until the webview reaches the given load state.
 // timeoutMs of 0 uses the agent's default.
 func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs int) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewWaitForLoadState(wvID, state, timeoutMs)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return err
@@ -270,6 +306,9 @@ func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs 
 
 // WebViewGoto navigates the webview identified by wvID to url.
 func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoto(wvID, url)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return err
@@ -280,6 +319,9 @@ func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
 
 // WebViewEvaluate runs expression in the webview and returns the JS result value.
 func (s *SimulatorDevice) WebViewEvaluate(wvID, expression string, args []any) (any, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewEvaluate(wvID, expression, args)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return nil, err
@@ -289,6 +331,9 @@ func (s *SimulatorDevice) WebViewEvaluate(wvID, expression string, args []any) (
 
 // ListWebViews returns all embedded WKWebViews found in the foreground simulator app.
 func (s *SimulatorDevice) ListWebViews() ([]WebViewInfo, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.ListWebViews()
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return nil, err
