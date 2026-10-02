@@ -216,6 +216,19 @@ test.describe('Android Tests', () => {
 		await expectLauncherToBeInForeground(device!.id);
 	});
 
+	test('should accept the HOME button regardless of case', async () => {
+		test.skip(!device, 'No Android device found');
+
+		// the help documents button names as case-insensitive
+		for (const name of ['home', 'Home', 'hOmE']) {
+			launchApp(device!.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+
+			pressButton(device!.id, name);
+			await expectLauncherToBeInForeground(device!.id);
+		}
+	});
+
 	test('should tap on Network & internet in Settings and navigate to that screen', async ({deviceType}) => {
 		test.skip(!device, 'No Android device found');
 		// matches on english settings labels, so it only holds for a known locale
