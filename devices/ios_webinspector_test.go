@@ -701,3 +701,20 @@ func TestSafariWaitOnAnUnknownWebViewFailsWithoutWaitingForTheTimeout(t *testing
 		t.Fatalf("expected a not found error, got %v", err)
 	}
 }
+
+// A tab that never answers must not make a wait outlive its timeout.
+func TestSafariWaitOnATabThatDoesNotAnswerEndsAtTheTimeout(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.frozenPages[examplePage.ID] = true
+
+	start := time.Now()
+	err := inspector.safari().WebViewWaitForLoadState("2", "load", 300)
+
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("the wait took %s for a 300ms timeout", elapsed)
+	}
+	expected := "waitForLoadState timed out waiting for 'load': webview 2 did not answer within 300ms; it is probably a background tab, which safari does not keep running"
+	if err == nil || err.Error() != expected {
+		t.Fatalf("expected the timeout to say why, got %v", err)
+	}
+}

@@ -646,7 +646,7 @@ func (session *webInspectorSession) attach(app inspectorApp, webviewID string, p
 	session.tabs[senderID] = tab
 	session.mu.Unlock()
 
-	notRunning := fmt.Errorf("webview %s did not answer within %s; it is probably a background tab, which safari does not keep running", webviewID, livenessTimeout)
+	notRunning := fmt.Errorf("webview %s did not answer within %s; it is probably a background tab, which safari does not keep running", webviewID, livenessTimeout.Round(time.Millisecond))
 
 	if err := session.send("_rpc_forwardSocketSetup:", tab.addressed(map[string]any{"WIRAutomaticallyPause": false})); err != nil {
 		tab.detach()
@@ -813,9 +813,14 @@ func (s safariWebViews) WebViewWaitForLoadState(webviewID, state string, timeout
 
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 	for {
+		// a poll on a tab that does not answer must not outlive the wait
+		pollTimeout := min(time.Until(deadline), s.liveness())
+		if pollTimeout <= 0 {
+			return fmt.Errorf("waitForLoadState timed out waiting for '%s'", state)
+		}
 		// the tab does not answer while it swaps pages mid-navigation, so only
 		// an unknown tab ends the wait early
-		loaded, err := s.hasLoaded(webviewID, hasLoaded)
+		loaded, err := s.hasLoaded(webviewID, hasLoaded, pollTimeout)
 		if errors.Is(err, errSafariTabNotFound) {
 			return err
 		}
@@ -832,13 +837,13 @@ func (s safariWebViews) WebViewWaitForLoadState(webviewID, state string, timeout
 	}
 }
 
-func (s safariWebViews) hasLoaded(webviewID, hasLoaded string) (bool, error) {
-	tab, err := s.attach(webviewID, s.liveness())
+func (s safariWebViews) hasLoaded(webviewID, hasLoaded string, timeout time.Duration) (bool, error) {
+	tab, err := s.attach(webviewID, timeout)
 	if err != nil {
 		return false, err
 	}
 	defer tab.detach()
 
-	loaded, err := tab.evaluate(hasLoaded, nil, s.liveness())
+	loaded, err := tab.evaluate(hasLoaded, nil, timeout)
 	return loaded == true, err
 }
