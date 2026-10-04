@@ -149,66 +149,8 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck -show verbose ./... || true
 
-  build_on_macos:
-
-    runs-on: macos-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    needs: [build_linux_agents, build_ios_agents]
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-
-    - name: Download Android agent binaries
-      uses: actions/download-artifact@v8
-      with:
-        name: android-agents
-        path: agents/android/
-
-    - name: Download iOS agent binaries
-      uses: actions/download-artifact@v8
-      with:
-        name: ios-agents
-        path: agents/ios/
-
-    - name: Install dependencies
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
-
-    - name: Set version
-      if: github.ref_type == 'tag'
-      run: |
-        if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
-          exit 1
-        fi
-        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
-
-    - name: Build
-      run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-darwin-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-darwin-amd64
-        ./mobilecli-darwin-arm64 --version
-
-    - name: Upload macos build artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: macos-build
-        path: |
-          mobilecli-darwin-arm64
-          mobilecli-darwin-amd64
-        retention-days: 1
-        overwrite: true
-
-  build_on_linux:
-
+  # no cgo anywhere, so one linux runner cross-compiles every platform
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -236,11 +178,6 @@ jobs:
         name: ios-agents
         path: agents/ios/
 
-    - name: Install dependencies
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
-        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
     - name: Set version
       if: github.ref_type == 'tag'
       run: |
@@ -251,12 +188,31 @@ jobs:
         sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
+      env:
+        CGO_ENABLED: 0
       run: |
-        CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
-        CGO_ENABLED=0 GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-linux-amd64
+        for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64; do
+          os="${target%/*}"
+          arch="${target#*/}"
+          ext=""
+          if [ "$os" = "windows" ]; then
+            ext=".exe"
+          fi
+          GOOS="$os" GOARCH="$arch" go build -ldflags="-s -w" -o "mobilecli-$os-$arch$ext"
+        done
         ./mobilecli-linux-amd64 --version
 
     - name: Upload macos build artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: macos-build
+        path: |
+          mobilecli-darwin-arm64
+          mobilecli-darwin-amd64
+        retention-days: 1
+        overwrite: true
+
+    - name: Upload linux build artifact
       uses: actions/upload-artifact@v7
       with:
         name: linux-build
@@ -266,61 +222,20 @@ jobs:
         retention-days: 1
         overwrite: true
 
-  build_on_windows:
-
-    runs-on: windows-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    needs: [build_linux_agents, build_ios_agents]
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-
-    - name: Download Android agent binaries
-      uses: actions/download-artifact@v8
-      with:
-        name: android-agents
-        path: agents/android/
-
-    - name: Download iOS agent binaries
-      uses: actions/download-artifact@v8
-      with:
-        name: ios-agents
-        path: agents/ios/
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-
-    - name: Set version
-      if: github.ref_type == 'tag'
-      run: |
-        if ($env:GITHUB_REF_NAME -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-          Write-Error "Invalid release tag format: $env:GITHUB_REF_NAME"
-          exit 1
-        }
-        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') utils/version.go
-
-    - name: Build
-      run: |
-        $env:GOARCH="amd64"; go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
-        $env:GOARCH="arm64"; go build -ldflags="-s -w" -o mobilecli-windows-arm64.exe
-
-    - name: Upload build artifact
+    - name: Upload windows build artifact
       uses: actions/upload-artifact@v7
       with:
         name: windows-build
         path: |
           mobilecli-windows-amd64.exe
           mobilecli-windows-arm64.exe
+        retention-days: 1
+        overwrite: true
 
   e2e_test:
     runs-on: self-hosted
     timeout-minutes: 10
-    needs: [build_on_macos]
+    needs: [build]
 
     steps:
     - uses: actions/checkout@v5
@@ -367,7 +282,7 @@ jobs:
     permissions:
       id-token: write  # Required for npm trusted publishing with OIDC
       contents: write
-    needs: [build_on_windows, build_on_linux, build_on_macos, e2e_test, test, lint, security]
+    needs: [build, e2e_test, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:
