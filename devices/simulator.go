@@ -284,10 +284,21 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	return err
 }
 
+// TerminateApp stops a running app. `xcrun simctl terminate` exits with
+// status 3 (ESRCH, "found nothing to terminate") both for an installed app
+// that is not running and for a bundle that is not installed; report those
+// the same way IOSDevice does so callers can tell the two apart.
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	_, err := runSimctl("terminate", s.UDID, bundleID)
 	if err != nil {
-		return err
+		if !isSimctlNothingToTerminate(err) {
+			return err
+		}
+		installed, listErr := s.isAppInstalled(bundleID)
+		if listErr != nil {
+			return err
+		}
+		return terminateErrorForMissingProcess(bundleID, installed)
 	}
 
 	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
@@ -300,6 +311,35 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	}
 
 	return nil
+}
+
+// isSimctlNothingToTerminate reports whether a runSimctl error is simctl's
+// exit status 3, which it uses for "found nothing to terminate".
+func isSimctlNothingToTerminate(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 3
+}
+
+// terminateErrorForMissingProcess mirrors IOSDevice.TerminateApp's errors for
+// an app that has no running process.
+func terminateErrorForMissingProcess(bundleID string, installed bool) error {
+	if !installed {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+	return fmt.Errorf("process of %s not found", bundleID)
+}
+
+func (s SimulatorDevice) isAppInstalled(bundleID string) (bool, error) {
+	apps, err := s.ListApps(false)
+	if err != nil {
+		return false, err
+	}
+	for _, app := range apps {
+		if app.PackageName == bundleID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func InstallApp(udid string, appPath string) error {
