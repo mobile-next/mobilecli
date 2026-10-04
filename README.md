@@ -337,6 +337,8 @@ Example output for `agent status`:
 
 Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
 
+On Android the same commands also drive the tabs of Chrome when it is the foreground app, over the Chrome DevTools Protocol. Chrome freezes the tabs it is not showing, so only the visible tab (`isVisible: true`) answers `eval` and the commands built on it.
+
 On iOS, real devices and simulators alike, the same commands also drive the tabs of Safari when it is the foreground app, through the device's Web Inspector service. A real device needs **Settings > Apps > Safari > Advanced > Web Inspector** turned on. Safari does not keep the tabs it is not showing running: a command on such a tab fails after 2 seconds, so use the tab listed with `isVisible: true`.
 
 ```bash

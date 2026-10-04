@@ -14,7 +14,7 @@ var webviewCmd = &cobra.Command{
 var webviewListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List embedded webviews on a device",
-	Long:  `Returns all embedded webviews currently visible in the foreground app. When the foreground app is Safari on iOS, returns its tabs instead. Chrome is not included.`,
+	Long:  `Returns all embedded webviews currently visible in the foreground app. When the foreground app is Chrome on Android or Safari on iOS, returns its tabs instead.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runViaDaemon("cli.webview.list", commands.WebViewListRequest{
 			DeviceID: deviceId,
