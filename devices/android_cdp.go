@@ -124,7 +124,7 @@ func (b cdpBrowser) call(webviewID, method string, params any, timeout time.Dura
 		}
 		if err := conn.ReadJSON(&message); err != nil {
 			if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
-				return nil, fmt.Errorf("webview %s did not answer %s within %s; a browser freezes the tabs it is not showing", webviewID, method, timeout)
+				return nil, fmt.Errorf("webview %s did not answer %s within %s; a browser freezes the tabs it is not showing", webviewID, method, timeout.Round(time.Millisecond))
 			}
 			return nil, fmt.Errorf("read %s reply: %w", method, err)
 		}
@@ -315,9 +315,14 @@ func (b cdpBrowser) WebViewWaitForLoadState(webviewID, state string, timeoutMs i
 
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 	for {
+		// a poll on a tab that never answers must not outlive the wait
+		pollTimeout := min(time.Until(deadline), cdpCommandTimeout)
+		if pollTimeout <= 0 {
+			return fmt.Errorf("waitForLoadState timed out waiting for '%s'", state)
+		}
 		// an evaluation fails while the tab swaps documents mid-navigation, so
 		// only an unknown tab ends the wait early
-		loaded, err := b.evaluate(webviewID, hasLoaded, nil, cdpCommandTimeout)
+		loaded, err := b.evaluate(webviewID, hasLoaded, nil, pollTimeout)
 		if errors.Is(err, errWebViewNotFound) {
 			return err
 		}
@@ -325,6 +330,9 @@ func (b cdpBrowser) WebViewWaitForLoadState(webviewID, state string, timeoutMs i
 			return nil
 		}
 		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("waitForLoadState timed out waiting for '%s': %w", state, err)
+			}
 			return fmt.Errorf("waitForLoadState timed out waiting for '%s'", state)
 		}
 		time.Sleep(cdpLoadStatePollEvery)

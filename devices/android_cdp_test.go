@@ -531,3 +531,25 @@ func TestCommandOnATabThatNeverAnswersFailsSayingSo(t *testing.T) {
 		t.Fatalf("expected an explanation of the timeout, got %v", err)
 	}
 }
+
+// A frozen tab never answers, and a poll on it must not outlive the wait.
+func TestWaitOnATabThatNeverAnswersEndsAtTheTimeout(t *testing.T) {
+	chrome := startFakeChrome(t, examplePage)
+	tabIsFrozen := make(chan struct{})
+	t.Cleanup(func() { close(tabIsFrozen) })
+	chrome.answer = func(fakeChromeCall) (any, string) {
+		<-tabIsFrozen
+		return map[string]any{}, ""
+	}
+
+	start := time.Now()
+	err := chrome.browser().WebViewWaitForLoadState("TAB1", "load", 300)
+
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the wait took %s for a 300ms timeout", elapsed)
+	}
+	expected := "waitForLoadState timed out waiting for 'load': webview TAB1 did not answer Runtime.evaluate within 300ms; a browser freezes the tabs it is not showing"
+	if err == nil || err.Error() != expected {
+		t.Fatalf("expected the timeout to say why, got %v", err)
+	}
+}
