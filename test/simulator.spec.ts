@@ -4,7 +4,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import {
+	grantPrivacyPermission,
 	printAllLogsFromSimulator,
+	privacyServicesDecidedFor,
 	shutdownSimulator,
 } from './simctl';
 import {randomUUID} from "node:crypto";
@@ -57,6 +59,7 @@ const TEST_SERVER_URL = 'http://localhost:12001';
 
 // ships on every simulator image and is never a debug build
 const IOS_SETTINGS_BUNDLE_ID = 'com.apple.Preferences';
+const SAFARI_BUNDLE_ID = 'com.apple.mobilesafari';
 
 // webkit hands each of these back as a value a json writer refuses. the expected
 // result is what JSON.stringify makes of it, which is what the android agent answers.
@@ -288,6 +291,38 @@ test.describe('iOS Simulator Tests', () => {
 				expect(longPressError(simulatorId, 200, 400, -100)).toContain('duration must not be negative');
 			});
 
+			test('should list only this simulator\'s crash reports, not the host\'s', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				// ~/Library/Logs/DiagnosticReports is shared with the host, so the
+				// listing must include simulator reports (is_simulated + this UDID) and
+				// exclude host-process crashes. Plant one of each and check.
+				const reportsDir = path.join(os.homedir(), 'Library', 'Logs', 'DiagnosticReports');
+				fs.mkdirSync(reportsDir, {recursive: true});
+				// crash report filenames must be <process>-YYYY-MM-DD-HHMMSS.ips
+				const d = new Date();
+				const pad = (n: number) => String(n).padStart(2, '0');
+				const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+				const rnd = Math.floor(Math.random() * 1e6);
+				const simReport = path.join(reportsDir, `mobilecliSim${rnd}-${stamp}.ips`);
+				const hostReport = path.join(reportsDir, `mobilecliHost${rnd}-${stamp}.ips`);
+				fs.writeFileSync(simReport,
+					`{"is_simulated":1,"app_name":"mobilecli-sim-${stamp}","bug_type":"309"}\n` +
+					`{"coalitionName":"com.apple.CoreSimulator.SimDevice.${simulatorId}"}`);
+				fs.writeFileSync(hostReport,
+					`{"app_name":"mobilecli-host-${stamp}","bug_type":"309"}\n{"coalitionName":"mobilecli-host"}`);
+
+				try {
+					const ids = mobilecli(['device', 'crashes', 'list', '--device', simulatorId])
+						.data.map((c: any) => c.id);
+					expect(ids).toContain(path.basename(simReport));
+					expect(ids).not.toContain(path.basename(hostReport));
+				} finally {
+					fs.rmSync(simReport, {force: true});
+					fs.rmSync(hostReport, {force: true});
+				}
+			});
+
 			test.skip('should test device lifecycle: boot, reboot, shutdown', async () => {
 				// shutdown simulator using simctl to get it offline
 				shutdownSimulator(simulatorId);
@@ -378,6 +413,95 @@ test.describe('iOS Simulator Tests', () => {
 					expect(app!.appName).toBe(PLAYGROUND_APP_NAME);
 					expect(app!.version).toBe(PLAYGROUND_APP_VERSION);
 					expect(app!.versionCode).toBe(PLAYGROUND_APP_VERSION_CODE);
+				});
+			});
+
+			// safari cannot take the injected agent, so its tabs are driven through the
+			// web inspector of the simulator instead. its own describe: `webview list`
+			// reads the foreground app, and the playground group below needs its own.
+			test.describe.serial('webview on safari', () => {
+				let tabId: string;
+
+				test.beforeAll(async () => {
+					if (!simulatorId) return;
+					await eventually(() => foregroundAppAfterLaunching(simulatorId, SAFARI_BUNDLE_ID), 'safari never came to the front')
+						.toBe(SAFARI_BUNDLE_ID);
+					await eventually(() => visibleSafariTabs(simulatorId).length, 'safari shows no tab').toBe(1);
+					tabId = visibleSafariTabs(simulatorId)[0].id;
+
+					webViewGoto(simulatorId, tabId, WEBVIEW_SAMPLE_URL);
+					webViewWait(simulatorId, tabId, 'load');
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, tabId), WEBVIEW_SAMPLE_URL);
+				});
+
+				test('should list the tab safari is showing', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const tab = visibleSafariTabs(simulatorId)[0];
+					expect(tab.id).toBe(tabId);
+					expect(tab.url).toBe(WEBVIEW_SAMPLE_URL);
+					expect(tab.title).toBe(WEBVIEW_SAMPLE_TITLE);
+					expect(tab.bundleId).toBe(SAFARI_BUNDLE_ID);
+				});
+
+				test('should report the url and title of the tab', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					expect(webViewUrl(simulatorId, tabId)).toBe(WEBVIEW_SAMPLE_URL);
+					expect(webViewTitle(simulatorId, tabId)).toBe(WEBVIEW_SAMPLE_TITLE);
+				});
+
+				test('should evaluate javascript in the tab and await the promise it returns', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					expect(webViewEval(simulatorId, tabId, '1 + 2')).toBe(3);
+					expect(webViewEval(simulatorId, tabId, 'new Promise(resolve => setTimeout(() => resolve(document.title), 100))'))
+						.toBe(WEBVIEW_SAMPLE_TITLE);
+				});
+
+				test('should report the error javascript throws in the tab', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const message = webViewCommandError(simulatorId, ['eval', tabId, '(() => { throw new Error("boom") })()']);
+					expect(message).toContain('Error: boom');
+				});
+
+				test('should dump the html content and query the dom of the tab', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					expect(webViewContent(simulatorId, tabId)).toContain(`<title>${WEBVIEW_SAMPLE_TITLE}</title>`);
+					expect(webViewQuery(simulatorId, tabId, 'input').length).toBeGreaterThan(0);
+				});
+
+				test('should navigate the tab to another url, then back and forward', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					webViewGoto(simulatorId, tabId, WEBVIEW_DONE_URL);
+					webViewWait(simulatorId, tabId, 'load');
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, tabId), WEBVIEW_DONE_URL);
+
+					webViewGoBack(simulatorId, tabId);
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, tabId), WEBVIEW_SAMPLE_URL);
+
+					webViewGoForward(simulatorId, tabId);
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, tabId), WEBVIEW_DONE_URL);
+				});
+
+				test('should reload the tab and stay on the same url', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const urlBeforeReload = webViewUrl(simulatorId, tabId);
+					webViewReload(simulatorId, tabId);
+					webViewWait(simulatorId, tabId, 'load');
+					await expectWebViewUrlToBecome(() => webViewUrl(simulatorId, tabId), urlBeforeReload);
+				});
+
+				test('should report an error for a tab safari does not have', () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					const message = webViewCommandError(simulatorId, ['url', WEBVIEW_MISSING_ID]);
+					expect(message).toContain('webview not found');
+					expect(message).toContain(WEBVIEW_MISSING_ID);
 				});
 			});
 
@@ -664,6 +788,21 @@ test.describe('iOS Simulator Tests', () => {
 						fs.rmSync(localDest, {force: true});
 						fs.rmSync(escapedWrite, {force: true});
 					}
+				});
+			});
+
+			test.describe('apps clear (com.mobilenext.playground)', () => {
+				test('should reset privacy permissions so the app asks again', async () => {
+					test.skip(!simulatorId, 'simulator not found');
+
+					grantPrivacyPermission(simulatorId, 'camera', PLAYGROUND_PACKAGE);
+					grantPrivacyPermission(simulatorId, 'microphone', PLAYGROUND_PACKAGE);
+					expect(privacyServicesDecidedFor(simulatorId, PLAYGROUND_PACKAGE)).toEqual(
+						expect.arrayContaining(['kTCCServiceCamera', 'kTCCServiceMicrophone']));
+
+					mobilecli(['apps', 'clear', PLAYGROUND_PACKAGE, '--device', simulatorId]);
+
+					expect(privacyServicesDecidedFor(simulatorId, PLAYGROUND_PACKAGE)).toEqual([]);
 				});
 			});
 		});
@@ -1034,6 +1173,17 @@ function webViewCommandError(simulatorId: string, args: string[]): string {
 	}
 
 	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+}
+
+// the devicekit agent comes to the front itself when it starts, which can land
+// after a launch, so the launch is repeated until the app is the one in front
+function foregroundAppAfterLaunching(simulatorId: string, bundleId: string): string {
+	launchApp(simulatorId, bundleId);
+	return getForegroundApp(simulatorId).data.packageName;
+}
+
+function visibleSafariTabs(simulatorId: string): WebViewInfo[] {
+	return (listWebViews(simulatorId) as WebViewInfo[]).filter(tab => tab.isVisible);
 }
 
 function listWebViews(simulatorId: string): unknown[] {

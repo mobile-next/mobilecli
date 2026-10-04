@@ -69,7 +69,7 @@ JSON-RPC API for mobile device automation and control
 
 **Clear application data**
 
-Clears all data (cache, preferences, databases) for an application without uninstalling it. Supported on Android and iOS Simulator. Not supported on real iOS devices.
+Clears all data (cache, preferences, databases) for an application without uninstalling it, and resets its runtime permissions so the app asks for them again (on iOS Simulator, notification permission is only reset by reinstalling). Supported on Android and iOS Simulator. Not supported on real iOS devices.
 
 #### Parameters
 
@@ -1664,7 +1664,7 @@ Operation result
 
 **List webviews**
 
-Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Chrome on Android, returns its tabs instead. Safari is not included.
+Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Chrome on Android or Safari on iOS, returns its tabs instead.
 
 #### Parameters
 

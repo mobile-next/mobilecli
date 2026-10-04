@@ -82,6 +82,10 @@ public class Input {
 		for (int i = 0; i < events.length; i++) {
 			long now = SystemClock.uptimeMillis();
 			KeyEvent timed = KeyEvent.changeTimeRepeat(events[i], now, 0);
+			// an on-screen keyboard marks its keys this way. Without it the first
+			// character takes the device out of touch mode, and the next screen
+			// hands focus to a view as if a hardware keyboard were in use.
+			timed = KeyEvent.changeFlags(timed, timed.getFlags() | KeyEvent.FLAG_KEEP_TOUCH_MODE);
 			if (timed.getSource() == InputDevice.SOURCE_UNKNOWN) {
 				timed.setSource(InputDevice.SOURCE_KEYBOARD);
 			}

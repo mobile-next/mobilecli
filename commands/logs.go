@@ -86,10 +86,22 @@ func getFieldValue(entry devices.LogEntry, key string) string {
 	}
 }
 
+// fieldMatches compares a log field against a filter value. Matching is
+// case-insensitive everywhere so "level=error" matches "Error" (iOS and Android
+// capitalize levels differently), and "message" matches as a substring so a free
+// text filter like "message=timeout" finds the entries that contain it rather
+// than demanding the whole line.
+func fieldMatches(key, fieldValue, filterValue string) bool {
+	if key == "message" {
+		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(filterValue))
+	}
+	return strings.EqualFold(fieldValue, filterValue)
+}
+
 func matchesFilters(entry devices.LogEntry, filters []LogFilter) bool {
 	for _, f := range filters {
 		fieldValue := getFieldValue(entry, f.Key)
-		match := fieldValue == f.Value
+		match := fieldMatches(f.Key, fieldValue, f.Value)
 		if f.Negate {
 			match = !match
 		}

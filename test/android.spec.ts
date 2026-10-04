@@ -216,6 +216,19 @@ test.describe('Android Tests', () => {
 		await expectLauncherToBeInForeground(device!.id);
 	});
 
+	test('should accept the HOME button regardless of case', async () => {
+		test.skip(!device, 'No Android device found');
+
+		// the help documents button names as case-insensitive
+		for (const name of ['home', 'Home', 'hOmE']) {
+			launchApp(device!.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+
+			pressButton(device!.id, name);
+			await expectLauncherToBeInForeground(device!.id);
+		}
+	});
+
 	test('should tap on Network & internet in Settings and navigate to that screen', async ({deviceType}) => {
 		test.skip(!device, 'No Android device found');
 		// matches on english settings labels, so it only holds for a known locale
@@ -573,6 +586,99 @@ test.describe('Android Tests', () => {
 
 	});
 
+	// a person typing on the on-screen keyboard never takes the device out of touch
+	// mode. out of it, android behaves as if a hardware keyboard is in use: the next
+	// screen gives focus to a view, and a scroll view jumps to that view.
+	test.describe.serial('touch mode while typing', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		let serial: string;
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			serial = adbSerialOf(device);
+			await openPlaygroundBasicUIScreen(device.id);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+		});
+
+		// before a field is tapped there is no on-screen keyboard to take the keys
+		// first, so they reach the app, which is where touch mode is decided
+		test('should stay in touch mode when the typed keys reach the app', () => {
+			test.skip(!device, 'No Android device found');
+			expect(isInTouchMode(serial), 'the tap that opened the screen put the device in touch mode').toBe(true);
+
+			typeText(device!.id, 'a');
+
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		test('should type text into a field and stay in touch mode', async () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			typeText(device!.id, 'Hello World 123!');
+
+			await eventually(() => textOfElementLabelled(device!.id, PLAYGROUND_TEXT_FIELD), 'the text never reached the field')
+				.toContain('Hello World 123!');
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		test('should stay in touch mode when the text is a line break', () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			typeText(device!.id, '\n');
+
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		// the enter button is a hardware key, and those are meant to leave touch mode:
+		// keyboard and tv navigation depend on it
+		test('should leave touch mode when the enter button is pressed', async () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			pressButton(device!.id, 'ENTER');
+
+			await eventually(() => isInTouchMode(serial), 'the enter button kept the device in touch mode').toBe(false);
+		});
+	});
+
+	// its own describe: it puts another screen on top of the webview screen, which would
+	// break the shared state the playground tests above set up once in their beforeAll
+	test.describe('webview behind another screen of the app', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			// a relaunch resumes whatever screen the app was left on, so start it afresh
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+			await openPlaygroundWebViewScreen(device.id);
+			await expectWebViewToAppear(device.id);
+			expect(visibleWebViews(device.id), 'the webview on screen is visible').not.toHaveLength(0);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			// drop the screens stacked here, so the next launch starts from the menu alone
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+		});
+
+		test('should report a webview covered by another screen as not visible', async () => {
+			test.skip(!device, 'No Android device found');
+
+			await coverWebViewScreenWithLoginSuccessfulScreen(device!.id);
+
+			// the screen underneath is hidden a moment after the new one has drawn over it
+			await eventually(() => visibleWebViews(device!.id).length, 'the covered webview stayed visible').toBe(0);
+			expect(listWebViews(device!.id).length, 'the covered webview is still alive').toBeGreaterThan(0);
+		});
+	});
+
 	// its own describe, not a test inside the playground group above: `webview list`
 	// reads the foreground app, so this launches a different app and would break the
 	// shared state the playground tests set up once in their beforeAll
@@ -924,6 +1030,54 @@ function pressButton(deviceId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', deviceId]);
 }
 
+// the accessibility labels of the playground basic ui screen
+const PLAYGROUND_BASIC_UI_BUTTON = 'Basic UI';
+const PLAYGROUND_TEXT_FIELD = 'text_field';
+
+async function openPlaygroundBasicUIScreen(deviceId: string): Promise<void> {
+	// a relaunch resumes whatever screen the app was left on, so start it afresh
+	terminateApp(deviceId, PLAYGROUND_PACKAGE);
+	launchApp(deviceId, PLAYGROUND_PACKAGE);
+	await eventually(() => allTextsIn(dumpUI(deviceId)), 'playground menu never appeared').toContain(PLAYGROUND_BASIC_UI_BUTTON);
+
+	const button = findElementByText(dumpUI(deviceId), PLAYGROUND_BASIC_UI_BUTTON);
+	tap(deviceId, centerOf(button).x, centerOf(button).y);
+	await eventually(() => hasElementLabelled(deviceId, PLAYGROUND_TEXT_FIELD), 'basic ui screen never appeared').toBe(true);
+}
+
+function elementsLabelled(deviceId: string, label: string): UIElement[] {
+	return flattenElements(dumpUI(deviceId).data.elements).filter(element => element.label === label);
+}
+
+function hasElementLabelled(deviceId: string, label: string): boolean {
+	return elementsLabelled(deviceId, label).length > 0;
+}
+
+// a tap is what puts the device in touch mode, and on the field it gives it focus
+function tapFieldToEnterTouchMode(deviceId: string, serial: string): void {
+	const [field] = elementsLabelled(deviceId, PLAYGROUND_TEXT_FIELD);
+	expect(field, 'no text field on screen').toBeDefined();
+	tap(deviceId, centerOf(field).x, centerOf(field).y);
+	expect(isInTouchMode(serial), 'a tap puts the device in touch mode').toBe(true);
+}
+
+function textOfElementLabelled(deviceId: string, label: string): string {
+	return elementsLabelled(deviceId, label)[0]?.text ?? '';
+}
+
+function typeText(deviceId: string, text: string): void {
+	mobilecli(['io', 'text', text, '--device', deviceId]);
+}
+
+// android reports whether the device is in touch mode in its window dump
+function isInTouchMode(serial: string): boolean {
+	const touchMode = adb(['-s', serial], ['shell', 'dumpsys', 'window']).match(/mInTouchMode=(true|false)/);
+	if (!touchMode) {
+		throw new Error('the window dump does not report the touch mode');
+	}
+	return touchMode[1] === 'true';
+}
+
 function findElementByText(uiDump: UIDumpResponse, text: string): UIElement {
 	const element = flattenElements(uiDump.data.elements).find(el => el.text === text);
 	if (!element) {
@@ -983,6 +1137,17 @@ function webViewCommandError(deviceId: string, args: string[]): string {
 	}
 
 	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+}
+
+// the deep link opens its screen on top of whatever the app is showing, and the
+// webview screen stays alive underneath it
+async function coverWebViewScreenWithLoginSuccessfulScreen(deviceId: string): Promise<void> {
+	mobilecli(['url', playgroundLoginLinkFor('Alice'), '--device', deviceId]);
+	await expectTextOnScreen(deviceId, playgroundGreetingFor('Alice'));
+}
+
+function visibleWebViews(deviceId: string): WebViewInfo[] {
+	return (listWebViews(deviceId) as WebViewInfo[]).filter(webView => webView.isVisible);
 }
 
 function listWebViews(deviceId: string): unknown[] {

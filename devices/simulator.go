@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -283,10 +284,21 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	return err
 }
 
+// TerminateApp stops a running app. `xcrun simctl terminate` exits with
+// status 3 (ESRCH, "found nothing to terminate") both for an installed app
+// that is not running and for a bundle that is not installed; report those
+// the same way IOSDevice does so callers can tell the two apart.
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	_, err := runSimctl("terminate", s.UDID, bundleID)
 	if err != nil {
-		return err
+		if !isSimctlNothingToTerminate(err) {
+			return err
+		}
+		installed, listErr := s.isAppInstalled(bundleID)
+		if listErr != nil {
+			return err
+		}
+		return terminateErrorForMissingProcess(bundleID, installed)
 	}
 
 	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
@@ -299,6 +311,35 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	}
 
 	return nil
+}
+
+// isSimctlNothingToTerminate reports whether a runSimctl error is simctl's
+// exit status 3, which it uses for "found nothing to terminate".
+func isSimctlNothingToTerminate(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 3
+}
+
+// terminateErrorForMissingProcess mirrors IOSDevice.TerminateApp's errors for
+// an app that has no running process.
+func terminateErrorForMissingProcess(bundleID string, installed bool) error {
+	if !installed {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+	return fmt.Errorf("process of %s not found", bundleID)
+}
+
+func (s SimulatorDevice) isAppInstalled(bundleID string) (bool, error) {
+	apps, err := s.ListApps(false)
+	if err != nil {
+		return false, err
+	}
+	for _, app := range apps {
+		if app.PackageName == bundleID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func InstallApp(udid string, appPath string) error {
@@ -984,6 +1025,12 @@ func (s SimulatorDevice) ClearApp(bundleID string) error {
 		}
 	}
 
+	// permissions live outside the data container; reset them so the app prompts again, like `pm clear` on
+	// android. notifications are not covered by simctl privacy and only reset on reinstall.
+	if _, err := runSimctl("privacy", s.UDID, "reset", "all", bundleID); err != nil {
+		return fmt.Errorf("failed to reset privacy permissions for %s: %w", bundleID, err)
+	}
+
 	return nil
 }
 
@@ -1031,6 +1078,49 @@ func (s SimulatorDevice) SetAppearance(appearance string) error {
 
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
 
+// crashReportIsForSimulator reports whether an .ips diagnostic report at path was
+// produced by the simulator with the given UDID. ~/Library/Logs/DiagnosticReports
+// is shared with the host, so it also holds crashes of host processes (adb,
+// CoreSimulatorBridge, chronod, …) that must not be reported as the device's.
+// Simulator reports carry "is_simulated": 1 in their first-line JSON header and
+// name the device as com.apple.CoreSimulator.SimDevice.<UDID> in the body, which
+// together scope the listing to this one simulator.
+func crashReportIsForSimulator(path, udid string) bool {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	header := content
+	if nl := bytes.IndexByte(content, '\n'); nl >= 0 {
+		header = content[:nl]
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(header, &meta); err != nil {
+		return false
+	}
+	if sim, ok := meta["is_simulated"]; !ok || !isTruthyJSON(sim) {
+		return false
+	}
+
+	return bytes.Contains(content, []byte("SimDevice."+udid))
+}
+
+// isTruthyJSON treats the JSON values crash reports use for is_simulated (the
+// number 1 or the boolean true) as true.
+func isTruthyJSON(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case float64:
+		return t != 0
+	case json.Number:
+		return t.String() != "0"
+	default:
+		return false
+	}
+}
+
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
 	dir := diagnosticReportsDir
 	entries, err := os.ReadDir(dir)
@@ -1040,7 +1130,10 @@ func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
 
 	var filenames []string
 	for _, e := range entries {
-		if !e.IsDir() {
+		if e.IsDir() {
+			continue
+		}
+		if crashReportIsForSimulator(filepath.Join(dir, e.Name()), s.UDID) {
 			filenames = append(filenames, e.Name())
 		}
 	}

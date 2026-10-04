@@ -148,7 +148,7 @@ func (c *fakeChrome) hasHistory(currentIndex int, entryIDs ...int) {
 	}
 }
 
-var examplePage = cdpTarget{ID: "TAB1", Type: "page", URL: "https://example.com/", Title: "Example Domain"}
+var exampleTab = cdpTarget{ID: "TAB1", Type: "page", URL: "https://example.com/", Title: "Example Domain"}
 
 func TestDevtoolsSocketsAreFoundAmongTheUnixSocketsOfTheDevice(t *testing.T) {
 	procNetUnix := `Num       RefCount Protocol Flags    Type St Inode Path
@@ -182,7 +182,7 @@ func TestBrowserReportsTheAndroidPackageItBelongsTo(t *testing.T) {
 
 func TestListingWebViewsReturnsTheTabsOfTheBrowser(t *testing.T) {
 	serviceWorker := cdpTarget{ID: "SW1", Type: "service_worker", URL: "https://example.com/sw.js"}
-	chrome := startFakeChrome(t, examplePage, serviceWorker)
+	chrome := startFakeChrome(t, exampleTab, serviceWorker)
 	chrome.evaluatesTo(true)
 
 	webviews, err := chrome.browser().ListWebViews()
@@ -204,7 +204,7 @@ func TestListingWebViewsReturnsTheTabsOfTheBrowser(t *testing.T) {
 }
 
 func TestBackgroundTabIsListedAsNotVisible(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.evaluatesTo(false)
 
 	webviews, err := chrome.browser().ListWebViews()
@@ -231,7 +231,7 @@ func TestBrowserWithoutTabsListsNoWebViews(t *testing.T) {
 }
 
 func TestEvaluateReturnsTheJavascriptValue(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.evaluatesTo(map[string]any{"title": "Example Domain"})
 
 	value, err := chrome.browser().WebViewEvaluate("TAB1", "return {title: document.title}", nil)
@@ -247,7 +247,7 @@ func TestEvaluateReturnsTheJavascriptValue(t *testing.T) {
 // The agent runs the expression as a function body and awaits what it returns,
 // so the same expression has to mean the same thing in a browser tab.
 func TestEvaluateRunsTheExpressionAsAFunctionBodyAndAwaitsIt(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 
 	_, err := chrome.browser().WebViewEvaluate("TAB1", "document.title", []any{"first", 2})
 
@@ -265,7 +265,7 @@ func TestEvaluateRunsTheExpressionAsAFunctionBodyAndAwaitsIt(t *testing.T) {
 }
 
 func TestEvaluateOfUndefinedReturnsNil(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.answer = func(fakeChromeCall) (any, string) {
 		return map[string]any{"result": map[string]any{"type": "undefined"}}, ""
 	}
@@ -278,7 +278,7 @@ func TestEvaluateOfUndefinedReturnsNil(t *testing.T) {
 }
 
 func TestEvaluateFailsWithTheMessageOfTheThrownError(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.answer = func(fakeChromeCall) (any, string) {
 		return map[string]any{
 			"result": map[string]any{"type": "object", "subtype": "error"},
@@ -297,7 +297,7 @@ func TestEvaluateFailsWithTheMessageOfTheThrownError(t *testing.T) {
 }
 
 func TestCommandOnAnUnknownWebViewFailsAsNotFound(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 
 	err := chrome.browser().WebViewReload("NO-SUCH-TAB")
 
@@ -307,7 +307,7 @@ func TestCommandOnAnUnknownWebViewFailsAsNotFound(t *testing.T) {
 }
 
 func TestProtocolErrorFailsTheCommand(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.answer = func(fakeChromeCall) (any, string) { return nil, "Not allowed" }
 
 	err := chrome.browser().WebViewReload("TAB1")
@@ -318,7 +318,7 @@ func TestProtocolErrorFailsTheCommand(t *testing.T) {
 }
 
 func TestGotoNavigatesTheTabToTheUrl(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 
 	err := chrome.browser().WebViewGoto("TAB1", "https://mobilewright.dev/")
 
@@ -331,7 +331,7 @@ func TestGotoNavigatesTheTabToTheUrl(t *testing.T) {
 }
 
 func TestGotoFailsWhenTheBrowserCannotStartTheNavigation(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.answer = func(fakeChromeCall) (any, string) {
 		return map[string]any{"frameId": "F1", "errorText": "net::ERR_NAME_NOT_RESOLVED"}, ""
 	}
@@ -344,7 +344,7 @@ func TestGotoFailsWhenTheBrowserCannotStartTheNavigation(t *testing.T) {
 }
 
 func TestReloadReloadsTheTab(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 
 	err := chrome.browser().WebViewReload("TAB1")
 
@@ -355,7 +355,7 @@ func TestReloadReloadsTheTab(t *testing.T) {
 }
 
 func TestGoBackNavigatesToThePreviousHistoryEntry(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.hasHistory(1, 10, 20, 30)
 
 	err := chrome.browser().WebViewGoBack("TAB1")
@@ -369,7 +369,7 @@ func TestGoBackNavigatesToThePreviousHistoryEntry(t *testing.T) {
 }
 
 func TestGoForwardNavigatesToTheNextHistoryEntry(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.hasHistory(1, 10, 20, 30)
 
 	err := chrome.browser().WebViewGoForward("TAB1")
@@ -384,7 +384,7 @@ func TestGoForwardNavigatesToTheNextHistoryEntry(t *testing.T) {
 
 // An embedded WebView ignores goBack when there is nowhere to go back to.
 func TestGoBackOnTheFirstHistoryEntryDoesNothing(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.hasHistory(0, 10, 20)
 
 	err := chrome.browser().WebViewGoBack("TAB1")
@@ -398,7 +398,7 @@ func TestGoBackOnTheFirstHistoryEntryDoesNothing(t *testing.T) {
 }
 
 func TestGoForwardOnTheLastHistoryEntryDoesNothing(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.hasHistory(1, 10, 20)
 
 	err := chrome.browser().WebViewGoForward("TAB1")
@@ -412,7 +412,7 @@ func TestGoForwardOnTheLastHistoryEntryDoesNothing(t *testing.T) {
 }
 
 func TestContentReturnsTheHtmlOfTheDocument(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.evaluatesTo("<html><body>hi</body></html>")
 
 	content, err := chrome.browser().WebViewContent("TAB1")
@@ -426,7 +426,7 @@ func TestContentReturnsTheHtmlOfTheDocument(t *testing.T) {
 }
 
 func TestWaitReturnsOnceTheDocumentHasLoaded(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	polls := 0
 	chrome.answer = func(fakeChromeCall) (any, string) {
 		polls++
@@ -444,7 +444,7 @@ func TestWaitReturnsOnceTheDocumentHasLoaded(t *testing.T) {
 }
 
 func TestWaitForDomContentLoadedAlsoAcceptsAnInteractiveDocument(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.evaluatesTo(true)
 
 	err := chrome.browser().WebViewWaitForLoadState("TAB1", "domcontentloaded", 5000)
@@ -459,7 +459,7 @@ func TestWaitForDomContentLoadedAlsoAcceptsAnInteractiveDocument(t *testing.T) {
 }
 
 func TestWaitTimesOutWhenTheDocumentNeverLoads(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	chrome.evaluatesTo(false)
 
 	err := chrome.browser().WebViewWaitForLoadState("TAB1", "load", 300)
@@ -470,7 +470,7 @@ func TestWaitTimesOutWhenTheDocumentNeverLoads(t *testing.T) {
 }
 
 func TestWaitOnAnUnknownWebViewFailsWithoutWaitingForTheTimeout(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 
 	err := chrome.browser().WebViewWaitForLoadState("NO-SUCH-TAB", "load", 60_000)
 
@@ -484,7 +484,7 @@ func TestWaitOnAnUnknownWebViewFailsWithoutWaitingForTheTimeout(t *testing.T) {
 func TestTheDevtoolsSocketOfTheForegroundAppIsChosen(t *testing.T) {
 	messages := startFakeChrome(t)
 	messages.packageName = "com.google.android.apps.messaging"
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	servers := map[string]*fakeChrome{"stetho_messaging_devtools_remote": messages, "chrome_devtools_remote": chrome}
 	var released []string
 	connect := func(socket string) (cdpBrowser, func(), error) {
@@ -502,7 +502,7 @@ func TestTheDevtoolsSocketOfTheForegroundAppIsChosen(t *testing.T) {
 }
 
 func TestNoDevtoolsBrowserIsFoundWhenNoSocketBelongsToTheApp(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	connect := func(socket string) (cdpBrowser, func(), error) {
 		return chrome.browser(), func() {}, nil
 	}
@@ -517,7 +517,7 @@ func TestNoDevtoolsBrowserIsFoundWhenNoSocketBelongsToTheApp(t *testing.T) {
 // Chrome freezes the tabs it is not showing, and a frozen tab accepts a
 // command without ever answering it.
 func TestCommandOnATabThatNeverAnswersFailsSayingSo(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	tabIsFrozen := make(chan struct{})
 	t.Cleanup(func() { close(tabIsFrozen) })
 	chrome.answer = func(fakeChromeCall) (any, string) {
@@ -534,7 +534,7 @@ func TestCommandOnATabThatNeverAnswersFailsSayingSo(t *testing.T) {
 
 // A frozen tab never answers, and a poll on it must not outlive the wait.
 func TestWaitOnATabThatNeverAnswersEndsAtTheTimeout(t *testing.T) {
-	chrome := startFakeChrome(t, examplePage)
+	chrome := startFakeChrome(t, exampleTab)
 	tabIsFrozen := make(chan struct{})
 	t.Cleanup(func() { close(tabIsFrozen) })
 	chrome.answer = func(fakeChromeCall) (any, string) {
