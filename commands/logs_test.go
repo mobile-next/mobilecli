@@ -69,6 +69,11 @@ func TestMatchesFiltersRequiresEveryFilterToPass(t *testing.T) {
 		{"one filter of many fails", []string{"level=Error", "tag=Zygote"}, false},
 		{"numeric pid is compared as text", []string{"pid=42"}, true},
 		{"empty field never matches a value", []string{"subsystem=com.apple.UIKit"}, false},
+		{"level is case-insensitive", []string{"level=error"}, true},
+		{"level upper-case still matches", []string{"level=ERROR"}, true},
+		{"case-insensitive exclude fails", []string{"level!=error"}, false},
+		{"process is case-insensitive", []string{"process=springboard"}, true},
+		{"wrong level value still fails", []string{"level=warning"}, false},
 	}
 
 	for _, test := range tests {
@@ -169,5 +174,29 @@ func TestStreamLogsSucceedsWhenEveryEntryIsWritten(t *testing.T) {
 	}
 	if lines := strings.Count(buffer.String(), "\n"); lines != 3 {
 		t.Errorf("expected 3 log lines, got %d", lines)
+	}
+}
+
+func TestMatchesFiltersMessageIsCaseInsensitiveSubstring(t *testing.T) {
+	entry := devices.LogEntry{Message: "Connection timed out after 10s"}
+
+	cases := []struct {
+		filter string
+		want   bool
+	}{
+		{"message=timed out", true},
+		{"message=TIMED OUT", true},
+		{"message=timeout", false},
+		{"message=connection", true},
+		{"message!=timed out", false},
+	}
+	for _, c := range cases {
+		filters, err := ParseLogFilters([]string{c.filter})
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", c.filter, err)
+		}
+		if got := matchesFilters(entry, filters); got != c.want {
+			t.Errorf("matchesFilters(%q) = %v, want %v", c.filter, got, c.want)
+		}
 	}
 }
