@@ -779,6 +779,8 @@ func (tab *inspectorTab) evaluate(expression string, args []any, timeout time.Du
 	if err != nil {
 		return nil, err
 	}
+	// the two commands share the timeout, so that together they keep to it
+	deadline := time.Now().Add(timeout)
 	// WebKit cannot await while evaluating. Whatever the function returns is
 	// made a promise, which is handed back by reference and awaited separately.
 	promise, err := tab.evaluateOnly("Promise.resolve("+call+")", timeout)
@@ -788,7 +790,7 @@ func (tab *inspectorTab) evaluate(expression string, args []any, timeout time.Du
 	raw, err := tab.command("Runtime.awaitPromise", map[string]any{
 		"promiseObjectId": promise.Result.ObjectID,
 		"returnByValue":   true,
-	}, timeout)
+	}, time.Until(deadline))
 	if err != nil {
 		return nil, err
 	}
@@ -837,13 +839,15 @@ func (s safariWebViews) WebViewWaitForLoadState(webviewID, state string, timeout
 	}
 }
 
+// hasLoaded attaches to the tab and evaluates hasLoaded in it, within timeout in all.
 func (s safariWebViews) hasLoaded(webviewID, hasLoaded string, timeout time.Duration) (bool, error) {
+	deadline := time.Now().Add(timeout)
 	tab, err := s.attach(webviewID, timeout)
 	if err != nil {
 		return false, err
 	}
 	defer tab.detach()
 
-	loaded, err := tab.evaluate(hasLoaded, nil, timeout)
+	loaded, err := tab.evaluate(hasLoaded, nil, time.Until(deadline))
 	return loaded == true, err
 }

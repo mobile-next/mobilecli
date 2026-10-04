@@ -48,6 +48,9 @@ type fakeWebInspector struct {
 	// frozenPages accept commands without ever answering them, as the tabs
 	// safari is not showing do
 	frozenPages map[uint64]bool
+	// slowDown delays the answer to each command of a method, or withholds it
+	// when the delay is negative, as a tab busy with its page does
+	slowDown map[string]time.Duration
 
 	mu          sync.Mutex
 	calls       []fakeInspectorCall
@@ -63,7 +66,7 @@ var (
 
 func startFakeWebInspector(t *testing.T, apps ...fakeInspectorApp) *fakeWebInspector {
 	t.Helper()
-	inspector := &fakeWebInspector{t: t, apps: apps, pages: map[string][]fakeInspectorPage{}, frozenPages: map[uint64]bool{}}
+	inspector := &fakeWebInspector{t: t, apps: apps, pages: map[string][]fakeInspectorPage{}, frozenPages: map[uint64]bool{}, slowDown: map[string]time.Duration{}}
 	inspector.answer = func(fakeInspectorCall) (any, string) { return map[string]any{}, "" }
 	inspector.client = &webInspectorClient{dial: inspector.dial}
 	t.Cleanup(inspector.client.close)
@@ -200,6 +203,12 @@ func (f *fakeWebInspector) answerCommand(send func(string, map[string]any), send
 	f.sendToInspector(send, sender, map[string]any{"id": outer.ID, "result": map[string]any{}})
 	if f.frozenPages[pageID] {
 		return
+	}
+	if delay, slow := f.slowDown[command.Method]; slow {
+		if delay < 0 {
+			return
+		}
+		time.Sleep(delay)
 	}
 	answerToTarget := func(reply map[string]any) {
 		inner, _ := json.Marshal(reply)
@@ -716,5 +725,24 @@ func TestSafariWaitOnATabThatDoesNotAnswerEndsAtTheTimeout(t *testing.T) {
 	expected := "waitForLoadState timed out waiting for 'load': webview 2 did not answer within 300ms; it is probably a background tab, which safari does not keep running"
 	if err == nil || err.Error() != expected {
 		t.Fatalf("expected the timeout to say why, got %v", err)
+	}
+}
+
+// The steps of a poll each take their time, and together they must still end
+// at the deadline of the wait.
+func TestSafariWaitEndsAtTheTimeoutWhenEveryStepOfAPollIsSlow(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.evaluatesTo(false)
+	inspector.slowDown["Runtime.evaluate"] = 250 * time.Millisecond
+	inspector.slowDown["Runtime.awaitPromise"] = -1
+
+	start := time.Now()
+	err := inspector.safari().WebViewWaitForLoadState("2", "load", 300)
+
+	if elapsed := time.Since(start); elapsed > 700*time.Millisecond {
+		t.Fatalf("the wait took %s for a 300ms timeout", elapsed)
+	}
+	if err == nil || !strings.HasPrefix(err.Error(), "waitForLoadState timed out waiting for 'load'") {
+		t.Fatalf("expected a timeout, got %v", err)
 	}
 }
