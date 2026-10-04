@@ -69,7 +69,7 @@ JSON-RPC API for mobile device automation and control
 
 **Clear application data**
 
-Clears all data (cache, preferences, databases) for an application without uninstalling it. Supported on Android and iOS Simulator. Not supported on real iOS devices.
+Clears all data (cache, preferences, databases) for an application without uninstalling it, and resets its runtime permissions so the app asks for them again (on iOS Simulator, notification permission is only reset by reinstalling). Supported on Android and iOS Simulator. Not supported on real iOS devices.
 
 #### Parameters
 

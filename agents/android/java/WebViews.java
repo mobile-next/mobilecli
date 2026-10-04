@@ -254,6 +254,12 @@ class WebViews {
 			.put("bundleId", pkg)
 			.put("processName", pkg)
 			.put("bounds", bounds)
-			.put("isVisible", w > 0 && h > 0);
+			.put("isVisible", w > 0 && h > 0 && isOnScreen(wv));
+	}
+
+	// A screen left in the back stack keeps its webview alive and laid out, so
+	// its size alone does not tell whether anyone can see it.
+	private static boolean isOnScreen(WebView wv) {
+		return wv.isShown() && wv.getWindowVisibility() == View.VISIBLE;
 	}
 }

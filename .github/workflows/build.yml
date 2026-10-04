@@ -155,7 +155,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -213,7 +213,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -272,7 +272,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -343,9 +343,22 @@ jobs:
         cd test
         npm install --ignore-scripts
 
+    # run the downloaded release binary as-is, never rebuild it here: what we test
+    # is what publish ships. MOBILECLI_HOME keeps the daemon away from ~/.mobilecli
     - name: run tests
-      run:
-        make test-e2e
+      env:
+        MOBILECLI_HOME: ${{ runner.temp }}/mobilecli-home
+      run: |
+        mkdir -p "$MOBILECLI_HOME"
+        ./mobilecli --version
+        ./mobilecli daemon stop || true
+        cd test && npx playwright test
+
+    - name: stop daemon
+      if: always()
+      env:
+        MOBILECLI_HOME: ${{ runner.temp }}/mobilecli-home
+      run: ./mobilecli daemon stop || true
 
   publish:
     if: github.ref_type == 'tag'
@@ -354,7 +367,7 @@ jobs:
     permissions:
       id-token: write  # Required for npm trusted publishing with OIDC
       contents: write
-    needs: [build_on_windows, build_on_linux, build_on_macos, e2e_test]
+    needs: [build_on_windows, build_on_linux, build_on_macos, e2e_test, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:

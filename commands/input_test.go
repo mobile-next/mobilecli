@@ -43,3 +43,21 @@ func TestLongPressCommandRejectsANegativeDuration(t *testing.T) {
 		t.Errorf("expected the error to name the duration, got %q", response.Error)
 	}
 }
+
+func TestNormalizeButtonNameIsCaseInsensitiveAndTrimmed(t *testing.T) {
+	cases := map[string]string{
+		"home":        "HOME",
+		"Home":        "HOME",
+		"HOME":        "HOME",
+		"volume_up":   "VOLUME_UP",
+		"  home  ":    "HOME",
+		"VolUme_Down": "VOLUME_DOWN",
+		"":            "",
+		"   ":         "",
+	}
+	for in, want := range cases {
+		if got := normalizeButtonName(in); got != want {
+			t.Errorf("normalizeButtonName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

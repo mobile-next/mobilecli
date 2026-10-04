@@ -984,6 +984,12 @@ func (s SimulatorDevice) ClearApp(bundleID string) error {
 		}
 	}
 
+	// permissions live outside the data container; reset them so the app prompts again, like `pm clear` on
+	// android. notifications are not covered by simctl privacy and only reset on reinstall.
+	if _, err := runSimctl("privacy", s.UDID, "reset", "all", bundleID); err != nil {
+		return fmt.Errorf("failed to reset privacy permissions for %s: %w", bundleID, err)
+	}
+
 	return nil
 }
 
