@@ -16,6 +16,7 @@ func TestExtendedWriteDeadlineForSlowMethods(t *testing.T) {
 		"device.apps.install":      3 * time.Minute,
 		"device.apps.uninstall":    3 * time.Minute,
 		"device.screenrecord.stop": 35 * time.Second,
+		"device.dump.ui":           60 * time.Second,
 	}
 
 	for method, want := range slowMethods {

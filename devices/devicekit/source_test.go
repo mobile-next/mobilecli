@@ -1,7 +1,10 @@
 package devicekit
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mobile-next/mobilecli/types"
 )
@@ -541,5 +544,38 @@ func TestFilterSourceElementsDoesNotMarkNonSwitchAsChecked(t *testing.T) {
 
 	if output[0].Checked != nil {
 		t.Errorf("expected checked to be unset, got %v", *output[0].Checked)
+	}
+}
+
+// Snapshotting a heavy screen can take the agent longer than the default RPC
+// timeout; dump ui has to wait for it instead of failing with "context
+// deadline exceeded", see https://github.com/mobile-next/mobilecli/issues/448
+func TestDumpUIWaitsForAnAgentSlowerThanTheDefaultRPCTimeout(t *testing.T) {
+	previous := defaultRPCTimeout
+	defaultRPCTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { defaultRPCTimeout = previous })
+
+	slowAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"type":"XCUIElementTypeApplication","rect":{"x":0,"y":0,"width":390,"height":844},"children":[{"type":"XCUIElementTypeButton","label":"Done","rect":{"x":16,"y":62,"width":44,"height":44}}]}}`))
+	}))
+	defer slowAgent.Close()
+
+	client := NewDeviceKitClient(slowAgent.URL)
+
+	if _, err := client.CallRPC("device.info", nil); err == nil {
+		t.Fatal("expected the agent to be slower than the default RPC timeout")
+	}
+
+	elements, err := client.GetSourceElements()
+	if err != nil {
+		t.Fatalf("GetSourceElements: %v", err)
+	}
+	if len(elements) != 1 || elementLabel(elements[0]) != "Done" {
+		t.Errorf("expected the Done button, got %+v", elements)
+	}
+
+	if _, err := client.GetSourceRaw(); err != nil {
+		t.Fatalf("GetSourceRaw: %v", err)
 	}
 }
