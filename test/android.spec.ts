@@ -768,6 +768,34 @@ test.describe('Android Tests', () => {
 			const names = entries.map((e: any) => e.name);
 			expect(names).not.toContain('mobilecli-test');
 		});
+
+		// the documented form: `fs ls <bundle-id> <path>` with a path relative to
+		// the container, rather than the absolute /data/user/0/<pkg>/... path
+		test('should address the container by bundle id and a relative path', () => {
+			test.skip(!device, 'No Android device found');
+
+			// a bundle id with no path lists the container root, not the device root
+			// (android's mobilecli() helper already returns the data payload)
+			const rootNames = mobilecli(['fs', 'ls', packageName, '--device', device!.id]).map((e: any) => e.name);
+			expect(rootNames).toContain('files');
+			expect(rootNames).not.toContain('sdcard'); // that would be the device root
+
+			// <bundle> /files matches the absolute container listing
+			const byBundle = mobilecli(['fs', 'ls', packageName, '/files', '--device', device!.id]);
+			const byPath = fsList(device!.id, `${containerPath}/files`);
+			expect(byBundle.map((e: any) => e.name).sort()).toEqual(byPath.map((e: any) => e.name).sort());
+
+			// create and remove a directory through the bundle+relative form
+			const relName = `mobilecli-rel-${Date.now()}`;
+			mobilecli(['fs', 'mkdir', packageName, `/files/${relName}`, '--device', device!.id]);
+			expect(fsList(device!.id, `${containerPath}/files`).map((e: any) => e.name)).toContain(relName);
+			mobilecli(['fs', 'rm', packageName, `/files/${relName}`, '-r', '--device', device!.id]);
+		});
+
+		test('should fail to list a container for an uninstalled package', () => {
+			test.skip(!device, 'No Android device found');
+			expect(() => mobilecli(['fs', 'ls', 'com.mobilecli.does.not.exist', '/files', '--device', device!.id])).toThrow();
+		});
 	});
 });
 
