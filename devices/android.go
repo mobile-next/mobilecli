@@ -876,9 +876,15 @@ func (d *AndroidDevice) PressButton(key string) error {
 	return nil
 }
 
-// androidModifierKeycodes maps canonical modifier names to Android keycodes
+// androidModifierKeycodes maps canonical modifier names to Android keycodes.
+//
+// "command" is the cross-platform primary shortcut modifier (the help documents
+// cmd+a as select-all). On Android that shortcut is Control, not Meta: Meta+A
+// opens the Google Assistant rather than selecting text, so "command" maps to
+// KEYCODE_CTRL_LEFT here. iOS maps it to the Command key, where the same combo
+// already selects all.
 var androidModifierKeycodes = map[string]string{
-	"command": "KEYCODE_META_LEFT",
+	"command": "KEYCODE_CTRL_LEFT",
 	"control": "KEYCODE_CTRL_LEFT",
 	"option":  "KEYCODE_ALT_LEFT",
 	"shift":   "KEYCODE_SHIFT_LEFT",
