@@ -294,6 +294,8 @@ func extendedWriteDeadline(method string) (time.Duration, bool) {
 		return 3 * time.Minute, true
 	case "device.screenrecord.stop":
 		return 35 * time.Second, true
+	case "device.dump.ui":
+		return 60 * time.Second, true
 	}
 	return 0, false
 }
