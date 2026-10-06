@@ -261,6 +261,19 @@ test.describe('iOS Simulator Tests', () => {
 				verifySpringBoardIsForeground(foregroundAfterHome);
 			});
 
+			test('should name the home screen SpringBoard, as a real device does', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				pressButton(simulatorId, 'HOME');
+				await eventually(
+					() => getForegroundApp(simulatorId).data.packageName,
+					'the home screen never came to the front',
+				).toBe('com.apple.springboard');
+
+				// the agent reports springboard's name as a single space
+				expect(getForegroundApp(simulatorId).data.appName).toBe('SpringBoard');
+			});
+
 			test('should set and read back clipboard text', async () => {
 				test.skip(!simulatorId, 'simulator not found');
 
