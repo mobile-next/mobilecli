@@ -509,7 +509,18 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	return nil
 }
 
+// TerminateApp stops an app. `am force-stop` succeeds for any package name, so a
+// package that is not installed is reported the way IOSDevice and SimulatorDevice
+// report it. An installed app that is not running is still stopped without error.
 func (d *AndroidDevice) TerminateApp(bundleID string) error {
+	installed, err := d.isPackageInstalled(bundleID)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+
 	output, err := d.runAdbShell("am", "force-stop", bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to terminate app %s: %v\nOutput: %s", bundleID, err, string(output))
@@ -1246,6 +1257,27 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 	}, nil
 }
 
+// isPackageInstalled reports whether packageName is installed on the device.
+func (d *AndroidDevice) isPackageInstalled(packageName string) (bool, error) {
+	output, err := d.runAdbShell("pm", "path", packageName)
+	return pmPathReportsInstalled(output, err)
+}
+
+// pmPathReportsInstalled reads the result of `pm path <package>`, which prints
+// "package:<apk path>" for an installed package and exits 1 with no output for
+// one that is not installed. Any other failure, such as an offline device, is
+// returned as an error rather than read as "not installed".
+func pmPathReportsInstalled(output []byte, err error) (bool, error) {
+	text := strings.TrimSpace(string(output))
+	if strings.HasPrefix(text, "package:") {
+		return true, nil
+	}
+	if err != nil && text != "" {
+		return false, fmt.Errorf("failed to check whether the package is installed: %v\nOutput: %s", err, text)
+	}
+	return false, nil
+}
+
 func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
 	output, err := d.runAdbShell("pm", "path", packageName)
 	if err != nil {
@@ -1781,6 +1813,14 @@ func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, err
 	}
 
 	output, err := d.runAdbCommand("uninstall", packageName)
+	if err != nil || !strings.Contains(string(output), "Success") {
+		// the package manager answers a package that is not installed with
+		// DELETE_FAILED_INTERNAL_ERROR, which says nothing about the cause
+		if installed, checkErr := d.isPackageInstalled(packageName); checkErr == nil && !installed {
+			return nil, fmt.Errorf("%s not installed", packageName)
+		}
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to uninstall app: %v\nOutput: %s", err, string(output))
 	}
