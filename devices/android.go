@@ -1813,6 +1813,14 @@ func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, err
 	}
 
 	output, err := d.runAdbCommand("uninstall", packageName)
+	if err != nil || !strings.Contains(string(output), "Success") {
+		// the package manager answers a package that is not installed with
+		// DELETE_FAILED_INTERNAL_ERROR, which says nothing about the cause
+		if installed, checkErr := d.isPackageInstalled(packageName); checkErr == nil && !installed {
+			return nil, fmt.Errorf("%s not installed", packageName)
+		}
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to uninstall app: %v\nOutput: %s", err, string(output))
 	}

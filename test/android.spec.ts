@@ -211,6 +211,16 @@ test.describe('Android Tests', () => {
 		terminateApp(device!.id, SETTINGS_PACKAGE);
 	});
 
+	test('should report that a package which is not installed cannot be uninstalled', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = appsCommandError(device!.id, 'uninstall', ABSENT_PACKAGE);
+
+		expect(error).toContain(`${ABSENT_PACKAGE} not installed`);
+		// the package manager's own code for this case says nothing about the cause
+		expect(error).not.toContain('DELETE_FAILED_INTERNAL_ERROR');
+	});
+
 	test('should handle launching app twice (idempotency)', async () => {
 		test.skip(!device, 'No Android device found');
 
