@@ -22,6 +22,7 @@ switch (process.platform) {
 		break;
 
 	case "linux":
+	case "android":
 		switch (process.arch) {
 			case "arm64":
 				packageName = "@mobilenext/mobilecli-linux-arm64";
