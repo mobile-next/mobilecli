@@ -187,17 +187,54 @@ func parseJavaCrash(lines []string, start int) (*CrashReport, int) {
 	}, i
 }
 
+// platformFramePrefixes are the packages of the runtime and libraries an app
+// is built on. An exception often surfaces in one of them (android.os.Parcel,
+// java.lang.Integer), which says nothing about which program crashed.
+var platformFramePrefixes = []string{
+	"android.",
+	"androidx.",
+	"com.android.internal.",
+	"dalvik.",
+	"java.",
+	"javax.",
+	"jdk.internal.",
+	"kotlin.",
+	"kotlinx.",
+	"libcore.",
+	"sun.",
+}
+
+func isPlatformFrameOwner(owner string) bool {
+	for _, prefix := range platformFramePrefixes {
+		if strings.HasPrefix(owner, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractProcessFromStack names a crash that has no "Process:" line after the
+// class of its first stack frame outside the platform, falling back to the
+// first frame when every frame belongs to the platform.
 func extractProcessFromStack(lines []string, start int, pid string) string {
+	firstOwner := ""
 	for i := start + 1; i < len(lines); i++ {
 		parsed := parseLogcatLine(lines[i])
 		if parsed == nil || parsed.PID != pid || parsed.Tag != androidRuntimeTag {
 			break
 		}
-		if name := parseStackFrameOwner(parsed.Message); name != "" {
+		name := parseStackFrameOwner(parsed.Message)
+		if name == "" {
+			continue
+		}
+		if !isPlatformFrameOwner(name) {
 			return name
 		}
+		if firstOwner == "" {
+			firstOwner = name
+		}
 	}
-	return ""
+	return firstOwner
 }
 
 // parseStackFrameOwner extracts the fully qualified class name from a stack
