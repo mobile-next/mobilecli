@@ -74,8 +74,8 @@ func bareAgentURL(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if count > 1 {
-		return "", fmt.Errorf("%s holds a single URL but %d iOS devices are connected, use <udid>=<url> to say which device runs the agent", iosAgentURLEnv, count)
+	if count != 1 {
+		return "", fmt.Errorf("%s holds a single URL, which needs exactly one connected iOS device but found %d, use <udid>=<url> to say which device runs the agent", iosAgentURLEnv, count)
 	}
 
 	return agentURL, nil
