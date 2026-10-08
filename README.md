@@ -513,7 +513,9 @@ The CLI and daemon talk JSON-RPC over a unix domain socket in `~/.mobilecli/` (o
 
 On Android, the daemon keeps a small server running on the device (`com.mobilenext.mobilecli.DeviceServer`) that holds the device's only UiAutomation connection, so other UiAutomator clients such as `uiautomator dump` or Appium cannot run alongside it. The daemon stops that server when it exits, so `mobilecli daemon stop` hands the device back to other tools; the server also exits by itself after 30 minutes without requests (`MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT=5m` shortens that).
 
-On a real iOS device, the daemon launches the on-device agent itself and reaches it through a tunnel (iOS 17+) and a port forward. If the agent is already running and reachable another way, set `MOBILECLI_IOS_AGENT_URL` to its URL and the daemon uses that agent as is, without launching it or starting a tunnel or forward for it. The URL applies to every real iOS device, and commands that do not go through the agent (apps, logs, crashes, AVC streaming) are unchanged. The daemon reads the variable when it starts, so run `mobilecli daemon stop` after changing it.
+On a real iOS device, the daemon launches the on-device agent itself and reaches it through a tunnel (iOS 17+) and a port forward. If the agent is already running and reachable another way, set `MOBILECLI_IOS_AGENT_URL` to its URL and the daemon uses that agent as is, without launching it or starting a tunnel or forward for it. Commands that do not go through the agent (apps, logs, crashes, AVC streaming) are unchanged.
+
+The variable takes either a bare URL, which mobilecli accepts only while exactly one real iOS device is connected, or a comma-separated list of `<udid>=<url>` pairs such as `00008101-00161CEC3CDB001E=http://[fd34:13d9:5468::1]:12004,00008110-001A2B3C4D5E001E=http://localhost:8100`. With a list, each device uses only its own entry and a device without one is reached the usual way. The agent cannot report which device it runs on, so the mapping is what binds a device to its agent. The URL cannot have a query, a fragment, or a user name and password. The daemon reads the variable when it starts, so run `mobilecli daemon stop` after changing it.
 
 For a device paired over Wi-Fi, the agent can listen on the Xcode CoreDevice tunnel address (devicekit-ios `DEVICEKIT_LISTEN_HOST`), which only the paired Mac can reach:
 
@@ -523,7 +525,7 @@ TUNNEL=$(xcrun devicectl device info details --device $UDID --json-output - | jq
 # in the devicekit-ios checkout, after building the runner for the device once
 TEST_RUNNER_DEVICEKIT_LISTEN_HOST="127.0.0.1,$TUNNEL" xcodebuild test-without-building \
   -project devicekit-ios.xcodeproj -scheme devicekit-ios -destination "id=$UDID" -collect-test-diagnostics never &
-MOBILECLI_IOS_AGENT_URL="http://[$TUNNEL]:12004" mobilecli --device $UDID device info
+MOBILECLI_IOS_AGENT_URL="$UDID=http://[$TUNNEL]:12004" mobilecli --device $UDID device info
 ```
 
 The tunnel address can change when the tunnel reconnects, so read it right before launching the runner. With USB, the same variable works with a forward instead, for example `iproxy 8100 12004` and `MOBILECLI_IOS_AGENT_URL=http://localhost:8100`.
