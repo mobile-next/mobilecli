@@ -500,6 +500,14 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
+	agentURL, err := iosAgentURLOverride()
+	if err != nil {
+		return err
+	}
+	if agentURL != "" {
+		return d.useExternalAgent(agentURL)
+	}
+
 	if _, err := d.deviceKitClient.GetStatus(); err == nil {
 		return nil
 	}
@@ -1149,8 +1157,7 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	wdaPort := d.deviceKitClient.Port()
-	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
+	mjpegURL := buildMjpegURLForAgent(d.deviceKitClient.BaseURL(), config.FPS, config.Scale)
 	d.mjpegClient = mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	d.mu.Unlock()
 

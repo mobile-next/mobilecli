@@ -82,7 +82,12 @@ const (
 )
 
 func buildMjpegURL(port, fps int, scale float64) string {
-	url := fmt.Sprintf("http://localhost:%d/mjpeg", port)
+	return buildMjpegURLForAgent(fmt.Sprintf("http://localhost:%d", port), fps, scale)
+}
+
+// buildMjpegURLForAgent builds the mjpeg URL served by the agent at baseURL.
+func buildMjpegURLForAgent(baseURL string, fps int, scale float64) string {
+	url := baseURL + "/mjpeg"
 	sep := "?"
 	if fps > 0 {
 		url += fmt.Sprintf("%sfps=%d", sep, fps)
