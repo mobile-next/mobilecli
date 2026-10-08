@@ -500,7 +500,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	agentURL, err := iosAgentURLOverride()
+	agentURL, err := iosAgentURLOverride(d.Udid)
 	if err != nil {
 		return err
 	}
