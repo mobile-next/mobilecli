@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -201,17 +202,21 @@ func TestStartAgentTakesTheNormalPathForAnUnmappedDevice(t *testing.T) {
 	assert.Equal(t, running.URL, device.deviceKitClient.BaseURL())
 }
 
-func TestStartAgentRejectsABareURLWithTwoDevicesConnected(t *testing.T) {
-	withConnectedIOSDevices(t, 2)
-	agent := fakeAgent(t)
-	t.Setenv(iosAgentURLEnv, agent.URL)
+func TestStartAgentRejectsABareURLUnlessExactlyOneDeviceIsConnected(t *testing.T) {
+	for _, count := range []int{0, 2} {
+		t.Run(fmt.Sprintf("%d devices", count), func(t *testing.T) {
+			withConnectedIOSDevices(t, count)
+			agent := fakeAgent(t)
+			t.Setenv(iosAgentURLEnv, agent.URL)
 
-	err := deviceWithoutTunnel("http://127.0.0.1:1").StartAgent(StartAgentConfig{})
+			err := deviceWithoutTunnel("http://127.0.0.1:1").StartAgent(StartAgentConfig{})
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "2 iOS devices are connected")
-	assert.Contains(t, err.Error(), "<udid>=<url>")
-	assert.Contains(t, err.Error(), iosAgentURLEnv)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), fmt.Sprintf("found %d", count))
+			assert.Contains(t, err.Error(), "<udid>=<url>")
+			assert.Contains(t, err.Error(), iosAgentURLEnv)
+		})
+	}
 }
 
 func TestMjpegURLFollowsTheAgentURL(t *testing.T) {
