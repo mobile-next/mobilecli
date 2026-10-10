@@ -15,5 +15,8 @@ export default defineConfig<{}, DeviceTypeOptions>({
 		{name: 'simulator', testMatch: /simulator\.spec\.ts/},
 		{name: 'emulator', testMatch: /android\.spec\.ts/, use: {deviceType: 'emulator'}},
 		{name: 'android', testMatch: /android\.spec\.ts/, use: {deviceType: 'real'}},
+		{name: 'network-simulator', testMatch: /network\.spec\.ts/, use: {deviceType: 'simulator'}},
+		{name: 'network-emulator', testMatch: /network\.spec\.ts/, use: {deviceType: 'emulator'}},
+		{name: 'network-android', testMatch: /network\.spec\.ts/, use: {deviceType: 'real'}},
 	],
 });
