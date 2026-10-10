@@ -16,17 +16,24 @@ public class InjectedAgent implements JsonRpcSocketServer.Dispatcher {
 	// entry point called by jvmti_agent.c once the app's main looper is up
 	public static void start() {
 		AndroidBridge.init();
+		OkHttpHook.install();
 		AndroidBridge.sMainHandler.postDelayed(InjectedAgent::startRpcServer, 500);
 	}
 
 	private static void startRpcServer() {
 		String socket = "mobilecli." + AndroidBridge.getPackageName();
-		new JsonRpcSocketServer(socket, new InjectedAgent()).startDaemon();
+		new JsonRpcSocketServer(socket, new InjectedAgent(), true).startDaemon();
 	}
 
 	@Override
 	public Object dispatch(String method, JSONObject params) throws Exception {
 		switch (method) {
+			case "network.enable": return Network.enable(params);
+			case "network.poll": return Network.poll(params);
+			case "network.continue": return Network.continueRequest(params);
+			case "network.fulfill": return Network.fulfill(params);
+			case "network.abort": return Network.abort(params);
+			case "network.disable": return Network.disable(params);
 
 			case "device.dump.ui":
 				return WebViews.dumpUi();

@@ -8,6 +8,76 @@
 #define AGENT_CLASS "com.mobilenext.mobilecli.InjectedAgent"
 #define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
+/* A breakpoint at OkHttpClient.interceptors() lets the agent replace the list
+   on both clients made before attach and clients made later. The getter then
+   returns that same field, with our interceptor appended once. */
+static jvmtiEnv *network_jvmti;
+static jmethodID network_getter;
+static jfieldID network_field;
+static jobject network_interceptor;
+
+static void JNICALL network_breakpoint(jvmtiEnv *jvmti, JNIEnv *env,
+        jthread thread, jmethodID method, jlocation location) {
+    (void) location;
+    if (method != network_getter || network_interceptor == NULL) return;
+    jobject client = NULL;
+    jvmtiError local_err = (*jvmti)->GetLocalInstance(jvmti, thread, 0, &client);
+    if (local_err != JVMTI_ERROR_NONE || !client) {
+        LOG("OkHttp getter receiver unavailable: %d", local_err);
+        return;
+    }
+    jobject old_list = (*env)->GetObjectField(env, client, network_field);
+    if (!old_list || (*env)->ExceptionCheck(env)) goto done;
+
+    jclass list_cls = (*env)->FindClass(env, "java/util/List");
+    jmethodID contains = (*env)->GetMethodID(env, list_cls, "contains", "(Ljava/lang/Object;)Z");
+    if ((*env)->CallBooleanMethod(env, old_list, contains, network_interceptor)) goto done;
+    if ((*env)->ExceptionCheck(env)) goto done;
+
+    jclass array_cls = (*env)->FindClass(env, "java/util/ArrayList");
+    jmethodID init = (*env)->GetMethodID(env, array_cls, "<init>", "(Ljava/util/Collection;)V");
+    jobject new_list = (*env)->NewObject(env, array_cls, init, old_list);
+    jmethodID add = (*env)->GetMethodID(env, array_cls, "add", "(Ljava/lang/Object;)Z");
+    (*env)->CallBooleanMethod(env, new_list, add, network_interceptor);
+    if (!(*env)->ExceptionCheck(env)) {
+        (*env)->SetObjectField(env, client, network_field, new_list);
+    }
+    (*env)->DeleteLocalRef(env, new_list);
+done:
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    if (old_list) (*env)->DeleteLocalRef(env, old_list);
+    (*env)->DeleteLocalRef(env, client);
+}
+
+static jboolean JNICALL network_install(JNIEnv *env, jclass unused, jclass client_cls, jobject interceptor) {
+    (void) unused;
+    if (!network_jvmti) return JNI_FALSE;
+    jmethodID getter = (*env)->GetMethodID(env, client_cls, "interceptors", "()Ljava/util/List;");
+    jfieldID field = (*env)->GetFieldID(env, client_cls, "interceptors", "Ljava/util/List;");
+    if (!getter || !field || (*env)->ExceptionCheck(env)) return JNI_FALSE;
+    jvmtiCapabilities caps = {0};
+    caps.can_generate_breakpoint_events = 1;
+    caps.can_access_local_variables = 1;
+    jvmtiError err = (*network_jvmti)->AddCapabilities(network_jvmti, &caps);
+    if (err != JVMTI_ERROR_NONE) { LOG("network JVMTI capabilities failed: %d", err); return JNI_FALSE; }
+    if (network_getter) (*network_jvmti)->ClearBreakpoint(network_jvmti, network_getter, 0);
+    if (network_interceptor) (*env)->DeleteGlobalRef(env, network_interceptor);
+    network_interceptor = (*env)->NewGlobalRef(env, interceptor);
+    network_getter = getter;
+    network_field = field;
+    jvmtiEventCallbacks callbacks = {0};
+    callbacks.Breakpoint = network_breakpoint;
+    err = (*network_jvmti)->SetEventCallbacks(network_jvmti, &callbacks, sizeof(callbacks));
+    if (err == JVMTI_ERROR_NONE) err = (*network_jvmti)->SetBreakpoint(network_jvmti, getter, 0);
+    if (err == JVMTI_ERROR_NONE) err = (*network_jvmti)->SetEventNotificationMode(
+        network_jvmti, JVMTI_ENABLE, JVMTI_EVENT_BREAKPOINT, NULL);
+    if (err != JVMTI_ERROR_NONE) {
+        LOG("OkHttp getter breakpoint failed: %d", err);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 /* ── load mobilecli.dex into the target process ─────────────────────────── */
 
 /* dex_path  — full path to mobilecli.dex on the device
@@ -80,6 +150,14 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
         return;
     }
 
+    jstring j_hook = (*env)->NewStringUTF(env, "com.mobilenext.mobilecli.OkHttpHook");
+    jclass hook_cls = (jclass)(*env)->CallObjectMethod(env, loader, load, j_hook);
+    (*env)->DeleteLocalRef(env, j_hook);
+    if (hook_cls && !(*env)->ExceptionCheck(env)) {
+        JNINativeMethod methods[] = {{"nativeInstall", "(Ljava/lang/Class;Ljava/lang/Object;)Z", (void *)network_install}};
+        if ((*env)->RegisterNatives(env, hook_cls, methods, 1) != JNI_OK) (*env)->ExceptionClear(env);
+    } else (*env)->ExceptionClear(env);
+
     jmethodID start = (*env)->GetStaticMethodID(env, agentCls, "start", "()V");
     if (!start || (*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
@@ -138,6 +216,11 @@ static jint setup(JavaVM *vm, const char *opts) {
     }
 
     JNIEnv *env = NULL;
+
+    if ((*vm)->GetEnv(vm, (void **)&network_jvmti, JVMTI_VERSION_1_2) != JNI_OK) {
+        LOG("JVMTI environment unavailable");
+        return JNI_ERR;
+    }
     jint rc = (*vm)->AttachCurrentThread(vm, (void **) &env, NULL);
     if (rc != JNI_OK || env == NULL) {
         LOG("AttachCurrentThread failed (rc=%d, dex=%s)", rc, dex_path);
