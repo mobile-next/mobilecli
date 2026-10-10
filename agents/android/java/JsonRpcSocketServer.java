@@ -48,12 +48,18 @@ class JsonRpcSocketServer {
 
 	private final String socketName;
 	private final Dispatcher dispatcher;
+	private final boolean concurrent;
 	private volatile boolean running = true;
 	private LocalServerSocket serverSocket;
 
 	JsonRpcSocketServer(String socketName, Dispatcher dispatcher) {
+		this(socketName, dispatcher, false);
+	}
+
+	JsonRpcSocketServer(String socketName, Dispatcher dispatcher, boolean concurrent) {
 		this.socketName = socketName;
 		this.dispatcher = dispatcher;
+		this.concurrent = concurrent;
 	}
 
 	/** Binds and serves on the calling thread until stop() or a socket error. */
@@ -68,16 +74,23 @@ class JsonRpcSocketServer {
 				if (running) Log.e(TAG, "accept failed on " + socketName, e);
 				break;
 			}
-			try {
-				handleConnection(conn);
-			} catch (Exception e) {
-				Log.e(TAG, "Error handling connection", e);
-			} finally {
-				try {
-					conn.close();
-				} catch (Exception ignored) {
-				}
+			if (concurrent) {
+				Thread worker = new Thread(() -> serveConnection(conn), "jsonrpc-client-" + socketName);
+				worker.setDaemon(true);
+				worker.start();
+			} else {
+				serveConnection(conn);
 			}
+		}
+	}
+
+	private void serveConnection(LocalSocket conn) {
+		try {
+			handleConnection(conn);
+		} catch (Exception e) {
+			Log.e(TAG, "Error handling connection", e);
+		} finally {
+			try { conn.close(); } catch (Exception ignored) { }
 		}
 	}
 
