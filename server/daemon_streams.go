@@ -120,6 +120,14 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 	return commands.NewSuccessResponse(commands.OK), nil
 }
 
+func streamNetwork(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error) {
+	var req commands.NetworkListenRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return commands.NewErrorResponse(fmt.Errorf("invalid parameters: %w", err)), nil
+	}
+	return commands.NetworkListenCommand(ctx, req, notify), nil
+}
+
 func streamScreenRecord(ctx context.Context, params json.RawMessage, notify func(any) error) (any, error) {
 	var req commands.ScreenRecordStreamRequest
 	if err := json.Unmarshal(params, &req); err != nil {

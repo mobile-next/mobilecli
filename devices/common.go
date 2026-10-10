@@ -261,6 +261,42 @@ type WebViewable interface {
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
+// NetworkInterceptorProvider is implemented by devices that can attach a network
+// interceptor to the debuggable foreground app. Resolving the interceptor
+// injects/locates the in-app agent, so it can fail when no debuggable app is in
+// front; callers resolve it once per operation.
+type NetworkInterceptorProvider interface {
+	NetworkInterceptor() (NetworkInterceptable, error)
+}
+
+// NetworkInterceptable observes and intercepts the HTTP traffic of the app the
+// agent is attached to. It is a thin relay over the in-app agent's network.*
+// RPC methods; see docs/network-interception.md for the contract. Everything is
+// fail-open: a paused request the host never answers continues unchanged.
+type NetworkInterceptable interface {
+	// NetworkEnable turns on interception for the given routes. A request is
+	// paused only when it matches a route, so unmatched traffic is untouched.
+	NetworkEnable(routes []NetworkRoute) error
+	// NetworkPoll long-polls the agent for the next batch of events, returning
+	// each event as an opaque JSON object to relay to the client. It returns an
+	// empty slice (no error) when the poll window elapses with nothing pending.
+	NetworkPoll(ctx context.Context) ([]json.RawMessage, error)
+	// NetworkContinue, NetworkFulfill and NetworkAbort answer one paused request,
+	// keyed by requestId inside params. See docs/network-interception.md.
+	NetworkContinue(params map[string]any) error
+	NetworkFulfill(params map[string]any) error
+	NetworkAbort(params map[string]any) error
+	// NetworkDisable turns interception off; any still-paused request continues.
+	NetworkDisable() error
+}
+
+// NetworkRoute is one URL glob (and optional HTTP method) the host asked to
+// pause on. An empty Method matches any method.
+type NetworkRoute struct {
+	URL    string `json:"url"`
+	Method string `json:"method,omitempty"`
+}
+
 // GetAllControllableDevices aggregates all known devices with options
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 
