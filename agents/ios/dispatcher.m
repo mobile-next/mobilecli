@@ -1,5 +1,6 @@
 #import "dispatcher.h"
 #import "bridge.h"
+#import "network.h"
 
 static const int kRPCParseError     = -32700;
 static const int kRPCMethodNotFound = -32601;
@@ -39,6 +40,13 @@ NSData *dispatch_rpc(NSData *body) {
     id reqId         = req[@"id"] ?: [NSNull null];
     NSString *method = req[@"method"];
     NSDictionary *params = req[@"params"];
+
+    if ([method hasPrefix:@"network."]) {
+        NSError *networkError = nil;
+        NSDictionary *value = [MobileNetwork perform:method params:params error:&networkError];
+        if (networkError) return rpc_error(reqId, (int)networkError.code, networkError.localizedDescription);
+        return rpc_result(reqId, value);
+    }
 
     if ([method isEqualToString:@"device.webview.list"]) {
         return rpc_result(reqId, [IosBridge listWebViews]);

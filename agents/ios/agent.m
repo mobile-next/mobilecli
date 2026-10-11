@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import "server.h"
 #import "dispatcher.h"
+#import "network.h"
 
 static int mobilecli_port = 0;
 
@@ -11,6 +12,7 @@ int mobilecli_get_port(void) { return mobilecli_port; }
 __attribute__((constructor))
 static void on_load(void) {
     NSLog(@"[mobilecli] agent loaded");
+    [MobileNetwork install];
 
     MobileServer *server = [[MobileServer alloc] initWithHandler:^NSData *(NSData *body) {
         return dispatch_rpc(body);
