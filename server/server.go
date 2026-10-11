@@ -579,6 +579,24 @@ func handleIoPinch(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+func handleIoShake(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+
+	var req commands.DeviceIDRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+
+	if req.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	response := commands.ShakeCommand(req)
+	return okResult(response)
+}
+
 type ClipboardGetParams struct {
 	DeviceID string `json:"deviceId"`
 }

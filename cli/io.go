@@ -223,6 +223,20 @@ var ioPinchCmd = &cobra.Command{
 	},
 }
 
+var ioShakeCmd = &cobra.Command{
+	Use:   "shake",
+	Short: "Shake a device",
+	Long:  `Simulates a shake gesture on the specified device. Supported on iOS simulators and Android emulators.`,
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.DeviceIDRequest{
+			DeviceID: deviceId,
+		}
+
+		return runViaDaemon("cli.io.shake", req)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -234,6 +248,7 @@ func init() {
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
 	ioCmd.AddCommand(ioPinchCmd)
+	ioCmd.AddCommand(ioShakeCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -245,6 +260,7 @@ func init() {
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
+	ioShakeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to shake")
 	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
 	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 200, "pixels each finger travels")
 	ioPinchCmd.Flags().IntVar(&pinchDuration, "duration", 300, "duration of the finger movement in milliseconds")

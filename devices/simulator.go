@@ -1071,6 +1071,12 @@ func (s SimulatorDevice) SetHingeAngle(angle float64) error {
 	return s.deviceKitClient.SetHingeAngle(angle)
 }
 
+// Shake posts the notification Simulator.app sends for Device > Shake
+func (s SimulatorDevice) Shake() error {
+	_, err := runSimctl("notify_post", s.UDID, "com.apple.UIKit.SimulatorShake")
+	return err
+}
+
 // SetAppearance switches the simulator between light and dark mode
 func (s SimulatorDevice) SetAppearance(appearance string) error {
 	return s.deviceKitClient.SetAppearance(appearance)
