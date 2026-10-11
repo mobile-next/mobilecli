@@ -129,7 +129,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 func (c *DeviceKitClient) GetSourceRaw() (any, error) {
 	startTime := time.Now()
 
-	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "raw"})
+	result, err := c.CallRPCWithTimeout("device.dump.ui", map[string]string{"format": "raw"}, dumpUITimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
@@ -148,7 +148,7 @@ func (c *DeviceKitClient) GetSourceRaw() (any, error) {
 func (c *DeviceKitClient) GetSourceElements() ([]types.ScreenElement, error) {
 	startTime := time.Now()
 
-	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "json"})
+	result, err := c.CallRPCWithTimeout("device.dump.ui", map[string]string{"format": "json"}, dumpUITimeout)
 	if err != nil {
 		return nil, err
 	}

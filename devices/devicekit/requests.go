@@ -34,7 +34,12 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
-const defaultRPCTimeout = 10 * time.Second
+// a var so tests can shorten it
+var defaultRPCTimeout = 10 * time.Second
+
+// dumpUITimeout gives the agent time to snapshot a heavy screen, while keeping
+// the request below the http client's own timeout
+const dumpUITimeout = 55 * time.Second
 
 func (c *DeviceKitClient) CallRPC(method string, params any) (json.RawMessage, error) {
 	return c.CallRPCWithTimeout(method, params, defaultRPCTimeout)
