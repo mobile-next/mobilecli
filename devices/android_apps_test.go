@@ -1,6 +1,70 @@
 package devices
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os/exec"
+	"testing"
+)
+
+func TestPmPathReportsAnInstalledPackage(t *testing.T) {
+	installed, err := pmPathReportsInstalled([]byte("package:/system_ext/priv-app/SettingsGoogle/SettingsGoogle.apk\n"), nil)
+
+	if err != nil || !installed {
+		t.Fatalf("got installed=%v err=%v, want installed with no error", installed, err)
+	}
+}
+
+func TestPmPathReportsAnInstalledSplitApkPackage(t *testing.T) {
+	output := []byte("package:/data/app/com.example/base.apk\npackage:/data/app/com.example/split_config.arm64_v8a.apk\n")
+
+	installed, err := pmPathReportsInstalled(output, nil)
+
+	if err != nil || !installed {
+		t.Fatalf("got installed=%v err=%v, want installed with no error", installed, err)
+	}
+}
+
+// processExiting returns the error of a process that exited with the given
+// status, as adb's does when pm path reports a missing package.
+func processExiting(t *testing.T, status int) error {
+	t.Helper()
+	err := exec.CommandContext(context.Background(), "sh", "-c", fmt.Sprintf("exit %d", status)).Run()
+	if err == nil {
+		t.Fatalf("expected the shell to exit with status %d", status)
+	}
+	return err
+}
+
+func TestPmPathReportsAMissingPackageAsNotInstalled(t *testing.T) {
+	// pm path exits 1 and prints nothing for a package that is not installed
+	installed, err := pmPathReportsInstalled([]byte(""), processExiting(t, 1))
+
+	if err != nil || installed {
+		t.Fatalf("got installed=%v err=%v, want not installed with no error", installed, err)
+	}
+}
+
+// adb that could not be started prints nothing either, and must not pass for
+// a package that is not installed.
+func TestPmPathReportsAnAdbThatCouldNotStartAsAnError(t *testing.T) {
+	adbNotFound := &exec.Error{Name: "adb", Err: exec.ErrNotFound}
+
+	_, err := pmPathReportsInstalled([]byte(""), adbNotFound)
+
+	if err == nil || !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("expected the launch failure to be reported, got %v", err)
+	}
+}
+
+func TestPmPathReportsAnAdbFailureAsAnError(t *testing.T) {
+	_, err := pmPathReportsInstalled([]byte("adb: device 'emulator-5554' not found"), errors.New("exit status 1"))
+
+	if err == nil {
+		t.Fatal("an adb failure must not be read as 'not installed'")
+	}
+}
 
 func TestParsePackageListerOutput(t *testing.T) {
 	output := []byte(`[{"packageName":"com.mobilenext.devicekit","appName":"DeviceKit","version":"1.2.5","versionCode":10205}]`)
