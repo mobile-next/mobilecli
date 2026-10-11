@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1265,15 +1266,18 @@ func (d *AndroidDevice) isPackageInstalled(packageName string) (bool, error) {
 
 // pmPathReportsInstalled reads the result of `pm path <package>`, which prints
 // "package:<apk path>" for an installed package and exits 1 with no output for
-// one that is not installed. Any other failure, such as an offline device, is
-// returned as an error rather than read as "not installed".
+// one that is not installed. Any other failure, such as an offline device or
+// an adb that could not be started, is returned as an error rather than read
+// as "not installed".
 func pmPathReportsInstalled(output []byte, err error) (bool, error) {
 	text := strings.TrimSpace(string(output))
 	if strings.HasPrefix(text, "package:") {
 		return true, nil
 	}
-	if err != nil && text != "" {
-		return false, fmt.Errorf("failed to check whether the package is installed: %v\nOutput: %s", err, text)
+	var exitErr *exec.ExitError
+	exitedWithoutAMatch := errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && text == ""
+	if err != nil && !exitedWithoutAMatch {
+		return false, fmt.Errorf("failed to check whether the package is installed: %w\nOutput: %s", err, text)
 	}
 	return false, nil
 }
