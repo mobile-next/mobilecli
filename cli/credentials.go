@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -25,11 +24,16 @@ var insecureStorage bool
 
 // useFileStorage reports whether the token lives in the credentials file rather
 // than the OS keyring. That is the case when --insecure-storage is set, and
-// always on Android (Termux), which has no keyring and where probing for one
-// kills the process: the seccomp filter rejects the faccessat2 syscall that
-// exec.LookPath makes, so the keyring backend crashes with SIGSYS.
+// always on Termux, which has no keyring and where probing for one kills the
+// process: the seccomp filter rejects the faccessat2 syscall that
+// exec.LookPath makes, so the keyring backend crashes with SIGSYS. We detect
+// Termux by TERMUX_VERSION, since the binary is built with GOOS=linux.
 func useFileStorage() bool {
-	return insecureStorage || runtime.GOOS == "android" || os.Getenv("TERMUX_VERSION") != ""
+	return insecureStorage || isTermux()
+}
+
+func isTermux() bool {
+	return os.Getenv("TERMUX_VERSION") != ""
 }
 
 // credentialsFilePath returns the path to the plaintext token file used when
@@ -53,6 +57,12 @@ func credentialsFilePath() (string, error) {
 // --insecure-storage is set.
 func storeToken(token string) error {
 	if useFileStorage() {
+		// on Termux we fall back to the plaintext file without being asked to, so
+		// tell the user. skip it when --insecure-storage was passed explicitly,
+		// since they already opted into plaintext storage.
+		if isTermux() && !insecureStorage {
+			fmt.Fprintln(os.Stderr, "Notice: Termux has no OS keyring, storing token in plaintext credentials file")
+		}
 		return storeTokenInFile(token)
 	}
 	if err := keyring.Set(keyringService, keyringUser, token); err != nil {
