@@ -1,3 +1,8 @@
+## [1.0.19](https://github.com/mobile-next/mobilecli/releases/tag/1.0.19) (2026-10-11)
+* Fix: support Android (Termux) by mapping android platform to linux binaries, with token stored in a credentials file ([#499](https://github.com/mobile-next/mobilecli/pull/499), [#505](https://github.com/mobile-next/mobilecli/pull/505)), thanks to [@Jobians](https://github.com/Jobians)
+* Fix(ios): stop dump ui from timing out after 10s on heavy screens ([#497](https://github.com/mobile-next/mobilecli/pull/497)), thanks to [@Cassian433](https://github.com/Cassian433)
+* Fix(android): report a package that is not installed when uninstalling it ([#500](https://github.com/mobile-next/mobilecli/pull/500))
+
 ## [1.0.18](https://github.com/mobile-next/mobilecli/releases/tag/1.0.18) (2026-10-04)
 * Fix: match log filters case-insensitively, message as a substring ([#483](https://github.com/mobile-next/mobilecli/pull/483))
 * Fix: accept hardware button names case-insensitively ([#479](https://github.com/mobile-next/mobilecli/pull/479))
