@@ -11,11 +11,18 @@ final class NetworkGlob {
 		for (int i = 0; i < glob.length(); i++) {
 			char c = glob.charAt(i);
 			if (c == '*') {
-				if (i + 1 < glob.length() && glob.charAt(i + 1) == '*') { regex.append(".*"); i++; }
-				else regex.append("[^/]*");
-			} else if (c == '?') regex.append('.');
-			else {
-				if ("\\.[]{}()+-^$|".indexOf(c) >= 0) regex.append('\\');
+				if (i + 1 < glob.length() && glob.charAt(i + 1) == '*') {
+					regex.append(".*");
+					i++;
+				} else {
+					regex.append("[^/]*");
+				}
+			} else if (c == '?') {
+				regex.append('.');
+			} else {
+				if ("\\.[]{}()+-^$|".indexOf(c) >= 0) {
+					regex.append('\\');
+				}
 				regex.append(c);
 			}
 		}

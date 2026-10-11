@@ -77,7 +77,9 @@ final class Network {
 			next.add(new Route(NetworkGlob.compile(glob), method == null || method.isEmpty() ? null : method));
 		}
 		// An empty route list means intercept every request.
-		if (next.isEmpty()) next.add(new Route(Pattern.compile(".*", Pattern.DOTALL), null));
+		if (next.isEmpty()) {
+			next.add(new Route(Pattern.compile(".*", Pattern.DOTALL), null));
+		}
 		synchronized (LOCK) {
 			releaseAllLocked();
 			EVENTS.clear();
@@ -97,7 +99,9 @@ final class Network {
 			try {
 				while (enabled && EVENTS.isEmpty()) {
 					long remaining = deadline - System.currentTimeMillis();
-					if (remaining <= 0) break;
+					if (remaining <= 0) {
+						break;
+					}
 					try { LOCK.wait(remaining); } catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						break;
@@ -144,7 +148,9 @@ final class Network {
 		Pause pause = new Pause();
 		String id;
 		synchronized (LOCK) {
-			if (!enabled || !matchesLocked(url, method) || EVENTS.size() >= MAX_EVENTS) return UNCHANGED;
+			if (!enabled || !matchesLocked(url, method) || EVENTS.size() >= MAX_EVENTS) {
+				return UNCHANGED;
+			}
 			id = Long.toString(IDS.incrementAndGet());
 			JSONObject event = new JSONObject();
 			try {
@@ -155,7 +161,9 @@ final class Network {
 				event.put("headers", headers);
 				event.put("body", body == null ? JSONObject.NULL : Base64.encodeToString(
 					body, 0, Math.min(body.length, MAX_BODY_BYTES), Base64.NO_WRAP));
-				if (body != null && body.length > MAX_BODY_BYTES) event.put("bodyTruncated", true);
+				if (body != null && body.length > MAX_BODY_BYTES) {
+					event.put("bodyTruncated", true);
+				}
 				event.put("stack", "okhttp");
 			} catch (JSONException e) {
 				return UNCHANGED;
@@ -207,12 +215,18 @@ final class Network {
 	}
 
 	private static boolean matchesLocked(String url, String method) {
-		for (Route route : routes) if (route.matches(url, method)) return true;
+		for (Route route : routes) {
+			if (route.matches(url, method)) {
+				return true;
+			}
+		}
 		return false;
 	}
 
 	private static void releaseAllLocked() {
-		for (Pause pause : PAUSED.values()) pause.verdict = UNCHANGED;
+		for (Pause pause : PAUSED.values()) {
+			pause.verdict = UNCHANGED;
+		}
 		PAUSED.clear();
 		LOCK.notifyAll();
 	}
