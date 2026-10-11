@@ -8,6 +8,6 @@
 		"url": "git+https://github.com/mobile-next/mobilecli.git"
 	},
 	"license": "FSL-1.1-ALv2",
-	"os": ["linux"],
+	"os": ["linux", "android"],
 	"cpu": ["arm64"]
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,15 @@ import (
 
 // insecureStorage is bound to the global --insecure-storage flag.
 var insecureStorage bool
+
+// useFileStorage reports whether the token lives in the credentials file rather
+// than the OS keyring. That is the case when --insecure-storage is set, and
+// always on Android (Termux), which has no keyring and where probing for one
+// kills the process: the seccomp filter rejects the faccessat2 syscall that
+// exec.LookPath makes, so the keyring backend crashes with SIGSYS.
+func useFileStorage() bool {
+	return insecureStorage || runtime.GOOS == "android" || os.Getenv("TERMUX_VERSION") != ""
+}
 
 // credentialsFilePath returns the path to the plaintext token file used when
 // --insecure-storage is set: $XDG_CONFIG_HOME/mobilecli/credentials, falling
@@ -42,7 +52,7 @@ func credentialsFilePath() (string, error) {
 // storeToken saves the token in the keyring, or in the credentials file when
 // --insecure-storage is set.
 func storeToken(token string) error {
-	if insecureStorage {
+	if useFileStorage() {
 		return storeTokenInFile(token)
 	}
 	if err := keyring.Set(keyringService, keyringUser, token); err != nil {
@@ -74,7 +84,7 @@ func loadToken() (string, error) {
 		return token, nil
 	}
 
-	if insecureStorage {
+	if useFileStorage() {
 		return loadTokenFromFile()
 	}
 
@@ -155,7 +165,7 @@ func loadTokenFromFile() (string, error) {
 // deleteToken removes the stored token. It returns keyring.ErrNotFound when no
 // token was stored, so logout can report "not logged in".
 func deleteToken() error {
-	if insecureStorage {
+	if useFileStorage() {
 		path, err := credentialsFilePath()
 		if err != nil {
 			return err
