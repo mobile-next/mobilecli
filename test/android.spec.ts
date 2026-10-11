@@ -195,6 +195,22 @@ test.describe('Android Tests', () => {
 		await expectLauncherToBeInForeground(device!.id);
 	});
 
+	test('should report that a package which is not installed cannot be terminated', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = appsCommandError(device!.id, 'terminate', ABSENT_PACKAGE);
+
+		expect(error).toContain(`${ABSENT_PACKAGE} not installed`);
+	});
+
+	test('should terminate an installed app that is not running without an error', () => {
+		test.skip(!device, 'No Android device found');
+
+		// force-stop is idempotent, and callers stop an app before relaunching it
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+	});
+
 	test('should handle launching app twice (idempotency)', async () => {
 		test.skip(!device, 'No Android device found');
 
@@ -981,6 +997,23 @@ function launchApp(deviceId: string, packageName: string): void {
 
 function terminateApp(deviceId: string, packageName: string): void {
 	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
+}
+
+// runs an `apps` subcommand that is expected to fail and returns its error message
+function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+	try {
+		mobilecliJson(['apps', subcommand, packageName, '--device', deviceId]);
+	} catch (error: unknown) {
+		// a timeout or a missing binary fails without printing an envelope, and
+		// parsing that as json would bury the real cause
+		const stdout = (error as {stdout?: string}).stdout ?? '';
+		if (stdout.trim() === '') {
+			throw error;
+		}
+		return expectErrorEnvelope(JSON.parse(stdout));
+	}
+
+	throw new Error(`apps ${subcommand} ${packageName} unexpectedly succeeded`);
 }
 
 // force-stops every package that can hold an activity in the settings task, so the
