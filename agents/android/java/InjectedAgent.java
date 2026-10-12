@@ -28,12 +28,23 @@ public class InjectedAgent implements JsonRpcSocketServer.Dispatcher {
 	@Override
 	public Object dispatch(String method, JSONObject params) throws Exception {
 		switch (method) {
-			case "network.enable": return Network.enable(params);
-			case "network.poll": return Network.poll(params);
-			case "network.continue": return Network.continueRequest(params);
-			case "network.fulfill": return Network.fulfill(params);
-			case "network.abort": return Network.abort(params);
-			case "network.disable": return Network.disable(params);
+			case "network.enable":
+				return Network.enable(params);
+
+			case "network.poll":
+				return Network.poll(params);
+
+			case "network.continue":
+				return Network.continueRequest(params);
+
+			case "network.fulfill":
+				return Network.fulfill(params);
+
+			case "network.abort":
+				return Network.abort(params);
+
+			case "network.disable":
+				return Network.disable(params);
 
 			case "device.dump.ui":
 				return WebViews.dumpUi();
