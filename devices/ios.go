@@ -157,7 +157,9 @@ func getDeviceInfo(deviceEntry goios.DeviceEntry) (*IOSDevice, error) {
 	}
 
 	device.tunnelManager = tunnelManager
-	device.deviceKitClient = devicekit.NewDeviceKitClient("localhost:8100")
+	// No deviceKitClient yet: it is created by ensureDeviceKitAgentForwarder
+	// pointing at this device's own forwarded port. A default localhost:8100
+	// client would reach whichever device's agent was forwarded first.
 
 	return device, nil
 }
@@ -478,6 +480,18 @@ func (d *IOSDevice) startTunnel() error {
 	return d.waitForTunnelReady()
 }
 
+// ownAgentClient returns this device's agent client only when this device
+// already has its own running agent forwarder. Otherwise there is no client
+// to trust: any answer would come from another device's agent.
+func (d *IOSDevice) ownAgentClient() *devicekit.DeviceKitClient {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning() {
+		return nil
+	}
+	return d.deviceKitClient
+}
+
 func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// register cleanup hook for this device
 	if config.Hook != nil {
@@ -500,8 +514,10 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	if _, err := d.deviceKitClient.GetStatus(); err == nil {
-		return nil
+	if client := d.ownAgentClient(); client != nil {
+		if _, err := client.GetStatus(); err == nil {
+			return nil
+		}
 	}
 	utils.Verbose("WebdriverAgent is not running, starting it")
 
@@ -1150,6 +1166,10 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
 	wdaPort := d.deviceKitClient.Port()
+	if wdaPort == 0 {
+		d.mu.Unlock()
+		return fmt.Errorf("agent not started for device %s: call StartAgent first", d.Udid)
+	}
 	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
 	d.mjpegClient = mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	d.mu.Unlock()
