@@ -1402,11 +1402,8 @@ func handleScreenCaptureSession(params json.RawMessage) (any, error) {
 		return nil, err
 	}
 
-	// avc format validation based on device type
-	if screenCaptureParams.Format == devices.FormatAVC {
-		if target.Platform == "ios" && target.Type == "simulator" {
-			return nil, fmt.Errorf("avc format is not supported on iOS simulators")
-		}
+	if err := devices.ValidateScreenCaptureFormat(target.Platform, target.Type, screenCaptureParams.Format); err != nil {
+		return nil, err
 	}
 
 	// ensure session manager is initialized for non-server Execute usage
@@ -1716,11 +1713,8 @@ func handleScreenCapture(r *http.Request, w http.ResponseWriter, params json.Raw
 		return fmt.Errorf("error finding device: %w", err)
 	}
 
-	// avc format is supported on Android and iOS real devices (not simulators)
-	if screenCaptureParams.Format == devices.FormatAVC {
-		if targetDevice.Platform() == "ios" && targetDevice.DeviceType() == "simulator" {
-			return fmt.Errorf("avc format is not supported on iOS simulators")
-		}
+	if err := devices.ValidateScreenCaptureFormat(targetDevice.Platform(), targetDevice.DeviceType(), screenCaptureParams.Format); err != nil {
+		return err
 	}
 
 	// Set headers for streaming response based on format

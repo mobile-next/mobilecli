@@ -735,6 +735,11 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 }
 
 func (s *SimulatorDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	// DeviceKit on the simulator only serves mjpeg
+	if err := ValidateScreenCaptureFormat(s.Platform(), s.DeviceType(), config.Format); err != nil {
+		return err
+	}
+
 	mjpegPort, err := s.getDeviceKitMjpegPort()
 	if err != nil {
 		return fmt.Errorf("failed to get MJPEG port: %w", err)
