@@ -1103,7 +1103,7 @@ func parsePackageListerOutput(output []byte) ([]InstalledAppInfo, error) {
 }
 
 // getForegroundComponent returns the package name and activity of the focused
-// window. Note that mCurrentFocus also reports dialogs and the IME.
+// window, or of the focused app when a system window holds focus.
 func (d *AndroidDevice) getForegroundComponent() (string, string, error) {
 	output, err := d.runAdbCommand("shell", "dumpsys", "window", "displays")
 	if err != nil {
@@ -1121,11 +1121,32 @@ func (d *AndroidDevice) getForegroundComponent() (string, string, error) {
 // A multi-display device prints one such line per display and the unfocused ones read
 // "mCurrentFocus=null", so a line that does not parse means "not this display" rather
 // than "no foreground app".
+//
+// mCurrentFocus also reports app-owned dialogs, which is what we want, but when a
+// system window holds focus (notification shade, IME, ANR dialog, power menu) it names
+// that window instead, e.g. "Window{... u0 NotificationShade}". Only then do we fall
+// back to the app behind it, which the same display reports right after as:
+//
+//	mFocusedApp=ActivityRecord{... u0 com.package.name/.MainActivity t42}
+//
+// A null focus is left as an error, so callers keep retrying through window transitions.
 func parseForegroundComponent(output string) (string, string, error) {
+	systemWindowFocused := false
 	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "mFocusedApp=") {
+			if !systemWindowFocused {
+				continue
+			}
+			if packageName, activity, found := parseActivityRecord(line); found {
+				return packageName, activity, nil
+			}
+			continue
+		}
+
 		if !strings.Contains(line, "mCurrentFocus") {
 			continue
 		}
+		systemWindowFocused = false
 		parts := strings.Fields(line)
 		if len(parts) < 3 {
 			continue
@@ -1135,9 +1156,35 @@ func parseForegroundComponent(output string) (string, string, error) {
 		if idx := strings.Index(focusPart, "/"); idx != -1 {
 			return focusPart[:idx], focusPart[idx+1:], nil
 		}
+		systemWindowFocused = true
 	}
 
 	return "", "", fmt.Errorf("could not determine foreground app")
+}
+
+// parseActivityRecord extracts the component from an
+// "ActivityRecord{hash u0 com.package.name/.MainActivity t42}" token, expanding an
+// activity name that is relative to the package.
+func parseActivityRecord(line string) (string, string, bool) {
+	idx := strings.Index(line, "ActivityRecord{")
+	if idx == -1 {
+		return "", "", false
+	}
+
+	for _, field := range strings.Fields(line[idx:]) {
+		field = strings.TrimRight(field, "}")
+		slash := strings.Index(field, "/")
+		if slash <= 0 || slash == len(field)-1 {
+			continue
+		}
+		packageName, activity := field[:slash], field[slash+1:]
+		if strings.HasPrefix(activity, ".") {
+			activity = packageName + activity
+		}
+		return packageName, activity, true
+	}
+
+	return "", "", false
 }
 
 func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
