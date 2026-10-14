@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
@@ -124,6 +125,7 @@ func TestStartAgentRejectsAQueryFragmentOrUserInfo(t *testing.T) {
 		"http://localhost:8100/?":                   "cannot have a query or fragment",
 		"http://localhost:8100/#":                   "cannot have a query or fragment",
 		"http://localhost:8100/#health":             "cannot have a query or fragment",
+		"http://localhost:8100?a=b":                 "cannot have a query or fragment",
 		"http://user:secret@192.168.1.20:8100":      "cannot carry a user name or password",
 		"https://user@localhost:8100":               "cannot carry a user name or password",
 		"00008110-000000000000001E=http://u:p@h:81": "cannot carry a user name or password",
@@ -140,10 +142,8 @@ func TestStartAgentRejectsAQueryFragmentOrUserInfo(t *testing.T) {
 	}
 }
 
-// a bare URL with a query looks like a mapping and is reported as malformed
 func TestStartAgentRejectsMalformedMappings(t *testing.T) {
 	for _, value := range []string{
-		"http://localhost:8100?a=b",
 		"00008110-000000000000001E=",
 		"=http://localhost:8100",
 		"00008110-000000000000001E=http://localhost:8100,",
@@ -223,4 +223,21 @@ func TestMjpegURLFollowsTheAgentURL(t *testing.T) {
 	assert.Equal(t, "http://192.168.1.20:8100/mjpeg?fps=10", buildMjpegURLForAgent("http://192.168.1.20:8100", 10, 1))
 	assert.Equal(t, "http://[fd34:13d9:5468::1]:12004/mjpeg?fps=10", buildMjpegURLForAgent("http://[fd34:13d9:5468::1]:12004", 10, 1))
 	assert.Equal(t, "http://localhost:8100/mjpeg?scale=50", buildMjpegURL(8100, 0, 0.5))
+}
+
+// '=' and ',' in the path of a bare URL do not make it a mapping
+func TestBareAgentURLMayHaveMappingSeparatorsInItsPath(t *testing.T) {
+	withConnectedIOSDevices(t, 1)
+	for _, value := range []string{
+		"http://localhost:8100/proxy=v2",
+		"http://localhost:8100/a,b",
+		"https://[fd34:13d9:5468::1]:12004/x=1,y=2/",
+	} {
+		t.Setenv(iosAgentURLEnv, value)
+
+		agentURL, err := iosAgentURLOverride("00008110-000000000000001E")
+
+		require.NoError(t, err, value)
+		assert.Equal(t, strings.TrimSuffix(value, "/"), agentURL, value)
+	}
 }

@@ -50,8 +50,9 @@ func iosAgentURLOverride(udid string) (string, error) {
 		return "", nil
 	}
 
-	// agent URLs cannot carry a query, so '=' and ',' only appear in a mapping
-	if !strings.ContainsAny(value, "=,") {
+	// a bare URL may have '=' or ',' in its path, so classify it before
+	// treating those characters as mapping separators
+	if isBareAgentURL(value) || !strings.ContainsAny(value, "=,") {
 		return bareAgentURL(value)
 	}
 
@@ -60,6 +61,13 @@ func iosAgentURLOverride(udid string) (string, error) {
 		return "", err
 	}
 	return agentURLs[strings.ToUpper(udid)], nil
+}
+
+// isBareAgentURL reports whether value parses as a single http(s) URL with a
+// host. A <udid>=<url> mapping never does: '=' cannot appear in a URL scheme.
+func isBareAgentURL(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
 }
 
 // bareAgentURL accepts a URL without a udid only when it cannot reach the
