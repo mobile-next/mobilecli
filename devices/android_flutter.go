@@ -63,28 +63,32 @@ func (d *AndroidDevice) flutterVMServiceURI(pkg string) string {
 // tryDumpFlutterSource returns the Flutter render tree for the foreground app,
 // or ok=false to signal the caller should use the accessibility dump. Detection
 // requires a debuggable app (the JVMTI agent only attaches to those), which is
-// also the only case where a Dart VM service exists.
-func (d *AndroidDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
+// also the only case where a Dart VM service exists. The error is only set when
+// the device stopped answering, as the accessibility dump would wait on it too.
+func (d *AndroidDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool, error) {
 	foreground, err := d.GetForegroundApp()
+	if errors.Is(err, errDeviceNotResponding) {
+		return nil, false, err
+	}
 	if err != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	pkg := foreground.PackageName
 	if !d.isAppDebuggable(pkg) {
-		return nil, false
+		return nil, false, nil
 	}
 	uri := d.flutterVMServiceURI(pkg)
 	if uri == "" {
-		return nil, false
+		return nil, false, nil
 	}
 	start := time.Now()
 	elements, err := d.dumpFlutterSource(uri)
 	if err != nil {
 		utils.Verbose("flutter: render-tree dump failed, falling back: %v", err)
-		return nil, false
+		return nil, false, nil
 	}
 	utils.Verbose("flutter: render-tree dump produced %d elements in %s", len(elements), time.Since(start))
-	return elements, true
+	return elements, true, nil
 }
 
 // dumpFlutterSource reads the Flutter render tree over the VM service and
