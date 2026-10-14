@@ -791,10 +791,10 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	select {
 	case <-sigChan:
 		interrupt()
-		<-done
+		awaitRecordVideoExit(cmd, done)
 	case <-stopChan:
 		interrupt()
-		<-done
+		awaitRecordVideoExit(cmd, done)
 	case <-done:
 	}
 
@@ -805,6 +805,25 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	signal.Stop(sigChan)
 	close(sigChan)
 	return nil
+}
+
+// recordVideoStopTimeout bounds how long an interrupted simctl recordVideo
+// gets to finalize the video before it is killed, so a hung simctl never
+// leaves the simulator's recorder claimed. It stays under the daemon's
+// shutdown grace.
+const recordVideoStopTimeout = 8 * time.Second
+
+// awaitRecordVideoExit waits for the interrupted simctl recordVideo (cmd,
+// whose Wait result arrives on done) to exit, killing it after
+// recordVideoStopTimeout.
+func awaitRecordVideoExit(cmd *exec.Cmd, done <-chan error) {
+	select {
+	case <-done:
+	case <-time.After(recordVideoStopTimeout):
+		utils.Info("simctl recordVideo did not stop within %s, killing it", recordVideoStopTimeout)
+		_ = cmd.Process.Kill()
+		<-done
+	}
 }
 
 type ProcessInfo struct {
