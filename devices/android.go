@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -1349,24 +1350,54 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("failed to start %s: %v", serverClass, err)
 	}
 
-	// Read bytes from the command output and send to callback
-	buffer := make([]byte, 65536)
-	for {
-		n, err := stdout.Read(buffer)
-		if err != nil {
-			break
-		}
+	err = forwardAgentStream(stdout, config.OnData)
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	if err != nil {
+		return fmt.Errorf("%s failed: %w", serverClass, err)
+	}
+	return nil
+}
 
-		if n > 0 {
-			// Send bytes to callback, break if it returns false
-			if !config.OnData(buffer[:n]) {
-				break
-			}
-		}
+// agentStreamErrorPrefix starts the message MjpegServer and AvcServer print when
+// they fail to start. `adb exec-out` merges the agent's stderr into its stdout,
+// and does not pass on its exit code, so the message arrives in place of the
+// stream and is the only sign that the agent failed.
+const agentStreamErrorPrefix = "Error: "
+
+// agentStreamErrorLimit bounds how much of a failed agent's output is read.
+const agentStreamErrorLimit = 64 * 1024
+
+// forwardAgentStream sends every chunk read from the agent's output to onData,
+// until the output ends or onData returns false. If the output starts with the
+// agent's error message instead of a stream, it returns that message as an error.
+func forwardAgentStream(r io.Reader, onData func([]byte) bool) error {
+	head := make([]byte, len(agentStreamErrorPrefix))
+	n, err := io.ReadFull(r, head)
+	head = head[:n]
+	if bytes.HasPrefix(head, []byte(agentStreamErrorPrefix)) {
+		rest, _ := io.ReadAll(io.LimitReader(r, agentStreamErrorLimit))
+		message := strings.TrimSpace(strings.TrimPrefix(string(head)+string(rest), agentStreamErrorPrefix))
+		return errors.New(message)
+	}
+	if n > 0 && !onData(head) {
+		return nil
+	}
+	if err != nil {
+		// the output ended within its first few bytes
+		return nil
 	}
 
-	_ = cmd.Process.Kill()
-	return nil
+	buffer := make([]byte, 65536)
+	for {
+		n, err := r.Read(buffer)
+		if n > 0 && !onData(buffer[:n]) {
+			return nil
+		}
+		if err != nil {
+			return nil
+		}
+	}
 }
 
 // ScreenRecord records the device screen to a local MP4 file using adb screenrecord.
