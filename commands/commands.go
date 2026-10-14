@@ -129,6 +129,7 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 	device, exists := deviceCache[deviceID]
 	mu.RUnlock()
 	if exists {
+		devices.RefreshState(device)
 		return device, nil
 	}
 
@@ -189,6 +190,7 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	cachedDevice, exists := deviceCache[deviceID]
 	mu.RUnlock()
 	if exists {
+		devices.RefreshState(cachedDevice)
 		return cachedDevice, nil
 	}
 

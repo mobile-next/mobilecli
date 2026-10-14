@@ -119,6 +119,30 @@ func TestADB_Shell_UsesTransportOnSameConnection(t *testing.T) {
 	}
 }
 
+func TestADB_DevicesLong_ReturnsTheLengthPrefixedListing(t *testing.T) {
+	listing := "emulator-5554          device product:sdk_gphone64_arm64 transport_id:9\n"
+	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
+		defer func() { _ = conn.Close() }()
+
+		got := readADBService(t, conn)
+		if got != "host:devices-l" {
+			t.Errorf("expected host:devices-l, got %q", got)
+			return
+		}
+		writeOKAY(t, conn)
+		writeLenPrefixed(t, conn, listing)
+	})
+	defer closeFn()
+
+	out, err := NewADB(host, port).DevicesLong(context.Background())
+	if err != nil {
+		t.Fatalf("DevicesLong error: %v", err)
+	}
+	if out != listing {
+		t.Fatalf("unexpected output %q", out)
+	}
+}
+
 func TestADB_TrackDevices_StreamsFramesAndStopsOnCancel(t *testing.T) {
 	host, port, closeFn := startFakeADBServer(t, func(conn net.Conn) {
 		defer func() { _ = conn.Close() }()
