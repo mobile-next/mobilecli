@@ -312,7 +312,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.JSONRPC != "2.0" {
+	if req.JSONRPC != jsonRPCVersion {
 		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "'jsonrpc' must be '2.0'")
 		return
 	}
@@ -357,7 +357,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 func sendJSONRPCResponse(w http.ResponseWriter, id any, result any) {
 	response := JSONRPCResponse{
-		JSONRPC: "2.0",
+		JSONRPC: jsonRPCVersion,
 		Result:  result,
 		ID:      id,
 	}
@@ -1296,7 +1296,7 @@ func handleServerShutdown(params json.RawMessage) (any, error) {
 
 func sendJSONRPCError(w http.ResponseWriter, id any, code int, message string, data any) {
 	response := JSONRPCResponse{
-		JSONRPC: "2.0",
+		JSONRPC: jsonRPCVersion,
 		Error: map[string]any{
 			"code":    code,
 			"message": message,
@@ -1321,7 +1321,7 @@ func sendBanner(w http.ResponseWriter, r *http.Request) {
 // newJsonRpcNotification creates a JSON-RPC notification message
 func newJsonRpcNotification(message string) map[string]any {
 	return map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": jsonRPCVersion,
 		"method":  "notification/message",
 		"params": map[string]string{
 			"message": message,

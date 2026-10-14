@@ -974,7 +974,7 @@ func (d *IOSDevice) sendAvcControl(method string, params map[string]any) error {
 	}
 
 	msg, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": jsonRPCVersion,
 		"method":  method,
 		"params":  params,
 		"id":      1,

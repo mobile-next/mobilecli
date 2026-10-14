@@ -243,7 +243,7 @@ func (vm *flutterVM) call(method string, params map[string]any) (json.RawMessage
 	vm.pending[id] = ch
 	vm.mu.Unlock()
 
-	req := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
+	req := map[string]any{"jsonrpc": jsonRPCVersion, "id": id, "method": method}
 	if params != nil {
 		req["params"] = params
 	}

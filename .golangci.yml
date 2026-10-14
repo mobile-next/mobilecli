@@ -44,6 +44,14 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
+      # cobra subcommand names, JSON/protocol keys, argv tokens and keycode
+      # table entries read better as literals than as constants
+      ignore-string-values:
+        - '^(list|status|start|running)$'
+        - '^(message|data|method|params|url|expression|text|format|deviceId|bundleId|isolateId|objectId)$'
+        - '^(command|control|option|Switch)$'
+        - '^(shell|simctl)$'
+        - '^KEYCODE_'
     gosec:
       excludes:
         - G204 # Subprocess launched with variable
