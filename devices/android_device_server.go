@@ -266,7 +266,7 @@ func forwardOnFreePort(runAdb func(args ...string) ([]byte, error), target strin
 // tooling that tunnels forwarded ports by their number has no number to tunnel, so every
 // agent behind such a forward looks dead.
 func forwardArgs(target string) ([]string, int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, 0, fmt.Errorf("find a free local port: %w", err)
 	}

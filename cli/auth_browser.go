@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -34,11 +35,11 @@ func openBrowser(target string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", target)
+		cmd = exec.CommandContext(context.Background(), "open", target)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+		cmd = exec.CommandContext(context.Background(), "rundll32", "url.dll,FileProtocolHandler", target)
 	default:
-		cmd = exec.Command("xdg-open", target)
+		cmd = exec.CommandContext(context.Background(), "xdg-open", target)
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to open browser: %w", err)

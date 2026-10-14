@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -39,7 +40,7 @@ func startLLDBProxy(device goios.DeviceEntry, proxyPort, pid int) (int, func(), 
 	}
 	utils.Verbose("lldb-proxy: pre-attached, stop=%q", stopReply)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		_ = devConn.Close()
 		return 0, nil, fmt.Errorf("listen for lldb proxy: %w", err)

@@ -128,7 +128,7 @@ func (s SimulatorDevice) Reboot() error {
 // runSimctl executes xcrun simctl with the provided arguments
 func runSimctl(args ...string) ([]byte, error) {
 	fullArgs := append([]string{"simctl"}, args...)
-	cmd := exec.Command("xcrun", fullArgs...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
@@ -224,7 +224,7 @@ func (s SimulatorDevice) launchAppWithEnv(bundleID string, env map[string]string
 		fullArgs = append(fullArgs, "--stderr="+stderrPath)
 	}
 	fullArgs = append(fullArgs, s.UDID, bundleID)
-	cmd := exec.Command("xcrun", fullArgs...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
 
 	// Set environment variables with SIMCTL_CHILD_ prefix for this command only
 	cmd.Env = os.Environ()
@@ -668,7 +668,7 @@ func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
 
 func (s *SimulatorDevice) OpenURL(url string) error {
 	// #nosec G204 -- udid is controlled, no shell interpretation
-	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
+	return exec.CommandContext(context.Background(), "xcrun", "simctl", "openurl", s.ID(), url).Run()
 }
 
 func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
@@ -760,7 +760,7 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	args := []string{"simctl", "io", s.UDID, "recordVideo", "--codec=h264", "--force", localOutput}
 
 	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
-	cmd := exec.Command("xcrun", args...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", args...)
 
 	// handle Ctrl+C: send SIGINT to the simctl process so it finalizes the video
 	sigChan := make(chan os.Signal, 1)
@@ -853,7 +853,7 @@ func parsePsOutput(output string) []ProcessInfo {
 
 // listAllProcesses returns a list of all running processes with their PIDs and command info
 func listAllProcesses() ([]ProcessInfo, error) {
-	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
+	cmd := exec.CommandContext(context.Background(), "/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run ps command: %w", err)

@@ -1068,7 +1068,7 @@ func (d *IOSDevice) startAvcStream(config ScreenCaptureConfig, emit func([]byte)
 	}
 
 	// connect to the TCP stream
-	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", deviceKitInfo.StreamPort))
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", fmt.Sprintf("localhost:%d", deviceKitInfo.StreamPort))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to stream port: %w", err)
 	}
@@ -1517,7 +1517,7 @@ func (d *IOSDevice) isDeviceKitRunning() bool {
 	}()
 
 	// try to connect with timeout
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", testPort), 2*time.Second)
+	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(context.Background(), "tcp", fmt.Sprintf("localhost:%d", testPort))
 	if err != nil {
 		utils.Verbose("DeviceKit not responding on port %d: %v", deviceKitStreamPort, err)
 		return false

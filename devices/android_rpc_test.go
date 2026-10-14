@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -100,7 +101,7 @@ func tcpPort(t *testing.T, addr net.Addr) int {
 
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := tcpPort(t, listener.Addr())
 	require.NoError(t, listener.Close())

@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,7 +63,11 @@ type cdpBrowser struct {
 
 func (b cdpBrowser) getJSON(path string, into any) error {
 	client := &http.Client{Timeout: cdpDiscoveryTimeout}
-	resp, err := client.Get("http://" + b.addr + path)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+b.addr+path, nil)
+	if err != nil {
+		return fmt.Errorf("devtools %s: %w", path, err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("devtools %s: %w", path, err)
 	}
