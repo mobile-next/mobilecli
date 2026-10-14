@@ -1025,6 +1025,12 @@ func (s SimulatorDevice) ClearApp(bundleID string) error {
 		}
 	}
 
+	// cfprefsd caches the app's UserDefaults in memory, so deleting the plist alone isn't enough: the next
+	// launch reads the old values back. restart it so the cache is dropped; launchd brings it back on demand.
+	if _, err := runSimctl("spawn", s.UDID, "launchctl", "kill", "SIGKILL", "user/foreground/com.apple.cfprefsd.xpc.daemon"); err != nil {
+		return fmt.Errorf("failed to restart cfprefsd to drop cached preferences of %s: %w", bundleID, err)
+	}
+
 	// permissions live outside the data container; reset them so the app prompts again, like `pm clear` on
 	// android. notifications are not covered by simctl privacy and only reset on reinstall.
 	if _, err := runSimctl("privacy", s.UDID, "reset", "all", bundleID); err != nil {
