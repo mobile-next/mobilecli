@@ -84,6 +84,40 @@ public class AvcServer {
 		return Math.max(MIN_BITRATE, Math.min(MAX_BITRATE, bps));
 	}
 
+	// H.264 encoders only accept dimensions that are a multiple of their
+	// alignment (usually 2); a raw (display * scale) can be odd. Round down.
+	private static int alignDown(float size, int alignment) {
+		int align = Math.max(alignment, 2);
+		return ((int) size / align) * align;
+	}
+
+	/**
+	 * Returns the largest {width, height} the encoder supports that is no bigger
+	 * than the one asked for and keeps its aspect ratio, or null if there is none.
+	 * Encoders often report their limits for landscape only (e.g. 4096x2176), so a
+	 * tall portrait screen can exceed the maximum height while its area is well
+	 * within what the encoder handles; it is then scaled down to fit.
+	 */
+	static int[] fitToEncoder(MediaCodecInfo.VideoCapabilities caps, float width, float height) {
+		int maxWidth = caps.getSupportedWidths().getUpper();
+		int maxHeight = caps.getSupportedHeights().getUpper();
+		float factor = Math.min(1.0f, Math.min(maxWidth / width, maxHeight / height));
+		// past the width/height limits there can still be a block count or aspect
+		// ratio limit; shrink a little at a time until the encoder takes it
+		for (int attempt = 0; attempt < 100; attempt++) {
+			int w = alignDown(width * factor, caps.getWidthAlignment());
+			int h = alignDown(height * factor, caps.getHeightAlignment());
+			if (w <= 0 || h <= 0) {
+				return null;
+			}
+			if (caps.isSizeSupported(w, h)) {
+				return new int[] {w, h};
+			}
+			factor *= 0.95f;
+		}
+		return null;
+	}
+
 	private void startControlServer(MediaCodec codec, DisplayUtils.DisplayMirror mirror) {
 		new JsonRpcSocketServer(CONTROL_SOCKET, (method, params) -> {
 			switch (method) {
@@ -127,23 +161,27 @@ public class AvcServer {
 		MediaCodecInfo.VideoCapabilities caps = codec.getCodecInfo()
 				.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).getVideoCapabilities();
 
-		// H.264 encoders only accept dimensions that are a multiple of their
-		// alignment (usually 2); a raw (display * scale) can be odd. Round down.
-		int widthAlign = Math.max(caps.getWidthAlignment(), 2);
-		int heightAlign = Math.max(caps.getHeightAlignment(), 2);
-		int width = ((int) (display.width * scale) / widthAlign) * widthAlign;
-		int height = ((int) (display.height * scale) / heightAlign) * heightAlign;
-
-		if (width <= 0 || height <= 0) {
+		int requestedWidth = alignDown(display.width * scale, caps.getWidthAlignment());
+		int requestedHeight = alignDown(display.height * scale, caps.getHeightAlignment());
+		if (requestedWidth <= 0 || requestedHeight <= 0) {
 			codec.release();
-			throw new IllegalArgumentException("Invalid dimensions: " + width + "x" + height);
+			throw new IllegalArgumentException("Invalid dimensions: " + requestedWidth + "x" + requestedHeight);
 		}
-		if (!caps.isSizeSupported(width, height)) {
+
+		int[] size = fitToEncoder(caps, display.width * scale, display.height * scale);
+		if (size == null) {
 			String max = caps.getSupportedWidths().getUpper() + "x" + caps.getSupportedHeights().getUpper();
 			codec.release();
-			throw new IllegalArgumentException("Video dimensions " + width + "x" + height
-					+ " exceed codec capabilities. Maximum supported: " + max
-					+ ". Try using --scale parameter to reduce resolution (e.g., --scale 0.5)");
+			throw new IllegalArgumentException("Video dimensions " + requestedWidth + "x" + requestedHeight
+					+ " are not supported by the encoder, and no smaller size with the same aspect ratio is."
+					+ " Maximum supported: " + max);
+		}
+		int width = size[0];
+		int height = size[1];
+		if (width != requestedWidth || height != requestedHeight) {
+			// not on stderr: adb exec-out merges it into the video stream
+			Log.i(TAG, "Encoder does not support " + requestedWidth + "x" + requestedHeight
+					+ ", encoding at " + width + "x" + height);
 		}
 
 		MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
