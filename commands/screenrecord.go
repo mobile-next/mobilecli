@@ -48,8 +48,27 @@ type ScreenRecordResponse struct {
 	EndReason  string `json:"endReason,omitempty"` // "size_limit" when the recording hit the size safety stop
 }
 
+// MaxScreenRecordTimeLimit is the longest time limit, in seconds, a recording
+// accepts: the largest value Android's screenrecord takes (older Android
+// versions refuse anything above 180, and that error is reported as is).
+const MaxScreenRecordTimeLimit = 4294967295
+
+// ValidateScreenRecordTimeLimit rejects a time limit that is negative or
+// above MaxScreenRecordTimeLimit. 0 means no limit.
+func ValidateScreenRecordTimeLimit(timeLimit int) error {
+	if timeLimit < 0 || int64(timeLimit) > MaxScreenRecordTimeLimit {
+		return fmt.Errorf("invalid time limit %d: must be 0 (no limit) or between 1 and %d seconds", timeLimit, MaxScreenRecordTimeLimit)
+	}
+	return nil
+}
+
 // ScreenRecordCommand records the device screen to an MP4 file.
 func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
+	if err := ValidateScreenRecordTimeLimit(req.TimeLimit); err != nil {
+		req.signalReady(err)
+		return NewErrorResponse(err)
+	}
+
 	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
 	if err != nil {
 		req.signalReady(err)
