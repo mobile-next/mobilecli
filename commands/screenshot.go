@@ -51,25 +51,25 @@ func validateScreenshotResize(scale float64, maxSize int) (float64, error) {
 	return scale, nil
 }
 
-// resolveScreenWidthForClip validates clip and returns the device screen
-// width in points, needed to map the clip rect to pixels of the captured
-// image. Returns 0 when clip is nil.
-func resolveScreenWidthForClip(device devices.ControllableDevice, clip *types.ScreenElementRect) (int, error) {
+// resolveScreenSizeForClip validates clip and returns the device screen
+// width and height in points, needed to map the clip rect to pixels of the
+// captured image. Returns zeros when clip is nil.
+func resolveScreenSizeForClip(device devices.ControllableDevice, clip *types.ScreenElementRect) (int, int, error) {
 	if clip == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if clip.Width <= 0 || clip.Height <= 0 {
-		return 0, fmt.Errorf("clip width and height must be positive")
+		return 0, 0, fmt.Errorf("clip width and height must be positive")
 	}
 
 	info, err := device.Info()
 	if err != nil {
-		return 0, fmt.Errorf("error getting device info for clip cropping: %v", err)
+		return 0, 0, fmt.Errorf("error getting device info for clip cropping: %v", err)
 	}
 	if info.ScreenSize == nil || info.ScreenSize.Width <= 0 {
-		return 0, fmt.Errorf("device did not report a screen size, cannot crop to clip")
+		return 0, 0, fmt.Errorf("device did not report a screen size, cannot crop to clip")
 	}
-	return info.ScreenSize.Width, nil
+	return info.ScreenSize.Width, info.ScreenSize.Height, nil
 }
 
 // resolveScreenshotPath turns the requested output into an absolute file path.
@@ -157,19 +157,20 @@ func ScreenshotCommand(req ScreenshotRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
 	}
 
-	screenWidthPoints, err := resolveScreenWidthForClip(targetDevice, req.Clip)
+	screenWidthPoints, screenHeightPoints, err := resolveScreenSizeForClip(targetDevice, req.Clip)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
 
 	// Take screenshot; the device is responsible for format, quality, cropping, and scaling
 	imageBytes, err := targetDevice.TakeScreenshot(devices.ScreenshotOptions{
-		Format:            req.Format,
-		Quality:           req.Quality,
-		Scale:             req.Scale,
-		MaxSize:           req.MaxSize,
-		Clip:              req.Clip,
-		ScreenWidthPoints: screenWidthPoints,
+		Format:             req.Format,
+		Quality:            req.Quality,
+		Scale:              req.Scale,
+		MaxSize:            req.MaxSize,
+		Clip:               req.Clip,
+		ScreenWidthPoints:  screenWidthPoints,
+		ScreenHeightPoints: screenHeightPoints,
 	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error taking screenshot: %v", err))
