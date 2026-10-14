@@ -1,3 +1,7 @@
+## [1.0.20](https://github.com/mobile-next/mobilecli/releases/tag/1.0.20) (2026-10-14)
+* Feat(ios): clear key in device.io.keys sends the HID keyboard clear to wipe the focused text field ([devicekit-ios#101](https://github.com/mobile-next/devicekit-ios/pull/101))
+* Fix(ios): bundle XCTest frameworks in the runner when Xcode 27 doesn't, and don't merge stale zips ([devicekit-ios#100](https://github.com/mobile-next/devicekit-ios/pull/100))
+
 ## [1.0.19](https://github.com/mobile-next/mobilecli/releases/tag/1.0.19) (2026-10-11)
 * Fix: support Android (Termux) by mapping android platform to linux binaries, with token stored in a credentials file ([#499](https://github.com/mobile-next/mobilecli/pull/499), [#505](https://github.com/mobile-next/mobilecli/pull/505)), thanks to [@Jobians](https://github.com/Jobians)
 * Fix(ios): stop dump ui from timing out after 10s on heavy screens ([#497](https://github.com/mobile-next/mobilecli/pull/497)), thanks to [@Cassian433](https://github.com/Cassian433)
