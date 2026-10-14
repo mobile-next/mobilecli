@@ -225,7 +225,7 @@ func (d *AndroidDevice) getAdbIdentifier() string {
 func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
 	deviceID := d.getAdbIdentifier()
 	cmdArgs := append([]string{"-s", deviceID}, args...)
-	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
 	return cmd.CombinedOutput()
 }
 
@@ -702,7 +702,7 @@ func getAndroidDeviceName(deviceID, avdName, model string) string {
 	}
 
 	// for real devices, try getting device name from settings
-	nameCmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
+	nameCmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
 	nameOutput, err := nameCmd.CombinedOutput()
 	if err == nil && len(nameOutput) > 0 {
 		name := strings.TrimSpace(string(nameOutput))
@@ -730,7 +730,7 @@ func getAndroidDeviceVersion(deviceID string) (string, error) {
 
 // GetAndroidDevices retrieves a list of connected Android devices
 func GetAndroidDevices() ([]ControllableDevice, error) {
-	command := exec.Command(getAdbPath(), "devices")
+	command := exec.CommandContext(context.Background(), getAdbPath(), "devices")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		status := command.ProcessState.ExitCode()
@@ -814,7 +814,7 @@ func (d *AndroidDevice) Boot() error {
 	defer cancel()
 
 	// launch emulator in background without context (so it persists after function returns)
-	cmd := exec.Command(getEmulatorPath(), "-netdelay", "none", "-netspeed", "full", "-avd", d.id, "-qt-hide-window")
+	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), "-netdelay", "none", "-netspeed", "full", "-avd", d.id, "-qt-hide-window")
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
@@ -851,7 +851,7 @@ func (d *AndroidDevice) Boot() error {
 
 // checkBootComplete checks if an emulator has finished booting
 func (d *AndroidDevice) checkBootComplete(deviceID string) (bool, error) {
-	cmd := exec.Command(getAdbPath(), "-s", deviceID, "shell", "getprop", "sys.boot_completed")
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "shell", "getprop", "sys.boot_completed")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, err
@@ -1338,7 +1338,7 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		cmdArgs = append(cmdArgs, "--bitrate", fmt.Sprintf("%d", config.Bitrate))
 	}
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
-	cmd := exec.Command(getAdbPath(), cmdArgs...)
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1386,7 +1386,7 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 	args = append(args, remotePath)
 
 	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
-	cmd := exec.Command(getAdbPath(), args...)
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), args...)
 
 	// handle Ctrl+C / stop: signal the on-device screenrecord process so it
 	// finalizes the MP4. signaling the local adb client does not propagate to

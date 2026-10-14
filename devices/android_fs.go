@@ -2,6 +2,7 @@ package devices
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,7 +78,7 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 	// exec-out (instead of shell) bypasses the PTY, preserving binary bytes on Windows
 	// and keeping stderr separate so we can surface it on failure
 	deviceID := d.getAdbIdentifier()
-	cmd := exec.Command(getAdbPath(), "-s", deviceID, "exec-out", shellCmd)
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "exec-out", shellCmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()

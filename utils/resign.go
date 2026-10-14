@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/sha1" // #nosec G505 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
 	"encoding/hex"
 	"fmt"
@@ -175,7 +176,7 @@ func repackageIPA(tempDir string) (string, error) {
 	_ = os.Remove(outputPath)
 
 	Verbose("Repackaging IPA to %s", outputPath)
-	cmd := exec.Command("zip", "-qr", outputPath, "Payload")
+	cmd := exec.CommandContext(context.Background(), "zip", "-qr", outputPath, "Payload")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -275,7 +276,7 @@ func readBundleID(appPath string) (string, error) {
 }
 
 func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error) {
-	cmd := exec.Command("openssl", "smime", "-inform", "DER", "-verify", "-noverify", "-in", profilePath)
+	cmd := exec.CommandContext(context.Background(), "openssl", "smime", "-inform", "DER", "-verify", "-noverify", "-in", profilePath)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode profile %s: %w", profilePath, err)
@@ -405,7 +406,7 @@ note: provisioning profiles require a paid Apple Developer Program membership ($
 }
 
 func findSigningIdentity(profile *provisioningProfile) (string, error) {
-	cmd := exec.Command("/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
+	cmd := exec.CommandContext(context.Background(), "/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list signing identities: %w", err)
@@ -487,7 +488,7 @@ func codesign(path, identity, entitlementsPath string) error {
 	}
 	args = append(args, path)
 
-	cmd := exec.Command("codesign", args...)
+	cmd := exec.CommandContext(context.Background(), "codesign", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("codesign failed: %w\n%s", err, output)

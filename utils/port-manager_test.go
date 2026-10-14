@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -36,7 +37,7 @@ func TestIsPortAvailable_LocalhostVariations(t *testing.T) {
 
 func TestIsPortAvailable_PortInUse(t *testing.T) {
 	// Create a listener to occupy a port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err, "Failed to create test listener")
 	defer func() { _ = listener.Close() }()
 

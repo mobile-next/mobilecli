@@ -181,7 +181,7 @@ func runOAuthLogin(authorizeURL, tokenURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("failed to listen for browser callback: %w", err)
 	}

@@ -50,7 +50,7 @@ func setCachedAgentPort(udid, bundleID string, port int) {
 // process of a specific bundle ID inside the given simulator.
 // Returns the PID and the .app bundle path.
 func findSimulatorPIDForBundle(udid, bundleID string) (pid int, appBundlePath string, err error) {
-	out, err := exec.Command("ps", "aux").Output()
+	out, err := exec.CommandContext(context.Background(), "ps", "aux").Output()
 	if err != nil {
 		return 0, "", fmt.Errorf("ps aux: %w", err)
 	}
@@ -100,7 +100,7 @@ func appBundleFromExecPath(execPath string) string {
 // bundleIDFromInfoPlist reads CFBundleIdentifier from an Info.plist using
 // the macOS `defaults read` command, which handles both XML and binary plists.
 func bundleIDFromInfoPlist(plistPath string) (string, error) {
-	out, err := exec.Command("defaults", "read", plistPath, "CFBundleIdentifier").Output()
+	out, err := exec.CommandContext(context.Background(), "defaults", "read", plistPath, "CFBundleIdentifier").Output()
 	if err != nil {
 		return "", fmt.Errorf("defaults read %s: %w", plistPath, err)
 	}

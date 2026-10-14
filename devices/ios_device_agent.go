@@ -262,7 +262,7 @@ func injectServerViaLLDB(localProxyPort int) (int, error) {
 // forward is ephemeral and lives only for this process, so we let the OS pick
 // it. (go-ios's forward.Forward rejects a literal port 0, so we grab one here.)
 func freeLocalPort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}

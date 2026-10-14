@@ -124,7 +124,7 @@ func readResponse(reader *bufio.Reader, onData func(json.RawMessage) error) (jso
 }
 
 func dial(socket string) (net.Conn, error) {
-	conn, err := net.DialTimeout("unix", socket, dialTimeout)
+	conn, err := (&net.Dialer{Timeout: dialTimeout}).DialContext(context.Background(), "unix", socket)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrNotRunning, err)
 	}
@@ -167,7 +167,7 @@ func Shutdown() error {
 // WaitForSocket polls until something accepts connections on the socket.
 func WaitForSocket(socket string, timeout time.Duration) error {
 	return pollUntil(timeout, func() bool {
-		conn, err := net.DialTimeout("unix", socket, 500*time.Millisecond)
+		conn, err := (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext(context.Background(), "unix", socket)
 		if err != nil {
 			return false
 		}
@@ -178,7 +178,7 @@ func WaitForSocket(socket string, timeout time.Duration) error {
 
 func waitForSocketGone(socket string, timeout time.Duration) error {
 	return pollUntil(timeout, func() bool {
-		conn, err := net.DialTimeout("unix", socket, 500*time.Millisecond)
+		conn, err := (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext(context.Background(), "unix", socket)
 		if err != nil {
 			return true
 		}

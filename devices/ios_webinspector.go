@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -77,7 +78,7 @@ func dialSimulatorWebInspector(udid string) (io.ReadWriteCloser, error) {
 	if socketPath == "" {
 		return nil, fmt.Errorf("simulator %s has no web inspector socket", udid)
 	}
-	conn, err := net.Dial("unix", socketPath)
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("connect to the web inspector of simulator %s: %w", udid, err)
 	}
