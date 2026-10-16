@@ -56,16 +56,12 @@ public class Input {
 	 */
 	@SuppressWarnings("deprecation") // recycle() is a no-op on API 33+, still frees pools below
 	static JSONObject fill(UiAutomation automation, String text) throws Exception {
-		// findFocus(FOCUS_INPUT) answers with the hosting view for Compose, which can't
-		// take text, so look for the focused editable node itself
-		AccessibilityNodeInfo field = null;
-		for (AccessibilityWindowInfo window : automation.getWindows()) {
-			AccessibilityNodeInfo root = window.getRoot();
-			window.recycle();
-			if (root == null) continue;
-			field = findFocusedEditable(root);
-			if (field != root) root.recycle();
-			if (field != null) break;
+		// the tap that focuses the field returns before the app has moved focus to it
+		AccessibilityNodeInfo field = findFocusedEditable(automation);
+		long deadline = SystemClock.uptimeMillis() + FOCUS_TIMEOUT_MS;
+		while (field == null && SystemClock.uptimeMillis() < deadline) {
+			SystemClock.sleep(FOCUS_POLL_MS);
+			field = findFocusedEditable(automation);
 		}
 		if (field == null) {
 			throw new RpcException(RpcException.INTERNAL_ERROR, "no text field has focus");
@@ -80,6 +76,24 @@ public class Input {
 			field.recycle();
 		}
 		return ok();
+	}
+
+	private static final long FOCUS_TIMEOUT_MS = 2000;
+	private static final long FOCUS_POLL_MS = 50;
+
+	// findFocus(FOCUS_INPUT) answers with the hosting view for Compose, which can't
+	// take text, so look for the focused editable node itself
+	@SuppressWarnings("deprecation")
+	private static AccessibilityNodeInfo findFocusedEditable(UiAutomation automation) {
+		for (AccessibilityWindowInfo window : automation.getWindows()) {
+			AccessibilityNodeInfo root = window.getRoot();
+			window.recycle();
+			if (root == null) continue;
+			AccessibilityNodeInfo field = findFocusedEditable(root);
+			if (field != root) root.recycle();
+			if (field != null) return field;
+		}
+		return null;
 	}
 
 	// depth-first; the caller owns the node it gets back, every other node is recycled
