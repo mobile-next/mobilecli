@@ -100,7 +100,7 @@ func rememberFlutterCandidate(udid string, pid int, isCandidate bool) {
 // process id, as on a real device. A relaunched or reinstalled app gets a new
 // pid and is looked at again.
 func (s *SimulatorDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
-	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
+	activeApp, err := s.deviceKitClient.GetActiveAppIdentity()
 	if err != nil || activeApp.BundleID == "" {
 		utils.Verbose("flutter: cannot tell the foreground app, skipping the flutter dump: %v", err)
 		return "", false
