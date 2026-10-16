@@ -977,12 +977,12 @@ func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
 	return nil
 }
 
-// ClearText empties the focused field through accessibility, not keys: a Compose
+// Fill sets the focused field's text through accessibility, not keys: a Compose
 // TextField moves its cursor to the tap a moment after focusing, which collapses
 // a ctrl+a selection.
-func (d *AndroidDevice) ClearText() error {
-	if _, err := d.serverRequest("device.io.clear", nil); err != nil {
-		return fmt.Errorf("AndroidDevice: failed to clear text: %w", err)
+func (d *AndroidDevice) Fill(text string) error {
+	if _, err := d.serverRequest("device.io.fill", textParams{Text: text}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to fill text: %w", err)
 	}
 	return nil
 }

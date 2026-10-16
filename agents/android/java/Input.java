@@ -49,12 +49,13 @@ public class Input {
 	}
 
 	/**
-	 * Empties the focused text field through accessibility (ACTION_SET_TEXT). Keys race
-	 * the field: a Compose TextField moves its cursor to the tap a moment after focusing,
-	 * which collapses a ctrl+a selection, and the backspace then deletes one character.
+	 * Replaces the focused text field's text through accessibility (ACTION_SET_TEXT);
+	 * "" clears it. Keys race the field: a Compose TextField moves its cursor to the tap
+	 * a moment after focusing, which collapses a ctrl+a selection, and a backspace then
+	 * deletes one character. Setting the text also takes any unicode without the clipboard.
 	 */
 	@SuppressWarnings("deprecation") // recycle() is a no-op on API 33+, still frees pools below
-	static JSONObject clearText(UiAutomation automation) throws Exception {
+	static JSONObject fill(UiAutomation automation, String text) throws Exception {
 		// findFocus(FOCUS_INPUT) answers with the hosting view for Compose, which can't
 		// take text, so look for the focused editable node itself
 		AccessibilityNodeInfo field = null;
@@ -71,9 +72,9 @@ public class Input {
 		}
 		try {
 			Bundle args = new Bundle();
-			args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "");
+			args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
 			if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-				throw new RpcException(RpcException.INTERNAL_ERROR, "the focused text field can't be cleared");
+				throw new RpcException(RpcException.INTERNAL_ERROR, "the focused text field can't be filled");
 			}
 		} finally {
 			field.recycle();

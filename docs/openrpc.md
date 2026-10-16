@@ -28,6 +28,7 @@ JSON-RPC API for mobile device automation and control
 - [device.fs.rm](#devicefsrm)
 - [device.info](#deviceinfo)
 - [device.io.button](#deviceiobutton)
+- [device.io.fill](#deviceiofill)
 - [device.io.gesture](#deviceiogesture)
 - [device.io.keys](#deviceiokeys)
 - [device.io.longpress](#deviceiolongpress)
@@ -821,6 +822,40 @@ Operation result
   "params": {
     "deviceId": "string",
     "button": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.io.fill
+
+**Fill text field**
+
+Replaces the text of the focused text field; an empty string clears it. Unlike device.io.text, which types key by key, this sets the text in one step: on Android through accessibility, on iOS by clearing the field and typing
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `text` | `string` | ✓ | Text to put in the field, or an empty string to clear it |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.fill",
+  "params": {
+    "deviceId": "string",
+    "text": "string"
   },
   "id": 1
 }

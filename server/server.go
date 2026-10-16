@@ -671,19 +671,27 @@ func handleIoKeys(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
-type IoClearParams struct {
+type IoFillParams struct {
 	DeviceID string `json:"deviceId"`
+	Text     string `json:"text"`
 }
 
-func handleIoClear(params json.RawMessage) (any, error) {
-	var ioClearParams IoClearParams
-	if len(params) > 0 {
-		if err := json.Unmarshal(params, &ioClearParams); err != nil {
-			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
-		}
+func handleIoFill(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
 	}
 
-	response := commands.ClearTextCommand(commands.ClearTextRequest{DeviceID: ioClearParams.DeviceID})
+	var ioFillParams IoFillParams
+	if err := json.Unmarshal(params, &ioFillParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
+	}
+
+	req := commands.FillRequest{
+		DeviceID: ioFillParams.DeviceID,
+		Text:     ioFillParams.Text,
+	}
+
+	response := commands.FillCommand(req)
 	return okResult(response)
 }
 

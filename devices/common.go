@@ -203,8 +203,8 @@ type ControllableDevice interface {
 	GetClipboard() (string, error)
 	SetClipboard(text string) error
 	PressKeys(combos []KeyCombo) error
-	// ClearText empties the text field that has focus
-	ClearText() error
+	// Fill replaces the focused text field's text; "" clears it
+	Fill(text string) error
 	PressButton(key string) error
 	LaunchApp(bundleID string, opts LaunchOptions) error
 	TerminateApp(bundleID string) error
