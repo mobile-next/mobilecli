@@ -642,6 +642,11 @@ func (s SimulatorDevice) PressKeys(combos []KeyCombo) error {
 	return s.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
 }
 
+// ClearText presses the HID clear key, which empties the focused field in one event
+func (s SimulatorDevice) ClearText() error {
+	return s.PressKeys([]KeyCombo{{Key: "clear"}})
+}
+
 func (s SimulatorDevice) Tap(x, y int) error {
 	return s.deviceKitClient.Tap(x, y)
 }

@@ -141,6 +141,8 @@ public class DeviceServer {
 				return Input.pressKey(automation, JsonRpcSocketServer.requireParam(params, "button"), null);
 			case "device.io.keys":
 				return pressKeys(automation, p.optJSONArray("keys"));
+			case "device.io.clear":
+				return Input.clearText(automation);
 			case "device.io.text":
 				return Input.typeText(automation, JsonRpcSocketServer.requireParam(params, "text"));
 			case "device.clipboard.get":

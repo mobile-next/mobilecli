@@ -671,6 +671,22 @@ func handleIoKeys(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+type IoClearParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+func handleIoClear(params json.RawMessage) (any, error) {
+	var ioClearParams IoClearParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &ioClearParams); err != nil {
+			return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	response := commands.ClearTextCommand(commands.ClearTextRequest{DeviceID: ioClearParams.DeviceID})
+	return okResult(response)
+}
+
 type IoButtonParams struct {
 	DeviceID string `json:"deviceId"`
 	Button   string `json:"button"`

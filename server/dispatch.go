@@ -22,6 +22,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.io.longpress":                   handleIoLongPress,
 		"device.io.text":                        handleIoText,
 		"device.io.keys":                        handleIoKeys,
+		"device.io.clear":                       handleIoClear,
 		"device.io.button":                      handleIoButton,
 		"device.io.swipe":                       handleIoSwipe,
 		"device.io.pinch":                       handleIoPinch,

@@ -146,6 +146,20 @@ Keys name physical keys and are case-insensitive: "cmd+A" is the same as "cmd+a"
 	},
 }
 
+var ioClearCmd = &cobra.Command{
+	Use:   "clear",
+	Short: "Clear the focused text field on a device",
+	Long:  `Empties the text field that has focus on the specified device. Tap the field first to focus it.`,
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ClearTextRequest{
+			DeviceID: deviceId,
+		}
+
+		return runViaDaemon("cli.io.clear", req)
+	},
+}
+
 var ioSwipeCmd = &cobra.Command{
 	Use:   "swipe [x1,y1,x2,y2]",
 	Short: "Swipe on a device screen from one point to another",
@@ -232,6 +246,7 @@ func init() {
 	ioCmd.AddCommand(ioButtonCmd)
 	ioCmd.AddCommand(ioTextCmd)
 	ioCmd.AddCommand(ioKeysCmd)
+	ioCmd.AddCommand(ioClearCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
 	ioCmd.AddCommand(ioPinchCmd)
 
@@ -243,6 +258,7 @@ func init() {
 	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
 	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
+	ioClearCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to clear the focused text field on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
 	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
