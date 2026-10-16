@@ -783,3 +783,54 @@ func TestCollectElementsLeavesNonClickableNodeUnset(t *testing.T) {
 		t.Errorf("expected Clickable to be nil for a non-clickable node, got %+v", *output[0].Clickable)
 	}
 }
+
+// A Material3 AlertDialog puts its pane title on a plain View that has no text of its own.
+// That node must be kept, with its pane title, so the dialog's content stays under it.
+func TestCollectUiNodeElementsKeepsPaneTitleNode(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class:     "android.view.View",
+			PaneTitle: "Dialog",
+			Rect:      uiRect{X: 60, Y: 900, Width: 960, Height: 500},
+			Children: []uiNode{
+				{
+					Class: "android.widget.TextView",
+					Text:  "You must be 18 or older to order a Dark Matter Martini",
+					Rect:  uiRect{X: 120, Y: 960, Width: 840, Height: 120},
+				},
+			},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].PaneTitle == nil || *output[0].PaneTitle != "Dialog" {
+		t.Errorf("expected PaneTitle to be Dialog, got %+v", output[0].PaneTitle)
+	}
+	if len(output[0].Children) != 1 {
+		t.Errorf("expected the dialog text under the pane, got %+v", output[0].Children)
+	}
+}
+
+// A node without a pane title must leave PaneTitle unset (nil), matching omitempty.
+func TestCollectUiNodeElementsLeavesPaneTitleUnset(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class: "android.widget.TextView",
+			Text:  "New Order",
+			Rect:  uiRect{X: 0, Y: 0, Width: 140, Height: 140},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].PaneTitle != nil {
+		t.Errorf("expected PaneTitle to be nil, got %+v", *output[0].PaneTitle)
+	}
+}
