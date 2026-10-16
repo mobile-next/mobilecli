@@ -1603,6 +1603,9 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 	if a.selected {
 		element.Selected = &isTrue
 	}
+	if a.clickable {
+		element.Clickable = &isTrue
+	}
 
 	// default type if class is empty
 	if element.Type == "" {

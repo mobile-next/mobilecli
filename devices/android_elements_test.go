@@ -744,3 +744,42 @@ func TestUiNodeDecodesEditableFromAgentJson(t *testing.T) {
 		t.Errorf("expected editable to be decoded")
 	}
 }
+
+// A Compose Button is a clickable android.view.View whose text lives on a child,
+// so clickable is the only hint that it is a button; it must surface Clickable=true.
+func TestCollectElementsMarksClickableNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:     "android.view.View",
+		Clickable: "true",
+		Bounds:    "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Clickable == nil || *output[0].Clickable != true {
+		t.Errorf("expected Clickable to be true, got %+v", output[0].Clickable)
+	}
+}
+
+// A node that isn't clickable must leave Clickable unset (nil), matching omitempty.
+func TestCollectElementsLeavesNonClickableNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.TextView",
+		Text:   "New Order",
+		Bounds: "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Clickable != nil {
+		t.Errorf("expected Clickable to be nil for a non-clickable node, got %+v", *output[0].Clickable)
+	}
+}
