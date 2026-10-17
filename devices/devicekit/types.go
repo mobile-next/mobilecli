@@ -31,6 +31,11 @@ func NewDeviceKitClient(hostPort string) *DeviceKitClient {
 	}
 }
 
+// BaseURL returns the agent URL this client talks to, without a trailing slash.
+func (c *DeviceKitClient) BaseURL() string {
+	return c.baseURL
+}
+
 // Port returns the port this client talks to, parsed from its base URL.
 func (c *DeviceKitClient) Port() int {
 	parsed, err := url.Parse(c.baseURL)
