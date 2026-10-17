@@ -1533,6 +1533,8 @@ type uiNode struct {
 	Range *types.ScreenElementRange `json:"range"`
 	// text can be typed into the node (EditText and the like)
 	Editable bool `json:"editable"`
+	// names a window-like region, e.g. "Dialog" on a Material3 AlertDialog
+	PaneTitle string `json:"pane-title"`
 }
 
 type uiHierarchy struct {
@@ -1582,17 +1584,18 @@ type androidNodeAttrs struct {
 	disabled    bool
 	checked     bool
 	selected    bool
+	paneTitle   string
 	rect        types.ScreenElementRect
 	// value is a slider's position or a text field's content, "" when it has none
 	value       string
 	sliderRange *types.ScreenElementRange
 }
 
-// isScreenElement reports whether the node is worth listing: it has text,
+// isScreenElement reports whether the node is worth listing: it has text, a pane title,
 // content-desc, hint, resource-id, or is interactable (clickable or checkable,
 // e.g. Flutter icon-only buttons), and has a positive width and height.
 func (a androidNodeAttrs) isScreenElement() bool {
-	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != "" || a.value != ""
+	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != "" || a.value != "" || a.paneTitle != ""
 	isInteractable := a.clickable || a.checkable
 	return (isLabeled || isInteractable) && a.rect.Width > 0 && a.rect.Height > 0
 }
@@ -1614,6 +1617,9 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 	if a.resourceID != "" {
 		element.Identifier = &a.resourceID
 	}
+	if a.paneTitle != "" {
+		element.PaneTitle = &a.paneTitle
+	}
 	if a.value != "" {
 		element.Value = &a.value
 	}
@@ -1632,6 +1638,9 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 	}
 	if a.selected {
 		element.Selected = &isTrue
+	}
+	if a.clickable {
+		element.Clickable = &isTrue
 	}
 
 	// default type if class is empty
@@ -1714,6 +1723,7 @@ func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
 			disabled:    !node.Enabled,
 			checked:     node.Checked,
 			selected:    node.Selected,
+			paneTitle:   node.PaneTitle,
 			value:       nodeValue(node),
 			sliderRange: node.Range,
 			rect: types.ScreenElementRect{

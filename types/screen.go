@@ -29,11 +29,13 @@ type ScreenElement struct {
 	Identifier  *string             `json:"identifier,omitempty"`
 	Key         *string             `json:"key,omitempty"` // flutter debug builds: nearest enclosing widget Key('...')
 	Rect        ScreenElementRect   `json:"rect"`
-	Range       *ScreenElementRange `json:"range,omitempty"`    // android only: slider, progress bar, rating bar
-	Focused     *bool               `json:"focused,omitempty"`  // android tv, and ios when hasFocus is reported
-	Enabled     *bool               `json:"enabled,omitempty"`  // only set when false
-	Checked     *bool               `json:"checked,omitempty"`  // only set when true
-	Selected    *bool               `json:"selected,omitempty"` // only set when true
+	Range       *ScreenElementRange `json:"range,omitempty"`     // android only: slider, progress bar, rating bar
+	Focused     *bool               `json:"focused,omitempty"`   // android tv, and ios when hasFocus is reported
+	Enabled     *bool               `json:"enabled,omitempty"`   // only set when false
+	Checked     *bool               `json:"checked,omitempty"`   // only set when true
+	Selected    *bool               `json:"selected,omitempty"`  // only set when true
+	Clickable   *bool               `json:"clickable,omitempty"` // android only: only set when true
+	PaneTitle   *string             `json:"paneTitle,omitempty"` // android only: a window-like region's title, e.g. "Dialog"
 	Children    []ScreenElement     `json:"children,omitempty"`
 }
 

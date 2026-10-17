@@ -154,6 +154,12 @@ class UiTreeSerializer {
 						.put("x", bounds.left).put("y", bounds.top)
 						.put("width", bounds.width()).put("height", bounds.height()));
 
+		// A pane title names a window-like region: Material3 sets "Dialog" on an AlertDialog,
+		// "Bottom Sheet" on a ModalBottomSheet. API 28+.
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+			obj.put("pane-title", str(node.getPaneTitle()));
+		}
+
 		// Sliders, progress bars and rating bars report their position here.
 		AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
 		if (hasPosition(range)) {
