@@ -1399,6 +1399,18 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 	return nil
 }
 
+// screenRecordStopTimeout bounds how long a stop waits for the on-device
+// screenrecord to finalize and exit. Past it the recording is killed, so a
+// missed stop signal never leaves it running (and the device's recorder
+// claimed) until its time limit runs out. It stays under the daemon's
+// shutdown grace, so a daemon stop still finalizes and cleans up.
+const screenRecordStopTimeout = 8 * time.Second
+
+// screenRecordStopRetry is how often a stop retries signaling the on-device
+// screenrecord when it was not found yet: the stop can land before adb has
+// started it.
+const screenRecordStopRetry = 2 * time.Second
+
 // ScreenRecord records the device screen to a local MP4 file using adb screenrecord.
 // blocks until Ctrl+C is pressed, stopChan is closed, or the time limit is reached.
 // when stopChan is nil, behavior is unchanged (CLI usage).
@@ -1417,6 +1429,11 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 
 	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
 	cmd := exec.CommandContext(context.Background(), getAdbPath(), args...)
+	// screenrecord reports why it refused to record (e.g. a time limit out of
+	// the device's range) on its output
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
 
 	// handle Ctrl+C / stop: signal the on-device screenrecord process so it
 	// finalizes the MP4. signaling the local adb client does not propagate to
@@ -1429,21 +1446,27 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 		return fmt.Errorf("failed to start screenrecord: %w", err)
 	}
 
+	// whatever happens from here on, don't leave the recording on the device
+	defer d.removeRemoteFile(remotePath)
+
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
+	var err error
 	select {
 	case <-sigChan:
-		d.signalRemoteScreenRecord(remotePath)
-		<-done
+		err = d.stopRemoteScreenRecord(remotePath, cmd, done)
 	case <-stopChan:
-		d.signalRemoteScreenRecord(remotePath)
-		<-done
-	case <-done:
+		err = d.stopRemoteScreenRecord(remotePath, cmd, done)
+	case err = <-done:
 	}
 
 	signal.Stop(sigChan)
 	close(sigChan)
+
+	if err != nil {
+		return fmt.Errorf("screenrecord failed: %w\n%s", err, strings.TrimSpace(output.String()))
+	}
 
 	// pull the recording from device
 	utils.Verbose("Pulling recording from device...")
@@ -1452,33 +1475,77 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 		return fmt.Errorf("failed to pull recording: %w\n%s", err, string(pullOutput))
 	}
 
-	// clean up device
-	if _, err := d.runAdbCommand("shell", "rm", remotePath); err != nil {
-		utils.Verbose("failed to remove remote file: %v", err)
-	}
-
 	return nil
 }
 
-// signalRemoteScreenRecord sends SIGINT to the on-device screenrecord process
-// recording remotePath so it finalizes the MP4 (writes the moov atom) before
-// exiting. signaling the local adb client does not propagate to the remote
-// process, which would leave the pulled file corrupt.
-func (d *AndroidDevice) signalRemoteScreenRecord(remotePath string) {
-	out, err := d.runAdbCommand("shell", "pgrep", "-f", remotePath)
+// stopRemoteScreenRecord asks the on-device screenrecord recording remotePath
+// to finalize and waits for adb (cmd, whose Wait result arrives on done) to
+// exit. It retries until the signal reaches the process, and kills the
+// recording if it still runs after screenRecordStopTimeout.
+func (d *AndroidDevice) stopRemoteScreenRecord(remotePath string, cmd *exec.Cmd, done <-chan error) error {
+	signaled := d.signalRemoteScreenRecord(remotePath, "-INT")
+
+	retry := time.NewTicker(screenRecordStopRetry)
+	defer retry.Stop()
+	deadline := time.NewTimer(screenRecordStopTimeout)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-retry.C:
+			// signal only once: screenrecord restores the default SIGINT
+			// action after the first one, so a second would cut finalizing short
+			if !signaled {
+				signaled = d.signalRemoteScreenRecord(remotePath, "-INT")
+			}
+		case <-deadline.C:
+			utils.Info("screenrecord did not stop within %s, killing it", screenRecordStopTimeout)
+			d.signalRemoteScreenRecord(remotePath, "-KILL")
+			_ = cmd.Process.Kill()
+			<-done
+			return fmt.Errorf("recording did not stop within %s and was killed", screenRecordStopTimeout)
+		}
+	}
+}
+
+// signalRemoteScreenRecord sends sig (a kill(1) flag such as -INT) to the
+// on-device screenrecord process recording remotePath. SIGINT makes it
+// finalize the MP4 (write the moov atom) before exiting; signaling the local
+// adb client does not propagate to the remote process, which would leave the
+// pulled file corrupt. Reports whether the process was found and signaled.
+func (d *AndroidDevice) signalRemoteScreenRecord(remotePath string, sig string) bool {
+	out, err := d.runAdbShell("pgrep", "-f", screenRecordProcessPattern(remotePath))
 	if err != nil {
 		utils.Verbose("failed to find remote screenrecord process: %v", err)
-		return
+		return false
 	}
 
 	pids := strings.Fields(string(out))
 	if len(pids) == 0 {
 		utils.Verbose("no remote screenrecord process found for %s", remotePath)
-		return
+		return false
 	}
 
-	if _, err := d.runAdbCommand(append([]string{"shell", "kill", "-INT"}, pids...)...); err != nil {
+	if _, err := d.runAdbShell(append([]string{"kill", sig}, pids...)...); err != nil {
 		utils.Verbose("failed to signal remote screenrecord: %v", err)
+		return false
+	}
+	return true
+}
+
+// screenRecordProcessPattern is the pgrep -f pattern for the screenrecord
+// process writing remotePath. The bracket keeps it from matching the command
+// line of the shell running pgrep, which contains the pattern itself.
+func screenRecordProcessPattern(remotePath string) string {
+	return "[s]creenrecord .*" + regexp.QuoteMeta(remotePath)
+}
+
+// removeRemoteFile deletes a recording's temporary file from the device.
+func (d *AndroidDevice) removeRemoteFile(remotePath string) {
+	if out, err := d.runAdbShell("rm", "-f", remotePath); err != nil {
+		utils.Verbose("failed to remove remote file %s: %v\n%s", remotePath, err, string(out))
 	}
 }
 
