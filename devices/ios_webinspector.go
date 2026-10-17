@@ -44,6 +44,8 @@ const (
 	safariVisibilityTimeout = 1 * time.Second
 
 	safariLoadStatePollEvery = 200 * time.Millisecond
+	// how long goto waits for the page it navigates to to replace the current one
+	safariNavigationTimeout = 30 * time.Second
 )
 
 var (
@@ -574,6 +576,7 @@ type safariWebViews struct {
 	// zero means the default; tests shorten them
 	findSafariTimeout time.Duration
 	livenessTimeout   time.Duration
+	navigateTimeout   time.Duration
 }
 
 func (s safariWebViews) findTimeout() time.Duration {
@@ -588,6 +591,13 @@ func (s safariWebViews) liveness() time.Duration {
 		return s.livenessTimeout
 	}
 	return safariLivenessTimeout
+}
+
+func (s safariWebViews) navigationTimeout() time.Duration {
+	if s.navigateTimeout > 0 {
+		return s.navigateTimeout
+	}
+	return safariNavigationTimeout
 }
 
 // safariTabs returns Safari and the tabs it has open.
@@ -727,9 +737,30 @@ func (s safariWebViews) navigate(webviewID, body string, args []any) error {
 	return err
 }
 
-// WebKit has no command to navigate a page, so the page is told to do it.
+// safariGotoScript tells the page to navigate to arguments[0], and marks it with
+// arguments[1] first. The mark goes away with the page, so a page without it is
+// the one the navigation brought. A javascript: url runs in the page, and a jump
+// to a fragment keeps the page and changes its url at once, so neither replaces
+// the page and the mark is taken off again right away.
+const safariGotoScript = `var target = new URL(arguments[0], window.location.href);
+window.__mobilecliGoto = arguments[1];
+window.location.href = arguments[0];
+if (target.protocol === 'javascript:' || (target.href.indexOf('#') !== -1 && window.location.href === target.href)) delete window.__mobilecliGoto;`
+
+// WebKit has no command to navigate a page, so the page is told to do it. The
+// navigation only starts there, and a wait right after it would still find the
+// page being left, so goto returns once the new page has replaced it.
 func (s safariWebViews) WebViewGoto(webviewID, url string) error {
-	return s.navigate(webviewID, "window.location.href = arguments[0]", []any{url})
+	mark, err := newInspectorID()
+	if err != nil {
+		return err
+	}
+	if err := s.navigate(webviewID, safariGotoScript, []any{url, mark}); err != nil {
+		return err
+	}
+	isNewPage := fmt.Sprintf("return window.__mobilecliGoto !== %q", mark)
+	timedOut := fmt.Sprintf("navigation to %s did not replace the page within %s", url, s.navigationTimeout())
+	return s.waitUntil(webviewID, isNewPage, s.navigationTimeout(), timedOut)
 }
 
 func (s safariWebViews) WebViewGoBack(webviewID string) error {
@@ -814,34 +845,42 @@ func (s safariWebViews) WebViewWaitForLoadState(webviewID, state string, timeout
 		hasLoaded = "return document.readyState === 'interactive' || document.readyState === 'complete'"
 	}
 
-	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
+	timedOut := fmt.Sprintf("waitForLoadState timed out waiting for '%s'", state)
+	return s.waitUntil(webviewID, hasLoaded, time.Duration(timeoutMs)*time.Millisecond, timedOut)
+}
+
+// waitUntil evaluates condition in the tab until it returns true, for at most
+// timeout. Running out of time fails with timedOut, followed by why the last
+// poll failed if it did.
+func (s safariWebViews) waitUntil(webviewID, condition string, timeout time.Duration, timedOut string) error {
+	deadline := time.Now().Add(timeout)
 	for {
 		// a poll on a tab that does not answer must not outlive the wait
 		pollTimeout := min(time.Until(deadline), s.liveness())
 		if pollTimeout <= 0 {
-			return fmt.Errorf("waitForLoadState timed out waiting for '%s'", state)
+			return errors.New(timedOut)
 		}
 		// the tab does not answer while it swaps pages mid-navigation, so only
 		// an unknown tab ends the wait early
-		loaded, err := s.hasLoaded(webviewID, hasLoaded, pollTimeout)
+		holds, err := s.holds(webviewID, condition, pollTimeout)
 		if errors.Is(err, errSafariTabNotFound) {
 			return err
 		}
-		if err == nil && loaded {
+		if err == nil && holds {
 			return nil
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
-				return fmt.Errorf("waitForLoadState timed out waiting for '%s': %w", state, err)
+				return fmt.Errorf("%s: %w", timedOut, err)
 			}
-			return fmt.Errorf("waitForLoadState timed out waiting for '%s'", state)
+			return errors.New(timedOut)
 		}
 		time.Sleep(safariLoadStatePollEvery)
 	}
 }
 
-// hasLoaded attaches to the tab and evaluates hasLoaded in it, within timeout in all.
-func (s safariWebViews) hasLoaded(webviewID, hasLoaded string, timeout time.Duration) (bool, error) {
+// holds attaches to the tab and evaluates condition in it, within timeout in all.
+func (s safariWebViews) holds(webviewID, condition string, timeout time.Duration) (bool, error) {
 	deadline := time.Now().Add(timeout)
 	tab, err := s.attach(webviewID, timeout)
 	if err != nil {
@@ -849,6 +888,6 @@ func (s safariWebViews) hasLoaded(webviewID, hasLoaded string, timeout time.Dura
 	}
 	defer tab.detach()
 
-	loaded, err := tab.evaluate(hasLoaded, nil, time.Until(deadline))
-	return loaded == true, err
+	result, err := tab.evaluate(condition, nil, time.Until(deadline))
+	return result == true, err
 }

@@ -573,19 +573,112 @@ func waitUntilTheClientNoticed(t *testing.T, client *webInspectorClient) {
 	}
 }
 
+// pageIsReplacedAfter makes the tab answer polls for its page as if the page
+// were replaced by the new one on the given poll. Only the polls await a
+// promise: the navigation itself is not awaited.
+func (f *fakeWebInspector) pageIsReplacedAfter(polls int) *int {
+	polled := 0
+	f.answer = func(call fakeInspectorCall) (any, string) {
+		if call.Method != "Runtime.awaitPromise" {
+			return promiseReference, ""
+		}
+		polled++
+		return map[string]any{"result": map[string]any{"type": "boolean", "value": polled >= polls}, "wasThrown": false}, ""
+	}
+	return &polled
+}
+
+// expressionOf returns the javascript of the nth evaluation the tab was sent
+func expressionOf(inspector *fakeWebInspector, nth int) string {
+	expression, _ := inspector.callsOf("Runtime.evaluate")[nth].Params["expression"].(string)
+	return expression
+}
+
+func navigationOf(inspector *fakeWebInspector) string {
+	return expressionOf(inspector, 0)
+}
+
 // WebKit has no command to navigate a page, so the page is told to navigate
 // itself. The url travels as an argument, not as javascript source.
 func TestSafariGotoNavigatesTheTabToTheUrl(t *testing.T) {
 	inspector := safariShowing(t, examplePage)
+	inspector.pageIsReplacedAfter(1)
 
 	err := inspector.safari().WebViewGoto("2", "https://mobilewright.dev/?q='quoted'")
 
 	if err != nil {
 		t.Fatalf("WebViewGoto: %v", err)
 	}
-	expression := inspector.onlyCallOf("Runtime.evaluate").Params["expression"].(string)
-	if expression != "(function(){\nwindow.location.href = arguments[0]\n}).apply(null, [\"https://mobilewright.dev/?q='quoted'\"])" {
-		t.Fatalf("unexpected expression %q", expression)
+	navigation := navigationOf(inspector)
+	if !strings.HasPrefix(navigation, "(function(){\n"+safariGotoScript+"\n}).apply(null, [\"https://mobilewright.dev/?q='quoted'\",\"") {
+		t.Fatalf("expected the url to be passed as an argument, evaluated %q", navigation)
+	}
+}
+
+// A wait issued right after goto must not find the page goto navigated away
+// from, so goto returns only once the new page has replaced it.
+func TestSafariGotoReturnsOnceTheNewPageHasReplacedTheOldOne(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	polled := inspector.pageIsReplacedAfter(3)
+
+	err := inspector.safari().WebViewGoto("2", "https://mobilewright.dev/")
+
+	if err != nil {
+		t.Fatalf("WebViewGoto: %v", err)
+	}
+	if *polled != 3 {
+		t.Fatalf("expected goto to poll until the page was replaced, polled %d times", *polled)
+	}
+}
+
+// The page goto leaves is marked, and the page that has no mark is the new one.
+func TestSafariGotoRecognizesTheNewPageByTheMarkItLeftOnTheOldOne(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.pageIsReplacedAfter(1)
+
+	if err := inspector.safari().WebViewGoto("2", "https://mobilewright.dev/"); err != nil {
+		t.Fatalf("WebViewGoto: %v", err)
+	}
+
+	_, markArgument, _ := strings.Cut(navigationOf(inspector), "[\"https://mobilewright.dev/\",")
+	mark := strings.TrimSuffix(markArgument, "])")
+	poll := expressionOf(inspector, 1)
+	if mark == "" || !strings.Contains(poll, "return window.__mobilecliGoto !== "+mark) {
+		t.Fatalf("expected the poll to look for the absence of mark %s, evaluated %q", mark, poll)
+	}
+}
+
+func TestSafariGotoUsesANewMarkForEachNavigation(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.pageIsReplacedAfter(1)
+	safari := inspector.safari()
+
+	if err := safari.WebViewGoto("2", "https://mobilewright.dev/"); err != nil {
+		t.Fatalf("WebViewGoto: %v", err)
+	}
+	if err := safari.WebViewGoto("2", "https://mobilewright.dev/"); err != nil {
+		t.Fatalf("WebViewGoto: %v", err)
+	}
+
+	if first, second := expressionOf(inspector, 0), expressionOf(inspector, 2); first == second {
+		t.Fatalf("expected each navigation to mark the page differently, both evaluated %q", first)
+	}
+}
+
+func TestSafariGotoFailsWhenTheNavigationNeverReplacesThePage(t *testing.T) {
+	inspector := safariShowing(t, examplePage)
+	inspector.evaluatesTo(false)
+	safari := inspector.safari()
+	safari.navigateTimeout = 300 * time.Millisecond
+
+	start := time.Now()
+	err := safari.WebViewGoto("2", "http://localhost:1/")
+
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("goto took %s for a 300ms timeout", elapsed)
+	}
+	if err == nil || err.Error() != "navigation to http://localhost:1/ did not replace the page within 300ms" {
+		t.Fatalf("expected goto to fail saying the page was not replaced, got %v", err)
 	}
 }
 
@@ -593,6 +686,7 @@ func TestSafariGotoNavigatesTheTabToTheUrl(t *testing.T) {
 // may be awaited from it afterwards.
 func TestSafariNavigationDoesNotAwaitThePageItLeaves(t *testing.T) {
 	inspector := safariShowing(t, examplePage)
+	inspector.pageIsReplacedAfter(1)
 	safari := inspector.safari()
 
 	if err := safari.WebViewGoto("2", "https://mobilewright.dev/"); err != nil {
@@ -605,8 +699,10 @@ func TestSafariNavigationDoesNotAwaitThePageItLeaves(t *testing.T) {
 		t.Fatalf("WebViewGoForward: %v", err)
 	}
 
-	if awaited := inspector.callsOf("Runtime.awaitPromise"); len(awaited) != 0 {
-		t.Fatalf("expected no promise to be awaited, got %v", awaited)
+	// goto awaits its one poll of the new page, and nothing of the pages it and
+	// the history moves leave
+	if awaited := inspector.callsOf("Runtime.awaitPromise"); len(awaited) != 1 {
+		t.Fatalf("expected only the poll of the new page to be awaited, got %v", awaited)
 	}
 }
 
