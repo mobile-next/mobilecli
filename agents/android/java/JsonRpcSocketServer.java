@@ -38,6 +38,15 @@ class JsonRpcSocketServer {
 		}
 		return v;
 	}
+	/** Like requireParam, but "" is a valid value; only a missing or non-string one is rejected. */
+	static String requireStringParam(JSONObject params, String key) throws RpcException {
+		Object v = params == null ? null : params.opt(key);
+		if (!(v instanceof String)) {
+			throw new RpcException(RpcException.INVALID_PARAMS, "params." + key + " must be a string");
+		}
+		return (String) v;
+	}
+
 	private static final String JSONRPC_VERSION = "2.0";
 	private static final String CONTENT_LENGTH_PREFIX = "content-length:";
 

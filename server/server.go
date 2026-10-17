@@ -673,7 +673,8 @@ func handleIoKeys(params json.RawMessage) (any, error) {
 
 type IoFillParams struct {
 	DeviceID string `json:"deviceId"`
-	Text     string `json:"text"`
+	// a pointer, so a missing text is told apart from "", which clears the field
+	Text *string `json:"text"`
 }
 
 func handleIoFill(params json.RawMessage) (any, error) {
@@ -685,10 +686,13 @@ func handleIoFill(params json.RawMessage) (any, error) {
 	if err := json.Unmarshal(params, &ioFillParams); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
 	}
+	if ioFillParams.Text == nil {
+		return nil, fmt.Errorf("'text' is required; pass \"\" to clear the field")
+	}
 
 	req := commands.FillRequest{
 		DeviceID: ioFillParams.DeviceID,
-		Text:     ioFillParams.Text,
+		Text:     *ioFillParams.Text,
 	}
 
 	response := commands.FillCommand(req)
