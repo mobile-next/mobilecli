@@ -502,12 +502,32 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 		return err
 	}
 
-	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-n", component)
+	output, err := d.runAdbShell(launchArgs(component, d.isAppRunning(bundleID))...)
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
 
 	return nil
+}
+
+// launchArgs builds the `am start` command line. force-stop kills an app's process but
+// keeps its task, and an activity the app started in that task, like the runtime
+// permission prompt, stays on top: a plain start just resumes it. When the app isn't
+// running, clear the task so the launch shows the app. When it is running, keep the
+// task so launching brings the app to the front as it was.
+func launchArgs(component string, isRunning bool) []string {
+	args := []string{"am", "start", "--display", defaultDisplayID}
+	if !isRunning {
+		args = append(args, "--activity-clear-task")
+	}
+	return append(args, "-n", component)
+}
+
+// isAppRunning reports whether the package has a live process. pidof exits non-zero
+// when there is none.
+func (d *AndroidDevice) isAppRunning(bundleID string) bool {
+	output, err := d.runAdbShell("pidof", bundleID)
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 // TerminateApp stops an app. `am force-stop` succeeds for any package name, so a
