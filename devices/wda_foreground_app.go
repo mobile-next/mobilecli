@@ -2,9 +2,15 @@ package devices
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 )
+
+// springboardBundleID is the home screen. A real device lists it among its
+// installed apps as "SpringBoard"; a simulator does not list it, and WDA names
+// it with a single space.
+const springboardBundleID = "com.apple.springboard"
 
 // wdaForegroundApp asks WDA which app is in the foreground and enriches the
 // answer with version details from the device's installed-app list. Shared by
@@ -22,7 +28,12 @@ func wdaForegroundApp(client *devicekit.DeviceKitClient, listApps func(onlyLaunc
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
 
-	// find the matching app to get full details
+	return foregroundAppFromWDA(activeApp, apps), nil
+}
+
+// foregroundAppFromWDA describes the app WDA reports in the foreground, using
+// the installed-app entry when there is one.
+func foregroundAppFromWDA(activeApp *devicekit.ActiveAppInfo, apps []InstalledAppInfo) *ForegroundAppInfo {
 	for _, app := range apps {
 		if app.PackageName == activeApp.BundleID {
 			return &ForegroundAppInfo{
@@ -30,15 +41,29 @@ func wdaForegroundApp(client *devicekit.DeviceKitClient, listApps func(onlyLaunc
 				AppName:     app.AppName,
 				Version:     app.Version,
 				Activity:    activeApp.ViewController,
-			}, nil
+			}
 		}
 	}
 
-	// if app not found in list (e.g., system app), return info from WDA only
+	// not in the list (e.g., a system app): describe it from WDA alone
 	return &ForegroundAppInfo{
 		PackageName: activeApp.BundleID,
-		AppName:     activeApp.Name,
+		AppName:     wdaAppName(activeApp),
 		Version:     "",
 		Activity:    activeApp.ViewController,
-	}, nil
+	}
+}
+
+// wdaAppName is the name WDA reports for an app, or, when that name is blank,
+// the name a real device lists for the home screen and the bundle ID for any
+// other app, as the Android foreground app does for an app without a label.
+func wdaAppName(activeApp *devicekit.ActiveAppInfo) string {
+	name := strings.TrimSpace(activeApp.Name)
+	if name != "" {
+		return name
+	}
+	if activeApp.BundleID == springboardBundleID {
+		return "SpringBoard"
+	}
+	return activeApp.BundleID
 }
