@@ -150,6 +150,10 @@ func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
 	return r.fireRPC("device.io.swipe", p)
 }
 
+func (r *RemoteDevice) Shake() error {
+	return r.fireRPC("device.io.shake", params{})
+}
+
 func (r *RemoteDevice) GetClipboard() (string, error) {
 	resp, err := rpcCall[struct {
 		Text string `json:"text"`

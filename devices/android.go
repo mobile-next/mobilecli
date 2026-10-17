@@ -1992,6 +1992,61 @@ func (d *AndroidDevice) SetHingeAngle(angle float64) error {
 	return nil
 }
 
+// Shake spikes the accelerometer of an emulator, then restores its previous reading.
+// Real devices have no emulator console and fail here.
+func (d *AndroidDevice) Shake() error {
+	output, err := d.runEmuCommand("sensor", "get", "acceleration")
+	if err != nil {
+		return fmt.Errorf("failed to read accelerometer (only emulators are supported): %w", err)
+	}
+
+	previous, err := parseEmuSensorValue(output)
+	if err != nil {
+		return err
+	}
+
+	if _, err := d.runEmuCommand("sensor", "set", "acceleration", "100:100:100"); err != nil {
+		return fmt.Errorf("failed to set accelerometer: %w", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	if _, err := d.runEmuCommand("sensor", "set", "acceleration", previous); err != nil {
+		return fmt.Errorf("failed to restore accelerometer: %w", err)
+	}
+
+	return nil
+}
+
+// runEmuCommand runs an emulator console command. The console reports failures
+// as "KO: <reason>" with a zero exit code.
+func (d *AndroidDevice) runEmuCommand(args ...string) (string, error) {
+	output, err := d.runAdbCommand(append([]string{"emu"}, args...)...)
+	text := strings.TrimSpace(string(output))
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", err, text)
+	}
+
+	if strings.Contains(text, "KO:") {
+		return "", fmt.Errorf("%s", text)
+	}
+
+	return text, nil
+}
+
+// parseEmuSensorValue reads "x:y:z" from the console reply to "sensor get <name>",
+// which is "<name> = x:y:z" followed by "OK".
+func parseEmuSensorValue(output string) (string, error) {
+	line, _, _ := strings.Cut(output, "\n")
+	_, value, ok := strings.Cut(line, " = ")
+	value = strings.TrimSpace(value)
+	if !ok || value == "" {
+		return "", fmt.Errorf("unexpected sensor reading: %q", output)
+	}
+
+	return value, nil
+}
+
 // SetAnimationsEnabled toggles the three global animation scales. Setting them
 // to 0 disables animations for stable screenshots; 1 restores the defaults.
 func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {

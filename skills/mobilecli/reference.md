@@ -103,6 +103,10 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Zoom out, fingers travel 300px each over 500ms
   mobilecli io pinch --device <device-id> --direction in --distance 300 --duration 500
   ```
+* **Shake** (iOS simulators and Android emulators only):
+  ```bash
+  mobilecli io shake --device <device-id>
+  ```
 * **Send Text**:
   ```bash
   # Types text into the currently focused input field

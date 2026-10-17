@@ -276,6 +276,7 @@ test.describe('rpc method validation', () => {
 		{method: 'device.io.longpress', params: {x: 10, y: 10}},
 		{method: 'device.io.swipe', params: {x1: 1, y1: 2, x2: 3, y2: 4}},
 		{method: 'device.io.pinch', params: {x: 500, y: 500, direction: 'out'}},
+		{method: 'device.io.shake', params: {}},
 		{method: 'device.io.button', params: {button: 'HOME'}},
 		{method: 'device.io.text', params: {text: 'hello'}},
 		{method: 'device.io.keys', params: {keys: ['a']}},

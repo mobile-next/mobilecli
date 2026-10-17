@@ -638,6 +638,28 @@
       }
     },
     {
+      "name": "device.io.shake",
+      "summary": "Shake the device",
+      "description": "Simulates a shake gesture. Supported on iOS simulators and Android emulators",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.info",
       "summary": "Get device information",
       "description": "Returns detailed information about the specified device",

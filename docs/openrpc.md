@@ -35,6 +35,7 @@ JSON-RPC API for mobile device automation and control
 - [device.io.orientation.get](#deviceioorientationget)
 - [device.io.orientation.set](#deviceioorientationset)
 - [device.io.pinch](#deviceiopinch)
+- [device.io.shake](#deviceioshake)
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
@@ -1074,6 +1075,38 @@ Operation result
     "y": 0,
     "distance": 0,
     "duration": 0
+  },
+  "id": 1
+}
+```
+
+
+### device.io.shake
+
+**Shake the device**
+
+Simulates a shake gesture. Supported on iOS simulators and Android emulators
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.shake",
+  "params": {
+    "deviceId": "string"
   },
   "id": 1
 }
