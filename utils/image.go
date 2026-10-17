@@ -56,10 +56,13 @@ func resizeFactor(width, height int, scale float64, maxSize int) float64 {
 }
 
 // cropRectInPixels maps clip rect (in screen points) to pixel coordinates of an
-// imageWidth-wide screenshot and clamps it to the image bounds. Bounds from a
+// imageWidth x imageHeight screenshot and clamps it to the image bounds. The
+// device may report its screen size in portrait while the screenshot is
+// rotated to landscape (or the other way around), so the screen side that
+// spans the image width is picked by matching the image's aspect. Bounds from a
 // UI hierarchy may slightly exceed the screen (e.g. partially scrolled
 // elements), so out-of-bounds portions are clipped rather than rejected.
-func cropRectInPixels(rect *types.ScreenElementRect, screenWidthPoints, imageWidth, imageHeight int) (image.Rectangle, error) {
+func cropRectInPixels(rect *types.ScreenElementRect, screenWidthPoints, screenHeightPoints, imageWidth, imageHeight int) (image.Rectangle, error) {
 	if rect.Width <= 0 || rect.Height <= 0 {
 		return image.Rectangle{}, fmt.Errorf("clip width and height must be positive")
 	}
@@ -67,7 +70,12 @@ func cropRectInPixels(rect *types.ScreenElementRect, screenWidthPoints, imageWid
 		return image.Rectangle{}, fmt.Errorf("screen width is required for clip cropping")
 	}
 
-	factor := float64(imageWidth) / float64(screenWidthPoints)
+	pointsAcross := screenWidthPoints
+	if isRotated(imageWidth, imageHeight, screenWidthPoints, screenHeightPoints) {
+		pointsAcross = screenHeightPoints
+	}
+
+	factor := float64(imageWidth) / float64(pointsAcross)
 	pixels := image.Rect(
 		int(float64(rect.X)*factor+0.5),
 		int(float64(rect.Y)*factor+0.5),
@@ -81,12 +89,21 @@ func cropRectInPixels(rect *types.ScreenElementRect, screenWidthPoints, imageWid
 	return pixels, nil
 }
 
+// isRotated reports whether the image is landscape while the screen size is
+// portrait, or the other way around. An unknown screen height is never rotated.
+func isRotated(imageWidth, imageHeight, screenWidthPoints, screenHeightPoints int) bool {
+	if screenHeightPoints <= 0 {
+		return false
+	}
+	return (imageWidth > imageHeight) != (screenWidthPoints > screenHeightPoints)
+}
+
 // ProcessScreenshot crops, resizes and re-encodes PNG screenshot bytes.
-// clip rect (in screen points, mapped to pixels via screenWidthPoints) is applied
+// clip rect (in screen points, mapped to pixels via the screen size) is applied
 // first, then scale/maxSize (see resizeFactor) against the cropped size, then
 // encoding to format ("png" or "jpeg"). When nothing is to be done and PNG is
 // requested, the input is returned unchanged.
-func ProcessScreenshot(pngBytes []byte, format string, quality int, scale float64, maxSize int, rect *types.ScreenElementRect, screenWidthPoints int) ([]byte, error) {
+func ProcessScreenshot(pngBytes []byte, format string, quality int, scale float64, maxSize int, rect *types.ScreenElementRect, screenWidthPoints, screenHeightPoints int) ([]byte, error) {
 	cfg, err := png.DecodeConfig(bytes.NewReader(pngBytes))
 	if err != nil {
 		return nil, err
@@ -95,7 +112,7 @@ func ProcessScreenshot(pngBytes []byte, format string, quality int, scale float6
 	width, height := cfg.Width, cfg.Height
 	var crop image.Rectangle
 	if rect != nil {
-		crop, err = cropRectInPixels(rect, screenWidthPoints, cfg.Width, cfg.Height)
+		crop, err = cropRectInPixels(rect, screenWidthPoints, screenHeightPoints, cfg.Width, cfg.Height)
 		if err != nil {
 			return nil, err
 		}

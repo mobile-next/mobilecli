@@ -98,7 +98,7 @@ func (s SimulatorDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints, opts.ScreenHeightPoints)
 }
 
 // Reboot shuts down and then boots the iOS simulator.
