@@ -1,3 +1,13 @@
+## [1.0.21](https://github.com/mobile-next/mobilecli/releases/tag/1.0.21) (2026-10-17)
+* Feat: new `io fill` command (alongside `io text`) replaces the focused text field's content; Android sets it through accessibility ACTION_SET_TEXT, iOS clears with the HID clear key then types ([#527](https://github.com/mobile-next/mobilecli/pull/527))
+* Fix: restart simulator cfprefsd in apps clear so cached preferences don't survive ([#513](https://github.com/mobile-next/mobilecli/pull/513))
+* Fix(ios): name the home screen SpringBoard in the foreground app on a simulator ([#502](https://github.com/mobile-next/mobilecli/pull/502))
+* Fix(ios): return from safari webview goto once the new page has replaced the old one ([#519](https://github.com/mobile-next/mobilecli/pull/519))
+* Fix(ios): report keyboard focus from the snapshot's hasKeyboardFocus, so the Email field reports focus too ([devicekit-ios#104](https://github.com/mobile-next/devicekit-ios/pull/104))
+* Feat: report clickable on android elements ([#524](https://github.com/mobile-next/mobilecli/pull/524))
+* Fix: launch a stopped android app above a leftover permission prompt ([#526](https://github.com/mobile-next/mobilecli/pull/526))
+* Fix(android): resolve foreground app behind a focused system window ([#516](https://github.com/mobile-next/mobilecli/pull/516))
+
 ## [1.0.20](https://github.com/mobile-next/mobilecli/releases/tag/1.0.20) (2026-10-14)
 * Feat(ios): clear key in device.io.keys sends the HID keyboard clear to wipe the focused text field ([devicekit-ios#101](https://github.com/mobile-next/devicekit-ios/pull/101))
 * Fix(ios): bundle XCTest frameworks in the runner when Xcode 27 doesn't, and don't merge stale zips ([devicekit-ios#100](https://github.com/mobile-next/devicekit-ios/pull/100))
