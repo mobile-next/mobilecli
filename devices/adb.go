@@ -230,6 +230,27 @@ func (a *ADB) ExecOut(ctx context.Context, serial, command string) (string, erro
 	return string(data), nil
 }
 
+// DevicesLong lists attached devices in the format of `adb devices -l`, one
+// device per line, without the "List of devices attached" header.
+func (a *ADB) DevicesLong(ctx context.Context) (string, error) {
+	c, err := a.dial(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = c.close() }()
+	c.setDeadlineFromNow()
+
+	if err := c.service("host:devices-l"); err != nil {
+		return "", err
+	}
+
+	data, err := c.readLengthPrefixedData()
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // TrackDevices subscribes to host:track-devices and streams each update frame.
 //
 // the returned channels are closed when the context is canceled or an error occurs.

@@ -432,6 +432,17 @@ func (s *SimulatorDevice) getState() (string, error) {
 	return "", fmt.Errorf("simulator %s not found", s.UDID)
 }
 
+// refreshState re-reads the simulator's state, since it can be booted or shut
+// down outside mobilecli (Simulator.app, simctl, a crash).
+func (s *SimulatorDevice) refreshState() error {
+	state, err := s.getState()
+	if err != nil {
+		return err
+	}
+	s.Simulator.State = state
+	return nil
+}
+
 // Boot boots the iOS simulator
 func (s *SimulatorDevice) Boot() error {
 	state, err := s.getState()

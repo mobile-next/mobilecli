@@ -101,11 +101,16 @@ type textParams struct {
 }
 
 type AndroidDevice struct {
-	id          string
+	id string
+
+	// liveMu guards the fields below, which refreshState rewrites when an
+	// emulator is started or stopped outside mobilecli.
+	liveMu      sync.RWMutex
 	name        string
 	version     string
 	state       string // "online" or "offline"
 	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
+	connection  string // adb's transport_id for transportID, new on every reconnect; empty when unknown
 	model       string
 
 	// host port of the DeviceServer once it's known to be up and current
@@ -118,11 +123,21 @@ func (d *AndroidDevice) ID() string {
 }
 
 func (d *AndroidDevice) Name() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
 	return d.name
 }
 
 func (d *AndroidDevice) Version() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
 	return d.version
+}
+
+func (d *AndroidDevice) Model() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
+	return d.model
 }
 
 func (d *AndroidDevice) Platform() string {
@@ -130,6 +145,8 @@ func (d *AndroidDevice) Platform() string {
 }
 
 func (d *AndroidDevice) DeviceType() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
 	// check transportID for online devices, or state for offline
 	if strings.HasPrefix(d.transportID, "emulator-") || d.state == StateOffline {
 		return DeviceTypeEmulator
@@ -139,6 +156,8 @@ func (d *AndroidDevice) DeviceType() string {
 }
 
 func (d *AndroidDevice) State() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
 	return d.state
 }
 
@@ -216,6 +235,8 @@ func getEmulatorPath() string {
 // getAdbIdentifier returns the correct device identifier for adb commands
 // uses transportID for online devices (e.g., "emulator-5554"), or id for offline
 func (d *AndroidDevice) getAdbIdentifier() string {
+	d.liveMu.RLock()
+	defer d.liveMu.RUnlock()
 	if d.transportID != "" {
 		return d.transportID
 	}
@@ -566,7 +587,7 @@ func (d *AndroidDevice) Shutdown() error {
 		return fmt.Errorf("shutdown is only supported for emulators")
 	}
 
-	if d.state == StateOffline {
+	if d.State() == StateOffline {
 		return fmt.Errorf("emulator is already offline")
 	}
 
@@ -576,8 +597,11 @@ func (d *AndroidDevice) Shutdown() error {
 		return fmt.Errorf("failed to shutdown emulator: %w", err)
 	}
 
+	d.liveMu.Lock()
 	d.state = StateOffline
 	d.transportID = ""
+	d.connection = ""
+	d.liveMu.Unlock()
 	return nil
 }
 
@@ -768,7 +792,7 @@ func GetAndroidDevices() ([]ControllableDevice, error) {
 
 func (d *AndroidDevice) StartAgent(config StartAgentConfig) error {
 	// if device is offline, return error - user should use 'device boot' command
-	if d.state == StateOffline {
+	if d.State() == StateOffline {
 		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
 	}
 
@@ -824,7 +848,7 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 
 // Boot launches an offline Android emulator and waits for it to be ready
 func (d *AndroidDevice) Boot() error {
-	if d.state != StateOffline {
+	if d.State() != StateOffline {
 		return fmt.Errorf("emulator is already running")
 	}
 	utils.Verbose("Starting Android emulator: %s", d.id)
@@ -864,8 +888,11 @@ func (d *AndroidDevice) Boot() error {
 	utils.Verbose("Emulator booted successfully with transport ID: %s", deviceID)
 	// update our transport ID to the actual emulator-XXXX ID
 	// the device ID (d.id) is already set to the AVD name and should not change
+	d.liveMu.Lock()
 	d.transportID = deviceID
+	d.connection = ""
 	d.state = StateOnline
+	d.liveMu.Unlock()
 	return nil
 }
 
@@ -1278,7 +1305,7 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    d.State(),
-			Model:    d.model,
+			Model:    d.Model(),
 		},
 		ScreenSize: &ScreenSize{
 			Width:  widthInt,

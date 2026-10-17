@@ -263,6 +263,24 @@ type WebViewable interface {
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
+// stateRefresher is implemented by devices that can be started or stopped
+// outside mobilecli, whose state therefore goes stale once cached.
+type stateRefresher interface {
+	refreshState() error
+}
+
+// RefreshState re-reads a long-lived device's real state (online or offline,
+// and what that implies) in place. If that fails, the last known state stays.
+func RefreshState(d ControllableDevice) {
+	refresher, ok := d.(stateRefresher)
+	if !ok {
+		return
+	}
+	if err := refresher.refreshState(); err != nil {
+		utils.Verbose("could not refresh the state of device %s: %v", d.ID(), err)
+	}
+}
+
 // GetAllControllableDevices aggregates all known devices with options
 func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
 
@@ -416,7 +434,7 @@ func deviceModel(d ControllableDevice) string {
 	case *SimulatorDevice:
 		return device.Simulator.DeviceType
 	case *AndroidDevice:
-		return device.model
+		return device.Model()
 	}
 	return ""
 }
