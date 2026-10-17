@@ -14,7 +14,8 @@ type KeyCombo struct {
 func toWdaKeyCombos(combos []KeyCombo) []devicekit.KeyCombo {
 	out := make([]devicekit.KeyCombo, len(combos))
 	for i, c := range combos {
-		out[i] = devicekit.KeyCombo{Key: c.Key, Modifiers: c.Modifiers}
+		// the agent rejects "modifiers": null, so a combo without modifiers sends []
+		out[i] = devicekit.KeyCombo{Key: c.Key, Modifiers: append([]string{}, c.Modifiers...)}
 	}
 	return out
 }

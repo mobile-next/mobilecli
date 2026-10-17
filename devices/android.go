@@ -977,6 +977,16 @@ func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
 	return nil
 }
 
+// Fill sets the focused field's text through accessibility, not keys: a Compose
+// TextField moves its cursor to the tap a moment after focusing, which collapses
+// a ctrl+a selection.
+func (d *AndroidDevice) Fill(text string) error {
+	if _, err := d.serverRequest("device.io.fill", textParams{Text: text}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to fill text: %w", err)
+	}
+	return nil
+}
+
 // isAscii checks if text contains only ASCII characters
 func isAscii(text string) bool {
 	for _, char := range text {

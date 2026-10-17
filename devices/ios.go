@@ -883,6 +883,17 @@ func (d *IOSDevice) PressKeys(combos []KeyCombo) error {
 	return d.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
 }
 
+// Fill presses the HID clear key, which empties the focused field in one event, then types
+func (d *IOSDevice) Fill(text string) error {
+	if err := d.PressKeys([]KeyCombo{{Key: "clear"}}); err != nil {
+		return err
+	}
+	if text == "" {
+		return nil
+	}
+	return d.SendKeys(text)
+}
+
 func (d *IOSDevice) OpenURL(url string) error {
 	return d.deviceKitClient.OpenURL(url)
 }

@@ -184,6 +184,9 @@ mobilecli io button --device <device-id> POWER
 # Send text
 mobilecli io text --device <device-id> 'hello world'
 
+# Replace the focused field's text in one step ('' clears it)
+mobilecli io fill --device <device-id> 'hello world'
+
 # Read device clipboard
 mobilecli io clipboard get --device <device-id>
 

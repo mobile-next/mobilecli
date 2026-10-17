@@ -1,6 +1,9 @@
 package com.mobilenext.mobilecli;
 
 import android.app.UiAutomation;
+import android.os.Bundle;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
@@ -43,6 +46,70 @@ public class Input {
 		}
 		actions.put(new JSONObject().put("type", "release").put("duration", 0));
 		return actions;
+	}
+
+	/**
+	 * Replaces the focused text field's text through accessibility (ACTION_SET_TEXT);
+	 * "" clears it. Keys race the field: a Compose TextField moves its cursor to the tap
+	 * a moment after focusing, which collapses a ctrl+a selection, and a backspace then
+	 * deletes one character. Setting the text also takes any unicode without the clipboard.
+	 */
+	@SuppressWarnings("deprecation") // recycle() is a no-op on API 33+, still frees pools below
+	static JSONObject fill(UiAutomation automation, String text) throws Exception {
+		// the tap that focuses the field returns before the app has moved focus to it
+		AccessibilityNodeInfo field = findFocusedEditable(automation);
+		long deadline = SystemClock.uptimeMillis() + FOCUS_TIMEOUT_MS;
+		while (field == null && SystemClock.uptimeMillis() < deadline) {
+			SystemClock.sleep(FOCUS_POLL_MS);
+			field = findFocusedEditable(automation);
+		}
+		if (field == null) {
+			throw new RpcException(RpcException.INTERNAL_ERROR, "no text field has focus");
+		}
+		try {
+			Bundle args = new Bundle();
+			args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+			if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+				throw new RpcException(RpcException.INTERNAL_ERROR, "the focused text field can't be filled");
+			}
+		} finally {
+			field.recycle();
+		}
+		return ok();
+	}
+
+	private static final long FOCUS_TIMEOUT_MS = 2000;
+	private static final long FOCUS_POLL_MS = 50;
+
+	// findFocus(FOCUS_INPUT) answers with the hosting view for Compose, which can't
+	// take text, so look for the focused editable node itself
+	@SuppressWarnings("deprecation")
+	private static AccessibilityNodeInfo findFocusedEditable(UiAutomation automation) {
+		for (AccessibilityWindowInfo window : automation.getWindows()) {
+			AccessibilityNodeInfo root = window.getRoot();
+			window.recycle();
+			if (root == null) continue;
+			AccessibilityNodeInfo field = findFocusedEditable(root);
+			if (field != root) root.recycle();
+			if (field != null) return field;
+		}
+		return null;
+	}
+
+	// depth-first; the caller owns the node it gets back, every other node is recycled
+	@SuppressWarnings("deprecation")
+	private static AccessibilityNodeInfo findFocusedEditable(AccessibilityNodeInfo node) {
+		if (node.isFocused() && node.isEditable()) {
+			return node;
+		}
+		for (int i = 0; i < node.getChildCount(); i++) {
+			AccessibilityNodeInfo child = node.getChild(i);
+			if (child == null) continue;
+			AccessibilityNodeInfo found = findFocusedEditable(child);
+			if (found != child) child.recycle();
+			if (found != null) return found;
+		}
+		return null;
 	}
 
 	/** Presses one key with zero or more modifiers held: modifiers down, key down/up, modifiers up. */

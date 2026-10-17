@@ -671,6 +671,34 @@ func handleIoKeys(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+type IoFillParams struct {
+	DeviceID string `json:"deviceId"`
+	// a pointer, so a missing text is told apart from "", which clears the field
+	Text *string `json:"text"`
+}
+
+func handleIoFill(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, text")
+	}
+
+	var ioFillParams IoFillParams
+	if err := json.Unmarshal(params, &ioFillParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, text", err)
+	}
+	if ioFillParams.Text == nil {
+		return nil, fmt.Errorf("'text' is required; pass \"\" to clear the field")
+	}
+
+	req := commands.FillRequest{
+		DeviceID: ioFillParams.DeviceID,
+		Text:     *ioFillParams.Text,
+	}
+
+	response := commands.FillCommand(req)
+	return okResult(response)
+}
+
 type IoButtonParams struct {
 	DeviceID string `json:"deviceId"`
 	Button   string `json:"button"`

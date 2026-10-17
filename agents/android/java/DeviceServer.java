@@ -141,6 +141,9 @@ public class DeviceServer {
 				return Input.pressKey(automation, JsonRpcSocketServer.requireParam(params, "button"), null);
 			case "device.io.keys":
 				return pressKeys(automation, p.optJSONArray("keys"));
+			case "device.io.fill":
+				// "" is a valid fill: it clears the field
+				return Input.fill(automation, JsonRpcSocketServer.requireStringParam(params, "text"));
 			case "device.io.text":
 				return Input.typeText(automation, JsonRpcSocketServer.requireParam(params, "text"));
 			case "device.clipboard.get":

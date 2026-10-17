@@ -181,6 +181,10 @@ func (r *RemoteDevice) PressKeys(combos []KeyCombo) error {
 	return r.fireRPC("device.io.keys", params{"keys": keys})
 }
 
+func (r *RemoteDevice) Fill(text string) error {
+	return r.fireRPC("device.io.fill", params{"text": text})
+}
+
 func (r *RemoteDevice) PressButton(key string) error {
 	return r.fireRPC("device.io.button", params{"button": key})
 }

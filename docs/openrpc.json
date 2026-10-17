@@ -298,6 +298,36 @@
       }
     },
     {
+      "name": "device.io.fill",
+      "summary": "Fill text field",
+      "description": "Replaces the text of the focused text field; an empty string clears it. Unlike device.io.text, which types key by key, this sets the text in one step: on Android through accessibility, on iOS by clearing the field and typing",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to put in the field, or an empty string to clear it",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.clipboard.get",
       "summary": "Read clipboard",
       "description": "Reads the text currently on the device clipboard",
