@@ -35,6 +35,7 @@ type ScreenElement struct {
 	Checked     *bool               `json:"checked,omitempty"`   // only set when true
 	Selected    *bool               `json:"selected,omitempty"`  // only set when true
 	Clickable   *bool               `json:"clickable,omitempty"` // android only: only set when true
+	PaneTitle   *string             `json:"paneTitle,omitempty"` // android only: a window-like region's title, e.g. "Dialog"
 	Children    []ScreenElement     `json:"children,omitempty"`
 }
 
