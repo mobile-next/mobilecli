@@ -392,3 +392,19 @@ jobs:
           npm pkg set "optionalDependencies.@mobilenext/mobilecli-$platform=$GITHUB_REF_NAME"
         done
         npm publish --access public --provenance
+
+  winget:
+    if: github.ref_type == 'tag'
+    runs-on: windows-latest
+    needs: [publish]
+    permissions:
+      contents: read
+    steps:
+    # ponytail: first version must be submitted manually via `komac new`; this only updates existing manifests
+    - uses: vedantmgoyal9/winget-releaser@v2
+      with:
+        identifier: MobileNext.mobilecli
+        version: ${{ github.ref_name }}
+        release-tag: ${{ github.ref_name }}
+        installers-regex: 'windows-(amd64|arm64)\.zip$'
+        token: ${{ secrets.WINGET_TOKEN }}
