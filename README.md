@@ -239,6 +239,9 @@ mobilecli apps foreground --device <device-id>
 # Launch an app
 mobilecli apps launch <bundle-id> --device <device-id>
 
+# Launch an app with arguments and environment variables (iOS only)
+mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
+
 # Terminate an app
 mobilecli apps terminate <bundle-id> --device <device-id>
 

@@ -51,6 +51,8 @@ All commands support the global `--device <id>` flag to specify the target devic
 * **Launch / Terminate**:
   ```bash
   mobilecli apps launch <bundle-id> --device <device-id>
+  # iOS only: repeat --arg and --env as needed
+  mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
   mobilecli apps terminate <bundle-id> --device <device-id>
   ```
 * **Install / Uninstall**:

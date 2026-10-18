@@ -19,8 +19,10 @@ var (
 	deviceType string
 
 	// for apps launch command
-	locale   string
-	activity string
+	locale     string
+	activity   string
+	launchArgs []string
+	launchEnv  []string
 
 	// for agent install command
 	agentForce               bool
