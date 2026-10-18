@@ -152,7 +152,9 @@ type FileEntry struct {
 
 // LaunchOptions carries optional parameters for launching an app.
 // Activity is Android-only; passing it to an iOS device is an error.
-// Arguments and Env are iOS-only; passing them to an Android device is an error.
+// Arguments are process arguments on iOS. On Android each one must be key=value
+// and is passed as a string intent extra. Env is iOS-only; passing it to an
+// Android device is an error.
 type LaunchOptions struct {
 	Locales   []string
 	Activity  string

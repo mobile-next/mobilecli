@@ -140,7 +140,7 @@ func Test_adbShellArgs_keepsEveryQueryParameterOfAURL(t *testing.T) {
 }
 
 func Test_launchArgs_clearsTheTaskWhenTheAppIsNotRunning(t *testing.T) {
-	got := strings.Join(launchArgs("com.example/.Main", false), " ")
+	got := strings.Join(launchArgs("com.example/.Main", false, nil), " ")
 	want := "am start --display " + defaultDisplayID + " --activity-clear-task -n com.example/.Main"
 	if got != want {
 		t.Fatalf("launchArgs() = %q, want %q", got, want)
@@ -148,9 +148,34 @@ func Test_launchArgs_clearsTheTaskWhenTheAppIsNotRunning(t *testing.T) {
 }
 
 func Test_launchArgs_keepsTheTaskWhenTheAppIsRunning(t *testing.T) {
-	got := strings.Join(launchArgs("com.example/.Main", true), " ")
+	got := strings.Join(launchArgs("com.example/.Main", true, nil), " ")
 	want := "am start --display " + defaultDisplayID + " -n com.example/.Main"
 	if got != want {
 		t.Fatalf("launchArgs() = %q, want %q", got, want)
+	}
+}
+
+func Test_launchArgs_passesExtrasBeforeTheComponent(t *testing.T) {
+	got := strings.Join(launchArgs("com.example/.Main", true, []string{"--es", "flag", "on"}), " ")
+	want := "am start --display " + defaultDisplayID + " --es flag on -n com.example/.Main"
+	if got != want {
+		t.Fatalf("launchArgs() = %q, want %q", got, want)
+	}
+}
+
+func Test_launchExtras(t *testing.T) {
+	got, err := launchExtras([]string{"apiUrl=https://x.test/?a=b", "empty="})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "--es apiUrl https://x.test/?a=b --es empty "
+	if strings.Join(got, " ") != want {
+		t.Errorf("launchExtras() = %q, want %q", strings.Join(got, " "), want)
+	}
+
+	for _, bad := range []string{"-FeatureX", "=value"} {
+		if _, err := launchExtras([]string{bad}); err == nil {
+			t.Errorf("launchExtras(%q): expected error, got nil", bad)
+		}
 	}
 }

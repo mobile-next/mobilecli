@@ -50,11 +50,11 @@ func Test_simctlLaunchEnv(t *testing.T) {
 	}
 }
 
-func Test_LaunchApp_ArgumentsAndEnvRejectedOnAndroid(t *testing.T) {
+func Test_LaunchApp_EnvAndBareArgumentsRejectedOnAndroid(t *testing.T) {
 	device := &AndroidDevice{}
 
-	if err := device.LaunchApp("com.example.app", LaunchOptions{Arguments: []string{"-x"}}); err == nil {
-		t.Fatal("expected error for arguments, got nil")
+	if err := device.LaunchApp("com.example.app", LaunchOptions{Arguments: []string{"-FeatureX"}}); err == nil {
+		t.Fatal("expected error for an argument without '=', got nil")
 	}
 
 	if err := device.LaunchApp("com.example.app", LaunchOptions{Env: map[string]string{"A": "1"}}); err == nil {

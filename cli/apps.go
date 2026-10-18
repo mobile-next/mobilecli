@@ -190,7 +190,7 @@ func init() {
 	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
 	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
 	appsLaunchCmd.Flags().StringVar(&activity, "activity", "", "Android activity to launch (e.g. .DebugActivity or com.example/.DebugActivity)")
-	appsLaunchCmd.Flags().StringArrayVar(&launchArgs, "arg", nil, "Argument to pass to the app, repeat for more (iOS only)")
+	appsLaunchCmd.Flags().StringArrayVar(&launchArgs, "arg", nil, "Argument to pass to the app, repeat for more. On Android it must be key=value and is passed as a string intent extra")
 	appsLaunchCmd.Flags().StringArrayVar(&launchEnv, "env", nil, "Environment variable KEY=VALUE to set for the app, repeat for more (iOS only)")
 	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
 	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
