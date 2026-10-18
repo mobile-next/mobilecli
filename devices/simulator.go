@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -127,8 +128,17 @@ func (s SimulatorDevice) Reboot() error {
 
 // runSimctl executes xcrun simctl with the provided arguments
 func runSimctl(args ...string) ([]byte, error) {
+	return runSimctlWithEnv(nil, args...)
+}
+
+// runSimctlWithEnv runs simctl with extra environment variables added to the
+// current environment.
+func runSimctlWithEnv(env []string, args ...string) ([]byte, error) {
 	fullArgs := append([]string{"simctl"}, args...)
 	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
@@ -276,12 +286,34 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if opts.Activity != "" {
 		return fmt.Errorf("--activity is not supported on iOS")
 	}
-	args := []string{"launch", s.UDID, bundleID}
+	_, err := runSimctlWithEnv(simctlLaunchEnv(opts.Env), simctlLaunchArgs(s.UDID, bundleID, opts)...)
+	return err
+}
+
+// simctlLaunchArgs builds the `simctl launch` command line. Everything after the
+// bundle id is passed to the app as its arguments.
+func simctlLaunchArgs(udid, bundleID string, opts LaunchOptions) []string {
+	args := []string{"launch", udid, bundleID}
 	if len(opts.Locales) > 0 {
 		args = append(args, "-AppleLanguages", "("+strings.Join(opts.Locales, ", ")+")")
 	}
-	_, err := runSimctl(args...)
-	return err
+	return append(args, opts.Arguments...)
+}
+
+// simctlLaunchEnv turns app environment variables into the SIMCTL_CHILD_ form
+// that simctl launch passes to the launched app, sorted for stable output.
+func simctlLaunchEnv(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	result := make([]string, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, "SIMCTL_CHILD_"+k+"="+env[k])
+	}
+	return result
 }
 
 // TerminateApp stops a running app. `xcrun simctl terminate` exits with

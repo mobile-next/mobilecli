@@ -478,6 +478,13 @@ func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error)
 }
 
 func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	if len(opts.Arguments) > 0 {
+		return fmt.Errorf("--arg is not supported on Android")
+	}
+	if len(opts.Env) > 0 {
+		return fmt.Errorf("--env is not supported on Android")
+	}
+
 	if len(opts.Locales) > 0 {
 		for _, l := range opts.Locales {
 			if !validLocaleTag.MatchString(l) {
