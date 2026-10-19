@@ -68,7 +68,7 @@ func advertisesDartVMService(app installationproxy.AppInfo) bool {
 // determined it says yes with no bundle id, which is the old probe-over-LLDB
 // behaviour.
 func (d *IOSDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
-	activeApp, err := d.deviceKitClient.GetActiveAppInfo()
+	activeApp, err := d.deviceKitClient.GetActiveAppIdentity()
 	if err != nil || activeApp.ProcessID == 0 {
 		utils.Verbose("flutter: cannot tell the foreground app, probing anyway: %v", err)
 		return "", true
