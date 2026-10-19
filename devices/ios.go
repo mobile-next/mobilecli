@@ -794,6 +794,12 @@ func (d *IOSDevice) LaunchApp(bundleID string, launchOpts LaunchOptions) error {
 	if len(launchOpts.Locales) > 0 {
 		args = append(args, "-AppleLanguages", "("+strings.Join(launchOpts.Locales, ", ")+")")
 	}
+	for _, a := range launchOpts.Arguments {
+		args = append(args, a)
+	}
+	for k, v := range launchOpts.Env {
+		envs[k] = v
+	}
 
 	pid, err := pControl.LaunchAppWithArgs(bundleID, args, envs, opts)
 	if err != nil {
