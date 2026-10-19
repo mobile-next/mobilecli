@@ -13,8 +13,8 @@ This is a living document of planned and in-progress features. Items are roughly
 | ✅ Boot & shutdown | `mobilecli device boot`, `mobilecli device shutdown`, `mobilecli device reboot` |
 | ✅ Screenshots | `mobilecli screenshot --device <id>` (PNG/JPEG, quality control) |
 | ✅ Screen streaming | `mobilecli screencapture --device <id>` (MJPEG / H.264) |
-| ✅ Input | `mobilecli io tap`, `io longpress`, `io button`, `io text` |
-| ✅ App lifecycle | `mobilecli apps list`, `launch`, `terminate`, `install`, `uninstall`, `foreground`, `path` |
+| ✅ Input | `mobilecli io tap`, `io longpress`, `io button`, `io text`, `io pinch` |
+| ✅ App lifecycle | `mobilecli apps list`, `launch`, `terminate`, `install`, `uninstall`, `clear`, `foreground`, `path` |
 | ✅ Filesystem | `mobilecli fs ls`, `push`, `pull`, `mkdir`, `rm` (Android, iOS Simulator, app containers) |
 | ✅ Crash reports | `mobilecli device crashes` (iOS + Android) |
 | ✅ WebView inspection | `mobilecli webview list`, `query`, `goto`, `eval`, `content`, `back`, `forward` |
@@ -34,7 +34,6 @@ This is a living document of planned and in-progress features. Items are roughly
 | Feature | Description | Status |
 |---|---|---|
 | **Keyboard dismiss** | Check visibility of on-screen keyboard and dismiss upon request | Planned |
-| **Clear app storage** | Clear app cache and documents | Planned |
 | **Simulate Shake** | Simulate a shake on the device | Planned |
 | **Push notifications** | Deliver a notification payload to an app without a real APNs/FCM round-trip | Planned |
 | **Biometrics** | Simulate Face ID, Touch ID and fingerprint match/non-match (virtual devices only) | Planned |
