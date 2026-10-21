@@ -46,6 +46,9 @@ func (c *DeviceKitClient) CallRPC(method string, params any) (json.RawMessage, e
 }
 
 func (c *DeviceKitClient) CallRPCWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
+	if c == nil || c.httpClient == nil {
+		return nil, fmt.Errorf("devicekit client not initialized: agent not started for this device")
+	}
 	rpcReq := jsonRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,
