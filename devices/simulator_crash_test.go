@@ -56,3 +56,32 @@ func TestCrashReportIsForSimulatorMatchesOnlyThisSimulator(t *testing.T) {
 		t.Error("a missing file must not match")
 	}
 }
+
+func TestCrashReportIsForSimulatorMatchesPlatformWithoutIsSimulated(t *testing.T) {
+	dir := t.TempDir()
+
+	// macOS 27: a simulator crash has "platform": 7 and no is_simulated key
+	sim := writeReport(t, dir, "Preferences.ips",
+		`{"app_name":"Preferences","platform":7,"bug_type":"309"}`,
+		`{"coalitionName":"com.apple.CoreSimulator.SimDevice.`+thisUDID+`","parentProc":"launchd_sim"}`)
+
+	// a macOS host crash: "platform": 1
+	host := writeReport(t, dir, "Finder.ips",
+		`{"app_name":"Finder","platform":1,"bug_type":"309"}`,
+		`{"coalitionName":"com.apple.finder"}`)
+
+	// a crash from a *different* simulator, same header shape
+	otherSim := writeReport(t, dir, "Other.ips",
+		`{"app_name":"Maps","platform":7}`,
+		`{"coalitionName":"com.apple.CoreSimulator.SimDevice.00000000-0000-0000-0000-000000000000"}`)
+
+	if !crashReportIsForSimulator(sim, thisUDID) {
+		t.Error("expected this simulator's platform 7 report to match")
+	}
+	if crashReportIsForSimulator(host, thisUDID) {
+		t.Error("host-process report must not match")
+	}
+	if crashReportIsForSimulator(otherSim, thisUDID) {
+		t.Error("another simulator's report must not match")
+	}
+}

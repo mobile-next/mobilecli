@@ -1099,7 +1099,8 @@ var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "
 // produced by the simulator with the given UDID. ~/Library/Logs/DiagnosticReports
 // is shared with the host, so it also holds crashes of host processes (adb,
 // CoreSimulatorBridge, chronod, …) that must not be reported as the device's.
-// Simulator reports carry "is_simulated": 1 in their first-line JSON header and
+// Simulator reports mark their first-line JSON header with "is_simulated": 1 or,
+// on macOS 27 where that key is gone, "platform": 7 (the iOS simulator), and
 // name the device as com.apple.CoreSimulator.SimDevice.<UDID> in the body, which
 // together scope the listing to this one simulator.
 func crashReportIsForSimulator(path, udid string) bool {
@@ -1116,7 +1117,7 @@ func crashReportIsForSimulator(path, udid string) bool {
 	if err := json.Unmarshal(header, &meta); err != nil {
 		return false
 	}
-	if sim, ok := meta["is_simulated"]; !ok || !isTruthyJSON(sim) {
+	if !isTruthyJSON(meta["is_simulated"]) && !isIOSSimulatorPlatform(meta["platform"]) {
 		return false
 	}
 
@@ -1136,6 +1137,13 @@ func isTruthyJSON(v any) bool {
 	default:
 		return false
 	}
+}
+
+// isIOSSimulatorPlatform reports whether a crash report's "platform" header
+// value is 7, Apple's platform id for the iOS simulator.
+func isIOSSimulatorPlatform(v any) bool {
+	n, ok := v.(float64)
+	return ok && n == 7
 }
 
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
