@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/forward"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -42,7 +41,7 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 	pf.srcPort = srcPort
 	pf.dstPort = dstPort
 
-	device, err := goios.GetDevice(pf.udid)
+	device, err := GetDevice(pf.udid)
 	if err != nil {
 		return fmt.Errorf("failed to get device %s: %w", pf.udid, err)
 	}

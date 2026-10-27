@@ -720,7 +720,7 @@ func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string
 func (d *IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 	const userspaceTunnelHost = "localhost"
 
-	device, err := goios.GetDevice(d.Udid)
+	device, err := ios.GetDevice(d.Udid)
 	if err != nil {
 		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", d.Udid, err)
 	}
