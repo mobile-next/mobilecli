@@ -1386,14 +1386,15 @@ func (d *AndroidDevice) getRotationFromDumpsysDisplay() (int, bool) {
 var displayInfoRotationRe = regexp.MustCompile(`, rotation ([0-3]),`)
 
 // parseRotationFromCmdDisplay reads the current rotation, in quarter turns
-// from the natural orientation, of the first display that is on from
-// "cmd display get-displays" output. Android 13 indents each display line.
-// user_rotation is only the rotation setting: apps that lock their orientation
-// and auto-rotate both draw in another one.
+// from the natural orientation, from "cmd display get-displays" output.
+// Android 13 indents each display line. user_rotation is only the rotation
+// setting: apps that lock their orientation and auto-rotate both draw in
+// another one. It reads the default display, the one `wm size` measures and
+// screenshots, dump and input work on, even when another display is the one on
 func parseRotationFromCmdDisplay(output string) (int, bool) {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Display id ") && strings.Contains(line, ", state ON,") {
+		if strings.HasPrefix(line, "Display id "+defaultDisplayID+":") {
 			return parseDisplayInfoRotation(line)
 		}
 	}

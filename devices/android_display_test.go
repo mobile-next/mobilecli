@@ -144,21 +144,28 @@ Display id 0: DisplayInfo{"Built-in Screen", displayId 0, displayGroupId 0, real
 			wantRead: true,
 		},
 		{
-			name: "every display off",
+			name: "screen off",
 			output: `Displays:
 Display id 0: DisplayInfo{"Built-in Screen", displayId 0, real 1080 x 2400, rotation 1, state OFF, type INTERNAL}`,
+			want:     1,
+			wantRead: true,
 		},
 		{
 			name:   "no get-displays before android 13",
 			output: "Physical size: 1080x2400\n",
 		},
 		{
-			name: "folded, second display is the one on",
+			name: "folded, the default display wm size measures wins over the one on",
 			output: `Displays:
-Display id 0: DisplayInfo{"Built-in Screen", displayId 0, real 2076 x 2152, rotation 0, state OFF, type INTERNAL, uniqueId "local:4619827259835644672"}
-Display id 3: DisplayInfo{"Second Screen", displayId 3, real 2424 x 1080, rotation 3, state ON, type INTERNAL, uniqueId "local:4619827551948147201"}`,
-			want:     3,
+Display id 3: DisplayInfo{"Second Screen", displayId 3, real 2424 x 1080, rotation 3, state ON, type INTERNAL, uniqueId "local:4619827551948147201"}
+Display id 0: DisplayInfo{"Built-in Screen", displayId 0, real 2076 x 2152, rotation 0, state OFF, type INTERNAL, uniqueId "local:4619827259835644672"}`,
+			want:     0,
 			wantRead: true,
+		},
+		{
+			name: "display 10 is not display 0",
+			output: `Displays:
+Display id 10: DisplayInfo{"Virtual", displayId 10, real 1920 x 1080, rotation 1, state ON, type VIRTUAL}`,
 		},
 		{
 			name:   "invalid input",
