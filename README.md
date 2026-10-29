@@ -551,7 +551,31 @@ wscat -c ws://localhost:12000/ws
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Requires the on-device agent. Install it with `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision`. A valid Apple provisioning profile is needed to re-sign the agent for your device.
+
+The on-device agent requires a valid development provisioning profile for your device and a corresponding signing certificate with its private key in your Mac's keychain:
+
+```bash
+mobilecli agent install --device <device-id> \
+  --provisioning-profile "/path/to/profile.mobileprovision"
+```
+
+#### Explicit and wildcard App IDs
+
+Agent installation supports Xcode-managed profiles with explicit App IDs. A custom agent bundle ID must end with `com.mobilenext.devicekit-iosUITests.xctrunner`, because agent discovery matches this known runner suffix. Profiles for unrelated applications are rejected.
+
+The bundle ID is derived automatically from the profile's `Entitlements.application-identifier` by removing the team identifier prefix and its following dot. For example:
+
+| Profile application identifier | Agent bundle ID |
+| --- | --- |
+| `XP3F47W7BG.com.mobilenext.devicekit-iosUITests.xctrunner` | `com.mobilenext.devicekit-iosUITests.xctrunner` |
+| `XP3F47W7BG.some.company.someapp.com.mobilenext.devicekit-iosUITests.xctrunner` | `some.company.someapp.com.mobilenext.devicekit-iosUITests.xctrunner` |
+| `XP3F47W7BG.*` | Original agent bundle ID, unchanged |
+
+There is no separate `--bundle-id` argument: `--provisioning-profile` remains the source of signing configuration. For an explicit App ID, mobilecli updates the main runner application's `CFBundleIdentifier` before signing when necessary. Missing Team IDs, mismatched team prefixes, and empty identifiers produce errors.
+
+Wildcard profiles (`TEAMID.*`) remain supported and preserve the original agent bundle ID. Partial wildcard identifiers such as `TEAMID.com.example.*` are not supported for this derivation.
+
+This automatic rewriting applies only to `agent install`. Generic `apps install --force-resign` preserves the IPA's original bundle ID, so existing app installation workflows do not acquire the agent-specific suffix requirement or change application identity. Use a profile that authorizes the original application's bundle ID.
 
 ## Development 👩‍💻
 

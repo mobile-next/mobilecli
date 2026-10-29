@@ -29,9 +29,16 @@ type entitlements struct {
 	ApplicationIdentifier string `plist:"application-identifier"`
 }
 
+// ResignOptions controls optional changes made while re-signing an IPA.
+type ResignOptions struct {
+	DeriveBundleIDFromProfile bool
+}
+
+const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+
 // ResignIPA re-signs an IPA file so it can be installed on a specific device.
 // it returns the path to a new temporary IPA file that should be cleaned up by the caller.
-func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (string, error) {
+func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string, opts ResignOptions) (string, error) {
 	tempDir, err := os.MkdirTemp("", "resign_")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
@@ -66,11 +73,15 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		return "", fmt.Errorf("failed to decode provisioning profile: %w", err)
 	}
 
-	if len(profile.TeamIdentifier) == 0 {
+	if len(profile.TeamIdentifier) == 0 || profile.TeamIdentifier[0] == "" {
 		return "", fmt.Errorf("no team identifier found in profile")
 	}
 	teamID := profile.TeamIdentifier[0]
 	Verbose("Team ID: %s", teamID)
+
+	if err := configureBundleID(appPath, profile, bundleID, opts); err != nil {
+		return "", err
+	}
 
 	identity, err := resolveSigningIdentity(identityOverride, profile)
 	if err != nil {
@@ -492,6 +503,70 @@ func codesign(path, identity, entitlementsPath string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("codesign failed: %w\n%s", err, output)
+	}
+	return nil
+}
+
+// bundleIDFromProfile requires the exact team prefix; only a full wildcard
+// preserves the original ID. Partial wildcards cannot be used as bundle IDs.
+func bundleIDFromProfile(profile *provisioningProfile, originalBundleID string) (string, error) {
+	if profile == nil || len(profile.TeamIdentifier) == 0 || profile.TeamIdentifier[0] == "" {
+		return "", fmt.Errorf("no team identifier found in profile")
+	}
+	prefix := profile.TeamIdentifier[0] + "."
+	appID := profile.Entitlements.ApplicationIdentifier
+	if !strings.HasPrefix(appID, prefix) {
+		return "", fmt.Errorf("profile application identifier %q must start with team prefix %q", appID, prefix)
+	}
+	bundleID := strings.TrimPrefix(appID, prefix)
+	if bundleID == "*" {
+		bundleID = originalBundleID
+	}
+	if bundleID == "" || strings.ContainsAny(bundleID, "* \t\r\n") {
+		return "", fmt.Errorf("invalid bundle identifier %q in provisioning profile", bundleID)
+	}
+	return bundleID, nil
+}
+
+func configureBundleID(appPath string, profile *provisioningProfile, originalBundleID string, opts ResignOptions) error {
+	if !opts.DeriveBundleIDFromProfile {
+		return nil
+	}
+	bundleID, err := bundleIDFromProfile(profile, originalBundleID)
+	if err != nil {
+		return err
+	}
+	if !strings.HasSuffix(bundleID, agentRunnerBundleID) {
+		return fmt.Errorf("profile bundle ID %q must end with %q for agent discovery", bundleID, agentRunnerBundleID)
+	}
+	if bundleID == originalBundleID {
+		return nil
+	}
+	if err := rewriteBundleID(appPath, bundleID); err != nil {
+		return fmt.Errorf("failed to rewrite agent bundle ID: %w", err)
+	}
+	Verbose("Changed agent bundle ID from %s to %s", originalBundleID, bundleID)
+	return nil
+}
+
+func rewriteBundleID(appPath, bundleID string) error {
+	path := filepath.Join(appPath, "Info.plist")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read Info.plist: %w", err)
+	}
+	var info map[string]any
+	format, err := plist.Unmarshal(data, &info)
+	if err != nil || info == nil {
+		return fmt.Errorf("failed to parse Info.plist dictionary: %v", err)
+	}
+	info["CFBundleIdentifier"] = bundleID
+	data, err = plist.Marshal(info, format)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Info.plist: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write Info.plist: %w", err)
 	}
 	return nil
 }

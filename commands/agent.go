@@ -252,7 +252,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfil
 
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
 		utils.Verbose("re-signing agent with provisioning profile %s", provisioningProfile)
-		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "")
+		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "", utils.ResignOptions{DeriveBundleIDFromProfile: true})
 		if err != nil {
 			return "", fmt.Errorf("failed to re-sign agent: %w", err)
 		}
