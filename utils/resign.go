@@ -528,6 +528,8 @@ func bundleIDFromProfile(profile *provisioningProfile, originalBundleID string) 
 	return bundleID, nil
 }
 
+// configureBundleID optionally derives the runner ID from the profile, validates
+// its discovery suffix, and rewrites the main bundle only when the ID changes.
 func configureBundleID(appPath string, profile *provisioningProfile, originalBundleID string, opts ResignOptions) error {
 	if !opts.DeriveBundleIDFromProfile {
 		return nil
@@ -549,6 +551,8 @@ func configureBundleID(appPath string, profile *provisioningProfile, originalBun
 	return nil
 }
 
+// rewriteBundleID replaces CFBundleIdentifier in the main app Info.plist while
+// preserving its format and other properties. It returns read, parse, or write errors.
 func rewriteBundleID(appPath, bundleID string) error {
 	path := filepath.Join(appPath, "Info.plist")
 	data, err := os.ReadFile(path)
