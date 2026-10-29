@@ -136,7 +136,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
 		}
 
-		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity)
+		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity, utils.ResignOptions{})
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to re-sign IPA: %w", err))
 		}
