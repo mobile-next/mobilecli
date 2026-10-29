@@ -114,6 +114,8 @@ type InstallAppResult struct {
 	App     *utils.AppMetadata `json:"app,omitempty"`
 }
 
+// InstallAppCommand installs an app on the selected device, optionally re-signing
+// a physical-device iOS IPA while preserving its original bundle identifier.
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	if req.Path == "" {
 		return NewErrorResponse(fmt.Errorf("path is required"))

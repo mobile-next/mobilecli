@@ -78,6 +78,7 @@ func TestLooseDylibsIsEmptyForAReleaseBuild(t *testing.T) {
 	}
 }
 
+// TestBundleIDFromProfile covers explicit and wildcard IDs and invalid profile identifiers.
 func TestBundleIDFromProfile(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -106,6 +107,7 @@ func TestBundleIDFromProfile(t *testing.T) {
 	}
 }
 
+// TestRewriteBundleID verifies XML and binary plist preservation and opt-in rewriting.
 func TestRewriteBundleID(t *testing.T) {
 	for _, format := range []int{plist.XMLFormat, plist.BinaryFormat} {
 		t.Run(fmt.Sprint(format), func(t *testing.T) {
@@ -144,6 +146,7 @@ func TestRewriteBundleID(t *testing.T) {
 	}
 }
 
+// TestConfigureBundleIDValidation checks suffix validation and skips rewriting unchanged IDs.
 func TestConfigureBundleIDValidation(t *testing.T) {
 	profile := &provisioningProfile{TeamIdentifier: []string{"TEAM"}, Entitlements: entitlements{ApplicationIdentifier: "TEAM.unrelated"}}
 	if err := configureBundleID(t.TempDir(), profile, agentRunnerBundleID, ResignOptions{DeriveBundleIDFromProfile: true}); err == nil {
@@ -158,6 +161,7 @@ func TestConfigureBundleIDValidation(t *testing.T) {
 	}
 }
 
+// TestRewriteBundleIDErrors checks missing and malformed plist failures.
 func TestRewriteBundleIDErrors(t *testing.T) {
 	app := t.TempDir()
 	if err := rewriteBundleID(app, "custom"); err == nil {
