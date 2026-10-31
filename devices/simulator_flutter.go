@@ -101,8 +101,12 @@ func rememberFlutterCandidate(udid string, pid int, isCandidate bool) {
 // pid and is looked at again.
 func (s *SimulatorDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
 	activeApp, err := s.deviceKitClient.GetActiveAppIdentity()
-	if err != nil || activeApp.BundleID == "" {
+	if err != nil {
 		utils.Verbose("flutter: cannot tell the foreground app, skipping the flutter dump: %v", err)
+		return "", false
+	}
+	if activeApp.BundleID == "" {
+		utils.Verbose("flutter: no foreground app, skipping the flutter dump")
 		return "", false
 	}
 
@@ -110,23 +114,34 @@ func (s *SimulatorDevice) foregroundFlutterCandidate() (bundleID string, mayBeFl
 		return activeApp.BundleID, isCandidate
 	}
 
-	isCandidate := s.isFlutterAppBundle(activeApp.BundleID)
+	isCandidate, err := s.isFlutterAppBundle(activeApp.BundleID)
+	if err != nil {
+		// a failed lookup is not a verdict: remembering it would leave a Flutter
+		// app on the accessibility dump until it is relaunched
+		utils.Verbose("flutter: cannot read %s's app bundle, skipping the flutter dump: %v", activeApp.BundleID, err)
+		return activeApp.BundleID, false
+	}
 	rememberFlutterCandidate(s.UDID, activeApp.ProcessID, isCandidate)
 
 	return activeApp.BundleID, isCandidate
 }
 
 // isFlutterAppBundle reports whether the installed app embeds Flutter.framework.
-func (s *SimulatorDevice) isFlutterAppBundle(bundleID string) bool {
+// An error means the bundle could not be found, not that it is not Flutter.
+func (s *SimulatorDevice) isFlutterAppBundle(bundleID string) (bool, error) {
 	out, err := runSimctl("get_app_container", s.UDID, bundleID, "app")
 	if err != nil {
-		return false
+		return false, err
 	}
 	appPath := strings.TrimSpace(string(out))
 	if appPath == "" {
-		return false
+		return false, fmt.Errorf("simctl reported no app container for %s", bundleID)
 	}
-	info, err := os.Stat(filepath.Join(appPath, "Frameworks", "Flutter.framework"))
+	return isDirectory(filepath.Join(appPath, "Frameworks", "Flutter.framework")), nil
+}
+
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
 }
 
