@@ -41,6 +41,7 @@ func TestProcessABIIsTheDeviceABIForA64BitApp(t *testing.T) {
 		{"", "x86_64", "x86_64"},
 		// a 32-bit app runs as 32-bit, which has no agent build
 		{"armeabi-v7a", "arm64-v8a", "armeabi-v7a"},
+		{"armeabi", "arm64-v8a", "armeabi"},
 		{"x86", "x86_64", "x86"},
 	}
 	for _, c := range cases {

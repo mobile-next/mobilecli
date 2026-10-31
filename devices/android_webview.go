@@ -198,7 +198,7 @@ func (d *AndroidDevice) appABI(pkg string) (string, error) {
 // processABI is the ABI an app process runs as: its package ABI when that is
 // 32-bit, otherwise the device's.
 func processABI(packageABI, deviceABI string) string {
-	if packageABI == "armeabi-v7a" || packageABI == "x86" {
+	if packageABI == "armeabi" || packageABI == "armeabi-v7a" || packageABI == "x86" {
 		return packageABI
 	}
 	return deviceABI
