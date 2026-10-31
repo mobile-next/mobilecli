@@ -18,7 +18,11 @@ NDK       := $(ANDROID_HOME)/ndk/$(NDK_VERSION)
 TOOLCHAIN := $(NDK)/toolchains/llvm/prebuilt/$(PREBUILT)/bin
 SYSROOT   := $(NDK)/toolchains/llvm/prebuilt/$(PREBUILT)/sysroot/usr/include
 
-CC_ANDROID  := $(TOOLCHAIN)/aarch64-linux-android26-clang
+# the agent is loaded into the app process, so it is built for each ABI an app
+# can run as: arm64-v8a (devices, arm64 emulators) and x86_64 (x86_64 emulators)
+CC_arm64-v8a := $(TOOLCHAIN)/aarch64-linux-android26-clang
+CC_x86_64    := $(TOOLCHAIN)/x86_64-linux-android26-clang
+
 D8          := $(ANDROID_HOME)/build-tools/$(BUILD_TOOLS_VERSION)/d8
 ANDROID_JAR := $(ANDROID_HOME)/platforms/android-35/android.jar
 
@@ -38,10 +42,10 @@ JAVA_SRCS := $(wildcard java/*.java)
 
 .PHONY: all clean lint
 
-all: mobilecli.so mobilecli.dex
+all: mobilecli-arm64-v8a.so mobilecli-x86_64.so mobilecli.dex
 
-mobilecli.so: jvmti_agent.c
-	$(CC_ANDROID) -shared -fPIC -O2 \
+mobilecli-%.so: jvmti_agent.c
+	$(CC_$*) -shared -fPIC -O2 \
 		-I$(SYSROOT) -I$(JDK_INC) -I$(JDK_INC)/$(JDK_PLATFORM) \
 		-o $@ $< -llog
 
@@ -57,5 +61,5 @@ lint:
 	$(JAVAC) --release 8 -Xlint:all,-options -Werror -cp $(ANDROID_JAR) -d $(shell mktemp -d) $(JAVA_SRCS)
 
 clean:
-	rm -f mobilecli.so mobilecli.dex
+	rm -f mobilecli-*.so mobilecli.dex
 	rm -rf .dex_build
