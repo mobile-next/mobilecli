@@ -114,6 +114,8 @@ type InstallAppResult struct {
 	App     *utils.AppMetadata `json:"app,omitempty"`
 }
 
+// InstallAppCommand installs an app on the selected device, optionally re-signing
+// a physical-device iOS IPA while preserving its original bundle identifier.
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	if req.Path == "" {
 		return NewErrorResponse(fmt.Errorf("path is required"))
@@ -136,7 +138,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
 		}
 
-		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity)
+		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity, utils.ResignOptions{})
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to re-sign IPA: %w", err))
 		}
