@@ -129,6 +129,23 @@ func TestInnermostStringKeyReadsTheNearestKeyInTheCreatorChain(t *testing.T) {
 // ring, after which the VM rejects it as an invalid argument. globalRect must
 // re-resolve Offset.zero and retry instead of silently dropping the node.
 func TestGlobalRectReResolvesAnExpiredOffsetZero(t *testing.T) {
+	expectGlobalRectToReResolveOffsetZero(t, func(args []any) (any, *vmRPCError) {
+		return nil, &vmRPCError{Code: vmInvalidParams, Message: "Invalid params", Details: fmt.Sprintf("invoke: invalid 'argumentIds' parameter: %v", args)}
+	})
+}
+
+// The VM service may also answer an expired argument id with the Expired
+// sentinel as the result, instead of an error.
+func TestGlobalRectReResolvesOffsetZeroOnAnExpiredSentinel(t *testing.T) {
+	expectGlobalRectToReResolveOffsetZero(t, func(args []any) (any, *vmRPCError) {
+		return map[string]any{"type": "Sentinel", "kind": "Expired", "valueAsString": "<expired>"}, nil
+	})
+}
+
+// expectGlobalRectToReResolveOffsetZero runs globalRect against a fake VM that
+// answers localToGlobal on the stale Offset.zero id with expired.
+func expectGlobalRectToReResolveOffsetZero(t *testing.T, expired func(args []any) (any, *vmRPCError)) {
+	t.Helper()
 	var lookups atomic.Int32
 	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
 		switch method {
@@ -136,7 +153,7 @@ func TestGlobalRectReResolvesAnExpiredOffsetZero(t *testing.T) {
 			switch params["selector"] {
 			case "localToGlobal":
 				if args, _ := params["argumentIds"].([]any); fmt.Sprint(args) != "[objects/zero-new]" {
-					return nil, &vmRPCError{Code: vmInvalidParams, Message: "Invalid params", Details: fmt.Sprintf("invoke: invalid 'argumentIds' parameter: %v", args)}
+					return expired(args)
 				}
 				return map[string]any{"id": "objects/global"}, nil
 			case "get:size":

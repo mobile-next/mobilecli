@@ -187,6 +187,12 @@ func isExpiredArgumentError(err error) bool {
 		strings.Contains(rpcErr.Details, "argumentIds")
 }
 
+// isExpiredSentinel reports whether an invoke returned the Expired sentinel,
+// which the VM service may send instead of an error when an argument id expired.
+func isExpiredSentinel(r *vmInstanceRef) bool {
+	return r != nil && r.Type == "Sentinel" && r.Kind == "Expired"
+}
+
 func dialFlutterVM(wsURL string) (*flutterVM, error) {
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
@@ -979,7 +985,7 @@ func (vm *flutterVM) localToGlobal(nodeID string) (*vmInstanceRef, error) {
 	vm.zeroMu.Unlock()
 
 	off, err := vm.invoke(nodeID, "localToGlobal", []string{zeroID})
-	if !isExpiredArgumentError(err) {
+	if !isExpiredArgumentError(err) && !isExpiredSentinel(off) {
 		return off, err
 	}
 	zeroID, err = vm.refreshZeroOffsetID(zeroID)
