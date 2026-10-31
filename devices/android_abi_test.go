@@ -30,3 +30,22 @@ func TestAgentSOForABIPicksTheMatchingBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessABIIsTheDeviceABIForA64BitApp(t *testing.T) {
+	cases := []struct{ packageABI, deviceABI, want string }{
+		// arm64-only app under translation on an x86_64 emulator runs as x86_64
+		{"arm64-v8a", "x86_64", "x86_64"},
+		{"x86_64", "x86_64", "x86_64"},
+		{"arm64-v8a", "arm64-v8a", "arm64-v8a"},
+		// no native code
+		{"", "x86_64", "x86_64"},
+		// a 32-bit app runs as 32-bit, which has no agent build
+		{"armeabi-v7a", "arm64-v8a", "armeabi-v7a"},
+		{"x86", "x86_64", "x86"},
+	}
+	for _, c := range cases {
+		if got := processABI(c.packageABI, c.deviceABI); got != c.want {
+			t.Errorf("processABI(%q, %q) = %q, want %q", c.packageABI, c.deviceABI, got, c.want)
+		}
+	}
+}

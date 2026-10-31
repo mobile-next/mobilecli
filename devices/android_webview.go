@@ -153,7 +153,11 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 
 	const tmpSO = "/data/local/tmp/mobilecli.so"
 
-	so, err := agentSOForABI(d.appABI(pkg))
+	abi, err := d.appABI(pkg)
+	if err != nil {
+		return "", err
+	}
+	so, err := agentSOForABI(abi)
 	if err != nil {
 		return "", err
 	}
@@ -175,20 +179,29 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 }
 
 // appABI returns the ABI the app's process runs as, which the agent .so must
-// match: the package's primaryCpuAbi, or for an app without native code (null)
-// the device's primary ABI.
-func (d *AndroidDevice) appABI(pkg string) string {
-	if out, err := d.runAdbCommand("shell", "dumpsys", "package", pkg); err == nil {
-		if abi := primaryCPUABI(string(out)); abi != "" {
-			return abi
-		}
-	}
+// match. A 64-bit app runs as the device's primary ABI even when its native code
+// is for another one (arm64 under translation on an x86_64 emulator), and ART
+// won't load an agent through that translation, so only a 32-bit package ABI
+// overrides the device's.
+func (d *AndroidDevice) appABI(pkg string) (string, error) {
 	out, err := d.runAdbCommand("shell", "getprop", "ro.product.cpu.abi")
 	if err != nil {
-		utils.Verbose("reading ro.product.cpu.abi failed: %v", err)
-		return ""
+		return "", fmt.Errorf("read device ABI: %w", err)
 	}
-	return strings.TrimSpace(string(out))
+	packageABI := ""
+	if dumpsys, err := d.runAdbCommand("shell", "dumpsys", "package", pkg); err == nil {
+		packageABI = primaryCPUABI(string(dumpsys))
+	}
+	return processABI(packageABI, strings.TrimSpace(string(out))), nil
+}
+
+// processABI is the ABI an app process runs as: its package ABI when that is
+// 32-bit, otherwise the device's.
+func processABI(packageABI, deviceABI string) string {
+	if packageABI == "armeabi-v7a" || packageABI == "x86" {
+		return packageABI
+	}
+	return deviceABI
 }
 
 var primaryCPUABIPattern = regexp.MustCompile(`primaryCpuAbi=(\S+)`)
