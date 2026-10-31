@@ -20,16 +20,16 @@ type AgentInstallRequest struct {
 }
 
 const (
-	agentVersionIOS   = "0.0.35"
+	agentVersionIOS   = "0.0.36"
 	iosRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	noAgentForAndroid = "no agent needed for android devices"
 )
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "cc0fd4d7b2983bf0421715e73910dc9cde8d744c9a2966fdda31d4392dc4018d",
-	"devicekit-ios-Sim-x86_64.zip": "ea4ed65ec4ed7fc58345ce0ab1947520881c52d08c2136c46707b57bbe83978e",
-	"devicekit-ios-runner.ipa":     "40e72380fcb89b2fd71edf7d2766e75c3676e4938af2393db92aecd2b101c46d",
+	"devicekit-ios-Sim-arm64.zip":  "f7ce6b8f496e4fb7abb4917f4492152d8629aa61f6cb98ab50f2000f5c07cf5c",
+	"devicekit-ios-Sim-x86_64.zip": "405bcc5536eb2e2f3b187c83e4265c87afd98d36c8f3318c41fa609a6ec59902",
+	"devicekit-ios-runner.ipa":     "951870bd8c1ee668345008d1803b14fd1e5bc4ee31d08e9581c29cf8f75cf3d3",
 }
 
 // AgentMessageResponse is the data of agent status/uninstall responses.
