@@ -567,6 +567,8 @@ make test
 
 ## Support 💬
 
+Something not working? Check [docs/troubleshooting.md](docs/troubleshooting.md) first.
+
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
 Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
