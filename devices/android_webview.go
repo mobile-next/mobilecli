@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -152,7 +153,11 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 
 	const tmpSO = "/data/local/tmp/mobilecli.so"
 
-	if err := d.pushTempFile(agents.AndroidMobilecliSO, tmpSO); err != nil {
+	so, err := agentSOForABI(d.appABI(pkg))
+	if err != nil {
+		return "", err
+	}
+	if err := d.pushTempFile(so, tmpSO); err != nil {
 		return "", fmt.Errorf("push .so: %w", err)
 	}
 	if err := d.copyToAppDir(pkg, tmpSO, agentDir+"/mobilecli.so", "755"); err != nil {
@@ -167,6 +172,44 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	}
 
 	return agentDir, nil
+}
+
+// appABI returns the ABI the app's process runs as, which the agent .so must
+// match: the package's primaryCpuAbi, or for an app without native code (null)
+// the device's primary ABI.
+func (d *AndroidDevice) appABI(pkg string) string {
+	if out, err := d.runAdbCommand("shell", "dumpsys", "package", pkg); err == nil {
+		if abi := primaryCPUABI(string(out)); abi != "" {
+			return abi
+		}
+	}
+	out, err := d.runAdbCommand("shell", "getprop", "ro.product.cpu.abi")
+	if err != nil {
+		utils.Verbose("reading ro.product.cpu.abi failed: %v", err)
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+var primaryCPUABIPattern = regexp.MustCompile(`primaryCpuAbi=(\S+)`)
+
+// primaryCPUABI reads primaryCpuAbi from `dumpsys package` output, or "" when it
+// is missing or null.
+func primaryCPUABI(dumpsys string) string {
+	m := primaryCPUABIPattern.FindStringSubmatch(dumpsys)
+	if m == nil || m[1] == "null" {
+		return ""
+	}
+	return m[1]
+}
+
+// agentSOForABI returns the agent .so built for abi.
+func agentSOForABI(abi string) ([]byte, error) {
+	so, ok := agents.AndroidMobilecliSO[abi]
+	if !ok {
+		return nil, fmt.Errorf("no in-app agent for ABI %q (only arm64-v8a and x86_64)", abi)
+	}
+	return so, nil
 }
 
 // webViewSocketTarget is the abstract socket the in-app agent listens on.
