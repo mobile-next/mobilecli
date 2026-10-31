@@ -2,6 +2,7 @@ package devices
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -140,6 +141,11 @@ type flutterVM struct {
 	dpr          float64
 	zeroOffsetID string        // objectId of Offset.zero, the localToGlobal argument
 	callSem      chan struct{} // bounds concurrent in-flight VM-service calls
+
+	// zeroMu guards zeroOffsetID, which is re-resolved from offsetClassID when it
+	// expires mid-walk (see localToGlobal).
+	zeroMu        sync.Mutex
+	offsetClassID string
 }
 
 // maxConcurrentVMCalls caps in-flight VM-service requests. The walk fans out one
@@ -152,6 +158,33 @@ const maxConcurrentVMCalls = 48
 type vmResp struct {
 	result json.RawMessage
 	err    error
+}
+
+// vmRPCError is a JSON-RPC error returned by the VM service for one call. The
+// message is generic ("Invalid params"); data.details says what was wrong.
+type vmRPCError struct {
+	Code    int
+	Message string
+	Details string
+}
+
+func (e *vmRPCError) Error() string {
+	if e.Details != "" {
+		return fmt.Sprintf("vm error %d: %s: %s", e.Code, e.Message, e.Details)
+	}
+	return fmt.Sprintf("vm error %d: %s", e.Code, e.Message)
+}
+
+// vmInvalidParams is the JSON-RPC code for a rejected parameter, which the VM
+// service also returns for an object id that has expired from the id ring.
+const vmInvalidParams = -32602
+
+// isExpiredArgumentError reports whether an invoke failed because one of its
+// argumentIds no longer refers to a live object.
+func isExpiredArgumentError(err error) bool {
+	var rpcErr *vmRPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == vmInvalidParams &&
+		strings.Contains(rpcErr.Details, "argumentIds")
 }
 
 func dialFlutterVM(wsURL string) (*flutterVM, error) {
@@ -185,6 +218,9 @@ func (vm *flutterVM) readLoop() {
 			Error  *struct {
 				Code    int    `json:"code"`
 				Message string `json:"message"`
+				Data    struct {
+					Details string `json:"details"`
+				} `json:"data"`
 			} `json:"error"`
 		}
 		if err := json.Unmarshal(data, &msg); err != nil || msg.ID == nil {
@@ -198,7 +234,7 @@ func (vm *flutterVM) readLoop() {
 			continue
 		}
 		if msg.Error != nil {
-			ch <- vmResp{err: fmt.Errorf("vm error %d: %s", msg.Error.Code, msg.Error.Message)}
+			ch <- vmResp{err: &vmRPCError{Code: msg.Error.Code, Message: msg.Error.Message, Details: msg.Error.Data.Details}}
 		} else {
 			ch <- vmResp{result: msg.Result}
 		}
@@ -485,6 +521,7 @@ func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) 
 		return nil, fmt.Errorf("could not obtain Offset.zero: %w", err)
 	}
 	vm.zeroOffsetID = zeroID
+	vm.offsetClassID = classes[offsetClass]
 	utils.Verbose("flutter: bootstrap (classes+root+offset.zero) took %s", time.Since(t0))
 
 	t1 := time.Now()
@@ -693,7 +730,11 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics, key 
 // merging semantics boundary), or returns nil if it has no on-screen size.
 func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics, key string) []types.ScreenElement {
 	rect, ok := vm.globalRect(nodeID)
-	if !ok || rect.Width <= 0 || rect.Height <= 0 {
+	if !ok {
+		utils.Verbose("flutter: dropping %s %s: could not read its global rect", className, nodeID)
+		return nil
+	}
+	if rect.Width <= 0 || rect.Height <= 0 {
 		return nil
 	}
 	el := types.ScreenElement{
@@ -903,7 +944,7 @@ func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
 // globalRect returns a render object's global bounds in physical pixels via
 // RenderBox.localToGlobal(Offset.zero) and RenderBox.size.
 func (vm *flutterVM) globalRect(nodeID string) (types.ScreenElementRect, bool) {
-	off, err := vm.invoke(nodeID, "localToGlobal", []string{vm.zeroOffsetID})
+	off, err := vm.localToGlobal(nodeID)
 	if err != nil || off.ID == "" {
 		return types.ScreenElementRect{}, false
 	}
@@ -925,6 +966,45 @@ func (vm *flutterVM) globalRect(nodeID string) (types.ScreenElementRect, bool) {
 		Width:  int(sw*vm.dpr + 0.5),
 		Height: int(sh*vm.dpr + 0.5),
 	}, true
+}
+
+// localToGlobal invokes RenderBox.localToGlobal(Offset.zero). Every invoke and
+// getObject adds ids to the isolate's VM-service id ring, and a large tree makes
+// thousands of them, so the Offset.zero id resolved before the walk can be
+// evicted partway through. The VM then rejects it as an invalid argument; in
+// that case re-resolve Offset.zero and retry once.
+func (vm *flutterVM) localToGlobal(nodeID string) (*vmInstanceRef, error) {
+	vm.zeroMu.Lock()
+	zeroID := vm.zeroOffsetID
+	vm.zeroMu.Unlock()
+
+	off, err := vm.invoke(nodeID, "localToGlobal", []string{zeroID})
+	if !isExpiredArgumentError(err) {
+		return off, err
+	}
+	zeroID, err = vm.refreshZeroOffsetID(zeroID)
+	if err != nil {
+		return nil, err
+	}
+	return vm.invoke(nodeID, "localToGlobal", []string{zeroID})
+}
+
+// refreshZeroOffsetID re-resolves Offset.zero once stale, the id the caller
+// used, has expired. The walk is concurrent, so many nodes hit the same expired
+// id at once; they wait for a single lookup and share its result.
+func (vm *flutterVM) refreshZeroOffsetID(stale string) (string, error) {
+	vm.zeroMu.Lock()
+	defer vm.zeroMu.Unlock()
+	if vm.zeroOffsetID != stale {
+		return vm.zeroOffsetID, nil // already re-resolved by another goroutine
+	}
+	id, err := vm.offsetZeroID(vm.offsetClassID)
+	if err != nil {
+		return "", fmt.Errorf("re-resolve expired Offset.zero: %w", err)
+	}
+	utils.Verbose("flutter: Offset.zero id %s expired, re-resolved as %s", stale, id)
+	vm.zeroOffsetID = id
+	return id, nil
 }
 
 // offsetPair reads the two doubles of an Offset or Size (both store _dx/_dy).
