@@ -692,7 +692,7 @@ func (d *IOSDevice) PressButton(key string) error {
 	return d.deviceKitClient.PressButton(key)
 }
 
-func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {
+func deviceWithRsdProvider(device goios.DeviceEntry, address string, rsdPort int) (goios.DeviceEntry, error) {
 	rsdService, err := goios.NewWithAddrPortDevice(address, rsdPort, device)
 	if err != nil {
 		return goios.DeviceEntry{}, fmt.Errorf("could not connect to RSD: %w", err)
@@ -704,16 +704,12 @@ func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string
 		return goios.DeviceEntry{}, fmt.Errorf("RSD handshake failed: %w", err)
 	}
 
-	device1, err := goios.GetDeviceWithAddress(udid, address, rsdProvider)
-	if err != nil {
-		return goios.DeviceEntry{}, fmt.Errorf("error getting device with address: %w", err)
-	}
+	// keep the entry the caller picked (USB first); looking the UDID up again
+	// could hand back the Wi-Fi entry
+	device.Address = address
+	device.Rsd = rsdProvider
 
-	device1.UserspaceTUN = device.UserspaceTUN
-	device1.UserspaceTUNHost = device.UserspaceTUNHost
-	device1.UserspaceTUNPort = device.UserspaceTUNPort
-
-	return device1, nil
+	return device, nil
 }
 
 // getEnhancedDevice gets device info enhanced with tunnel/RSD information for iOS 17+
@@ -733,7 +729,7 @@ func (d *IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 		device.UserspaceTUNPort = tunnelInfo.UserspaceTUNPort
 		device.UserspaceTUNHost = userspaceTunnelHost
 		device.UserspaceTUN = tunnelInfo.UserspaceTUN
-		device, err = deviceWithRsdProvider(device, d.Udid, tunnelInfo.Address, tunnelInfo.RsdPort)
+		device, err = deviceWithRsdProvider(device, tunnelInfo.Address, tunnelInfo.RsdPort)
 		if err != nil {
 			utils.Verbose("failed to get device with RSD provider: %v", err)
 		}
@@ -745,7 +741,7 @@ func (d *IOSDevice) getEnhancedDevice() (goios.DeviceEntry, error) {
 			device.UserspaceTUNPort = info.UserspaceTUNPort
 			device.UserspaceTUNHost = userspaceTunnelHost
 			device.UserspaceTUN = info.UserspaceTUN
-			device, err = deviceWithRsdProvider(device, d.Udid, info.Address, info.RsdPort)
+			device, err = deviceWithRsdProvider(device, info.Address, info.RsdPort)
 			if err != nil {
 				utils.Verbose("failed to get device with RSD provider: %v", err)
 			}
