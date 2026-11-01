@@ -1295,26 +1295,9 @@ func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
-
-	// run adb shell wm size
-	output, err := d.runAdbCommand("shell", "wm", "size")
+	width, height, _, err := d.currentScreenSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
-	}
-
-	// split result by space, and then take 2nd argument split by "x"
-	screenSize := strings.Split(string(output), " ")
-	pair := strings.Trim(screenSize[len(screenSize)-1], "\r\n")
-	parts := strings.SplitN(pair, "x", 2)
-
-	widthInt, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
-	}
-
-	heightInt, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
+		return nil, err
 	}
 
 	return &FullDeviceInfo{
@@ -1328,11 +1311,118 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Model:    d.model,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  widthInt,
-			Height: heightInt,
+			Width:  width,
+			Height: height,
 			Scale:  1,
 		},
 	}, nil
+}
+
+// currentScreenSize returns the screen size in the orientation the display is
+// in right now, which taps, the ui tree and screenshots all use. `wm size`
+// reports the natural orientation, so a quarter turn swaps its sides. known is
+// false when the current rotation could not be read and the size is the
+// natural one.
+func (d *AndroidDevice) currentScreenSize() (width, height int, known bool, err error) {
+	// one round trip: callers ask for the size before every screenshot and swipe
+	output, err := d.runAdbCommand("shell", "wm size && { cmd display get-displays 2>/dev/null; true; }")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	width, height, err = parseWmSize(string(output))
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	rotation, known := parseRotationFromCmdDisplay(string(output))
+	if !known {
+		rotation, known = d.getRotationFromDumpsysDisplay()
+	}
+	if known && rotation%2 == 1 {
+		width, height = height, width
+	}
+	return width, height, known, nil
+}
+
+// parseWmSize reads the size the display is drawn at from `wm size` output,
+// which adds an "Override size" line when one is set
+func parseWmSize(output string) (int, int, error) {
+	var size string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if value, ok := strings.CutPrefix(line, "Override size: "); ok {
+			size = value
+		} else if value, ok := strings.CutPrefix(line, "Physical size: "); ok && size == "" {
+			size = value
+		}
+	}
+
+	parts := strings.SplitN(size, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("failed to get screen size from %q", strings.TrimSpace(output))
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	return width, height, nil
+}
+
+// getRotationFromDumpsysDisplay covers devices before Android 13, which have no
+// "cmd display get-displays"
+func (d *AndroidDevice) getRotationFromDumpsysDisplay() (int, bool) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return 0, false
+	}
+	return parseRotationFromDumpsysDisplay(string(output))
+}
+
+var displayInfoRotationRe = regexp.MustCompile(`, rotation ([0-3]),`)
+
+// parseRotationFromCmdDisplay reads the current rotation, in quarter turns
+// from the natural orientation, from "cmd display get-displays" output.
+// Android 13 indents each display line. user_rotation is only the rotation
+// setting: apps that lock their orientation and auto-rotate both draw in
+// another one. It reads the default display, the one `wm size` measures and
+// screenshots, dump and input work on, even when another display is the one on
+func parseRotationFromCmdDisplay(output string) (int, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Display id "+defaultDisplayID+":") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+// parseRotationFromDumpsysDisplay reads the rotation of the first logical
+// display from "dumpsys display" output. mBaseDisplayInfo stays in the natural
+// orientation, mOverrideDisplayInfo follows the display
+func parseRotationFromDumpsysDisplay(output string) (int, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "mOverrideDisplayInfo=DisplayInfo{") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+func parseDisplayInfoRotation(displayInfo string) (int, bool) {
+	matches := displayInfoRotationRe.FindStringSubmatch(displayInfo)
+	if len(matches) != 2 {
+		return 0, false
+	}
+	rotation, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, false
+	}
+	return rotation, true
 }
 
 // isPackageInstalled reports whether packageName is installed on the device.
@@ -1923,8 +2013,17 @@ func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, err
 	return appInfo, nil
 }
 
-// GetOrientation gets the current device orientation
+// GetOrientation gets the orientation the screen is drawn in right now
 func (d *AndroidDevice) GetOrientation() (string, error) {
+	// natural-landscape tablets are in landscape at rotation 0, so go by the sides
+	width, height, known, err := d.currentScreenSize()
+	if err == nil && known {
+		if width > height {
+			return devicekit.OrientationLandscape, nil
+		}
+		return devicekit.OrientationPortrait, nil
+	}
+
 	output, err := d.runAdbCommand("shell", "settings", "get", "system", "user_rotation")
 	if err != nil {
 		return "", fmt.Errorf("failed to get orientation: %v", err)

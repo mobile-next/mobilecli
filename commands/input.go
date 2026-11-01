@@ -92,9 +92,9 @@ const (
 // at the same time.
 //
 // Like every other io command, this rejects negative coordinates and leaves
-// the far edges to the device: the screen size mobilecli can read is the
-// natural-orientation one, so checking against it would refuse valid pinches
-// on a rotated screen.
+// the far edges to the device: agents may report the natural-orientation
+// screen size, so checking against it would refuse valid pinches on a rotated
+// screen.
 func pinchActions(x, y int, direction string, distance, duration int) ([]devicekit.TapAction, error) {
 	if distance <= 0 {
 		distance = defaultPinchDistance
