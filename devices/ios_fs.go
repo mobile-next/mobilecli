@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -278,12 +280,54 @@ func afcPush(fs afcFS, localPath, remotePath string) error {
 	}
 	defer func() { _ = src.Close() }()
 
+	if _, exists := afcExists(fs, remote); !exists {
+		// Nothing to protect: write in place, but never leave a truncated file behind.
+		if err := afcCopyTo(fs, src, remote, st.Size()); err != nil {
+			_ = fs.Remove(remote)
+			return err
+		}
+		return nil
+	}
+
+	// AFC has no rename (go-ios does not expose one), so an atomic replace is not
+	// possible. Instead the new content is staged next to the destination and
+	// verified first; the existing file is only touched once the complete new
+	// content is on the device. A crash can leave the dot-prefixed staging file
+	// behind, which is why every failure path removes it.
+	stage, err := afcStageName(remote)
+	if err != nil {
+		return err
+	}
+	if err := afcCopyTo(fs, src, stage, st.Size()); err != nil {
+		_ = fs.Remove(stage)
+		return err
+	}
+	if err := fs.Remove(remote); err != nil {
+		_ = fs.Remove(stage)
+		return fmt.Errorf("replace remote file: remove old: %w", err)
+	}
+	staged, err := fs.OpenRead(stage)
+	if err != nil {
+		return fmt.Errorf("replace remote file: the new content is kept at %s: %w", stage, err)
+	}
+	defer func() { _ = staged.Close() }()
+	if err := afcCopyTo(fs, staged, remote, st.Size()); err != nil {
+		_ = fs.Remove(remote)
+		return fmt.Errorf("replace remote file: the new content is kept at %s: %w", stage, err)
+	}
+	_ = fs.Remove(stage)
+	return nil
+}
+
+// afcCopyTo writes r to the remote path with bounded chunks, closes it and
+// verifies the resulting size.
+func afcCopyTo(fs afcFS, r io.Reader, remote string, size int64) error {
 	dst, err := fs.OpenWrite(remote)
 	if err != nil {
 		return fmt.Errorf("open remote file: %w", err)
 	}
 	// Wrap both ends so io.CopyBuffer uses our bounded buffer (no ReaderFrom/WriterTo shortcut).
-	_, copyErr := io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, afcChunkSize))
+	_, copyErr := io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{r}, make([]byte, afcChunkSize))
 	closeErr := dst.Close()
 	if copyErr != nil {
 		return fmt.Errorf("write remote file: %w", copyErr)
@@ -295,10 +339,19 @@ func afcPush(fs afcFS, localPath, remotePath string) error {
 	if err != nil {
 		return fmt.Errorf("verify remote file: %w", err)
 	}
-	if info.Size != st.Size() {
-		return fmt.Errorf("remote size %d does not match local size %d", info.Size, st.Size())
+	if info.Size != size {
+		return fmt.Errorf("remote size %d does not match local size %d", info.Size, size)
 	}
 	return nil
+}
+
+// afcStageName returns a sibling staging path ".<base>.mobilecli-<hex>.tmp".
+func afcStageName(remote string) (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("staging name: %w", err)
+	}
+	return path.Join(path.Dir(remote), fmt.Sprintf(".%s.mobilecli-%s.tmp", path.Base(remote), hex.EncodeToString(b[:]))), nil
 }
 
 // afcPull copies the remote regular file to local. If local is an existing

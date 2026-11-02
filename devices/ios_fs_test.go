@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,6 +22,11 @@ type fakeAfc struct {
 	readErr    error
 	removed    []string
 	removedAll []string
+
+	// failure injection, keyed by remote path
+	failWriteOn    string // Write returns an error on this path after failAfterBytes bytes
+	failAfterBytes int
+	truncateOn     string // Write silently drops the second half of every chunk on this path
 }
 
 func newFakeAfc(dirs ...string) *fakeAfc {
@@ -49,6 +55,19 @@ type fakeWriter struct {
 func (w *fakeWriter) Write(b []byte) (int, error) {
 	if len(b) > afcChunkSize {
 		return 0, errors.New("oversize packet")
+	}
+	if w.p == w.f.failWriteOn {
+		room := w.f.failAfterBytes - len(w.f.files[w.p])
+		if room < len(b) {
+			if room > 0 {
+				w.f.files[w.p] = append(w.f.files[w.p], b[:room]...)
+			}
+			return max(room, 0), errors.New("link down")
+		}
+	}
+	if w.p == w.f.truncateOn {
+		w.f.files[w.p] = append(w.f.files[w.p], b[:len(b)/2]...)
+		return len(b), nil
 	}
 	w.f.files[w.p] = append(w.f.files[w.p], b...)
 	return len(b), nil
@@ -224,6 +243,136 @@ func TestAfcPush(t *testing.T) {
 	})
 }
 
+// stageFiles lists the staging files left in the fake filesystem.
+func stageFiles(fs *fakeAfc) []string {
+	var out []string
+	for k := range fs.files {
+		if strings.Contains(path.Base(k), ".mobilecli-") {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func TestAfcPushKeepsExistingDestination(t *testing.T) {
+	const dest = "/Downloads/a.txt"
+	newData := bytes.Repeat([]byte("N"), 3*afcChunkSize)
+
+	t.Run("staged upload fails mid-way", func(t *testing.T) {
+		fs := newFakeAfc("/Downloads")
+		fs.files[dest] = []byte("old content")
+		l := writeLocal(t, t.TempDir(), "a.txt", newData)
+		fs2 := &stageFailFS{fakeAfc: fs, after: afcChunkSize}
+		if err := afcPush(fs2, l, dest); err == nil {
+			t.Fatal("expected error")
+		}
+		if string(fs.files[dest]) != "old content" {
+			t.Fatalf("old destination damaged: %d bytes", len(fs.files[dest]))
+		}
+		if left := stageFiles(fs); len(left) != 0 {
+			t.Fatalf("staging left behind: %v", left)
+		}
+	})
+	t.Run("staged size mismatch", func(t *testing.T) {
+		fs := newFakeAfc("/Downloads")
+		fs.files[dest] = []byte("old content")
+		l := writeLocal(t, t.TempDir(), "a.txt", newData)
+		fs2 := &stageFailFS{fakeAfc: fs, truncate: true}
+		err := afcPush(fs2, l, dest)
+		if err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("got %v", err)
+		}
+		if string(fs.files[dest]) != "old content" {
+			t.Fatal("old destination damaged")
+		}
+		if left := stageFiles(fs); len(left) != 0 {
+			t.Fatalf("staging left behind: %v", left)
+		}
+	})
+	t.Run("success leaves no staging file", func(t *testing.T) {
+		fs := newFakeAfc("/Downloads")
+		fs.files[dest] = []byte("old content")
+		l := writeLocal(t, t.TempDir(), "a.txt", newData)
+		if err := afcPush(fs, l, dest); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(fs.files[dest], newData) {
+			t.Fatal("content mismatch")
+		}
+		if left := stageFiles(fs); len(left) != 0 {
+			t.Fatalf("staging left behind: %v", left)
+		}
+		if len(fs.removed) != 2 {
+			t.Fatalf("removed %v, want old destination and staging file", fs.removed)
+		}
+	})
+	t.Run("final replacement fails keeps verified staging file", func(t *testing.T) {
+		fs := newFakeAfc("/Downloads")
+		fs.files[dest] = []byte("old content")
+		fs.failWriteOn = dest
+		fs.failAfterBytes = 0
+		l := writeLocal(t, t.TempDir(), "a.txt", newData)
+		err := afcPush(fs, l, dest)
+		left := stageFiles(fs)
+		if err == nil || len(left) != 1 || !strings.Contains(err.Error(), left[0]) {
+			t.Fatalf("err=%v staging=%v", err, left)
+		}
+		if !bytes.Equal(fs.files[left[0]], newData) {
+			t.Fatal("staging file does not hold the complete new content")
+		}
+		if _, ok := fs.files[dest]; ok {
+			t.Fatal("partial destination left behind")
+		}
+	})
+	t.Run("new file write fails leaves no partial file", func(t *testing.T) {
+		fs := newFakeAfc("/Downloads")
+		fs.failWriteOn = dest
+		fs.failAfterBytes = afcChunkSize
+		l := writeLocal(t, t.TempDir(), "a.txt", newData)
+		if err := afcPush(fs, l, dest); err == nil {
+			t.Fatal("expected error")
+		}
+		if len(fs.files) != 0 {
+			t.Fatalf("left behind: %v", fs.files)
+		}
+	})
+}
+
+// stageFailFS injects write failures on staging paths only, whose names are
+// random and so cannot be known up front.
+type stageFailFS struct {
+	*fakeAfc
+	after    int  // fail with an error once this many bytes were written
+	truncate bool // silently drop half of every chunk
+}
+
+func (s *stageFailFS) OpenWrite(p string) (io.WriteCloser, error) {
+	w, err := s.fakeAfc.OpenWrite(p)
+	if err != nil || !strings.Contains(path.Base(p), ".mobilecli-") {
+		return w, err
+	}
+	return &stageWriter{w: w.(*fakeWriter), s: s}, nil
+}
+
+type stageWriter struct {
+	w *fakeWriter
+	s *stageFailFS
+}
+
+func (sw *stageWriter) Write(b []byte) (int, error) {
+	if sw.s.truncate {
+		if _, err := sw.w.Write(b[:len(b)/2]); err != nil {
+			return 0, err
+		}
+		return len(b), nil
+	}
+	if len(sw.w.f.files[sw.w.p])+len(b) > sw.s.after {
+		return 0, errors.New("link down")
+	}
+	return sw.w.Write(b)
+}
+func (sw *stageWriter) Close() error { return sw.w.Close() }
+
 func TestAfcPull(t *testing.T) {
 	t.Run("file", func(t *testing.T) {
 		fs := newFakeAfc("/Downloads")
@@ -236,9 +385,11 @@ func TestAfcPull(t *testing.T) {
 		if string(b) != "hello" {
 			t.Fatalf("got %q", b)
 		}
-		st, _ := os.Stat(dst)
-		if st.Mode().Perm() != 0o600 {
-			t.Fatalf("mode %v", st.Mode().Perm())
+		if runtime.GOOS != "windows" { // Windows does not report Unix permission bits
+			st, _ := os.Stat(dst)
+			if st.Mode().Perm() != 0o600 {
+				t.Fatalf("mode %v", st.Mode().Perm())
+			}
 		}
 	})
 	t.Run("directory", func(t *testing.T) {
