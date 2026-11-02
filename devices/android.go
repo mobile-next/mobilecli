@@ -30,6 +30,32 @@ import (
 
 const androidDiscoveryGetpropTimeout = 5 * time.Second
 
+// adbCommandTimeout bounds one quick adb command. These finish in well under a
+// second on a healthy device; one that runs this long is talking to a device
+// that stopped answering.
+const adbCommandTimeout = 30 * time.Second
+
+// uiAutomatorDumpTimeout bounds the whole uiautomator fallback of a dump,
+// retries included. uiautomator waits for the UI to go idle before dumping,
+// which takes a while on a busy screen.
+const uiAutomatorDumpTimeout = 60 * time.Second
+
+// screencapTimeout bounds the whole screencap fallback of a screenshot:
+// finding the display and transferring a full-size png.
+const screencapTimeout = 30 * time.Second
+
+// adbWaitDelay is how long we wait for adb's output to close after adb exited
+// or was killed.
+const adbWaitDelay = 2 * time.Second
+
+// adbCommandSummaryWords is how many words of an adb command an error shows.
+const adbCommandSummaryWords = 4
+
+// errDeviceNotResponding marks an adb command that ran out of time: the device
+// (or its adb connection) stopped answering. Callers do not try a fallback
+// that talks to the same device after it.
+var errDeviceNotResponding = errors.New("device is not responding")
+
 // androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
 // on the device, shared by every feature that runs a class out of it
 const goosWindows = "windows"
@@ -222,19 +248,47 @@ func (d *AndroidDevice) getAdbIdentifier() string {
 	return d.id
 }
 
+// runAdbCommand runs one adb command that should finish quickly (a shell
+// query, a settings change, a reboot request). A hung device never answers
+// adb, so the command gets adbCommandTimeout and is killed after that.
 func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
-	deviceID := d.getAdbIdentifier()
-	cmdArgs := append([]string{"-s", deviceID}, args...)
-	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
-	return cmd.CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), adbCommandTimeout)
+	defer cancel()
+	return d.runAdbCommandContext(ctx, args...)
 }
 
-// runAdbCommandContext is runAdbCommand for callers on a deadline: adb is
-// killed when ctx ends instead of being waited for.
+// runAdbLongCommand runs a command whose duration grows with the user's data:
+// installs, uninstalls, clearing app data and file transfers. It gets no
+// deadline, as it takes as long as the payload needs.
+func (d *AndroidDevice) runAdbLongCommand(args ...string) ([]byte, error) {
+	return d.runAdbCommandContext(context.Background(), args...)
+}
+
+// runAdbCommandContext runs adb until it exits or ctx ends. When ctx ends,
+// adb is killed and reaped, and the error wraps errDeviceNotResponding.
 func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
 	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
-	return cmd.CombinedOutput()
+	// a process that inherited adb's output must not keep us waiting after
+	// adb itself was killed
+	cmd.WaitDelay = adbWaitDelay
+	start := time.Now()
+	output, err := cmd.CombinedOutput()
+	if err != nil && ctx.Err() != nil {
+		return output, fmt.Errorf("%w: %s gave no answer to `adb %s` in %s",
+			errDeviceNotResponding, d.getAdbIdentifier(), adbCommandSummary(args), time.Since(start).Round(time.Second))
+	}
+	return output, err
+}
+
+// adbCommandSummary names an adb command in an error: the first words only,
+// since a shell command line can be long.
+func adbCommandSummary(args []string) string {
+	words := strings.Fields(strings.Join(args, " "))
+	if len(words) > adbCommandSummaryWords {
+		words = append(words[:adbCommandSummaryWords], "...")
+	}
+	return strings.Join(words, " ")
 }
 
 // adbShellArgs returns the `adb` arguments that run argv as one command on the
@@ -250,11 +304,20 @@ func (d *AndroidDevice) runAdbShell(argv ...string) ([]byte, error) {
 	return d.runAdbCommand(adbShellArgs(argv...)...)
 }
 
-// getDisplayCount counts the number of displays on the device
-func (d *AndroidDevice) getDisplayCount() int {
-	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
+// runAdbLongShell is runAdbShell for a command that gets no deadline (see runAdbLongCommand).
+func (d *AndroidDevice) runAdbLongShell(argv ...string) ([]byte, error) {
+	return d.runAdbLongCommand(adbShellArgs(argv...)...)
+}
+
+// getDisplayCount counts the number of displays on the device. Only a device
+// that stopped answering is an error; any other failure counts as one display.
+func (d *AndroidDevice) getDisplayCount(ctx context.Context) (int, error) {
+	output, err := d.runAdbCommandContext(ctx, "shell", "dumpsys", "SurfaceFlinger", "--display-id")
+	if errors.Is(err, errDeviceNotResponding) {
+		return 0, err
+	}
 	if err != nil {
-		return 1 // assume single display on error
+		return 1, nil // assume single display on error
 	}
 
 	count := 0
@@ -265,7 +328,7 @@ func (d *AndroidDevice) getDisplayCount() int {
 		}
 	}
 
-	return count
+	return count, nil
 }
 
 // parseDisplayIdFromCmdDisplay extracts display ID from "cmd display get-displays" output (Android 11+)
@@ -307,9 +370,9 @@ func parseDisplayIdFromDumpsysState(dumpsys string) string {
 }
 
 // getFirstDisplayId finds the first active display's unique ID
-func (d *AndroidDevice) getFirstDisplayId() string {
+func (d *AndroidDevice) getFirstDisplayId(ctx context.Context) string {
 	// try using cmd display get-displays (Android 11+)
-	output, err := d.runAdbCommand("shell", "cmd", "display", "get-displays")
+	output, err := d.runAdbCommandContext(ctx, "shell", "cmd", "display", "get-displays")
 	if err == nil {
 		if id := parseDisplayIdFromCmdDisplay(string(output)); id != "" {
 			return id
@@ -317,7 +380,7 @@ func (d *AndroidDevice) getFirstDisplayId() string {
 	}
 
 	// fallback: parse dumpsys display for display info (compatible with older Android versions)
-	output, err = d.runAdbCommand("shell", "dumpsys", "display")
+	output, err = d.runAdbCommandContext(ctx, "shell", "dumpsys", "display")
 	if err != nil {
 		return ""
 	}
@@ -334,12 +397,12 @@ func (d *AndroidDevice) getFirstDisplayId() string {
 }
 
 // captureScreenshot captures screenshot with optional display ID
-func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
+func (d *AndroidDevice) captureScreenshot(ctx context.Context, displayID string) ([]byte, error) {
 	args := []string{"exec-out", "screencap", "-p"}
 	if displayID != "" {
 		args = append(args, "-d", displayID)
 	}
-	byteData, err := d.runAdbCommand(args...)
+	byteData, err := d.runAdbCommandContext(ctx, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to take screenshot: %w", err)
 	}
@@ -352,6 +415,9 @@ func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 	data, err := d.takeScreenshotWithDex(opts)
 	if err == nil {
 		return data, nil
+	}
+	if errors.Is(err, errDeviceNotResponding) {
+		return nil, err
 	}
 	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
 
@@ -410,22 +476,28 @@ func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, e
 }
 
 func (d *AndroidDevice) takeScreenshotWithScreencap() ([]byte, error) {
-	displayCount := d.getDisplayCount()
+	ctx, cancel := context.WithTimeout(context.Background(), screencapTimeout)
+	defer cancel()
+
+	displayCount, err := d.getDisplayCount(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	if displayCount <= 1 {
 		// backward compatibility for android 10 and below, and for single display devices
-		return d.captureScreenshot("")
+		return d.captureScreenshot(ctx, "")
 	}
 
 	// find the first display that is turned on, and capture that one
-	displayID := d.getFirstDisplayId()
+	displayID := d.getFirstDisplayId(ctx)
 	if displayID == "" {
 		// no idea why, but we have displayCount >= 2, yet we failed to parse
 		// let's go with screencap's defaults and hope for the best
-		return d.captureScreenshot("")
+		return d.captureScreenshot(ctx, "")
 	}
 
-	return d.captureScreenshot(displayID)
+	return d.captureScreenshot(ctx, displayID)
 }
 
 // validLocaleTag checks that a locale tag only contains safe BCP 47 characters
@@ -766,10 +838,15 @@ func GetAndroidDevices() ([]ControllableDevice, error) {
 	return androidDevices, nil
 }
 
+// offlineError tells the user to boot an offline emulator first.
+func (d *AndroidDevice) offlineError() error {
+	return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
+}
+
 func (d *AndroidDevice) StartAgent(config StartAgentConfig) error {
 	// if device is offline, return error - user should use 'device boot' command
 	if d.state == StateOffline {
-		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
+		return d.offlineError()
 	}
 
 	// android doesn't need an agent to be started for online devices
@@ -1494,7 +1571,7 @@ func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan
 
 	// pull the recording from device
 	utils.Verbose("Pulling recording from device...")
-	pullOutput, err := d.runAdbCommand("pull", remotePath, localOutput)
+	pullOutput, err := d.runAdbLongCommand("pull", remotePath, localOutput)
 	if err != nil {
 		return fmt.Errorf("failed to pull recording: %w\n%s", err, string(pullOutput))
 	}
@@ -1806,8 +1883,11 @@ func (d *AndroidDevice) getDeviceServerDump(opts DumpOptions) (string, error) {
 }
 
 func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), uiAutomatorDumpTimeout)
+	defer cancel()
+
 	for tries := 0; tries < 10; tries++ {
-		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
+		output, err := d.runAdbCommandContext(ctx, "exec-out", "uiautomator", "dump", "/dev/tty")
 		if err != nil {
 			return "", fmt.Errorf("failed to run uiautomator dump: %w", err)
 		}
@@ -1832,11 +1912,14 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
-	if jsonStr, err := d.getDeviceServerDump(opts); err == nil {
+	jsonStr, err := d.getDeviceServerDump(opts)
+	if err == nil {
 		return jsonStr, nil
-	} else {
-		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
+	if errors.Is(err, errDeviceNotResponding) {
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+	}
+	utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
@@ -1851,15 +1934,22 @@ func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 	// dumps below miss typed/unlabeled/non-semantic widgets. When the foreground
 	// app is a debuggable Flutter app, read its live render tree from the Dart VM
 	// service instead. Any failure falls through to the accessibility dump.
-	if elements, ok := d.tryDumpFlutterSource(); ok {
+	elements, ok, err := d.tryDumpFlutterSource()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+	}
+	if ok {
 		return elements, nil
 	}
 
-	if nodes, err := d.dumpUiNodes(opts); err == nil {
+	nodes, err := d.dumpUiNodes(opts)
+	if err == nil {
 		return collectUiNodeElements(nodes), nil
-	} else {
-		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 	}
+	if errors.Is(err, errDeviceNotResponding) {
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+	}
+	utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
 
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
@@ -1875,7 +1965,7 @@ func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 }
 
 func (d *AndroidDevice) InstallApp(path string) error {
-	output, err := d.runAdbCommand("install", "-r", path)
+	output, err := d.runAdbLongCommand("install", "-r", path)
 	if err != nil {
 		return fmt.Errorf("failed to install app: %v\nOutput: %s", err, string(output))
 	}
@@ -1888,7 +1978,7 @@ func (d *AndroidDevice) InstallApp(path string) error {
 }
 
 func (d *AndroidDevice) ClearApp(bundleID string) error {
-	output, err := d.runAdbShell("pm", "clear", bundleID)
+	output, err := d.runAdbLongShell("pm", "clear", bundleID)
 	if err != nil {
 		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
@@ -1903,7 +1993,7 @@ func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, err
 		PackageName: packageName,
 	}
 
-	output, err := d.runAdbCommand("uninstall", packageName)
+	output, err := d.runAdbLongCommand("uninstall", packageName)
 	if err != nil || !strings.Contains(string(output), "Success") {
 		// the package manager answers a package that is not installed with
 		// DELETE_FAILED_INTERNAL_ERROR, which says nothing about the cause
@@ -2103,11 +2193,17 @@ var logcatLevelMap = map[string]string{
 }
 
 func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	// adb logcat waits, silently and for good, for a device that is not there
+	if d.state == StateOffline {
+		return d.offlineError()
+	}
+
 	pidCache := &androidPidCache{names: make(map[int]string)}
 
 	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
 	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+	cmd.WaitDelay = adbWaitDelay
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

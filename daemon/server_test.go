@@ -158,6 +158,28 @@ func TestClientDisconnectCancelsHandlerContext(t *testing.T) {
 	}
 }
 
+// startBlockedCall leaves a "block" call running against the daemon, as a
+// client streaming logs does.
+func startBlockedCall() {
+	go func() { _, _ = CallStream(context.Background(), "block", nil, nil) }()
+}
+
+func TestShutdownCancelsHandlersStillRunning(t *testing.T) {
+	rd := startTestDaemon(t, 0, nil)
+	startBlockedCall()
+	time.Sleep(100 * time.Millisecond)
+
+	require.NoError(t, Shutdown())
+
+	select {
+	case <-rd.blocked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler context was not cancelled when the daemon shut down")
+	}
+	_, ok := rd.waitStopped(5 * time.Second)
+	assert.True(t, ok, "Run did not return after daemon.shutdown")
+}
+
 func TestCancelledStreamCallStillReturnsHandlerResult(t *testing.T) {
 	startTestDaemon(t, 0, nil)
 

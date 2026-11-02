@@ -52,13 +52,18 @@ const (
 )
 
 type server struct {
-	opts         Options
-	startedAt    time.Time
-	lastActivity atomic.Int64 // unix nanos
-	inflight     atomic.Int32
-	wg           sync.WaitGroup
-	shutdown     chan struct{}
-	shutdownOnce sync.Once
+	opts      Options
+	startedAt time.Time
+	// requests is the parent of every request context. It ends when the
+	// daemon shuts down, so handlers stop and kill what they started instead
+	// of leaving it running after the daemon exits.
+	requests       context.Context
+	cancelRequests context.CancelFunc
+	lastActivity   atomic.Int64 // unix nanos
+	inflight       atomic.Int32
+	wg             sync.WaitGroup
+	shutdown       chan struct{}
+	shutdownOnce   sync.Once
 }
 
 // Run listens on the unix socket and serves until ctx is cancelled, the idle
@@ -85,7 +90,9 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("restrict %s: %w", opts.Paths.Socket, err)
 	}
 
-	s := &server{opts: opts, startedAt: time.Now(), shutdown: make(chan struct{})}
+	requests, cancelRequests := context.WithCancel(context.Background())
+	defer cancelRequests()
+	s := &server{opts: opts, startedAt: time.Now(), shutdown: make(chan struct{}), requests: requests, cancelRequests: cancelRequests}
 	s.touch()
 
 	if err := writePidFile(opts.Paths.Pid, pidInfo{PID: os.Getpid(), Version: opts.Version, StartedAt: s.startedAt}); err != nil {
@@ -111,6 +118,7 @@ func Run(ctx context.Context, opts Options) error {
 	// join the accept loop first: once it has returned no more wg.Add calls
 	// can race with the wg.Wait inside waitInflight
 	<-accepting
+	s.cancelRequests()
 	s.waitInflight()
 	if opts.OnShutdown != nil {
 		opts.OnShutdown()
@@ -205,7 +213,7 @@ func (s *server) handleConn(conn net.Conn) {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.requests)
 	defer cancel()
 	go cancelOnDisconnect(conn, cancel)
 
