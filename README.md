@@ -239,6 +239,12 @@ mobilecli apps foreground --device <device-id>
 # Launch an app
 mobilecli apps launch <bundle-id> --device <device-id>
 
+# Launch an app with arguments and environment variables (iOS)
+mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
+
+# Launch an app with string intent extras (Android, each --arg is key=value and becomes --es key value)
+mobilecli apps launch <package-name> --device <device-id> --arg featureX=true --arg apiUrl=https://staging.example.com
+
 # Terminate an app
 mobilecli apps terminate <bundle-id> --device <device-id>
 

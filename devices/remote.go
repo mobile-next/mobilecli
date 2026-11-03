@@ -201,6 +201,12 @@ func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if opts.Activity != "" {
 		p["activity"] = opts.Activity
 	}
+	if len(opts.Arguments) > 0 {
+		p["args"] = opts.Arguments
+	}
+	if len(opts.Env) > 0 {
+		p["env"] = opts.Env
+	}
 	return r.fireRPC("device.apps.launch", p)
 }
 

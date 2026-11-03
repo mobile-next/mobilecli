@@ -764,10 +764,12 @@ type DumpUIParams struct {
 }
 
 type AppsLaunchParams struct {
-	DeviceID string   `json:"deviceId"`
-	BundleID string   `json:"bundleId"`
-	Locales  []string `json:"locales,omitempty"`
-	Activity string   `json:"activity,omitempty"`
+	DeviceID string            `json:"deviceId"`
+	BundleID string            `json:"bundleId"`
+	Locales  []string          `json:"locales,omitempty"`
+	Activity string            `json:"activity,omitempty"`
+	Args     []string          `json:"args,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
 }
 
 type AppsTerminateParams struct {
@@ -1098,6 +1100,8 @@ func handleAppsLaunch(params json.RawMessage) (any, error) {
 		BundleID: appsLaunchParams.BundleID,
 		Locales:  appsLaunchParams.Locales,
 		Activity: appsLaunchParams.Activity,
+		Args:     appsLaunchParams.Args,
+		Env:      appsLaunchParams.Env,
 	}
 
 	response := commands.LaunchAppCommand(req)
