@@ -463,7 +463,7 @@
         },
         {
           "name": "actions",
-          "description": "List of gesture actions to perform",
+          "description": "List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap); iOS only for now",
           "required": true,
           "schema": {
             "type": "array",
