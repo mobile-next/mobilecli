@@ -8,8 +8,9 @@ import (
 
 // voiceOverSetTimeout covers the agent's own wait for VoiceOver to start or stop:
 // disabling takes ~5s even when it is already off, and a slow start fails after ~15s
-// with an error worth passing on rather than our own timeout.
-const voiceOverSetTimeout = 30 * time.Second
+// with an error worth passing on rather than our own timeout. It stays under
+// rpc.RPCTimeout (30s) so a fleet caller sees this error, not its own read timeout.
+const voiceOverSetTimeout = 25 * time.Second
 
 type voiceOverState struct {
 	Enabled bool `json:"enabled"`
