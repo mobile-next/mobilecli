@@ -123,6 +123,18 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Write to the device clipboard
   mobilecli io clipboard set --device <device-id> "Hello World"
   ```
+* **VoiceOver** (iOS 27+, simulators and real devices):
+  ```bash
+  # Turn VoiceOver on, then read what it speaks for the focused element
+  mobilecli device voiceover set --device <device-id> on
+  mobilecli device voiceover speech --device <device-id>
+
+  # Walk the focus order: each move prints what VoiceOver speaks
+  mobilecli device voiceover move --device <device-id> next
+
+  # VoiceOver stays on after mobilecli exits, and taps only focus while it is on
+  mobilecli device voiceover set --device <device-id> off
+  ```
 
 ### 5. UI Inspection & Webviews
 * **Dump UI Tree**:

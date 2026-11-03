@@ -92,5 +92,10 @@ func CLIRegistry() map[string]CLIHandler {
 		"cli.agent.status":           adapt(AgentStatusCommand),
 		"cli.agent.install":          adapt(AgentInstallCommand),
 		"cli.agent.uninstall":        adapt(AgentUninstallCommand),
+
+		"cli.device.voiceover.get":    adapt(VoiceOverGetCommand),
+		"cli.device.voiceover.set":    adapt(VoiceOverSetCommand),
+		"cli.device.voiceover.speech": adapt(VoiceOverSpeechCommand),
+		"cli.device.voiceover.move":   adapt(VoiceOverMoveCommand),
 	}
 }

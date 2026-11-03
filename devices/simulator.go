@@ -1093,6 +1093,26 @@ func (s SimulatorDevice) SetAppearance(appearance string) error {
 	return s.deviceKitClient.SetAppearance(appearance)
 }
 
+// GetVoiceOver reports whether VoiceOver is running (iOS 27+)
+func (s SimulatorDevice) GetVoiceOver() (bool, error) {
+	return s.deviceKitClient.GetVoiceOver()
+}
+
+// SetVoiceOver turns VoiceOver on or off (iOS 27+)
+func (s SimulatorDevice) SetVoiceOver(enabled bool) error {
+	return s.deviceKitClient.SetVoiceOver(enabled)
+}
+
+// VoiceOverSpeech returns what VoiceOver speaks for the focused element
+func (s SimulatorDevice) VoiceOverSpeech() (string, error) {
+	return s.deviceKitClient.VoiceOverSpeech()
+}
+
+// MoveVoiceOver moves the VoiceOver cursor and returns what it speaks
+func (s SimulatorDevice) MoveVoiceOver(direction string) (string, error) {
+	return s.deviceKitClient.MoveVoiceOver(direction)
+}
+
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
 
 // crashReportIsForSimulator reports whether an .ips diagnostic report at path was
