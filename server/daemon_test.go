@@ -95,3 +95,28 @@ func TestFoldSetRequiresDeviceID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "'deviceId' is required")
 }
+
+func TestVoiceOverMethodsRequireDeviceID(t *testing.T) {
+	for method, params := range map[string]string{
+		"device.voiceover.get":    `{}`,
+		"device.voiceover.set":    `{"enabled":true}`,
+		"device.voiceover.speech": `{}`,
+		"device.voiceover.move":   `{"direction":"next"}`,
+	} {
+		_, err := DaemonDispatch(context.Background(), method, json.RawMessage(params), noNotify)
+		require.Error(t, err, method)
+		assert.Contains(t, err.Error(), "'deviceId' is required", method)
+	}
+}
+
+func TestVoiceOverSetRequiresEnabled(t *testing.T) {
+	_, err := DaemonDispatch(context.Background(), "device.voiceover.set", json.RawMessage(`{"deviceId":"__nope__"}`), noNotify)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'enabled' is required")
+}
+
+func TestVoiceOverMoveRejectsInvalidDirectionBeforeLookingUpDevice(t *testing.T) {
+	_, err := DaemonDispatch(context.Background(), "device.voiceover.move", json.RawMessage(`{"deviceId":"__nope__","direction":"up"}`), noNotify)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid voiceover direction")
+}

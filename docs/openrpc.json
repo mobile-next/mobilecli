@@ -742,6 +742,140 @@
       }
     },
     {
+      "name": "device.voiceover.get",
+      "summary": "Get VoiceOver state",
+      "description": "Reports whether VoiceOver is on. Requires iOS 27 or later, on a simulator or a real device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "voiceover",
+        "description": "VoiceOver state",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether VoiceOver is on"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.set",
+      "summary": "Turn VoiceOver on or off",
+      "description": "Turns VoiceOver on or off. Requires iOS 27 or later. VoiceOver stays on after mobilecli exits, and while it is on a tap focuses an element instead of activating it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "enabled",
+          "description": "true to turn VoiceOver on, false to turn it off",
+          "required": true,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "voiceover",
+        "description": "VoiceOver state",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether VoiceOver is on"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.speech",
+      "summary": "Read VoiceOver speech",
+      "description": "Returns what VoiceOver speaks for the element it is focused on. Requires VoiceOver to be on",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "speech",
+        "description": "VoiceOver speech",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "utterance": {
+              "type": "string",
+              "description": "What VoiceOver speaks for the element, e.g. \"Add Favorites, button\""
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.move",
+      "summary": "Move the VoiceOver cursor",
+      "description": "Moves the VoiceOver cursor and returns what VoiceOver speaks for the element it lands on. Requires VoiceOver to be on; 'in' and 'out' need VoiceOver's Navigation Style set to Groups",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "direction",
+          "description": "'next', 'previous', 'in' (into a container) or 'out' (out of a container)",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "next",
+              "previous",
+              "in",
+              "out"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "speech",
+        "description": "VoiceOver speech",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "utterance": {
+              "type": "string",
+              "description": "What VoiceOver speaks for the element, e.g. \"Add Favorites, button\""
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "device.location.set",
       "summary": "Override device location",
       "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",

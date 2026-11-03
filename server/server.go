@@ -947,6 +947,95 @@ func handleFoldSet(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+type VoiceOverDeviceParams struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type VoiceOverSetParams struct {
+	DeviceID string `json:"deviceId"`
+	Enabled  *bool  `json:"enabled"`
+}
+
+func parseVoiceOverDeviceParams(params json.RawMessage) (string, error) {
+	var req VoiceOverDeviceParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return "", fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+		}
+	}
+
+	if req.DeviceID == "" {
+		return "", fmt.Errorf("'deviceId' is required")
+	}
+
+	return req.DeviceID, nil
+}
+
+func handleVoiceOverGet(params json.RawMessage) (any, error) {
+	deviceID, err := parseVoiceOverDeviceParams(params)
+	if err != nil {
+		return nil, err
+	}
+
+	response := commands.VoiceOverGetCommand(commands.VoiceOverGetRequest{DeviceID: deviceID})
+	return commandResult(response)
+}
+
+func handleVoiceOverSet(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, enabled")
+	}
+
+	var req VoiceOverSetParams
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, enabled", err)
+	}
+
+	if req.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	if req.Enabled == nil {
+		return nil, fmt.Errorf("'enabled' is required")
+	}
+
+	state := "off"
+	if *req.Enabled {
+		state = "on"
+	}
+
+	response := commands.VoiceOverSetCommand(commands.VoiceOverSetRequest{DeviceID: req.DeviceID, State: state})
+	return commandResult(response)
+}
+
+func handleVoiceOverSpeech(params json.RawMessage) (any, error) {
+	deviceID, err := parseVoiceOverDeviceParams(params)
+	if err != nil {
+		return nil, err
+	}
+
+	response := commands.VoiceOverSpeechCommand(commands.VoiceOverSpeechRequest{DeviceID: deviceID})
+	return commandResult(response)
+}
+
+func handleVoiceOverMove(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, direction")
+	}
+
+	var req commands.VoiceOverMoveRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, direction", err)
+	}
+
+	if req.DeviceID == "" {
+		return nil, fmt.Errorf("'deviceId' is required")
+	}
+
+	response := commands.VoiceOverMoveCommand(req)
+	return commandResult(response)
+}
+
 func handleLocationSet(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, latitude, longitude")
