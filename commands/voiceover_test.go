@@ -3,8 +3,17 @@ package commands
 import (
 	"testing"
 
+	"github.com/mobile-next/mobilecli/devices"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+// every iOS device type, local or on a fleet, has to reach the agent's VoiceOver
+var (
+	_ voiceOverController = devices.SimulatorDevice{}
+	_ voiceOverController = (*devices.IOSDevice)(nil)
+	_ voiceOverController = (*devices.RemoteDevice)(nil)
 )
 
 func TestVoiceOverStatesParseToEnabled(t *testing.T) {
