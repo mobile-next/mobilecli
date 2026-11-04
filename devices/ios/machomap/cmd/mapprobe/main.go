@@ -129,13 +129,50 @@ func main() {
 			}
 			return 0
 		}
+		clearErrno := func() {
+			if ep, e := t.Call(he["__error"]); e == nil && ep != 0 {
+				_ = c.WriteMem(ep, []byte{0, 0, 0, 0}, 0)
+			}
+		}
+		// compare how the agent's imports bind (dlsym RTLD_DEFAULT) vs the specific
+		// libsystem_kernel export (trie) for listen — a mismatch means RTLD_DEFAULT
+		// picked the wrong image, which would break the agent's listen() call.
+		hd, _ := machomap.NewExportTrieResolver(c).Resolve([]string{"dlsym", "listen"})
+		listenDlsym := call(hd["dlsym"], ^uint64(0)-1 /*RTLD_DEFAULT*/, put("listen"))
+		socketDlsym := call(hd["dlsym"], ^uint64(0)-1, put("socket"))
+		fmt.Printf("listen: trie=%#x dlsym(RTLD_DEFAULT)=%#x  %s\n", hd["listen"], listenDlsym,
+			map[bool]string{true: "MATCH", false: "MISMATCH"}[hd["listen"] == listenDlsym])
+		fmt.Printf("socket dlsym=%#x\n", socketDlsym)
 		cls := call(h["objc_getClass"], put("MobileServer"))
 		obj := call(h["objc_msgSend"], cls, sel("alloc"))
 		obj = call(h["objc_msgSend"], obj, sel("initWithHandler:"), 0)
+		// sanity: a method that definitely returns YES, to validate BOOL reads
+		resp := call(h["objc_msgSend"], obj, sel("respondsToSelector:"), sel("bind"))
+		fmt.Printf("respondsToSelector(bind)=%d (want 1)\n", resp&0xff)
+		// decompose on a fresh object: -bindPort alone
+		o2 := call(h["objc_msgSend"], cls, sel("alloc"))
+		o2 = call(h["objc_msgSend"], o2, sel("initWithHandler:"), 0)
+		clearErrno()
+		bp := call(h["objc_msgSend"], o2, sel("bindPort"))
+		bpErr := errnoNow()
+		p2 := call(h["objc_msgSend"], o2, sel("port"))
+		fmt.Printf("-bindPort=%d (errno=%d) -port=%d\n", bp&0xff, bpErr, p2&0xffffffff)
+		// read the agent socket's fd via its _serverFd ivar, then listen() on it directly
+		hi, _ := machomap.NewExportTrieResolver(c).Resolve([]string{"class_getInstanceVariable", "ivar_getOffset", "listen"})
+		ivar := call(hi["class_getInstanceVariable"], cls, put("_serverFd"))
+		ivoff := call(hi["ivar_getOffset"], ivar)
+		fdb, _ := c.Memory(o2+ivoff, 4)
+		fd := uint64(fdb[0]) | uint64(fdb[1])<<8 | uint64(fdb[2])<<16 | uint64(fdb[3])<<24
+		clearErrno()
+		ld := call(hi["listen"], fd, 8)
+		fmt.Printf("agent _serverFd=%d  direct listen(fd,8)=%d (errno=%d)\n",
+			int32(uint32(fd)), int32(uint32(ld)), errnoNow())
+
+		clearErrno()
 		bnd := call(h["objc_msgSend"], obj, sel("bind"))
 		bErrno := errnoNow()
 		port := call(h["objc_msgSend"], obj, sel("port"))
-		fmt.Printf("MobileServer cls=%#x alloc/init obj=%#x  -bind=%d (errno=%d)  -port=%d\n",
+		fmt.Printf("MobileServer cls=%#x alloc/init obj=%#x  -bind=%d (errno-after=%d)  -port=%d\n",
 			cls, obj, bnd&0xff, bErrno, port&0xffffffff)
 		_, _ = c.Request("D")
 		return
