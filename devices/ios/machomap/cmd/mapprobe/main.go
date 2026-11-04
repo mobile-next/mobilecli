@@ -100,8 +100,38 @@ func main() {
 
 	if *servertest {
 		// map first so MobileServer is registered, then drive it via the runtime
-		if _, err := machomap.Map(c, dylib, machomap.NewExportTrieResolver(c), machomap.Options{RunInit: false}); err != nil {
+		mres, err := machomap.Map(c, dylib, machomap.NewExportTrieResolver(c), machomap.Options{RunInit: false})
+		if err != nil {
 			fatal("map: %v", err)
+		}
+		// compile-time ivar-offset globals (what the compiled methods read) vs runtime
+		if mm, e := machomap.ParseMacho(dylib); e == nil {
+			ht, _ := machomap.NewExportTrieResolver(c).Resolve([]string{"mmap", "class_getInstanceVariable", "ivar_getOffset", "objc_getClass"})
+			tt, _ := machomap.NewTarget(c)
+			sc, _ := tt.Call(ht["mmap"], 0, 0x1000, 3, 0x1002, ^uint64(0), 0)
+			cu := sc
+			put := func(s string) uint64 {
+				b := append([]byte(s), 0)
+				_ = c.WriteMem(cu, b, 0)
+				p := cu
+				cu += uint64(len(b))
+				return p
+			}
+			srvCls, _ := tt.Call(ht["objc_getClass"], put("MobileServer"))
+			for _, iv := range []string{"_serverFd", "_port"} {
+				off, ok := mm.Symbols["_OBJC_IVAR_$_MobileServer."+iv]
+				if !ok {
+					fmt.Printf("ivar %s: no symbol\n", iv)
+					continue
+				}
+				gb, _ := c.Memory(mres.Base+off, 8)
+				compiled := uint64(gb[0]) | uint64(gb[1])<<8 | uint64(gb[2])<<16 | uint64(gb[3])<<24
+				ivar, _ := tt.Call(ht["class_getInstanceVariable"], srvCls, put(iv))
+				rt, _ := tt.Call(ht["ivar_getOffset"], ivar)
+				fmt.Printf("ivar %-10s compiled-global=%d runtime=%d %s\n", iv, compiled, rt&0xffffffff,
+					map[bool]string{true: "MATCH", false: "MISMATCH"}[compiled == rt&0xffffffff])
+			}
+			_ = tt.Restore()
 		}
 		h, err := machomap.NewExportTrieResolver(c).Resolve([]string{"mmap", "objc_getClass", "objc_msgSend", "sel_registerName"})
 		check(err)
