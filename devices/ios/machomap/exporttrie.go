@@ -27,11 +27,17 @@ func NewExportTrieResolver(c *RSP) *ExportTrieResolver {
 		nameDylib: map[string]string{
 			"mmap":               "/usr/lib/system/libsystem_kernel.dylib",
 			"mprotect":           "/usr/lib/system/libsystem_kernel.dylib",
+			"socket":             "/usr/lib/system/libsystem_kernel.dylib",
+			"bind":               "/usr/lib/system/libsystem_kernel.dylib",
+			"listen":             "/usr/lib/system/libsystem_kernel.dylib",
+			"__error":            "/usr/lib/system/libsystem_kernel.dylib",
 			"dlsym":              "/usr/lib/system/libdyld.dylib",
 			"sel_registerName":   "/usr/lib/libobjc.A.dylib",
 			"objc_readClassPair": "/usr/lib/libobjc.A.dylib",
 			"objc_getClass":      "/usr/lib/libobjc.A.dylib",
 			"objc_msgSend":       "/usr/lib/libobjc.A.dylib",
+			"object_getClass":    "/usr/lib/libobjc.A.dylib",
+			"class_addMethod":    "/usr/lib/libobjc.A.dylib",
 		},
 		loadAddr: map[string]uint64{},
 	}

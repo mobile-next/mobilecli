@@ -184,6 +184,15 @@ func (c *RSP) WriteMem(addr uint64, blob []byte, chunk int) error {
 	return nil
 }
 
+// readPtr reads a little-endian 64-bit pointer at addr.
+func (c *RSP) readPtr(addr uint64) (uint64, error) {
+	b, err := c.Memory(addr, 8)
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(b), nil
+}
+
 // ReadReg reads a register by DWARF-ish number on a thread.
 func (c *RSP) ReadReg(num int, thread uint64) (uint64, error) {
 	resp, err := c.Request(fmt.Sprintf("p%x;thread:%x;", num, thread))

@@ -49,6 +49,7 @@ type Result struct {
 	Imports    int
 	Selrefs    int
 	Classes    int
+	Categories int
 	Unresolved []string
 }
 
@@ -203,6 +204,20 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 			return nil, err
 		}
 		res0.Classes = int(n)
+	}
+
+	// 6b. apply categories (objc_readClassPair does not, and there is no public API
+	// to attach one from a mapped image) — before init, which may swizzle them.
+	if m.SectionCount("__objc_catlist") > 0 {
+		ch, err := res.Resolve(categoryHelpers)
+		if err != nil {
+			return nil, fmt.Errorf("resolve category helpers: %w", err)
+		}
+		applied, err := applyCategories(c, t, base, m, ch)
+		if err != nil {
+			return nil, err
+		}
+		res0.Categories = applied
 	}
 
 	// 7. run initializers (starts the agent) unless suppressed
