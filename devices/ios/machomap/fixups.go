@@ -22,23 +22,26 @@ type fixupSeg struct {
 	pageStarts    []uint16
 }
 
-// ParseChainedFixups returns the imported symbol names (in ordinal order) and the
-// per-segment chain-start tables from the LC_DYLD_CHAINED_FIXUPS blob at hdrOff.
-func ParseChainedFixups(data []byte, hdrOff uint32) (imports []string, segs []fixupSeg, err error) {
+// ParseChainedFixups returns the imported symbol names (in ordinal order), a
+// parallel slice marking weak imports (which may legitimately resolve to 0), and
+// the per-segment chain-start tables from the LC_DYLD_CHAINED_FIXUPS blob at
+// hdrOff.
+func ParseChainedFixups(data []byte, hdrOff uint32) (imports []string, weak []bool, segs []fixupSeg, err error) {
 	h := int(hdrOff)
 	if h+28 > len(data) {
-		return nil, nil, fmt.Errorf("chained-fixups header out of range")
+		return nil, nil, nil, fmt.Errorf("chained-fixups header out of range")
 	}
 	startsOff := binary.LittleEndian.Uint32(data[h+4:])
 	impOff := binary.LittleEndian.Uint32(data[h+8:])
 	symOff := binary.LittleEndian.Uint32(data[h+12:])
 	impCnt := binary.LittleEndian.Uint32(data[h+16:])
-	// imports format 1: {lib_ordinal:8, weak:1, name_offset:23}
+	// imports format 1: {lib_ordinal:8, weak_import:1, name_offset:23}
 	for i := uint32(0); i < impCnt; i++ {
 		v := binary.LittleEndian.Uint32(data[h+int(impOff)+int(i)*4:])
 		nameOff := (v >> 9) & 0x7FFFFF
 		name := cstrAt(data, h+int(symOff)+int(nameOff), len(data))
 		imports = append(imports, name)
+		weak = append(weak, (v>>8)&1 == 1)
 	}
 	segCount := binary.LittleEndian.Uint32(data[h+int(startsOff):])
 	for s := uint32(0); s < segCount; s++ {
@@ -62,7 +65,7 @@ func ParseChainedFixups(data []byte, hdrOff uint32) (imports []string, segs []fi
 			pageStarts:    starts,
 		})
 	}
-	return imports, segs, nil
+	return imports, weak, segs, nil
 }
 
 // ApplyFixups patches the image buffer in place: rebases -> base+target+(high8<<56),

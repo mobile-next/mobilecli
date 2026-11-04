@@ -205,7 +205,7 @@ func (s *mapSession) bindImports() error {
 	if !s.m.HasChained {
 		return nil
 	}
-	imports, segs, err := ParseChainedFixups(s.dylib, s.m.ChainedOff)
+	imports, weak, segs, err := ParseChainedFixups(s.dylib, s.m.ChainedOff)
 	if err != nil {
 		return err
 	}
@@ -243,9 +243,15 @@ func (s *mapSession) bindImports() error {
 	importAddrs := make([]uint64, len(imports))
 	for i := range imports {
 		importAddrs[i] = binary.LittleEndian.Uint64(raw[i*8:])
-		if importAddrs[i] == 0 {
+		// A weak import may legitimately resolve to 0 (the code null-checks it);
+		// a missing non-weak import would make the initializer call a null pointer
+		// and crash the app, so fail now, before the image is written.
+		if importAddrs[i] == 0 && !weak[i] {
 			s.result.Unresolved = append(s.result.Unresolved, imports[i])
 		}
+	}
+	if len(s.result.Unresolved) > 0 {
+		return fmt.Errorf("unresolved imports (missing symbols in target): %v", s.result.Unresolved)
 	}
 	rebases, binds, err := ApplyFixups(s.image, segs, s.base, importAddrs)
 	if err != nil {

@@ -37,7 +37,7 @@ func TestGoParserMatchesPythonCounts(t *testing.T) {
 		t.Fatal("expected chained fixups")
 	}
 
-	imports, segs, err := ParseChainedFixups(data, m.ChainedOff)
+	imports, _, segs, err := ParseChainedFixups(data, m.ChainedOff)
 	if err != nil {
 		t.Fatalf("ParseChainedFixups: %v", err)
 	}
