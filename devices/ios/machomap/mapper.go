@@ -57,7 +57,7 @@ type Result struct {
 // initializers (unless Options.RunInit is false). The process must be attached
 // (QSetDetachOnError + vAttach) by the caller; Map borrows a thread and restores
 // it before returning.
-func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
+func Map(c *RSP, dylib []byte, resolver Resolver, opt Options) (*Result, error) {
 	m, err := ParseMacho(dylib)
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		chunk = 1024
 	}
 
-	helpers, err := res.Resolve(bootstrapNames)
+	helpers, err := resolver.Resolve(bootstrapNames)
 	if err != nil {
 		return nil, fmt.Errorf("resolve bootstrap helpers: %w", err)
 	}
@@ -85,7 +85,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 	defer func() { _ = t.Restore() }()
 
 	mmap := helpers["mmap"]
-	res0 := &Result{ImageSize: imageSize}
+	result := &Result{ImageSize: imageSize}
 
 	// 1. reserve the image r-x
 	base, err := t.Call(mmap, 0, imageSize, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
@@ -95,7 +95,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 	if base == neg1 {
 		return nil, fmt.Errorf("reserve mmap failed (MAP_FAILED)")
 	}
-	res0.Base = base
+	result.Base = base
 
 	// 2. MAP_FIXED-remap writable segments rw
 	for _, s := range mapped {
@@ -143,7 +143,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		res0.Imports = len(imports)
+		result.Imports = len(imports)
 		// stage import name strings (one write) + a pointer table + an output table
 		var blob []byte
 		offs := make([]int, len(imports))
@@ -177,14 +177,14 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		for i := range imports {
 			importAddrs[i] = binary.LittleEndian.Uint64(raw[i*8:])
 			if importAddrs[i] == 0 {
-				res0.Unresolved = append(res0.Unresolved, imports[i])
+				result.Unresolved = append(result.Unresolved, imports[i])
 			}
 		}
 		rb, bn, err := ApplyFixups(image, segs, base, importAddrs)
 		if err != nil {
 			return nil, err
 		}
-		res0.Rebases, res0.Binds = rb, bn
+		result.Rebases, result.Binds = rb, bn
 	}
 
 	// 5. write the fixed-up image
@@ -199,7 +199,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 			if _, err := t.Call(stubMem+StubSelrefOff, helpers["sel_registerName"], sel, base+sr.Addr); err != nil {
 				return nil, err
 			}
-			res0.Selrefs = int(sel)
+			result.Selrefs = int(sel)
 		}
 		cl := m.Sections["__objc_classlist"]
 		var imageinfo uint64
@@ -209,13 +209,13 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		if _, err := t.Call(stubMem+StubClassOff, helpers["objc_readClassPair"], n, base+cl.Addr, imageinfo); err != nil {
 			return nil, err
 		}
-		res0.Classes = int(n)
+		result.Classes = int(n)
 	}
 
 	// 6b. apply categories (objc_readClassPair does not, and there is no public API
 	// to attach one from a mapped image) — before init, which may swizzle them.
 	if m.SectionCount("__objc_catlist") > 0 {
-		ch, err := res.Resolve(categoryHelpers)
+		ch, err := resolver.Resolve(categoryHelpers)
 		if err != nil {
 			return nil, fmt.Errorf("resolve category helpers: %w", err)
 		}
@@ -223,7 +223,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		res0.Categories = applied
+		result.Categories = applied
 	}
 
 	// 7. run initializers (starts the agent) unless suppressed
@@ -238,7 +238,7 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 		}
 	}
 
-	return res0, nil
+	return result, nil
 }
 
 // stripOneUnderscore removes exactly one leading linker underscore (not all).

@@ -268,12 +268,11 @@ func indexByte(b []byte, c byte) int {
 }
 
 // lookupExportTrie walks the dyld export trie for symbol and returns its address
-// offset (from the image base) if found. Handles regular and absolute exports;
-// errors on reexports (not expected for our bootstrap symbols).
+// offset (from the image base) if found. It assumes a regular export (which the
+// bootstrap symbols all are) and errors on re-exports and stub-resolvers rather
+// than resolving them incorrectly.
 func lookupExportTrie(trie []byte, symbol string) (uint64, bool, error) {
 	const (
-		flagsKindMask   = 0x03
-		flagAbsolute    = 0x02
 		flagReexport    = 0x08
 		flagStubAndReso = 0x10
 	)
@@ -295,8 +294,6 @@ func lookupExportTrie(trie []byte, symbol string) (uint64, bool, error) {
 				return 0, false, fmt.Errorf("unsupported export kind (flags=%#x)", flags)
 			}
 			addr, _ := uleb(trie, p)
-			_ = flags & flagsKindMask
-			_ = flagAbsolute
 			return addr, true, nil
 		}
 		// skip this node's terminal payload to reach the child list
