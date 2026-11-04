@@ -20,6 +20,13 @@ const (
 	mapFixed    = 0x0010
 	neg1        = ^uint64(0) // -1 (mmap fd, and RTLD_DEFAULT base below)
 	rtldDefault = ^uint64(0) - 1
+
+	scratchSize  = 0x10000 // rw scratch for staged strings/tables
+	stubPageSize = 0x4000  // r-x page holding the loop stubs + landing pad
+	// landingPadOffset is the call-return breakpoint address within the stub
+	// page, placed well past the stub bytes so callee code never executes it.
+	landingPadOffset  = 0x800
+	defaultWriteChunk = 1024
 )
 
 // bootstrapNames are the runtime helpers the mapper itself needs; the Resolver
@@ -37,7 +44,7 @@ type Resolver interface {
 // Options controls the map.
 type Options struct {
 	RunInit    bool // run the dylib's offset-based initializers (starts the agent)
-	WriteChunk int  // M-packet chunk size; 0 => 1024
+	WriteChunk int  // M-packet chunk size; 0 => defaultWriteChunk
 }
 
 // Result reports what was mapped.
@@ -63,10 +70,6 @@ func Map(c *RSP, dylib []byte, resolver Resolver, opt Options) (*Result, error) 
 		return nil, err
 	}
 	image, imageSize, mapped := m.BuildImage()
-	chunk := opt.WriteChunk
-	if chunk == 0 {
-		chunk = 1024
-	}
 
 	helpers, err := resolver.Resolve(bootstrapNames)
 	if err != nil {
@@ -84,161 +87,235 @@ func Map(c *RSP, dylib []byte, resolver Resolver, opt Options) (*Result, error) 
 	}
 	defer func() { _ = t.Restore() }()
 
-	mmap := helpers["mmap"]
-	result := &Result{ImageSize: imageSize}
+	chunk := opt.WriteChunk
+	if chunk == 0 {
+		chunk = defaultWriteChunk
+	}
+	s := &mapSession{
+		c: c, t: t, m: m, dylib: dylib, image: image, chunk: chunk,
+		helpers: helpers, resolver: resolver,
+		result: &Result{ImageSize: imageSize},
+	}
 
-	// 1. reserve the image r-x
-	base, err := t.Call(mmap, 0, imageSize, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
+	steps := []func() error{
+		func() error { return s.reserveImage(imageSize) },
+		func() error { return s.remapWritableSegments(mapped) },
+		s.setupScratchAndStubs,
+		s.bindImports,
+		s.writeImage,
+		s.registerClasses,
+		s.applyImageCategories,
+		func() error {
+			if opt.RunInit {
+				return s.runInitializers()
+			}
+			return nil
+		},
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return nil, err
+		}
+	}
+	return s.result, nil
+}
+
+// mapSession holds the state shared across the steps of a single Map call.
+type mapSession struct {
+	c        *RSP
+	t        *Target
+	m        *Macho
+	dylib    []byte
+	image    []byte
+	base     uint64
+	chunk    int
+	scratch  uint64 // next free offset in the rw scratch region
+	stub     uint64 // base of the r-x stub page
+	helpers  map[string]uint64
+	resolver Resolver
+	result   *Result
+}
+
+// alloc hands out 8-byte-aligned chunks of the rw scratch region.
+func (s *mapSession) alloc(size uint64) uint64 {
+	s.scratch = (s.scratch + 7) &^ 7
+	p := s.scratch
+	s.scratch += size
+	return p
+}
+
+// reserveImage mmaps the whole image r-x (executable). iOS fixes max_protection
+// at mmap time, so EXEC must be requested now; the writable segments are then
+// remapped rw over this reservation.
+func (s *mapSession) reserveImage(imageSize uint64) error {
+	base, err := s.t.Call(s.helpers["mmap"], 0, imageSize, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if base == neg1 {
-		return nil, fmt.Errorf("reserve mmap failed (MAP_FAILED)")
+		return fmt.Errorf("reserve mmap failed (MAP_FAILED)")
 	}
-	result.Base = base
+	s.base = base
+	s.result.Base = base
+	return nil
+}
 
-	// 2. MAP_FIXED-remap writable segments rw
-	for _, s := range mapped {
-		if s.Name != "__TEXT" && s.InitProt&vmProtWrite != 0 {
-			got, err := t.Call(mmap, base+s.VMAddr, s.VMSize, protRead|protWrite,
-				mapAnon|mapPrivate|mapFixed, neg1, 0)
-			if err != nil {
-				return nil, err
-			}
-			if got != base+s.VMAddr {
-				return nil, fmt.Errorf("MAP_FIXED %s @ %#x -> %#x", s.Name, base+s.VMAddr, got)
-			}
+// remapWritableSegments MAP_FIXED-remaps each writable, non-__TEXT segment rw.
+func (s *mapSession) remapWritableSegments(mapped []Segment) error {
+	for _, seg := range mapped {
+		if seg.Name == "__TEXT" || seg.InitProt&vmProtWrite == 0 {
+			continue
+		}
+		at := s.base + seg.VMAddr
+		got, err := s.t.Call(s.helpers["mmap"], at, seg.VMSize, protRead|protWrite, mapAnon|mapPrivate|mapFixed, neg1, 0)
+		if err != nil {
+			return err
+		}
+		if got != at {
+			return fmt.Errorf("MAP_FIXED %s @ %#x -> %#x", seg.Name, at, got)
 		}
 	}
+	return nil
+}
 
-	// 3. RW scratch for staged tables, and an r-x page for the loop stubs
-	scratch, err := t.Call(mmap, 0, 0x10000, protRead|protWrite, mapAnon|mapPrivate, neg1, 0)
+// setupScratchAndStubs maps the rw scratch region and the r-x stub page, writes
+// the loop stubs, and points the call-return breakpoint at a private address in
+// the stub page (rather than the thread's live PC) so re-entrant callee code —
+// NSLog/libdispatch in the initializer — can't trip it early.
+func (s *mapSession) setupScratchAndStubs() error {
+	scratch, err := s.t.Call(s.helpers["mmap"], 0, scratchSize, protRead|protWrite, mapAnon|mapPrivate, neg1, 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	stubMem, err := t.Call(mmap, 0, 0x4000, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
+	stub, err := s.t.Call(s.helpers["mmap"], 0, stubPageSize, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := c.WriteMem(stubMem, StubBytes, chunk); err != nil {
-		return nil, err
+	if err := s.c.WriteMem(stub, StubBytes, s.chunk); err != nil {
+		return err
 	}
-	// Return called functions to a private r-x address in the stub page (well past
-	// the stub bytes) rather than the thread's live PC, so re-entrant callee code
-	// (NSLog/libdispatch in the initializer) can't trip the return breakpoint early.
-	if err := t.SetLanding(stubMem + 0x800); err != nil {
-		return nil, err
+	s.scratch, s.stub = scratch, stub
+	return s.t.SetLanding(stub + landingPadOffset)
+}
+
+// bindImports resolves every imported symbol in one in-process rstub_dlsym call
+// (names + a pointer table + an output table staged in scratch), then applies
+// the chained fixups to the image buffer locally.
+func (s *mapSession) bindImports() error {
+	if !s.m.HasChained {
+		return nil
 	}
-	cur := scratch
-	alloc := func(size uint64) uint64 {
-		cur = (cur + 7) &^ 7
-		p := cur
-		cur += size
-		return p
+	imports, segs, err := ParseChainedFixups(s.dylib, s.m.ChainedOff)
+	if err != nil {
+		return err
+	}
+	s.result.Imports = len(imports)
+
+	var blob []byte
+	offs := make([]int, len(imports))
+	for i, n := range imports {
+		offs[i] = len(blob)
+		blob = append(blob, stripOneUnderscore(n)...)
+		blob = append(blob, 0)
+	}
+	blobBase := s.alloc(uint64(len(blob)))
+	if err := s.c.WriteMem(blobBase, blob, s.chunk); err != nil {
+		return err
 	}
 
-	// 4. resolve all imports in ONE call via rstub_dlsym, then apply fixups locally
-	if m.HasChained {
-		imports, segs, err := ParseChainedFixups(dylib, m.ChainedOff)
-		if err != nil {
-			return nil, err
+	namesTbl := s.alloc(uint64(len(imports)) * 8)
+	tbl := make([]byte, len(imports)*8)
+	for i := range imports {
+		binary.LittleEndian.PutUint64(tbl[i*8:], blobBase+uint64(offs[i]))
+	}
+	if err := s.c.WriteMem(namesTbl, tbl, s.chunk); err != nil {
+		return err
+	}
+	outTbl := s.alloc(uint64(len(imports)) * 8)
+	if _, err := s.t.Call(s.stub+StubDlsymOff, s.helpers["dlsym"], uint64(len(imports)), namesTbl, outTbl, rtldDefault); err != nil {
+		return err
+	}
+
+	raw, err := s.c.Memory(outTbl, uint64(len(imports))*8)
+	if err != nil {
+		return err
+	}
+	importAddrs := make([]uint64, len(imports))
+	for i := range imports {
+		importAddrs[i] = binary.LittleEndian.Uint64(raw[i*8:])
+		if importAddrs[i] == 0 {
+			s.result.Unresolved = append(s.result.Unresolved, imports[i])
 		}
-		result.Imports = len(imports)
-		// stage import name strings (one write) + a pointer table + an output table
-		var blob []byte
-		offs := make([]int, len(imports))
-		for i, n := range imports {
-			offs[i] = len(blob)
-			blob = append(blob, stripOneUnderscore(n)...)
-			blob = append(blob, 0)
+	}
+	rebases, binds, err := ApplyFixups(s.image, segs, s.base, importAddrs)
+	if err != nil {
+		return err
+	}
+	s.result.Rebases, s.result.Binds = rebases, binds
+	return nil
+}
+
+// writeImage writes the fixed-up image into the reserved mapping.
+func (s *mapSession) writeImage() error {
+	return s.c.WriteMem(s.base, s.image, s.chunk)
+}
+
+// registerClasses uniques the image's selrefs and registers its classes with
+// objc_readClassPair — one in-process stub call each.
+func (s *mapSession) registerClasses() error {
+	classlist, ok := s.m.Sections["__objc_classlist"]
+	if !ok || classlist.Size == 0 {
+		return nil
+	}
+	if selrefs, ok := s.m.Sections["__objc_selrefs"]; ok && selrefs.Size > 0 {
+		n := selrefs.Size / 8
+		if _, err := s.t.Call(s.stub+StubSelrefOff, s.helpers["sel_registerName"], n, s.base+selrefs.Addr); err != nil {
+			return err
 		}
-		blobBase := alloc(uint64(len(blob)))
-		if err := c.WriteMem(blobBase, blob, chunk); err != nil {
-			return nil, err
-		}
-		namesTbl := alloc(uint64(len(imports)) * 8)
-		tbl := make([]byte, len(imports)*8)
-		for i := range imports {
-			binary.LittleEndian.PutUint64(tbl[i*8:], blobBase+uint64(offs[i]))
-		}
-		if err := c.WriteMem(namesTbl, tbl, chunk); err != nil {
-			return nil, err
-		}
-		outTbl := alloc(uint64(len(imports)) * 8)
-		if _, err := t.Call(stubMem+StubDlsymOff, helpers["dlsym"], uint64(len(imports)),
-			namesTbl, outTbl, rtldDefault); err != nil {
-			return nil, err
-		}
-		raw, err := c.Memory(outTbl, uint64(len(imports))*8)
-		if err != nil {
-			return nil, err
-		}
-		importAddrs := make([]uint64, len(imports))
-		for i := range imports {
-			importAddrs[i] = binary.LittleEndian.Uint64(raw[i*8:])
-			if importAddrs[i] == 0 {
-				result.Unresolved = append(result.Unresolved, imports[i])
+		s.result.Selrefs = int(n)
+	}
+	var imageinfo uint64
+	if ii, ok := s.m.Sections["__objc_imageinfo"]; ok {
+		imageinfo = s.base + ii.Addr
+	}
+	n := classlist.Size / 8
+	if _, err := s.t.Call(s.stub+StubClassOff, s.helpers["objc_readClassPair"], n, s.base+classlist.Addr, imageinfo); err != nil {
+		return err
+	}
+	s.result.Classes = int(n)
+	return nil
+}
+
+// applyImageCategories attaches the image's __objc_catlist categories (which
+// objc_readClassPair does not), before the initializer that may swizzle them.
+func (s *mapSession) applyImageCategories() error {
+	if s.m.SectionCount("__objc_catlist") == 0 {
+		return nil
+	}
+	helpers, err := s.resolver.Resolve(categoryHelpers)
+	if err != nil {
+		return fmt.Errorf("resolve category helpers: %w", err)
+	}
+	applied, err := applyCategories(s.c, s.t, s.base, s.m, helpers)
+	if err != nil {
+		return err
+	}
+	s.result.Categories = applied
+	return nil
+}
+
+// runInitializers runs each offset-based initializer (the agent's C constructor),
+// which is what starts the agent.
+func (s *mapSession) runInitializers() error {
+	for _, is := range s.m.InitSections {
+		for o := uint64(0); o < is.Size; o += 4 {
+			initOff := uint64(binary.LittleEndian.Uint32(s.image[is.Addr+o:]))
+			if _, err := s.t.Call(s.base + initOff); err != nil {
+				return err
 			}
 		}
-		rb, bn, err := ApplyFixups(image, segs, base, importAddrs)
-		if err != nil {
-			return nil, err
-		}
-		result.Rebases, result.Binds = rb, bn
 	}
-
-	// 5. write the fixed-up image
-	if err := c.WriteMem(base, image, chunk); err != nil {
-		return nil, err
-	}
-
-	// 6. register ObjC metadata (selrefs then classes), one stub call each
-	if n := m.SectionCount("__objc_classlist"); n > 0 {
-		if sel := m.SectionCount("__objc_selrefs"); sel > 0 {
-			sr := m.Sections["__objc_selrefs"]
-			if _, err := t.Call(stubMem+StubSelrefOff, helpers["sel_registerName"], sel, base+sr.Addr); err != nil {
-				return nil, err
-			}
-			result.Selrefs = int(sel)
-		}
-		cl := m.Sections["__objc_classlist"]
-		var imageinfo uint64
-		if ii, ok := m.Sections["__objc_imageinfo"]; ok {
-			imageinfo = base + ii.Addr
-		}
-		if _, err := t.Call(stubMem+StubClassOff, helpers["objc_readClassPair"], n, base+cl.Addr, imageinfo); err != nil {
-			return nil, err
-		}
-		result.Classes = int(n)
-	}
-
-	// 6b. apply categories (objc_readClassPair does not, and there is no public API
-	// to attach one from a mapped image) — before init, which may swizzle them.
-	if m.SectionCount("__objc_catlist") > 0 {
-		ch, err := resolver.Resolve(categoryHelpers)
-		if err != nil {
-			return nil, fmt.Errorf("resolve category helpers: %w", err)
-		}
-		applied, err := applyCategories(c, t, base, m, ch)
-		if err != nil {
-			return nil, err
-		}
-		result.Categories = applied
-	}
-
-	// 7. run initializers (starts the agent) unless suppressed
-	if opt.RunInit {
-		for _, is := range m.InitSections {
-			for o := uint64(0); o < is.Size; o += 4 {
-				initOff := uint64(binary.LittleEndian.Uint32(image[is.Addr+o:]))
-				if _, err := t.Call(base + initOff); err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-
-	return result, nil
+	return nil
 }
 
 // stripOneUnderscore removes exactly one leading linker underscore (not all).
