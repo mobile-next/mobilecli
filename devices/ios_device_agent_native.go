@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
 	"github.com/mobile-next/mobilecli/agents"
 	"github.com/mobile-next/mobilecli/devices/ios/machomap"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+// injectTimeout bounds the whole debugserver map. The map normally takes a few
+// seconds; this is only a ceiling so a wedged device (a debugserver reply that
+// never arrives) cannot hang the CLI/daemon indefinitely.
+const injectTimeout = 60 * time.Second
 
 // injectAgentNative maps the compiled agent dylib into the foreground app over
 // the developer debugserver and runs its initializer, with no code signing and
@@ -23,7 +29,19 @@ func injectAgentNative(device goios.DeviceEntry, proxyPort, pid int) (int, error
 		return 0, fmt.Errorf("connect debug proxy: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
-	return mapAgentOverConn(conn, pid)
+
+	// Bound the blocking RSP exchanges: closing the connection when the deadline
+	// expires unblocks any pending read in mapAgentOverConn, which then returns an
+	// error instead of hanging.
+	timedOut := false
+	timer := time.AfterFunc(injectTimeout, func() { timedOut = true; _ = conn.Close() })
+	defer timer.Stop()
+
+	port, err := mapAgentOverConn(conn, pid)
+	if timedOut {
+		return 0, fmt.Errorf("agent injection timed out after %s (device unresponsive)", injectTimeout)
+	}
+	return port, err
 }
 
 // mapAgentOverConn runs the attach + map + boot sequence on an already-opened
