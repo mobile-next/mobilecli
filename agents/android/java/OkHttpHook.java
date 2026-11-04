@@ -68,22 +68,45 @@ final class OkHttpHook {
 		Object request = call(chain, "request");
 		String url = call(request, "url").toString();
 		String method = (String) call(request, "method");
+		// Read the body only for requests that will actually pause. Reading it for
+		// every request wastes a copy and, for a streaming body that does not
+		// declare isOneShot/isDuplex, the later writeTo from proceed would send a
+		// truncated upload — corrupting the app's own request just because we attached.
+		if (!Network.shouldPause(method, url)) {
+			return call(chain, "proceed", request);
+		}
 		JSONObject headers = headersToJson(call(request, "headers"));
 		Network.Verdict verdict = Network.await(method, url, headers, requestBodyBytes(request));
 		switch (verdict.action) {
 			case "fulfill":
-				return syntheticResponse(request, verdict.params);
+				return failOpenToIO(request, verdict, true);
 			case "abort":
 				throw new IOException("mobilecli network abort: "
 					+ verdict.params.optString("errorCode", "failed"));
 			case "continue":
 				if (verdict.params.has("url") || verdict.params.has("method")
 					|| verdict.params.has("headers") || verdict.params.has("body")) {
-					request = overrideRequest(request, verdict.params);
+					request = failOpenToIO(request, verdict, false);
 				}
 				return call(chain, "proceed", request);
 			default:
 				throw new IOException("unknown network decision: " + verdict.action);
+		}
+	}
+
+	// A malformed host verdict (bad url/method/headers, GET with a body) makes the
+	// OkHttp builders throw IllegalArgumentException/JSONException. Those are not
+	// IOExceptions, so on an async call OkHttp lets them escape on the dispatcher
+	// thread and crash the app. Wrap them so the request fails cleanly instead.
+	private static Object failOpenToIO(Object request, Network.Verdict verdict, boolean fulfill) throws IOException {
+		try {
+			return fulfill ? syntheticResponse(request, verdict.params)
+				: overrideRequest(request, verdict.params);
+		} catch (IOException e) {
+			throw e;
+		} catch (Throwable e) {
+			throw new IOException("mobilecli network " + (fulfill ? "fulfill" : "continue")
+				+ " failed: " + e.getMessage(), e);
 		}
 	}
 
@@ -151,7 +174,10 @@ final class OkHttpHook {
 		String method = params.optString("method", (String) call(request, "method"));
 		Object body = call(request, "body");
 		if (params.has("body")) {
-			body = responseBody(request, Base64.decode(params.getString("body"), Base64.DEFAULT), true);
+			// Keep the original body's media type; otherwise OkHttp's bridge
+			// interceptor emits the request with no Content-Type and servers reject it.
+			Object mediaType = body == null ? null : call(body, "contentType");
+			body = responseBody(request, Base64.decode(params.getString("body"), Base64.DEFAULT), true, mediaType);
 		}
 		if (params.has("method") || params.has("body")) {
 			call(builder, "method", method, body);
@@ -180,11 +206,11 @@ final class OkHttpHook {
 			}
 		}
 		byte[] bytes = params.has("body") ? Base64.decode(params.getString("body"), Base64.DEFAULT) : new byte[0];
-		call(builder, "body", responseBody(request, bytes, false));
+		call(builder, "body", responseBody(request, bytes, false, null));
 		return call(builder, "build");
 	}
 
-	private static Object responseBody(Object request, byte[] bytes, boolean requestBody) throws Throwable {
+	private static Object responseBody(Object request, byte[] bytes, boolean requestBody, Object mediaType) throws Throwable {
 		ClassLoader loader = request.getClass().getClassLoader();
 		Class<?> bodyClass = Class.forName(requestBody ? "okhttp3.RequestBody" : "okhttp3.ResponseBody", true, loader);
 		for (Method method : bodyClass.getMethods()) {
@@ -196,10 +222,10 @@ final class OkHttpHook {
 				continue;
 			}
 			if (types[0] == byte[].class && types[1].getName().equals("okhttp3.MediaType")) {
-				return invoke(method, null, bytes, null);
+				return invoke(method, null, bytes, mediaType);
 			}
 			if (types[1] == byte[].class && types[0].getName().equals("okhttp3.MediaType")) {
-				return invoke(method, null, null, bytes);
+				return invoke(method, null, mediaType, bytes);
 			}
 		}
 		throw new IOException("unsupported OkHttp body factory");

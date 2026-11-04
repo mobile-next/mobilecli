@@ -143,6 +143,18 @@ final class Network {
 		return ok();
 	}
 
+	/**
+	 * True if a request on this route would be paused. The interceptor checks this
+	 * before reading the request body, so disabled or non-matching requests are not
+	 * read at all — avoiding a needless body copy and a second writeTo that would
+	 * corrupt a streaming upload whose body does not declare isOneShot/isDuplex.
+	 */
+	static boolean shouldPause(String method, String url) {
+		synchronized (LOCK) {
+			return enabled && matchesLocked(url, method) && EVENTS.size() < MAX_EVENTS;
+		}
+	}
+
 	/** Called only by the OkHttp interceptor on the app's request thread. */
 	static Verdict await(String method, String url, JSONObject headers, byte[] body) {
 		Pause pause = new Pause();
