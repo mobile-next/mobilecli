@@ -20,6 +20,7 @@ type Target struct {
 	thread      uint64
 	saved       string
 	returnPC    uint64
+	landing     uint64 // address of the breakpoint a called function returns to
 	sp          uint64
 	stackLo     uint64
 	stackBackup []byte
@@ -60,10 +61,27 @@ func NewTarget(c *RSP) (*Target, error) {
 	if t.stackBackup, err = c.Memory(t.stackLo, t.sp-t.stackLo); err != nil {
 		return nil, err
 	}
-	if err := c.OK(fmt.Sprintf("Z0,%x,4", t.returnPC)); err != nil {
+	// Default: a called function returns to a breakpoint planted at the thread's
+	// current PC. That is unsafe for functions that re-enter the code the thread
+	// was stopped in (NSLog/libdispatch/runloop), which can trip the breakpoint
+	// mid-execution. SetLanding switches to a private trampoline that callee code
+	// never naturally executes.
+	t.landing = t.returnPC
+	if err := c.OK(fmt.Sprintf("Z0,%x,4", t.landing)); err != nil {
 		return nil, err
 	}
 	return t, nil
+}
+
+// SetLanding moves the return-breakpoint to addr — a dedicated, never-naturally-
+// executed address (e.g. a private r-x page). This avoids false early stops when
+// a called function re-enters the code region the thread was stopped in.
+func (t *Target) SetLanding(addr uint64) error {
+	if err := t.c.OK(fmt.Sprintf("z0,%x,4", t.landing)); err != nil {
+		return err
+	}
+	t.landing = addr
+	return t.c.OK(fmt.Sprintf("Z0,%x,4", addr))
 }
 
 // Call invokes fn(args...) on the borrowed thread and returns x0. LR points at
@@ -74,7 +92,7 @@ func (t *Target) Call(fn uint64, args ...uint64) (uint64, error) {
 			return 0, err
 		}
 	}
-	if err := t.c.WriteReg(regLR, t.thread, t.returnPC); err != nil {
+	if err := t.c.WriteReg(regLR, t.thread, t.landing); err != nil {
 		return 0, err
 	}
 	if err := t.c.WriteReg(regSP, t.thread, t.sp-0x100); err != nil {
@@ -91,7 +109,7 @@ func (t *Target) Call(fn uint64, args ...uint64) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if !strings.HasPrefix(resp, "T05") || pc != t.returnPC {
+	if !strings.HasPrefix(resp, "T05") || pc != t.landing {
 		return 0, fmt.Errorf("unexpected stop calling %#x: resp=%.60q pc=%#x", fn, resp, pc)
 	}
 	return t.c.ReadReg(0, t.thread)
@@ -105,7 +123,7 @@ func (t *Target) Restore() error {
 	if err := t.c.OK(fmt.Sprintf("QRestoreRegisterState:%s;thread:%x;", t.saved, t.thread)); err != nil {
 		return err
 	}
-	return t.c.OK(fmt.Sprintf("z0,%x,4", t.returnPC))
+	return t.c.OK(fmt.Sprintf("z0,%x,4", t.landing))
 }
 
 func isDigits(s string) bool {

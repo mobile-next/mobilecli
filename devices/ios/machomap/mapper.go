@@ -123,6 +123,12 @@ func Map(c *RSP, dylib []byte, res Resolver, opt Options) (*Result, error) {
 	if err := c.WriteMem(stubMem, StubBytes, chunk); err != nil {
 		return nil, err
 	}
+	// Return called functions to a private r-x address in the stub page (well past
+	// the stub bytes) rather than the thread's live PC, so re-entrant callee code
+	// (NSLog/libdispatch in the initializer) can't trip the return breakpoint early.
+	if err := t.SetLanding(stubMem + 0x800); err != nil {
+		return nil, err
+	}
 	cur := scratch
 	alloc := func(size uint64) uint64 {
 		cur = (cur + 7) &^ 7

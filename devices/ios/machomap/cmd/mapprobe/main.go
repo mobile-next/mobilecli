@@ -257,18 +257,37 @@ func main() {
 	if !*runInit {
 		fmt.Println("(initializer NOT run; --init to start the agent)")
 	} else {
-		// boot check: the agent constructor binds a server and exports its port
-		if m, err := machomap.ParseMacho(dylib); err == nil {
-			if off, ok := m.Symbols["_mobilecli_get_port"]; ok {
-				t, err := machomap.NewTarget(c)
-				check(err)
-				port, err := t.Call(res.Base + off)
-				check(err)
-				_ = t.Restore()
-				fmt.Printf("mobilecli_get_port() = %d  (agent %s)\n", port&0xffffffff,
-					map[bool]string{true: "RUNNING", false: "did not bind"}[port&0xffffffff != 0])
-			}
+		// verify the agent booted: the constructor binds a control server (exported via
+		// mobilecli_get_port) and installs the NSURLSession swizzle, after which
+		// +[NSURLSessionConfiguration defaultSessionConfiguration]'s IMP points into our
+		// mapped image.
+		m, _ := machomap.ParseMacho(dylib)
+		hv, err := machomap.NewExportTrieResolver(c).Resolve([]string{"mmap", "objc_getClass", "object_getClass", "sel_registerName", "class_getMethodImplementation"})
+		check(err)
+		t, err := machomap.NewTarget(c)
+		check(err)
+		defer func() { _ = t.Restore() }()
+		scratch, err := t.Call(hv["mmap"], 0, 0x1000, 3, 0x1002, ^uint64(0), 0)
+		check(err)
+		cur := scratch
+		put := func(s string) uint64 {
+			b := append([]byte(s), 0)
+			_ = c.WriteMem(cur, b, 0)
+			p := cur
+			cur += uint64(len(b))
+			return p
 		}
+		call := func(fn uint64, a ...uint64) uint64 { v, e := t.Call(fn, a...); check(e); return v }
+
+		if off, ok := m.Symbols["_mobilecli_get_port"]; ok {
+			port := call(res.Base+off) & 0xffffffff
+			fmt.Printf("control server: mobilecli_get_port() = %d  (%s)\n", port,
+				map[bool]string{true: "UP", false: "not bound"}[port != 0])
+		}
+		meta := call(hv["object_getClass"], call(hv["objc_getClass"], put("NSURLSessionConfiguration")))
+		imp := call(hv["class_getMethodImplementation"], meta, call(hv["sel_registerName"], put("defaultSessionConfiguration")))
+		fmt.Printf("network swizzle: +[NSURLSessionConfiguration defaultSessionConfiguration] IMP=%#x  %s\n", imp,
+			map[bool]string{true: "INSTALLED (points into mapped agent)", false: "NOT installed"}[imp >= res.Base && imp < res.Base+res.ImageSize])
 	}
 	_, _ = c.Request("D")
 	fmt.Printf("detached; total %.3fs\n", time.Since(start).Seconds())
