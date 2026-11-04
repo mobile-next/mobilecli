@@ -38,7 +38,6 @@ static BOOL enabled;
 static NSUInteger sequence;
 static NSInteger pollers;
 static NSDate *lastPollEnd;
-static NSURLSession *captureSession;
 static const void *kDelegateCloneKey = &kDelegateCloneKey;
 static const void *kIsDelegateCloneKey = &kIsDelegateCloneKey;
 
@@ -108,40 +107,58 @@ static void addProtocol(NSURLSessionConfiguration *configuration) {
 - (NSURLSessionDataTask *)mobile_dataTaskWithRequest:(NSURLRequest *)request;
 @end
 
+// interceptClone returns a session whose configuration is copied from `session`
+// — preserving its cookie storage, HTTPAdditionalHeaders, credential storage and
+// timeouts — plus MobileURLProtocol, together with the original delegate and
+// delegate queue. It is created once per session and reused. It returns nil when
+// `session` is itself such a clone, so that clone's own tasks run normally (and
+// are intercepted through the protocol already in its configuration). Routing a
+// matched request through this clone, rather than a shared ephemeral session,
+// keeps the app's session context (notably cookies) on intercepted requests.
+static NSURLSession *interceptClone(NSURLSession *session) {
+    if ([objc_getAssociatedObject(session, kIsDelegateCloneKey) boolValue]) {
+        return nil;
+    }
+    NSURLSession *clone = objc_getAssociatedObject(session, kDelegateCloneKey);
+    if (clone) {
+        return clone;
+    }
+    @synchronized (session) {
+        clone = objc_getAssociatedObject(session, kDelegateCloneKey);
+        if (!clone) {
+            NSURLSessionConfiguration *configuration = [session.configuration copy];
+            addProtocol(configuration);
+            clone = [NSURLSession sessionWithConfiguration:configuration
+                delegate:session.delegate delegateQueue:session.delegateQueue];
+            objc_setAssociatedObject(clone, kIsDelegateCloneKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(session, kDelegateCloneKey, clone, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    }
+    return clone;
+}
+
 @implementation NSURLSession (MobileNetworkTasks)
 - (NSURLSessionDataTask *)mobile_dataTaskWithURL:(NSURL *)url
     completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    if (self != captureSession && [MobileNetwork matches:[NSURLRequest requestWithURL:url]]) {
-        return [captureSession dataTaskWithURL:url completionHandler:completionHandler];
+    NSURLSession *clone = interceptClone(self);
+    if (clone && [MobileNetwork matches:[NSURLRequest requestWithURL:url]]) {
+        return [clone dataTaskWithURL:url completionHandler:completionHandler];
     }
     return [self mobile_dataTaskWithURL:url completionHandler:completionHandler];
 }
 
 - (NSURLSessionDataTask *)mobile_dataTaskWithRequest:(NSURLRequest *)request
     completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    if (self != captureSession && [MobileNetwork matches:request]) {
-        return [captureSession dataTaskWithRequest:request completionHandler:completionHandler];
+    NSURLSession *clone = interceptClone(self);
+    if (clone && [MobileNetwork matches:request]) {
+        return [clone dataTaskWithRequest:request completionHandler:completionHandler];
     }
     return [self mobile_dataTaskWithRequest:request completionHandler:completionHandler];
 }
 
 - (NSURLSessionDataTask *)mobile_dataTaskWithRequest:(NSURLRequest *)request {
-    if (![objc_getAssociatedObject(self, kIsDelegateCloneKey) boolValue] &&
-        [MobileNetwork matches:request]) {
-        NSURLSession *clone = objc_getAssociatedObject(self, kDelegateCloneKey);
-        if (!clone) {
-            @synchronized (self) {
-                clone = objc_getAssociatedObject(self, kDelegateCloneKey);
-                if (!clone) {
-                    NSURLSessionConfiguration *configuration = [self.configuration copy];
-                    addProtocol(configuration);
-                    clone = [NSURLSession sessionWithConfiguration:configuration
-                        delegate:self.delegate delegateQueue:self.delegateQueue];
-                    objc_setAssociatedObject(clone, kIsDelegateCloneKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                    objc_setAssociatedObject(self, kDelegateCloneKey, clone, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                }
-            }
-        }
+    NSURLSession *clone = interceptClone(self);
+    if (clone && [MobileNetwork matches:request]) {
         return [clone dataTaskWithRequest:request];
     }
     return [self mobile_dataTaskWithRequest:request];
@@ -171,9 +188,6 @@ static void addProtocol(NSURLSessionConfiguration *configuration) {
         method_exchangeImplementations(
             class_getInstanceMethod(meta, @selector(ephemeralSessionConfiguration)),
             class_getInstanceMethod(meta, @selector(mobile_ephemeralSessionConfiguration)));
-        NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-        addProtocol(configuration);
-        captureSession = [NSURLSession sessionWithConfiguration:configuration];
         method_exchangeImplementations(
             class_getInstanceMethod([NSURLSession class], @selector(dataTaskWithURL:completionHandler:)),
             class_getInstanceMethod([NSURLSession class], @selector(mobile_dataTaskWithURL:completionHandler:)));
@@ -478,7 +492,13 @@ static NSURLRequest *materializeSmallBody(NSURLRequest *request) {
     }
     NSMutableURLRequest *marked = [request mutableCopy];
     [NSURLProtocol setProperty:@YES forKey:kHandledKey inRequest:marked];
-    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    // Use the default (not ephemeral) configuration so the forwarded request
+    // carries the app's shared cookies and credentials and so Set-Cookie
+    // responses are persisted — a plain `continue` must not change what reaches
+    // the server. Remove MobileURLProtocol to avoid intercepting our own forward.
+    // (An NSURLProtocol cannot reach the originating session's own config, so a
+    // session with a private, non-shared cookie store is not covered here.)
+    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
     NSMutableArray *classes = [configuration.protocolClasses mutableCopy] ?: [NSMutableArray array];
     [classes removeObject:[MobileURLProtocol class]];
     configuration.protocolClasses = classes;
