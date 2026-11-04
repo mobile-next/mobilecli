@@ -97,3 +97,14 @@ func (s *SimulatorDevice) NetworkInterceptor() (NetworkInterceptable, error) {
 	}
 	return agentNetwork{port: port}, nil
 }
+
+// NetworkInterceptor maps the agent dylib into the foreground app on a real iOS
+// device (signing-free, over the debugserver) and returns a relay to its in-app
+// agent. The agent's dispatcher routes network.* RPC to MobileNetwork.
+func (d *IOSDevice) NetworkInterceptor() (NetworkInterceptable, error) {
+	port, err := d.ensureIOSDeviceAgentReady()
+	if err != nil {
+		return nil, err
+	}
+	return agentNetwork{port: port}, nil
+}
