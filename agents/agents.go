@@ -22,10 +22,10 @@ var AndroidMobilecliDEX []byte
 //go:embed ios/agent-sim.dylib
 var IOSAgentSimDylib []byte
 
-// IOSRealDeviceWebViewAgent is the Objective-C expression evaluated via LLDB to
-// inject the webview agent into a foreground app on a real iOS device. It is an
-// LLDB expression (top-level statements), not a standalone translation unit, so
-// it is not compiled — only embedded. See devices/ios_device_webview.go.
+// IOSAgentDevDylib is the real-device build of the compiled agent (server +
+// bridge + dispatcher + network). It is mapped into a foreground app over the
+// debugserver by devices/ios/machomap — no code signing, no re-signing — and
+// supersedes the LLDB-evaluated webview source agent on real devices.
 //
-//go:embed ios-real/agent.m
-var IOSRealDeviceWebViewAgent string
+//go:embed ios/agent-dev.dylib
+var IOSAgentDevDylib []byte

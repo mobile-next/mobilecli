@@ -10,10 +10,10 @@ import (
 )
 
 // RSP is a GDB Remote Serial Protocol client for the on-device debugserver. It
-// differs from devices/ios/debugserver.GDBServer in that it fully decodes
-// responses — run-length compression ('*') and byte escaping ('}') — which is
-// required when we consume register and memory reads ourselves rather than
-// forwarding raw bytes to an external lldb. Mirrors the proven raw_attach.py.
+// fully decodes responses — run-length compression ('*') and byte escaping
+// ('}') — which is required when we consume register and memory reads ourselves
+// (rather than forwarding raw bytes to an external lldb). Mirrors the proven
+// raw_attach.py prototype.
 type RSP struct {
 	w     io.Writer
 	r     *bufio.Reader
