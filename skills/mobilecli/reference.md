@@ -246,9 +246,24 @@ Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.
 - `pointerMove`: Moves coordinates to target `x`, `y` over `duration` (in milliseconds).
 - `pointerUp`: Lifts pointer off screen.
-- `pause`: Sleeps for `duration` (in milliseconds).
+- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead (iOS only for now).
 
 Multi-finger gestures: give each action a `button` (finger index, default 0) and list every finger's actions contiguously, one complete `pointerMove` → `pointerDown` → ... → `pointerUp` sequence per finger; the fingers then move at the same time on both iOS and Android.
+
+To tap more than once in one gesture (a double tap, or VoiceOver's double tap to activate), use a second finger that pauses until the first has lifted. A finger touches down only once per gesture.
+```json
+[
+  { "type": "pointerMove", "x": 200, "y": 400, "button": 0 },
+  { "type": "pointerDown", "button": 0 },
+  { "type": "pause", "duration": 50, "button": 0 },
+  { "type": "pointerUp", "button": 0 },
+  { "type": "pause", "duration": 200, "button": 1 },
+  { "type": "pointerMove", "x": 200, "y": 400, "button": 1 },
+  { "type": "pointerDown", "button": 1 },
+  { "type": "pause", "duration": 50, "button": 1 },
+  { "type": "pointerUp", "button": 1 }
+]
+```
 
 **Example: Drag-and-Drop Action**
 ```json
