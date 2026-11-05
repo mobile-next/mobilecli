@@ -249,3 +249,34 @@ func TestOnShutdownRunsAfterRunStopsServing(t *testing.T) {
 		t.Fatal("OnShutdown was not called")
 	}
 }
+
+func TestShutdownCancelsInFlightHandlerContext(t *testing.T) {
+	rd := startTestDaemon(t, 0, nil)
+
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := CallStream(context.Background(), "block", nil, nil)
+		callDone <- err
+	}()
+	waitUntilHandlerIsRunning(t)
+
+	require.NoError(t, Shutdown())
+
+	select {
+	case <-rd.blocked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight handler was not cancelled when the daemon shut down")
+	}
+	select {
+	case <-callDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight call did not return after the daemon shut down")
+	}
+}
+
+// waitUntilHandlerIsRunning gives a call started in another goroutine time to
+// reach its handler.
+func waitUntilHandlerIsRunning(t *testing.T) {
+	t.Helper()
+	time.Sleep(200 * time.Millisecond)
+}
