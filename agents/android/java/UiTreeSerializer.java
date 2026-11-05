@@ -19,6 +19,8 @@ class UiTreeSerializer {
 
 	private static final String TAG = "UiTreeSerializer";
 
+	private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
+
 	// The UI must be quiet for this long before waitForIdle returns, bounded by
 	// the caller-supplied global timeout. Mirrors UiDevice.waitForIdle semantics.
 	private static final long IDLE_WINDOW_MS = 500;
@@ -45,8 +47,16 @@ class UiTreeSerializer {
 				continue;
 			}
 			AccessibilityNodeInfo root = window.getRoot();
-			if (root != null) roots.add(root);
 			window.recycle();
+			if (root == null) {
+				continue;
+			}
+			// The status bar clock ticks every second, so a dump with it never matches the one before.
+			if (!full && isSystemUi(root)) {
+				root.recycle();
+				continue;
+			}
+			roots.add(root);
 		}
 
 		// Windows can be present yet expose null roots (not queryable at the
@@ -65,6 +75,12 @@ class UiTreeSerializer {
 		} finally {
 			for (AccessibilityNodeInfo root : roots) root.recycle();
 		}
+	}
+
+	// Status bar, navigation bar and notification shade all belong to System UI.
+	private static boolean isSystemUi(AccessibilityNodeInfo root) {
+		CharSequence packageName = root.getPackageName();
+		return packageName != null && SYSTEM_UI_PACKAGE.contentEquals(packageName);
 	}
 
 	// This connection is long-lived, so node reads are served from the framework's
