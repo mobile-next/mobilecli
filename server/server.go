@@ -760,7 +760,7 @@ type DeviceRebootParams struct {
 type DumpUIParams struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format,omitempty"` // "json" or "raw"
-	Full     bool   `json:"full,omitempty"`   // include the on-screen keyboard and other normally hidden windows
+	Full     bool   `json:"full,omitempty"`   // include the on-screen keyboard, the Android status bar and other normally hidden windows
 }
 
 type AppsLaunchParams struct {

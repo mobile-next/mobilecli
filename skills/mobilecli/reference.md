@@ -136,7 +136,7 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Raw XML/JSON source from agent
   mobilecli dump ui --device <device-id> --format raw
 
-  # Include elements normally left out, such as the on-screen keyboard (Android)
+  # Include elements normally left out, such as the on-screen keyboard and status bar (Android)
   mobilecli dump ui --device <device-id> --full
   ```
 * **List Webviews**:
