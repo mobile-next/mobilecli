@@ -182,6 +182,18 @@ const (
 	FormatAVC   = "avc"
 )
 
+// ValidateScreenCaptureFormat rejects a format the device cannot stream, so a
+// request for avc fails loudly instead of quietly getting mjpeg frames.
+func ValidateScreenCaptureFormat(platform, deviceType, format string) error {
+	if format != FormatMJPEG && format != FormatAVC {
+		return fmt.Errorf("format must be 'mjpeg' or 'avc' for screen capture")
+	}
+	if format == FormatAVC && platform == PlatformIOS && deviceType == DeviceTypeSimulator {
+		return fmt.Errorf("avc is not supported on iOS simulators, use mjpeg")
+	}
+	return nil
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
