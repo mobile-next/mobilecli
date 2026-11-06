@@ -5,15 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
-	"github.com/mobile-next/mobilecli/agents"
 	iosutil "github.com/mobile-next/mobilecli/devices/ios"
 	"github.com/mobile-next/mobilecli/utils"
 )
@@ -36,10 +31,6 @@ import (
 // (see agents/ios-real/agent.m). A fixed port lets the reuse fast-path find an
 // already-running agent without scanning or persisting state between runs.
 const iosDeviceAgentPort = 12008
-
-// deviceAgentPortRE extracts the bound port from LLDB's expression result line,
-// e.g. "(int) $0 = 12008".
-var deviceAgentPortRE = regexp.MustCompile(`\$\d+\s*=\s*(\d+)`)
 
 // deviceAgentPortCache maps device UDID → local TCP port of its injected agent.
 // This is intentionally separate from the simulator's (udid, bundleID) cache in
@@ -164,17 +155,10 @@ func (d *IOSDevice) injectFreshAgent() (int, error) {
 		return 0, fmt.Errorf("no foreground app (pid 0) — open an app first")
 	}
 
-	utils.Verbose("injecting agent into %s (pid %d) via LLDB", activeApp.BundleID, activeApp.ProcessID)
-	lldbProxyPort, cancelProxy, err := startLLDBProxy(device, proxyPort, activeApp.ProcessID)
+	utils.Verbose("mapping agent dylib into %s (pid %d)", activeApp.BundleID, activeApp.ProcessID)
+	devicePort, err := injectAgentNative(device, proxyPort, activeApp.ProcessID)
 	if err != nil {
-		return 0, fmt.Errorf("start lldb proxy: %w", err)
-	}
-	defer cancelProxy()
-	utils.Verbose("LLDB proxy listening on localhost:%d", lldbProxyPort)
-
-	devicePort, err := injectServerViaLLDB(lldbProxyPort)
-	if err != nil {
-		return 0, fmt.Errorf("inject server via lldb: %w", err)
+		return 0, fmt.Errorf("inject agent: %w", err)
 	}
 	utils.Verbose("agent started on device port %d", devicePort)
 
@@ -215,45 +199,6 @@ func iosDeviceDebugProxyPort(device goios.DeviceEntry) (int, error) {
 		return 0, fmt.Errorf("com.apple.internal.dt.remote.debugproxy not in RSD")
 	}
 	return p, nil
-}
-
-// injectServerViaLLDB connects LLDB to the proxy (which has already attached to
-// the target process), evaluates the agent expression to start a persistent HTTP
-// server inside the app, and returns the device-side TCP port.
-func injectServerViaLLDB(localProxyPort int) (int, error) {
-	const lldbTimeout = 120 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), lldbTimeout)
-	defer cancel()
-
-	utils.Verbose("running LLDB (timeout %s)", lldbTimeout)
-	cmd := exec.CommandContext(ctx, "lldb",
-		"-o", "settings set target.process.memory-cache-line-size 16384",
-		"-o", "platform select remote-ios",
-		"-o", fmt.Sprintf("process connect connect://localhost:%d", localProxyPort),
-		// The leading newline after "--" is required: it puts LLDB into multi-line
-		// expression mode so the whole agent source is treated as one expression
-		// (without it, LLDB runs only the first line and parses the rest as commands).
-		"-o", "expr -l objc -- \n"+agents.IOSRealDeviceWebViewAgent,
-		"-o", "detach",
-		"-o", "quit",
-	)
-	out, err := cmd.CombinedOutput()
-	utils.Verbose("LLDB finished (err=%v), output:\n%s", err, out)
-	if err != nil {
-		return 0, fmt.Errorf("lldb: %w\noutput:\n%s", err, out)
-	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		m := deviceAgentPortRE.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		port, err := strconv.Atoi(m[1])
-		if err == nil && port == iosDeviceAgentPort {
-			return port, nil
-		}
-	}
-	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
 // freeLocalPort asks the kernel for an unused local TCP port (bind :0, read it

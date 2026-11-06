@@ -47,6 +47,13 @@ func agentRequest(port int, method string, params any) (json.RawMessage, error) 
 }
 
 func agentRequestWithTimeout(port int, method string, params any, timeout time.Duration) (json.RawMessage, error) {
+	return agentRequestContext(context.Background(), port, method, params, timeout)
+}
+
+// agentRequestContext is agentRequestWithTimeout with a caller-supplied context,
+// so a long call (e.g. network.poll's long-poll) aborts as soon as the context
+// is cancelled instead of blocking until the agent replies or the timeout.
+func agentRequestContext(ctx context.Context, port int, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	payload, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", ID: "1", Method: method, Params: params})
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -58,7 +65,7 @@ func agentRequestWithTimeout(port int, method string, params any, timeout time.D
 	}()
 
 	client := &http.Client{Timeout: timeout}
-	resp, err := postJSON(client, port, bytes.NewReader(payload))
+	resp, err := postJSONContext(ctx, client, port, bytes.NewReader(payload))
 	if err != nil {
 		if netErr := net.Error(nil); errors.As(err, &netErr) && netErr.Timeout() {
 			return nil, fmt.Errorf("%w on port %d after %s: %v", errAgentTimedOut, port, timeout, err)
@@ -100,7 +107,11 @@ func isAgentReady(port int) bool {
 }
 
 func postJSON(client *http.Client, port int, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("http://localhost:%d/", port), body)
+	return postJSONContext(context.Background(), client, port, body)
+}
+
+func postJSONContext(ctx context.Context, client *http.Client, port int, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://localhost:%d/", port), body)
 	if err != nil {
 		return nil, err
 	}
