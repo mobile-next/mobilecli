@@ -12,37 +12,20 @@ type keyboardStatusResult struct {
 	Visible bool `json:"visible"`
 }
 
-type keyboardHideResult struct {
-	Dismissed bool `json:"dismissed"`
-}
-
 // IsKeyboardVisible reports whether the software keyboard is showing in the
 // foreground app.
 func (c *DeviceKitClient) IsKeyboardVisible() (bool, error) {
-	var result keyboardStatusResult
-	err := c.callKeyboardMethod("device.io.keyboard.status", &result)
-	return result.Visible, err
-}
-
-// HideKeyboard asks the agent to dismiss the keyboard. It returns false when
-// no keyboard was showing.
-func (c *DeviceKitClient) HideKeyboard() (bool, error) {
-	var result keyboardHideResult
-	err := c.callKeyboardMethod("device.io.keyboard.hide", &result)
-	return result.Dismissed, err
-}
-
-func (c *DeviceKitClient) callKeyboardMethod(method string, result any) error {
-	raw, err := c.CallRPC(method, nil)
+	raw, err := c.CallRPC("device.io.keyboard.status", nil)
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) && rpcErr.Code == rpcMethodNotFound {
-		return errors.New("the agent on this device does not support keyboard commands, run `mobilecli agent install --force`")
+		return false, errors.New("the agent on this device does not support keyboard commands, run `mobilecli agent install --force`")
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
-	if err := json.Unmarshal(raw, result); err != nil {
-		return fmt.Errorf("failed to parse %s response: %w", method, err)
+	var result keyboardStatusResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, fmt.Errorf("failed to parse keyboard status response: %w", err)
 	}
-	return nil
+	return result.Visible, nil
 }

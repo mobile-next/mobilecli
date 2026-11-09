@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -262,6 +263,10 @@ type WebViewable interface {
 	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
+
+// errHideKeyboardNotSupportedOnIOS is returned by iOS devices: XCTest's private
+// dismissKeyboard blocks the agent for about a minute and leaves the keyboard up.
+var errHideKeyboardNotSupportedOnIOS = errors.New("hiding the keyboard is not supported on iOS yet")
 
 // KeyboardControllable is implemented by devices that can query and dismiss
 // the on-screen keyboard.

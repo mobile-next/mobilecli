@@ -28,18 +28,6 @@ func TestIsKeyboardVisibleReadsTheAgentAnswer(t *testing.T) {
 	}
 }
 
-func TestHideKeyboardReadsTheAgentAnswer(t *testing.T) {
-	client := agentAnswering(t, `{"jsonrpc":"2.0","id":1,"result":{"dismissed":true}}`)
-
-	dismissed, err := client.HideKeyboard()
-	if err != nil {
-		t.Fatalf("HideKeyboard: %v", err)
-	}
-	if !dismissed {
-		t.Error("dismissed = false, want true")
-	}
-}
-
 func TestAnOldAgentGetsTheInstallInstruction(t *testing.T) {
 	client := agentAnswering(t, `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`)
 
@@ -52,7 +40,7 @@ func TestAnOldAgentGetsTheInstallInstruction(t *testing.T) {
 func TestOtherAgentErrorsPassThrough(t *testing.T) {
 	client := agentAnswering(t, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"No foreground app found"}}`)
 
-	_, err := client.HideKeyboard()
+	_, err := client.IsKeyboardVisible()
 	if err == nil || !strings.Contains(err.Error(), "No foreground app found") {
 		t.Errorf("error = %v, want the agent's own message", err)
 	}
