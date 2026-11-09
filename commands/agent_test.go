@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mobile-next/mobilecli/devices"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,6 +15,28 @@ func TestAgentCommandsFailCleanlyForUnknownDevice(t *testing.T) {
 		assert.Equal(t, "error", resp.Status, method)
 		assert.Contains(t, resp.Error, "__nope__", method)
 	}
+}
+
+type fakeAgentDevice struct {
+	devices.ControllableDevice
+	deviceType string
+}
+
+func (d *fakeAgentDevice) DeviceType() string {
+	return d.deviceType
+}
+
+func TestRealDeviceNeedsAProvisioningProfile(t *testing.T) {
+	realDevice := &fakeAgentDevice{deviceType: devices.DeviceTypeReal}
+
+	assert.Error(t, requireProvisioningProfile(realDevice, ""))
+	assert.NoError(t, requireProvisioningProfile(realDevice, "/path/to/profile.mobileprovision"))
+}
+
+func TestSimulatorDoesNotNeedAProvisioningProfile(t *testing.T) {
+	simulator := &fakeAgentDevice{deviceType: devices.DeviceTypeSimulator}
+
+	assert.NoError(t, requireProvisioningProfile(simulator, ""))
 }
 
 func TestAgentMatchesAppUsesSuffixOnIOSOnly(t *testing.T) {

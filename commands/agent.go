@@ -107,6 +107,10 @@ func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
 				return agentStatusResponse("Agent is already installed", agent)
 			}
 
+			if err := requireProvisioningProfile(device, req.ProvisioningProfile); err != nil {
+				return NewErrorResponse(err)
+			}
+
 			utils.Verbose("installed agent version %s differs from expected %s, uninstalling before reinstall", agent.Version, expectedVersion)
 			if _, err := device.UninstallApp(agent.PackageName); err != nil {
 				return NewErrorResponse(fmt.Errorf("failed to uninstall existing agent: %w", err))
@@ -132,8 +136,8 @@ func installAgent(device devices.ControllableDevice, provisioningProfile string)
 		case devices.DeviceTypeSimulator:
 			return installAgentOnSimulator(device)
 		case devices.DeviceTypeReal:
-			if provisioningProfile == "" {
-				return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+			if err := requireProvisioningProfile(device, provisioningProfile); err != nil {
+				return err
 			}
 			return installAgentOnRealIOS(device, provisioningProfile)
 		default:
@@ -142,6 +146,15 @@ func installAgent(device devices.ControllableDevice, provisioningProfile string)
 	default:
 		return fmt.Errorf("unsupported platform: %s", device.Platform())
 	}
+}
+
+// requireProvisioningProfile runs before an old agent is removed, so a missing
+// profile cannot leave a real device with no agent.
+func requireProvisioningProfile(device devices.ControllableDevice, provisioningProfile string) error {
+	if device.DeviceType() == devices.DeviceTypeReal && provisioningProfile == "" {
+		return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+	}
+	return nil
 }
 
 // AgentUninstallCommand removes the on-device agent.
