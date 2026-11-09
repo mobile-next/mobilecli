@@ -17,13 +17,13 @@ import (
 // as the simulator and Android (same _ReusableRenderView root, same
 // invoke/localToGlobal), so this only handles the device-specific parts:
 //   - Getting the Dart VM service URI: the injected in-process agent
-//     (agents/ios-real/agent.m) reads it from the running Flutter engine and
+//     (agents/ios) reads it from the running Flutter engine and
 //     returns it over the existing agentCall channel — no logs, no mDNS.
 //   - Reaching it: the VM service listens on the device's loopback, so we
 //     forward a local port to it through the same go-ios tunnel the agent uses.
 //
-// Detection happens in two steps. Injecting the agent means attaching LLDB,
-// which pauses the app and takes ~20s on any debuggable app, so it is only
+// Detection happens in two steps. Injecting the agent means attaching over the
+// debug proxy, which pauses the app and takes several seconds on any debuggable app, so it is only
 // attempted when the foreground app's Info.plist advertises the Dart VM service
 // over bonjour — Flutter adds that to debug and profile builds, the only builds
 // that have a VM service to read. After that, detection is by attempt: a
@@ -33,7 +33,7 @@ import (
 
 // bonjour service types the Flutter tool adds to debug/profile builds so that
 // `flutter attach` can find the VM service; the second is what older Flutter versions called it.
-// how long to wait for a bonjour answer before falling back to LLDB.
+// how long to wait for a bonjour answer before falling back to the injected agent.
 const dartVMServiceMDNSTimeout = 3 * time.Second
 
 var dartVMServiceTypes = []string{"_dartVmService._tcp", "_dartobservatory._tcp"}
@@ -65,7 +65,7 @@ func advertisesDartVMService(app installationproxy.AppInfo) bool {
 
 // foregroundFlutterCandidate decides whether looking for a Dart VM is worth it,
 // and names the foreground app when it knows it. when the answer cannot be
-// determined it says yes with no bundle id, which is the old probe-over-LLDB
+// determined it says yes with no bundle id, which is the old probe-through-the-agent
 // behaviour.
 func (d *IOSDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
 	activeApp, err := d.deviceKitClient.GetActiveAppIdentity()
@@ -132,15 +132,15 @@ func (d *IOSDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
 	if uri := d.dartVMServiceURIViaMDNS(bundleID); uri != "" {
 		elements, err := d.dumpFlutterSourceDevice(uri)
 		if err != nil {
-			// the agent could only hand us this same URI, so injecting it over
-			// LLDB would cost ~20s and fail the same way
+			// the agent could only return this same URI, so injecting it would
+			// cost several seconds and fail the same way
 			utils.Verbose("flutter: render-tree dump failed, falling back: %v", err)
 			return nil, false
 		}
 		return elements, true
 	}
 
-	// slow path: inject the agent over LLDB (~20s, pauses the app) and ask it
+	// slow path: inject the agent (several seconds, pauses the app) and ask it
 	raw, err := d.agentCall("device.flutter.vmServiceUri", nil)
 	if err != nil {
 		// Expected for non-Flutter apps ("not a flutter app") and when the

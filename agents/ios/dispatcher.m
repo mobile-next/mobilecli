@@ -45,6 +45,12 @@ NSData *dispatch_rpc(NSData *body) {
         return rpc_result(reqId, @{@"status": @"ok"});
     }
 
+    if ([method isEqualToString:@"device.flutter.vmServiceUri"]) {
+        NSString *uri = [IosBridge flutterVMServiceURI];
+        if (!uri) return rpc_error(reqId, kRPCServerError, @"not a flutter app");
+        return rpc_result(reqId, @{@"uri": uri});
+    }
+
     if ([method isEqualToString:@"device.webview.list"]) {
         return rpc_result(reqId, [IosBridge listWebViews]);
     }
@@ -98,11 +104,8 @@ NSData *dispatch_rpc(NSData *body) {
 
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutMs / 1000.0];
         while (YES) {
+            // an evaluation error means not ready yet: a page mid-navigation fails to evaluate
             NSDictionary *result = [IosBridge evaluateJS:js inWebView:wv];
-            if (result[@"__error"]) {
-                return rpc_error(reqId, kRPCServerError,
-                    [NSString stringWithFormat:@"waitForLoadState eval error: %@", result[@"__error"]]);
-            }
             if ([@"true" isEqualToString:result[@"result"]]) {
                 return rpc_result(reqId, @{@"status": @"ok"});
             }
