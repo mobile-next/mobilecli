@@ -1,7 +1,5 @@
 package devices
 
-import "fmt"
-
 // HideKeyboard dismisses the keyboard through the agent injected into the
 // foreground app. The check comes first, so a call with no keyboard showing
 // never attaches LLDB to the app.
@@ -13,7 +11,7 @@ func (s *SimulatorDevice) HideKeyboard() (bool, error) {
 
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
-		return false, fmt.Errorf("hiding the keyboard on a simulator only works in apps you installed: %w", err)
+		return false, err
 	}
 	if _, err := agentRequest(port, "device.io.keyboard.hide", nil); err != nil {
 		return false, err

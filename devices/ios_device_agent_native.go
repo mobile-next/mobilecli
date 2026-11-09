@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -18,6 +19,18 @@ import (
 // never arrives) cannot hang the CLI/daemon indefinitely.
 const injectTimeout = 60 * time.Second
 
+const (
+	injectAttempts   = 3
+	injectRetryDelay = time.Second
+)
+
+var errAttachRefused = errors.New("only debuggable apps can be injected, so system apps, App Store apps and release builds are not supported")
+
+// errAppBusyDuringProbe means the app's thread trapped while being probed for an
+// existing agent. It was seen on about 1 in 15 first injections while a keyboard
+// was opening. The cause is not known, and attaching again has worked.
+var errAppBusyDuringProbe = errors.New("app trapped during the agent probe")
+
 // injectAgentNative maps the compiled agent dylib into the foreground app over
 // the developer debugserver and runs its initializer, with no code signing and
 // no re-signing (the CS_DEBUGGED exemption lets the debugger execute the pages
@@ -25,6 +38,43 @@ const injectTimeout = 60 * time.Second
 // works where dlopen does not (AWS Device Farm). Returns the device-side TCP port
 // the agent's server bound.
 func injectAgentNative(device goios.DeviceEntry, proxyPort, pid int) (int, error) {
+	return retryWhileAppIsBusy(func() (int, error) {
+		return injectAgentOnce(device, proxyPort, pid)
+	})
+}
+
+// retryWhileAppIsBusy attaches again when the probe trapped.
+func retryWhileAppIsBusy(inject func() (int, error)) (int, error) {
+	for attempt := 1; ; attempt++ {
+		port, err := inject()
+		if !shouldRetryInjection(err, attempt) {
+			return port, err
+		}
+		utils.Verbose("attempt %d: %v", attempt, err)
+		time.Sleep(injectRetryDelay)
+	}
+}
+
+// shouldRetryInjection also retries a refused attach, but only after a first
+// attempt: debugserver can refuse a new attach just after the previous detach. A
+// refused first attempt means the app is not debuggable, so it fails at once.
+func shouldRetryInjection(err error, attempt int) bool {
+	if attempt == injectAttempts {
+		return false
+	}
+	return errors.Is(err, errAppBusyDuringProbe) || (attempt > 1 && errors.Is(err, errAttachRefused))
+}
+
+// probeError marks a trap in the probe as safe to retry. Only the probe is
+// retried: it runs before the agent is mapped, while a failed map is half-written.
+func probeError(err error) error {
+	if errors.Is(err, machomap.ErrUnexpectedStop) {
+		return fmt.Errorf("%w: %w", errAppBusyDuringProbe, err)
+	}
+	return fmt.Errorf("probe existing agent: %w", err)
+}
+
+func injectAgentOnce(device goios.DeviceEntry, proxyPort, pid int) (int, error) {
 	conn, err := goios.ConnectTUNDevice(device.Address, proxyPort, device)
 	if err != nil {
 		return 0, fmt.Errorf("connect debug proxy: %w", err)
@@ -49,7 +99,7 @@ func injectAgentNative(device goios.DeviceEntry, proxyPort, pid int) (int, error
 // process is not debuggable, which is the normal case for system and release apps.
 func attachError(pid int, response string) error {
 	if strings.HasPrefix(response, "E") {
-		return fmt.Errorf("cannot attach to pid %d (debugserver %s): only debuggable apps can be injected, so system apps, App Store apps and release builds are not supported", pid, response)
+		return fmt.Errorf("cannot attach to pid %d (debugserver %s): %w", pid, response, errAttachRefused)
 	}
 	return fmt.Errorf("vAttach pid %d: unexpected response %q", pid, response)
 }
@@ -82,7 +132,7 @@ func mapAgentOverConn(conn io.ReadWriter, pid int) (int, error) {
 	// the in-process port cache is gone and the agent's ephemeral port cannot be
 	// recovered, so ask the caller to relaunch the app.
 	if already, err := machomap.ClassIsRegistered(rsp, resolver, "MobileServer"); err != nil {
-		return 0, fmt.Errorf("probe existing agent: %w", err)
+		return 0, probeError(err)
 	} else if already {
 		return 0, fmt.Errorf("agent already injected in pid %d; relaunch the app to re-inject", pid)
 	}

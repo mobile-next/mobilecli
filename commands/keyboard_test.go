@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -12,22 +13,28 @@ import (
 const shortCloseTimeout = 20 * time.Millisecond
 
 type fakeKeyboard struct {
-	hideResult      bool
-	hideErr         error
-	statusErr       error
-	visibleReports  []bool
-	statusCallCount int
+	hideResult         bool
+	hideErr            error
+	statusErr          error
+	failingStatusCalls int
+	visibleReports     []bool
+	statusCallCount    int
 }
 
 func (k *fakeKeyboard) HideKeyboard() (bool, error) {
 	return k.hideResult, k.hideErr
 }
 
-// IsKeyboardVisible walks through visibleReports and repeats the last one.
+// IsKeyboardVisible fails for the first failingStatusCalls calls, then walks
+// through visibleReports and repeats the last one.
 func (k *fakeKeyboard) IsKeyboardVisible() (bool, error) {
-	index := min(k.statusCallCount, len(k.visibleReports)-1)
+	call := k.statusCallCount
 	k.statusCallCount++
-	return k.visibleReports[index], k.statusErr
+	if call < k.failingStatusCalls {
+		return false, k.statusErr
+	}
+	index := min(call-k.failingStatusCalls, len(k.visibleReports)-1)
+	return k.visibleReports[index], nil
 }
 
 func TestHideSucceedsOnceTheKeyboardReportsClosed(t *testing.T) {
@@ -59,12 +66,30 @@ func TestHideWithNoKeyboardShowingDoesNotPoll(t *testing.T) {
 	assert.Zero(t, keyboard.statusCallCount)
 }
 
-func TestHideReturnsAStatusFailureInsteadOfWaiting(t *testing.T) {
-	statusFailure := errors.New("no foreground app")
-	keyboard := &fakeKeyboard{hideResult: true, visibleReports: []bool{true}, statusErr: statusFailure}
+func TestHideSurvivesOneFailedStatusCheck(t *testing.T) {
+	keyboard := &fakeKeyboard{
+		hideResult:         true,
+		visibleReports:     []bool{true, false},
+		statusErr:          errors.New("agent busy"),
+		failingStatusCalls: 1,
+	}
 
-	_, err := hideKeyboardAndWaitForClose(keyboard, time.Second)
+	dismissed, err := hideKeyboardAndWaitForClose(keyboard, time.Second)
+
+	require.NoError(t, err)
+	assert.True(t, dismissed)
+}
+
+func TestHideReportsAStatusFailureThatNeverClears(t *testing.T) {
+	statusFailure := errors.New("no foreground app")
+	keyboard := &fakeKeyboard{
+		hideResult:         true,
+		visibleReports:     []bool{true},
+		statusErr:          statusFailure,
+		failingStatusCalls: math.MaxInt,
+	}
+
+	_, err := hideKeyboardAndWaitForClose(keyboard, shortCloseTimeout)
 
 	require.ErrorIs(t, err, statusFailure)
-	assert.Equal(t, 1, keyboard.statusCallCount)
 }

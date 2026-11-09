@@ -36,21 +36,9 @@ func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, 
 	return kb, nil
 }
 
-// rejectHideOnRealIOS runs before the agent starts, because starting it on a real
-// device can send the app under test to the background.
-func rejectHideOnRealIOS(deviceID string) error {
-	device, err := FindDeviceOrAutoSelect(deviceID)
-	if err != nil {
-		return fmt.Errorf("error finding device: %w", err)
-	}
-	if device.Platform() == devices.PlatformIOS && device.DeviceType() == devices.DeviceTypeReal {
-		return devices.ErrHideKeyboardNotSupportedOnRealIOS
-	}
-	return nil
-}
-
-// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and
-// an error when the keyboard is still showing once the timeout has passed.
+// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and an
+// error when the keyboard cannot be seen to close before the timeout has passed.
+// A failed status check is retried, because the hide itself has already worked.
 func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.Duration) (bool, error) {
 	dismissed, err := kb.HideKeyboard()
 	if err != nil || !dismissed {
@@ -60,13 +48,13 @@ func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.D
 	deadline := time.Now().Add(timeout)
 	for {
 		visible, err := kb.IsKeyboardVisible()
-		if err != nil {
-			return false, err
-		}
-		if !visible {
+		if err == nil && !visible {
 			return true, nil
 		}
 		if time.Now().After(deadline) {
+			if err != nil {
+				return false, fmt.Errorf("could not confirm the keyboard closed: %w", err)
+			}
 			return false, fmt.Errorf("keyboard is still visible after %s", timeout)
 		}
 		time.Sleep(keyboardPollInterval)
@@ -74,9 +62,6 @@ func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.D
 }
 
 func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
-	if err := rejectHideOnRealIOS(req.DeviceID); err != nil {
-		return NewErrorResponse(err)
-	}
 	kb, err := keyboardControllableDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
