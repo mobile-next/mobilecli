@@ -10,20 +10,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// simulatorWithNoKeyboardShowing has a DeviceKit agent that reports no keyboard.
-// Any attempt to inject the in-app agent would fail, because no such app exists.
-func simulatorWithNoKeyboardShowing(t *testing.T) *SimulatorDevice {
+// deviceKitReportingNoKeyboard is a DeviceKit agent that reports no keyboard. Any
+// attempt to inject the in-app agent would fail, because no such app exists.
+func deviceKitReportingNoKeyboard(t *testing.T) *devicekit.DeviceKitClient {
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"visible":false}}`))
 	}))
 	t.Cleanup(agent.Close)
-	return &SimulatorDevice{deviceKitClient: devicekit.NewDeviceKitClient(agent.URL)}
+	return devicekit.NewDeviceKitClient(agent.URL)
 }
 
-func TestRealIOSDevicesRefuseToHideTheKeyboard(t *testing.T) {
-	_, err := (&IOSDevice{}).HideKeyboard()
+func simulatorWithNoKeyboardShowing(t *testing.T) *SimulatorDevice {
+	return &SimulatorDevice{deviceKitClient: deviceKitReportingNoKeyboard(t)}
+}
 
-	assert.ErrorIs(t, err, ErrHideKeyboardNotSupportedOnRealIOS)
+func realIPhoneWithNoKeyboardShowing(t *testing.T) *IOSDevice {
+	return &IOSDevice{deviceKitClient: deviceKitReportingNoKeyboard(t)}
+}
+
+func TestRealIPhoneHideWithNoKeyboardShowingDoesNothing(t *testing.T) {
+	dismissed, err := realIPhoneWithNoKeyboardShowing(t).HideKeyboard()
+
+	require.NoError(t, err)
+	assert.False(t, dismissed)
 }
 
 func TestSimulatorHideWithNoKeyboardShowingDoesNothing(t *testing.T) {
