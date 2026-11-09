@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -18,12 +16,7 @@ var urlCmd = &cobra.Command{
 			URL:      args[0],
 		}
 
-		response := commands.URLCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.url", req)
 	},
 }
 

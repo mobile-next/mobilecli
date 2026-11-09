@@ -149,7 +149,7 @@ func getOfflineAndroidEmulators(onlineDeviceIDs map[string]bool) ([]Controllable
 				id:      avdName,
 				name:    displayName,
 				version: version,
-				state:   "offline",
+				state:   StateOffline,
 			})
 		}
 	}

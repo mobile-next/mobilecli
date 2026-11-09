@@ -89,6 +89,27 @@
           }
         },
         {
+          "name": "scale",
+          "description": "Scale factor for the screenshot (0.0-1.0, default 1.0)",
+          "required": false,
+          "schema": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "default": 1
+          }
+        },
+        {
+          "name": "maxSize",
+          "description": "Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit)",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
           "name": "clip",
           "description": "Optional rectangle to crop the screenshot to, in screen coordinates",
           "required": false,
@@ -149,10 +170,15 @@
         }
       ],
       "result": {
-        "name": "stream",
-        "description": "Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC",
+        "name": "session",
+        "description": "Streaming session. Connect to sessionUrl to receive the stream (multipart/x-mixed-replace for MJPEG, video/h264 for AVC). The session expires one minute after creation and accepts a single connection.",
         "schema": {
-          "type": "string"
+          "type": "object",
+          "properties": {
+            "format": { "type": "string", "description": "Video format of the stream" },
+            "sessionUrl": { "type": "string", "description": "Path to connect to for the stream, e.g. /sessions/<session-id>/stream" }
+          },
+          "required": ["format", "sessionUrl"]
         }
       }
     },
@@ -257,6 +283,94 @@
         {
           "name": "text",
           "description": "Text to input",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.fill",
+      "summary": "Fill text field",
+      "description": "Replaces the text of the focused text field; an empty string clears it. Unlike device.io.text, which types key by key, this sets the text in one step: on Android through accessibility, on iOS by clearing the field and typing",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to put in the field, or an empty string to clear it",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.clipboard.get",
+      "summary": "Read clipboard",
+      "description": "Reads the text currently on the device clipboard",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "clipboard",
+        "description": "Clipboard contents",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Text on the clipboard, empty when it holds no text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.clipboard.set",
+      "summary": "Write clipboard",
+      "description": "Replaces the text on the device clipboard, an empty string clears it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "text",
+          "description": "Text to place on the clipboard",
           "required": true,
           "schema": {
             "type": "string"
@@ -442,6 +556,77 @@
           "schema": {
             "type": "integer"
           }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the swipe in milliseconds, omitted applies the platform default",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.pinch",
+      "summary": "Perform two-finger pinch gesture",
+      "description": "Performs a two-finger pinch centered at (x, y) on the device screen. Direction \"out\" spreads the fingers apart to zoom in, \"in\" brings them together to zoom out. Omitting x and y pinches around the center of the screen.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "direction",
+          "description": "\"in\" to zoom out or \"out\" to zoom in",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": ["in", "out"]
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate of the pinch center, defaults to the screen center",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate of the pinch center, defaults to the screen center",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "distance",
+          "description": "Pixels each finger travels, defaults to 200",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "duration",
+          "description": "Duration of the finger movement in milliseconds, defaults to 300",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
         }
       ],
       "result": {
@@ -527,6 +712,104 @@
       }
     },
     {
+      "name": "device.fold.set",
+      "summary": "Fold or unfold a foldable device",
+      "description": "Sets the hinge of a foldable device. Supported on foldable iOS simulators and Android emulators",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "state",
+          "description": "'folded' (0), 'half-open' (90), 'open' (180), or an angle in degrees between 0 and 180",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.location.set",
+      "summary": "Override device location",
+      "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "latitude",
+          "description": "Latitude in degrees, between -90 and 90",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        },
+        {
+          "name": "longitude",
+          "description": "Longitude in degrees, between -180 and 180",
+          "required": true,
+          "schema": {
+            "type": "number"
+          }
+        }
+      ],
+      "result": {
+        "name": "location",
+        "description": "Simulated location",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.location.clear",
+      "summary": "Clear device location override",
+      "description": "Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.boot",
       "summary": "Boot a device",
       "description": "Boots the specified device (simulators/emulators only)",
@@ -593,6 +876,46 @@
       }
     },
     {
+      "name": "device.settings.apply",
+      "summary": "Apply device settings",
+      "description": "Applies device-level settings. Only the settings provided are changed",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "animations",
+          "description": "Toggle system animations (Android only)",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": ["on", "off"]
+          }
+        },
+        {
+          "name": "appearance",
+          "description": "System appearance",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": ["light", "dark"]
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.dump.ui",
       "summary": "Dump UI hierarchy",
       "description": "Dumps the UI hierarchy of the device screen",
@@ -616,6 +939,15 @@
               "raw"
             ],
             "default": "json"
+          }
+        },
+        {
+          "name": "full",
+          "description": "Include additional elements normally left out, such as the on-screen keyboard",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
           }
         }
       ],
@@ -852,7 +1184,7 @@
     {
       "name": "device.apps.clear",
       "summary": "Clear application data",
-      "description": "Clears all data (cache, preferences, databases) for an application without uninstalling it. Supported on Android and iOS Simulator. Not supported on real iOS devices.",
+      "description": "Clears all data (cache, preferences, databases) for an application without uninstalling it, and resets its runtime permissions so the app asks for them again (on iOS Simulator, notification permission is only reset by reinstalling). Supported on Android and iOS Simulator. Not supported on real iOS devices.",
       "params": [
         {
           "name": "deviceId",
@@ -1086,6 +1418,42 @@
       }
     },
     {
+      "name": "device.logs",
+      "summary": "Start device log streaming",
+      "description": "Creates a log streaming session for the specified device and returns the URL to connect to. Supported on iOS real devices, iOS simulators, and Android devices.",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "limit",
+          "description": "Stop the stream after this many log entries (0 or omitted for unlimited)",
+          "required": false,
+          "schema": { "type": "integer", "default": 0 }
+        },
+        {
+          "name": "filters",
+          "description": "Filters applied to every entry, ANDed together. Each is 'key=value' to include or 'key!=value' to exclude, matched exactly. Valid keys: pid, process, tag, level, subsystem, category, message",
+          "required": false,
+          "schema": { "type": "array", "items": { "type": "string" } }
+        }
+      ],
+      "result": {
+        "name": "session",
+        "description": "Log streaming session. Connect to sessionUrl to receive application/x-ndjson, one JSON log entry per line. The session expires one minute after creation and accepts a single connection.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "sessionUrl": { "type": "string", "description": "Path to connect to for the log stream, e.g. /sessions/<session-id>/logs" }
+          },
+          "required": ["sessionUrl"]
+        }
+      }
+    },
+    {
       "name": "device.crashes.list",
       "summary": "List crash reports",
       "description": "Returns a list of crash reports from the specified device. Supports iOS real devices (via crashreport service), iOS simulators (reads from DiagnosticReports), and Android devices (parses adb logcat crash buffer).",
@@ -1176,7 +1544,7 @@
     {
       "name": "device.webview.list",
       "summary": "List webviews",
-      "description": "Returns all embedded webviews currently visible in the foreground app on the device. Browser apps (Safari, Chrome) are not included.",
+      "description": "Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Chrome on Android or Safari on iOS, returns its tabs instead.",
       "params": [
         {
           "name": "deviceId",
@@ -1759,9 +2127,9 @@
             "type": "string",
             "description": "Provider type (e.g. 'mobilenext', 'local')"
           },
-          "sessionId": {
+          "allocationId": {
             "type": "string",
-            "description": "Session identifier for this device allocation"
+            "description": "Allocation identifier for this device"
           }
         },
         "required": [

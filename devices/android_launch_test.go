@@ -1,6 +1,9 @@
 package devices
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func Test_parseResolveActivityOutput(t *testing.T) {
 	tests := []struct {
@@ -122,5 +125,32 @@ func Test_buildLaunchComponent(t *testing.T) {
 				t.Fatalf("buildLaunchComponent() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func Test_adbShellArgs_keepsEveryQueryParameterOfAURL(t *testing.T) {
+	args := adbShellArgs("am", "start", "-d", "https://example.com/?first=1&second=2")
+
+	// unquoted, the device's sh reads `&` as "run in the background" and the url
+	// reaches `am` cut off at the first parameter
+	want := []string{"shell", `am start -d 'https://example.com/?first=1&second=2'`}
+	if len(args) != len(want) || args[0] != want[0] || args[1] != want[1] {
+		t.Errorf("got %q, want %q", args, want)
+	}
+}
+
+func Test_launchArgs_clearsTheTaskWhenTheAppIsNotRunning(t *testing.T) {
+	got := strings.Join(launchArgs("com.example/.Main", false), " ")
+	want := "am start --display " + defaultDisplayID + " --activity-clear-task -n com.example/.Main"
+	if got != want {
+		t.Fatalf("launchArgs() = %q, want %q", got, want)
+	}
+}
+
+func Test_launchArgs_keepsTheTaskWhenTheAppIsRunning(t *testing.T) {
+	got := strings.Join(launchArgs("com.example/.Main", true), " ")
+	want := "am start --display " + defaultDisplayID + " -n com.example/.Main"
+	if got != want {
+		t.Fatalf("launchArgs() = %q, want %q", got, want)
 	}
 }

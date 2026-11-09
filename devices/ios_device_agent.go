@@ -65,11 +65,11 @@ func setCachedDeviceAgentPort(udid string, port int) {
 // agentCall ensures the agent is ready and makes a JSON-RPC call to it. This is
 // the single seam every device-agent feature uses; it also drops the cached
 // port on failure so a dead agent is re-injected on the next call.
-func (d *IOSDevice) agentCall(method string, params map[string]any) (json.RawMessage, error) {
+func (d *IOSDevice) agentCall(method string, params any) (json.RawMessage, error) {
 	return d.agentCallWithTimeout(method, params, defaultAgentTimeout)
 }
 
-func (d *IOSDevice) agentCallWithTimeout(method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
+func (d *IOSDevice) agentCallWithTimeout(method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	port, err := d.ensureIOSDeviceAgentReady()
 	if err != nil {
 		return nil, err
@@ -262,10 +262,14 @@ func injectServerViaLLDB(localProxyPort int) (int, error) {
 // forward is ephemeral and lives only for this process, so we let the OS pick
 // it. (go-ios's forward.Forward rejects a literal port 0, so we grab one here.)
 func freeLocalPort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
+	defer func() { _ = ln.Close() }()
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("listener address is %T, not TCP", ln.Addr())
+	}
+	return addr.Port, nil
 }

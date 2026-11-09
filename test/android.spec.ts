@@ -3,35 +3,74 @@ import {execFileSync, spawn} from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import type {UIElement, UIDumpResponse, ForegroundAppResponse} from './types';
+import type {InstalledApp, Point, UIElement, UIDumpResponse, ForegroundAppResponse} from './types';
 import {coverageEnv} from './coverage';
+import {eventually} from './poll';
 import {
-	expectAgentShape,
 	expectAppShape,
 	expectFsListingShape,
 	expectForegroundAppShape,
+	expectErrorEnvelope,
+	expectInstallResultShape,
+	expectInstalledAppShape,
 	expectOkEnvelope,
 	expectUIDumpShape,
 } from './shapes';
+import {
+	centerOf,
+	expectWebViewShape,
+	expectWebViewUrlToBecome,
+	findWebViewButton,
+	flattenElements,
+	WEBVIEW_COMMANDS_TAKING_AN_ID,
+	WEBVIEW_DONE_GREETING,
+	WEBVIEW_DONE_URL,
+	WEBVIEW_MISSING_ID,
+	WEBVIEW_SAMPLE_TITLE,
+	WEBVIEW_SAMPLE_URL,
+} from './webview';
+import type {WebViewInfo, WebViewQueryResult} from './webview';
+import {
+	downloadPlayground,
+	PLAYGROUND_APP_NAME,
+	PLAYGROUND_APP_VERSION,
+	PLAYGROUND_APP_VERSION_CODE,
+	PLAYGROUND_PACKAGE,
+} from './playground';
 
 const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 
 // settings is present on every android image, unlike chrome or play store
 const SETTINGS_PACKAGE = 'com.android.settings';
 
-const PLAYGROUND_PACKAGE = 'com.mobilenext.playground';
-
 // the settings search ui is a separate package that joins the settings task via
 // taskAffinity=com.android.settings.root. force-stopping settings alone leaves its
 // activity on top of that task, so `am start` resumes a task settings no longer owns
 const SETTINGS_SEARCH_PACKAGE = 'com.google.android.settings.intelligence';
 
-const AGENT_BUNDLE_ID = 'com.mobilenext.devicekit';
-const AGENT_MISSING_MESSAGE = 'Agent is not installed on the device';
-
 // google_apis images use com.google.android.apps.nexuslauncher, aosp images use
 // com.android.launcher3 — match on the shared substring instead of pinning one
 const LAUNCHER_PACKAGE_PATTERN = /launcher/i;
+
+// every `apps` subcommand that hands its package name to the device shell
+const APPS_COMMANDS_TAKING_A_PACKAGE = ['launch', 'terminate', 'path', 'clear'];
+
+// not installed anywhere, so the commands under test have nothing real to stop or clear
+const ABSENT_PACKAGE = 'com.mobilenext.notinstalled';
+
+// world-writable for the shell user, which is who a smuggled command would run as
+const SMUGGLED_MARKER_DIR = '/sdcard/Download';
+
+// the on-device server mobilecli talks to (agents/android/java/DeviceServer.java)
+const DEVICE_SERVER_CLASS = 'com.mobilenext.mobilecli.DeviceServer';
+
+// well inside the poll window of eventually(), with room for the server to notice
+const DEVICE_SERVER_SHORT_IDLE_SECONDS = 2;
+
+const UIAUTOMATOR_DUMP_FILE = '/sdcard/mobilecli-test-uiautomator.xml';
+
+// macOS's os.tmpdir() is too long for a unix socket path
+const DAEMON_HOME_ROOT = process.platform === 'darwin' ? '/tmp' : os.tmpdir();
 
 type Device = {
 	id: string;
@@ -45,11 +84,6 @@ type Device = {
 type Dimensions = {
 	width: number;
 	height: number;
-};
-
-type Point = {
-	x: number;
-	y: number;
 };
 
 // this spec is written against an emulator: it force-stops apps, writes to
@@ -131,7 +165,7 @@ test.describe('Android Tests', () => {
 
 		const apps = listApps(device!.id);
 		apps.forEach(expectAppShape);
-		expect(apps.map((a: any) => a.packageName)).toContain(SETTINGS_PACKAGE);
+		expect(apps.map(app => app.packageName)).toContain(SETTINGS_PACKAGE);
 	});
 
 	test('should launch Settings app and verify it is in foreground', async () => {
@@ -139,9 +173,8 @@ test.describe('Android Tests', () => {
 
 		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
 
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 	});
 
 	test('should terminate Settings app and verify launcher is in foreground', async () => {
@@ -153,41 +186,73 @@ test.describe('Android Tests', () => {
 		// force-stop returns to whatever task sits below the app, so start from the
 		// launcher — otherwise an app left running by an earlier test surfaces instead
 		pressButton(device!.id, 'HOME');
-		await sleep(2000);
+		await expectLauncherToBeInForeground(device!.id);
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		clearSettingsTask(device!.id);
-		await sleep(3000);
+		await expectLauncherToBeInForeground(device!.id);
+	});
 
-		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+	test('should report that a package which is not installed cannot be terminated', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = appsCommandError(device!.id, 'terminate', ABSENT_PACKAGE);
+
+		expect(error).toContain(`${ABSENT_PACKAGE} not installed`);
+	});
+
+	test('should terminate an installed app that is not running without an error', () => {
+		test.skip(!device, 'No Android device found');
+
+		// force-stop is idempotent, and callers stop an app before relaunching it
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+		terminateApp(device!.id, SETTINGS_PACKAGE);
+	});
+
+	test('should report that a package which is not installed cannot be uninstalled', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = appsCommandError(device!.id, 'uninstall', ABSENT_PACKAGE);
+
+		expect(error).toContain(`${ABSENT_PACKAGE} not installed`);
+		// the package manager's own code for this case says nothing about the cause
+		expect(error).not.toContain('DELETE_FAILED_INTERNAL_ERROR');
 	});
 
 	test('should handle launching app twice (idempotency)', async () => {
 		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		// launching again should resume the app, not fail
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
-
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 	});
 
 	test('should press HOME button and return to launcher from Settings', async () => {
 		test.skip(!device, 'No Android device found');
 
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(3000);
-		expect(getForegroundApp(device!.id).data.packageName).toBe(SETTINGS_PACKAGE);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
 
 		pressButton(device!.id, 'HOME');
-		await sleep(3000);
+		await expectLauncherToBeInForeground(device!.id);
+	});
 
-		expect(getForegroundApp(device!.id).data.packageName).toMatch(LAUNCHER_PACKAGE_PATTERN);
+	test('should accept the HOME button regardless of case', async () => {
+		test.skip(!device, 'No Android device found');
+
+		// the help documents button names as case-insensitive
+		for (const name of ['home', 'Home', 'hOmE']) {
+			launchApp(device!.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+
+			pressButton(device!.id, name);
+			await expectLauncherToBeInForeground(device!.id);
+		}
 	});
 
 	test('should tap on Network & internet in Settings and navigate to that screen', async ({deviceType}) => {
@@ -199,13 +264,13 @@ test.describe('Android Tests', () => {
 		// land on the settings root screen rather than wherever a previous test left it
 		clearSettingsTask(device!.id);
 		launchApp(device!.id, SETTINGS_PACKAGE);
-		await sleep(5000);
+		await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+		await expectTextOnScreen(device!.id, 'Network & internet');
 
 		const entry = findElementByText(dumpUI(device!.id), 'Network & internet');
 		tap(device!.id, centerOf(entry).x, centerOf(entry).y);
-		await sleep(3000);
 
-		verifyElementWithTextExists(dumpUI(device!.id), 'Airplane mode');
+		await expectTextOnScreen(device!.id, 'Airplane mode');
 	});
 
 	test.describe('fs operations on /sdcard/Download', () => {
@@ -249,70 +314,420 @@ test.describe('Android Tests', () => {
 		});
 	});
 
-	// these run in order and share device state: each step depends on what the
-	// previous one left installed
-	test.describe('agent lifecycle', () => {
+	test.describe('a package name carrying a shell command', () => {
+		for (const subcommand of APPS_COMMANDS_TAKING_A_PACKAGE) {
+			test(`apps ${subcommand} should not run the command on the device`, () => {
+				test.skip(!device, 'No Android device found');
+
+				const marker = `mobilecli-smuggled-by-apps-${subcommand}`;
+				const packageName = packageNameSmuggling(`touch ${SMUGGLED_MARKER_DIR}/${marker}`);
+				runIgnoringItsOutcome(['apps', subcommand, packageName, '--device', device!.id]);
+
+				const smuggledCommandRan = fileNamesIn(device!.id, SMUGGLED_MARKER_DIR).includes(marker);
+				if (smuggledCommandRan) {
+					// a leftover marker would fail the next run even once the bug is gone
+					fsRm(device!.id, `${SMUGGLED_MARKER_DIR}/${marker}`, false);
+				}
+
+				expect(smuggledCommandRan, `apps ${subcommand} ran a command smuggled into the package name`).toBe(false);
+			});
+		}
+	});
+
+	test.describe('device server lifetime', () => {
+		// the DeviceServer mobilecli keeps on the device holds its only UiAutomation,
+		// and every other UiAutomator client is killed while it does. it must not
+		// outlive the daemon that uses it, or stay around forever when nothing does.
+		let serial: string;
+
 		test.beforeAll(() => {
+			if (device) serial = adbSerialOf(device);
+		});
+
+		test.afterEach(() => {
+			if (device) removeUiautomatorDumpFile(serial);
+		});
+
+		test('uiautomator dump should succeed after daemon stop', () => {
+			test.skip(!device, 'No Android device found');
+
+			dumpUI(device!.id);
+			expect(isDeviceServerRunning(serial), 'dump ui left no device server behind').toBe(true);
+
+			mobilecliWithEnv(['daemon', 'stop'], {});
+
+			expect(isDeviceServerRunning(serial), 'the device server outlived the daemon').toBe(false);
+			expect(uiautomatorDumpSucceeds(serial), 'uiautomator dump was killed after daemon stop').toBe(true);
+		});
+
+		test('device server should finish a request that outlasts its idle timeout', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a slow, short scroll of the settings list: the one gesture that can be
+			// stretched over seconds without opening or pulling down anything
+			clearSettingsTask(device!.id);
+			launchApp(device!.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device!.id, SETTINGS_PACKAGE);
+			const {width, height} = screenSizeOf(device!.id);
+			const x = Math.floor(width / 2);
+			const from = Math.floor(height * 0.7);
+			const to = Math.floor(height * 0.6);
+
+			const home = makePrivateDaemonHome();
+			try {
+				const env = {MOBILECLI_HOME: home, MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`};
+				startDeviceServerWithShortIdle(device!.id, serial, env);
+
+				// three times the idle timeout, so the watchdog is sure to look while the
+				// request runs: the server must not count a request it is still serving
+				// as idle time and exit in the middle of it, which would also leave the
+				// finger down in the input dispatcher. mobilecli relaunches a vanished
+				// server and retries, so the proof is the server's pid, not the outcome
+				const serverBefore = deviceServerPid(serial);
+				const swipeMs = DEVICE_SERVER_SHORT_IDLE_SECONDS * 3 * 1000;
+				mobilecliWithEnv(['io', 'swipe', `${x},${from},${x},${to}`, '--duration', String(swipeMs), '--device', device!.id], env);
+				expect(deviceServerPid(serial), 'the device server was replaced during the request').toBe(serverBefore);
+			} finally {
+				mobilecliWithEnv(['daemon', 'stop'], {MOBILECLI_HOME: home});
+				fs.rmSync(home, {recursive: true, force: true});
+			}
+		});
+
+		test('device server should exit on its own once idle', async () => {
+			test.skip(!device, 'No Android device found');
+
+			const home = makePrivateDaemonHome();
+			try {
+				const env = {MOBILECLI_HOME: home, MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT: `${DEVICE_SERVER_SHORT_IDLE_SECONDS}s`};
+				startDeviceServerWithShortIdle(device!.id, serial, env);
+
+				await eventually(() => isDeviceServerRunning(serial), 'the device server never went idle').toBe(false);
+				expect(uiautomatorDumpSucceeds(serial)).toBe(true);
+			} finally {
+				mobilecliWithEnv(['daemon', 'stop'], {MOBILECLI_HOME: home});
+				fs.rmSync(home, {recursive: true, force: true});
+			}
+		});
+	});
+
+	test.describe('agent commands', () => {
+		const NO_AGENT_MESSAGE = 'no agent needed for android devices';
+
+		for (const subcommand of ['status', 'install', 'uninstall']) {
+			test(`${subcommand} should report that no agent is needed`, () => {
+				test.skip(!device, 'No Android device found');
+
+				const response = runAgentCommand(device!.id, subcommand);
+				expect(response.status).toBe('ok');
+				expect(response.data.message).toBe(NO_AGENT_MESSAGE);
+			});
+		}
+	});
+
+	test.describe.serial('install and uninstall playground', () => {
+		// installs an app we own rather than anything already on the image, so the
+		// uninstall half is safe to run for real. also leaves playground installed
+		// for the app-container fs group below.
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		let apkPath: string;
+
+		test.beforeAll(async () => {
+			apkPath = await downloadPlayground('android');
+		});
+
+		test('should uninstall playground and no longer list it', () => {
+			test.skip(!device, 'No Android device found');
+
+			uninstallPlaygroundIfPresent(device!.id);
+			expect(installedPackageNames(device!.id)).not.toContain(PLAYGROUND_PACKAGE);
+		});
+
+		test('should install playground from a local apk', () => {
+			test.skip(!device, 'No Android device found');
+
+			const result: unknown = mobilecliJson(['apps', 'install', apkPath, '--device', device!.id]).data;
+			expectInstallResultShape(result);
+			expect(result.app.packageName).toBe(PLAYGROUND_PACKAGE);
+			expect(result.app.version).toBe(PLAYGROUND_APP_VERSION);
+			expect(result.app.versionCode).toBe(PLAYGROUND_APP_VERSION_CODE);
+		});
+
+		test('should list playground with every field it reports today', () => {
+			test.skip(!device, 'No Android device found');
+
+			const app = findInstalledApp(device!.id, PLAYGROUND_PACKAGE);
+			expect(app, `${PLAYGROUND_PACKAGE} missing after install`).toBeDefined();
+			expectInstalledAppShape(app);
+			expect(app!.appName).toBe(PLAYGROUND_APP_NAME);
+			expect(app!.version).toBe(PLAYGROUND_APP_VERSION);
+			expect(app!.versionCode).toBe(PLAYGROUND_APP_VERSION_CODE);
+		});
+	});
+
+	test.describe('url with more than one query parameter', () => {
+		// playground owns this deep link and prints its `name` parameter on screen, so
+		// what the device received is readable without a browser or the network
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test('should deliver every query parameter, not only the first', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a greeting left on screen by an earlier run must not satisfy this one
+			terminateApp(device!.id, PLAYGROUND_PACKAGE);
+
+			mobilecli(['url', playgroundLoginLinkFor('Alice'), '--device', device!.id]);
+
+			await expectTextOnScreen(device!.id, playgroundGreetingFor('Alice'));
+		});
+	});
+
+	test.describe.serial('webview', () => {
+		// the playground webview screen is the one embedded webview we control on
+		// both platforms. a real handset would be left on an arbitrary screen.
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		let webViewId: string;
+
+		test.beforeAll(async () => {
 			if (!device) return;
-			// the device may arrive with an agent from an earlier run, so start clean.
-			// the response is ignored: "not installed" is a perfectly good outcome here
-			runAgentCommand(device.id, 'uninstall');
+			const deviceId = device.id;
+
+			await openPlaygroundWebViewScreen(deviceId);
+			await expectWebViewToAppear(deviceId);
+			webViewId = firstWebView(deviceId).id;
+
+			// the app restores whatever url the webview last showed, so start every
+			// run from the sample page instead of inheriting the previous run's state
+			webViewGoto(deviceId, webViewId, WEBVIEW_SAMPLE_URL);
+			webViewWait(deviceId, webViewId, 'load');
+
+			// the webview is listed as soon as it exists, before its page has a title,
+			// so settle it here rather than leaving every test to race the load
+			await expectWebViewUrlToBecome(() => webViewUrl(deviceId, webViewId), WEBVIEW_SAMPLE_URL);
+			await eventually(() => webViewTitle(deviceId, webViewId), 'sample page never finished loading')
+				.toBe(WEBVIEW_SAMPLE_TITLE);
 		});
 
-		test('status should report no agent before installation', () => {
+		test('should list the playground webview', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'status');
-			expect(response.status).toBe('fail');
-			expect(response.data.message).toBe(AGENT_MISSING_MESSAGE);
+			const webView = firstWebView(device!.id);
+			expect(webView.url).toBe(WEBVIEW_SAMPLE_URL);
+			expect(webView.title).toBe(WEBVIEW_SAMPLE_TITLE);
+			expect(webView.bundleId).toBe(PLAYGROUND_PACKAGE);
+			expect(webView.isVisible).toBe(true);
 		});
 
-		test('uninstall should report no agent when none is installed', () => {
+		test('should report the url and title of the webview', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'uninstall');
-			expect(response.status).toBe('fail');
-			expect(response.data.message).toBe(AGENT_MISSING_MESSAGE);
+			expect(webViewUrl(device!.id, webViewId)).toBe(WEBVIEW_SAMPLE_URL);
+			expect(webViewTitle(device!.id, webViewId)).toBe(WEBVIEW_SAMPLE_TITLE);
 		});
 
-		test('install should report a successful installation', () => {
+		test('should evaluate javascript inside the webview', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'install');
-			expect(response.status).toBe('ok');
-			expect(response.data.message).toBe('Agent installed successfully');
-			expectAgentShape(response.data.agent);
-			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
+			expect(webViewEval(device!.id, webViewId, 'document.title')).toBe(WEBVIEW_SAMPLE_TITLE);
 		});
 
-		test('installing again should report the agent is already installed', () => {
+		test('should dump the html content of the webview', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'install');
-			expect(response.status).toBe('ok');
-			expect(response.data.message).toBe('Agent is already installed');
-			expectAgentShape(response.data.agent);
-			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
+			const html = webViewContent(device!.id, webViewId);
+			expect(html).toContain('<form id="loginForm"');
+			expect(html).toContain(WEBVIEW_SAMPLE_TITLE);
 		});
 
-		test('status should report the installed agent', () => {
+		test('should query dom elements by css selector', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'status');
-			expect(response.status).toBe('ok');
-			expectAgentShape(response.data.agent);
-			expect(response.data.agent.bundleId).toBe(AGENT_BUNDLE_ID);
-			// derived from the reported version rather than a literal, so bumping the
-			// pinned agent in cli/agent.go does not require editing this test
-			expect(response.data.message).toBe(`Agent version ${response.data.agent.version} is installed on device`);
+			const inputs = webViewQuery(device!.id, webViewId, 'input#name');
+			expect(inputs.length).toBe(1);
+			expect(inputs[0].tag).toBe('input');
+			expect(inputs[0].id).toBe('name');
 		});
 
-		test('uninstall should succeed once an agent is installed', () => {
+		test('should wait for the webview to finish loading', () => {
 			test.skip(!device, 'No Android device found');
 
-			const response = runAgentCommand(device!.id, 'uninstall');
-			expect(response.status).toBe('ok');
-			expect(response.data.message).toBe('Agent uninstalled successfully');
+			webViewWait(device!.id, webViewId, 'domcontentloaded');
+			webViewWait(device!.id, webViewId, 'load');
+		});
+
+		test('should navigate the webview to another url', async () => {
+			test.skip(!device, 'No Android device found');
+
+			webViewGoto(device!.id, webViewId, WEBVIEW_DONE_URL);
+			webViewWait(device!.id, webViewId, 'load');
+
+			await expectWebViewUrlToBecome(() => webViewUrl(device!.id, webViewId), WEBVIEW_DONE_URL);
+			expect(webViewQuery(device!.id, webViewId, 'h1')[0].text).toBe(WEBVIEW_DONE_GREETING);
+		});
+
+		test('should go back to the page it navigated away from', async () => {
+			test.skip(!device, 'No Android device found');
+
+			webViewGoBack(device!.id, webViewId);
+
+			await expectWebViewUrlToBecome(() => webViewUrl(device!.id, webViewId), WEBVIEW_SAMPLE_URL);
+		});
+
+		test('should go forward again', async () => {
+			test.skip(!device, 'No Android device found');
+
+			webViewGoForward(device!.id, webViewId);
+
+			await expectWebViewUrlToBecome(() => webViewUrl(device!.id, webViewId), WEBVIEW_DONE_URL);
+		});
+
+		test('should report an error for every command given an unknown webview id', () => {
+			test.skip(!device, 'No Android device found');
+
+			for (const [subcommand, ...args] of WEBVIEW_COMMANDS_TAKING_AN_ID) {
+				const message = webViewCommandError(device!.id, [subcommand, WEBVIEW_MISSING_ID, ...args]);
+				expect(message, `${subcommand} accepted an unknown webview id`).toContain(WEBVIEW_MISSING_ID);
+			}
+		});
+
+		test('should report an error when the device does not exist', () => {
+			test.skip(!device, 'No Android device found');
+
+			for (const [subcommand, ...args] of WEBVIEW_COMMANDS_TAKING_AN_ID) {
+				const message = webViewCommandError('no-such-device', [subcommand, WEBVIEW_MISSING_ID, ...args]);
+				expect(message, `${subcommand} accepted an unknown device`).toContain('error finding device');
+			}
+			expect(webViewCommandError('no-such-device', ['list'])).toContain('error finding device');
+		});
+
+		test('should reload the webview and stay on the same url', async () => {
+			test.skip(!device, 'No Android device found');
+
+			webViewReload(device!.id, webViewId);
+			webViewWait(device!.id, webViewId, 'load');
+
+			await expectWebViewUrlToBecome(() => webViewUrl(device!.id, webViewId), WEBVIEW_DONE_URL);
+		});
+
+	});
+
+	// a person typing on the on-screen keyboard never takes the device out of touch
+	// mode. out of it, android behaves as if a hardware keyboard is in use: the next
+	// screen gives focus to a view, and a scroll view jumps to that view.
+	test.describe.serial('touch mode while typing', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		let serial: string;
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			serial = adbSerialOf(device);
+			await openPlaygroundBasicUIScreen(device.id);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+		});
+
+		// before a field is tapped there is no on-screen keyboard to take the keys
+		// first, so they reach the app, which is where touch mode is decided
+		test('should stay in touch mode when the typed keys reach the app', () => {
+			test.skip(!device, 'No Android device found');
+			expect(isInTouchMode(serial), 'the tap that opened the screen put the device in touch mode').toBe(true);
+
+			typeText(device!.id, 'a');
+
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		test('should type text into a field and stay in touch mode', async () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			typeText(device!.id, 'Hello World 123!');
+
+			await eventually(() => textOfElementLabelled(device!.id, PLAYGROUND_TEXT_FIELD), 'the text never reached the field')
+				.toContain('Hello World 123!');
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		test('should stay in touch mode when the text is a line break', () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			typeText(device!.id, '\n');
+
+			expect(isInTouchMode(serial)).toBe(true);
+		});
+
+		// the enter button is a hardware key, and those are meant to leave touch mode:
+		// keyboard and tv navigation depend on it
+		test('should leave touch mode when the enter button is pressed', async () => {
+			test.skip(!device, 'No Android device found');
+			tapFieldToEnterTouchMode(device!.id, serial);
+
+			pressButton(device!.id, 'ENTER');
+
+			await eventually(() => isInTouchMode(serial), 'the enter button kept the device in touch mode').toBe(false);
+		});
+	});
+
+	// its own describe: it puts another screen on top of the webview screen, which would
+	// break the shared state the playground tests above set up once in their beforeAll
+	test.describe('webview behind another screen of the app', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			// a relaunch resumes whatever screen the app was left on, so start it afresh
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+			await openPlaygroundWebViewScreen(device.id);
+			await expectWebViewToAppear(device.id);
+			expect(visibleWebViews(device.id), 'the webview on screen is visible').not.toHaveLength(0);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			// drop the screens stacked here, so the next launch starts from the menu alone
+			terminateApp(device.id, PLAYGROUND_PACKAGE);
+		});
+
+		test('should report a webview covered by another screen as not visible', async () => {
+			test.skip(!device, 'No Android device found');
+
+			await coverWebViewScreenWithLoginSuccessfulScreen(device!.id);
+
+			// the screen underneath is hidden a moment after the new one has drawn over it
+			await eventually(() => visibleWebViews(device!.id).length, 'the covered webview stayed visible').toBe(0);
+			expect(listWebViews(device!.id).length, 'the covered webview is still alive').toBeGreaterThan(0);
+		});
+	});
+
+	// its own describe, not a test inside the playground group above: `webview list`
+	// reads the foreground app, so this launches a different app and would break the
+	// shared state the playground tests set up once in their beforeAll
+	test.describe('webview on an app that cannot be inspected', () => {
+		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+
+		test.beforeAll(async () => {
+			if (!device) return;
+			launchApp(device.id, SETTINGS_PACKAGE);
+			await expectForegroundAppToBecome(device.id, SETTINGS_PACKAGE);
+		});
+
+		test.afterAll(() => {
+			if (!device) return;
+			clearSettingsTask(device.id);
+		});
+
+		test('should fail to list webviews in an app that is not debuggable', () => {
+			test.skip(!device, 'No Android device found');
+
+			const message = webViewCommandError(device!.id, ['list']);
+			expect(message).toContain('webview list failed');
+			expect(message).toContain(SETTINGS_PACKAGE);
 		});
 	});
 
@@ -402,6 +817,114 @@ function mobilecli(args: string[]): any {
 	}
 }
 
+// for the few tests that need a daemon of their own, or a setting that only an
+// environment variable carries into the daemon. daemon commands answer with a
+// bare ok envelope, so unlike mobilecli() this does not insist on data
+function mobilecliWithEnv(args: string[], extraEnv: NodeJS.ProcessEnv): any {
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: {...coverageEnv(), ...extraEnv},
+	});
+	const parsed = JSON.parse(output);
+	expect(parsed.status, `${args.join(' ')}: ${output}`).toBe('ok');
+	return parsed;
+}
+
+function screenSizeOf(deviceId: string): Dimensions {
+	const info = mobilecliJson(['device', 'info', '--device', deviceId]).data.device;
+	return {width: info.screenSize.width, height: info.screenSize.height};
+}
+
+// an earlier test may already have stopped it, which is not a failure here
+function stopSharedDaemonIfRunning(): void {
+	try {
+		mobilecliWithEnv(['daemon', 'stop'], {});
+	} catch {
+		// not running
+	}
+}
+
+function makePrivateDaemonHome(): string {
+	return fs.mkdtempSync(path.join(DAEMON_HOME_ROOT, 'mcli-idle-'));
+}
+
+// mobilecli names an emulator by its avd, adb by its serial, so the tests that
+// reach the device through adb need the serial of the device under test
+function adbSerialOf(device: Device): string {
+	if (device.type === 'real') {
+		return device.id;
+	}
+	const serials = adb([], ['devices']).split('\n')
+		.filter(line => line.startsWith('emulator-'))
+		.map(line => line.split('\t')[0]);
+	const serial = serials.find(candidate => adb(['-s', candidate], ['emu', 'avd', 'name']).split('\n')[0].trim() === device.id);
+	if (!serial) {
+		throw new Error(`no running emulator is the avd ${device.id} (emulators: ${serials.join(', ')})`);
+	}
+	return serial;
+}
+
+function adbPath(): string {
+	const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
+	const bundled = sdk ? path.join(sdk, 'platform-tools', 'adb') : '';
+	return bundled && fs.existsSync(bundled) ? bundled : 'adb';
+}
+
+function adb(selector: string[], args: string[]): string {
+	return execFileSync(adbPath(), [...selector, ...args], {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']});
+}
+
+// a command the device shell runs, reporting its exit status instead of throwing
+function adbShell(serial: string, command: string): {ok: boolean; output: string} {
+	try {
+		return {ok: true, output: adb(['-s', serial], ['shell', command])};
+	} catch (error: any) {
+		return {ok: false, output: `${error.stdout ?? ''}${error.stderr ?? ''}`};
+	}
+}
+
+// a daemon of its own, started with env, launches the server the test wants. the
+// shared daemon's server must be gone first, or the new daemon adopts it instead,
+// and that one was started with the default idle timeout
+function startDeviceServerWithShortIdle(deviceId: string, serial: string, env: NodeJS.ProcessEnv): void {
+	stopSharedDaemonIfRunning();
+	expect(isDeviceServerRunning(serial), 'daemon stop left the device server behind').toBe(false);
+
+	mobilecliWithEnv(['dump', 'ui', '--device', deviceId], env);
+	expect(deviceServerCommandLine(serial)).toContain(`--idle-timeout-ms=${DEVICE_SERVER_SHORT_IDLE_SECONDS * 1000}`);
+}
+
+function isDeviceServerRunning(serial: string): boolean {
+	return deviceServerPid(serial) !== undefined;
+}
+
+function deviceServerPid(serial: string): number | undefined {
+	const result = adbShell(serial, `pgrep -f '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`);
+	return result.ok ? Number(result.output.trim()) : undefined;
+}
+
+function deviceServerCommandLine(serial: string): string {
+	return adbShell(serial, `pgrep -af '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).output;
+}
+
+// brackets around the first letter keep pgrep from matching its own command line
+function pgrepPatternFor(name: string): string {
+	return `[${name[0]}]${name.slice(1)}`;
+}
+
+// uiautomator is the client an outside tool would be: it is killed (137) while
+// another process holds the device's UiAutomation
+function uiautomatorDumpSucceeds(serial: string): boolean {
+	const result = adbShell(serial, `uiautomator dump ${UIAUTOMATOR_DUMP_FILE}`);
+	return result.ok && result.output.includes('dumped to');
+}
+
+function removeUiautomatorDumpFile(serial: string): void {
+	adbShell(serial, `rm -f ${UIAUTOMATOR_DUMP_FILE}`);
+}
+
 function mobilecliJson(args: string[]): any {
 	try {
 		const result = execFileSync(mobilecliBinary, args, {
@@ -436,8 +959,46 @@ function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function listApps(deviceId: string): any[] {
-	return mobilecliJson(['apps', 'list', '--device', deviceId]).data;
+function listApps(deviceId: string): InstalledApp[] {
+	return mobilecliJson(['apps', 'list', '--device', deviceId]).data as InstalledApp[];
+}
+
+function installedPackageNames(deviceId: string): string[] {
+	return listApps(deviceId).map(app => app.packageName);
+}
+
+function findInstalledApp(deviceId: string, packageName: string): InstalledApp | undefined {
+	return listApps(deviceId).find(app => app.packageName === packageName);
+}
+
+// uninstalling an app that is not installed is not an error worth failing on: the
+// point of this call is only to reach a known-clean starting state
+function uninstallPlaygroundIfPresent(deviceId: string): void {
+	try {
+		mobilecliJson(['apps', 'uninstall', PLAYGROUND_PACKAGE, '--device', deviceId]);
+	} catch {
+		// already absent
+	}
+}
+
+// a package name that ends the intended command and starts another one, the way
+// an unquoted argument would be read by the device shell
+function packageNameSmuggling(command: string): string {
+	return `${ABSENT_PACKAGE}; ${command}`;
+}
+
+// some commands reject a bogus package and others accept it; either is fine for a
+// test that only cares about what reached the device shell
+function runIgnoringItsOutcome(args: string[]): void {
+	try {
+		mobilecliJson(args);
+	} catch {
+		// the outcome is asserted on the device, not on the envelope
+	}
+}
+
+function fileNamesIn(deviceId: string, remoteDir: string): string[] {
+	return fsList(deviceId, remoteDir).map((entry: any) => entry.name);
 }
 
 function launchApp(deviceId: string, packageName: string): void {
@@ -446,6 +1007,23 @@ function launchApp(deviceId: string, packageName: string): void {
 
 function terminateApp(deviceId: string, packageName: string): void {
 	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
+}
+
+// runs an `apps` subcommand that is expected to fail and returns its error message
+function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+	try {
+		mobilecliJson(['apps', subcommand, packageName, '--device', deviceId]);
+	} catch (error: unknown) {
+		// a timeout or a missing binary fails without printing an envelope, and
+		// parsing that as json would bury the real cause
+		const stdout = (error as {stdout?: string}).stdout ?? '';
+		if (stdout.trim() === '') {
+			throw error;
+		}
+		return expectErrorEnvelope(JSON.parse(stdout));
+	}
+
+	throw new Error(`apps ${subcommand} ${packageName} unexpectedly succeeded`);
 }
 
 // force-stops every package that can hold an activity in the settings task, so the
@@ -495,9 +1073,52 @@ function pressButton(deviceId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', deviceId]);
 }
 
-// android returns the view hierarchy as a nested tree, so flatten it before searching
-function flattenElements(elements: UIElement[]): UIElement[] {
-	return elements.flatMap(element => [element, ...flattenElements(element.children ?? [])]);
+// the accessibility labels of the playground basic ui screen
+const PLAYGROUND_BASIC_UI_BUTTON = 'Basic UI';
+const PLAYGROUND_TEXT_FIELD = 'text_field';
+
+async function openPlaygroundBasicUIScreen(deviceId: string): Promise<void> {
+	// a relaunch resumes whatever screen the app was left on, so start it afresh
+	terminateApp(deviceId, PLAYGROUND_PACKAGE);
+	launchApp(deviceId, PLAYGROUND_PACKAGE);
+	await eventually(() => allTextsIn(dumpUI(deviceId)), 'playground menu never appeared').toContain(PLAYGROUND_BASIC_UI_BUTTON);
+
+	const button = findElementByText(dumpUI(deviceId), PLAYGROUND_BASIC_UI_BUTTON);
+	tap(deviceId, centerOf(button).x, centerOf(button).y);
+	await eventually(() => hasElementLabelled(deviceId, PLAYGROUND_TEXT_FIELD), 'basic ui screen never appeared').toBe(true);
+}
+
+function elementsLabelled(deviceId: string, label: string): UIElement[] {
+	return flattenElements(dumpUI(deviceId).data.elements).filter(element => element.label === label);
+}
+
+function hasElementLabelled(deviceId: string, label: string): boolean {
+	return elementsLabelled(deviceId, label).length > 0;
+}
+
+// a tap is what puts the device in touch mode, and on the field it gives it focus
+function tapFieldToEnterTouchMode(deviceId: string, serial: string): void {
+	const [field] = elementsLabelled(deviceId, PLAYGROUND_TEXT_FIELD);
+	expect(field, 'no text field on screen').toBeDefined();
+	tap(deviceId, centerOf(field).x, centerOf(field).y);
+	expect(isInTouchMode(serial), 'a tap puts the device in touch mode').toBe(true);
+}
+
+function textOfElementLabelled(deviceId: string, label: string): string {
+	return elementsLabelled(deviceId, label)[0]?.text ?? '';
+}
+
+function typeText(deviceId: string, text: string): void {
+	mobilecli(['io', 'text', text, '--device', deviceId]);
+}
+
+// android reports whether the device is in touch mode in its window dump
+function isInTouchMode(serial: string): boolean {
+	const touchMode = adb(['-s', serial], ['shell', 'dumpsys', 'window']).match(/mInTouchMode=(true|false)/);
+	if (!touchMode) {
+		throw new Error('the window dump does not report the touch mode');
+	}
+	return touchMode[1] === 'true';
 }
 
 function findElementByText(uiDump: UIDumpResponse, text: string): UIElement {
@@ -518,11 +1139,136 @@ function allTextsIn(uiDump: UIDumpResponse): string[] {
 	return flattenElements(uiDump.data.elements).map(el => el.text).filter(Boolean) as string[];
 }
 
-function centerOf(element: UIElement): Point {
-	return {
-		x: element.rect.x + Math.floor(element.rect.width / 2),
-		y: element.rect.y + Math.floor(element.rect.height / 2),
-	};
+async function openPlaygroundWebViewScreen(deviceId: string): Promise<void> {
+	launchApp(deviceId, PLAYGROUND_PACKAGE);
+
+	// wait for the main menu to draw before looking for the button on it
+	await eventually(() => hasWebViewButton(deviceId), 'playground menu never appeared').toBe(true);
+
+	const button = findWebViewButton(dumpUI(deviceId));
+	tap(deviceId, centerOf(button).x, centerOf(button).y);
+}
+
+function hasWebViewButton(deviceId: string): boolean {
+	try {
+		findWebViewButton(dumpUI(deviceId));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// tapping the menu entry starts the webview activity, which loads its page before
+// the agent can report it
+async function expectWebViewToAppear(deviceId: string): Promise<void> {
+	await eventually(() => listWebViews(deviceId).length, 'no webview appeared in the playground app')
+		.toBeGreaterThan(0);
+}
+
+// runs a webview command that is expected to fail and returns the error message
+function webViewCommandError(deviceId: string, args: string[]): string {
+	try {
+		mobilecliJson(['webview', ...args, '--device', deviceId]);
+	} catch (error: unknown) {
+		// a timeout or a missing binary fails without printing an envelope, and
+		// parsing that as json would bury the real cause
+		const stdout = (error as {stdout?: string}).stdout ?? '';
+		if (stdout.trim() === '') {
+			throw error;
+		}
+		return expectErrorEnvelope(JSON.parse(stdout));
+	}
+
+	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+}
+
+// the deep link opens its screen on top of whatever the app is showing, and the
+// webview screen stays alive underneath it
+async function coverWebViewScreenWithLoginSuccessfulScreen(deviceId: string): Promise<void> {
+	mobilecli(['url', playgroundLoginLinkFor('Alice'), '--device', deviceId]);
+	await expectTextOnScreen(deviceId, playgroundGreetingFor('Alice'));
+}
+
+function visibleWebViews(deviceId: string): WebViewInfo[] {
+	return (listWebViews(deviceId) as WebViewInfo[]).filter(webView => webView.isVisible);
+}
+
+function listWebViews(deviceId: string): unknown[] {
+	return mobilecliJson(['webview', 'list', '--device', deviceId]).data as unknown[];
+}
+
+function firstWebView(deviceId: string): WebViewInfo {
+	const webViews = listWebViews(deviceId);
+	expect(webViews.length, 'no webview reported by the playground app').toBeGreaterThan(0);
+	expectWebViewShape(webViews[0]);
+	return webViews[0];
+}
+
+function webViewUrl(deviceId: string, webViewId: string): string {
+	return mobilecliJson(['webview', 'url', webViewId, '--device', deviceId]).data as string;
+}
+
+function webViewTitle(deviceId: string, webViewId: string): string {
+	return mobilecliJson(['webview', 'title', webViewId, '--device', deviceId]).data as string;
+}
+
+function webViewContent(deviceId: string, webViewId: string): string {
+	return mobilecliJson(['webview', 'content', webViewId, '--device', deviceId]).data as string;
+}
+
+function webViewEval(deviceId: string, webViewId: string, expression: string): unknown {
+	return mobilecliJson(['webview', 'eval', webViewId, expression, '--device', deviceId]).data;
+}
+
+function webViewQuery(deviceId: string, webViewId: string, selector: string): WebViewQueryResult[] {
+	return mobilecliJson(['webview', 'query', webViewId, selector, '--device', deviceId]).data as WebViewQueryResult[];
+}
+
+function webViewGoto(deviceId: string, webViewId: string, url: string): void {
+	mobilecliJson(['webview', 'goto', webViewId, url, '--device', deviceId]);
+}
+
+function webViewReload(deviceId: string, webViewId: string): void {
+	mobilecliJson(['webview', 'reload', webViewId, '--device', deviceId]);
+}
+
+function webViewGoBack(deviceId: string, webViewId: string): void {
+	mobilecliJson(['webview', 'back', webViewId, '--device', deviceId]);
+}
+
+function webViewGoForward(deviceId: string, webViewId: string): void {
+	mobilecliJson(['webview', 'forward', webViewId, '--device', deviceId]);
+}
+
+function webViewWait(deviceId: string, webViewId: string, state: string): void {
+	mobilecliJson(['webview', 'wait', webViewId, '--state', state, '--timeout', '15000', '--device', deviceId]);
+}
+
+// the device settles on its own schedule, so these read it until it agrees
+// rather than sleeping for a guessed duration
+async function expectForegroundAppToBecome(deviceId: string, packageName: string): Promise<void> {
+	await eventually(() => getForegroundApp(deviceId).data.packageName,
+		`${packageName} never came to the foreground`).toBe(packageName);
+}
+
+async function expectLauncherToBeInForeground(deviceId: string): Promise<void> {
+	await eventually(() => getForegroundApp(deviceId).data.packageName,
+		'launcher never came to the foreground').toMatch(LAUNCHER_PACKAGE_PATTERN);
+}
+
+async function expectTextOnScreen(deviceId: string, text: string): Promise<void> {
+	await eventually(() => allTextsIn(dumpUI(deviceId)),
+		`"${text}" never appeared on screen`).toContain(text);
+}
+
+// `name` deliberately comes second: the device shell used to cut the url at the
+// first `&`, which left the app greeting its default guest
+function playgroundLoginLinkFor(name: string): string {
+	return `playground://login-successful?source=mobilecli&name=${name}`;
+}
+
+function playgroundGreetingFor(name: string): string {
+	return `You have successfully logged in to the native app, ${name}!`;
 }
 
 function getAppContainerPath(deviceId: string, packageName: string): string {

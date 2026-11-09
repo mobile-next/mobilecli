@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 type Request struct {
@@ -62,6 +63,7 @@ func Dial(token string) (*websocket.Conn, error) {
 	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+token)
+	header.Set("User-Agent", utils.UserAgent())
 	conn, _, err := fleetDialer.Dial(u.String(), header)
 	return conn, err
 }
@@ -74,9 +76,9 @@ func Call(token, method string, params any, result any) error {
 		return fmt.Errorf("failed to connect to fleet server: %w", err)
 	}
 	defer func() {
-		conn.WriteMessage(websocket.CloseMessage,
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	req := Request{

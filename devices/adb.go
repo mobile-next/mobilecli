@@ -181,7 +181,7 @@ func (a *ADB) Shell(ctx context.Context, serial, command string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	defer c.close()
+	defer func() { _ = c.close() }()
 	c.setDeadlineFromNow()
 
 	if err := c.service("host:transport:" + serial); err != nil {
@@ -206,7 +206,7 @@ func (a *ADB) ExecOut(ctx context.Context, serial, command string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer c.close()
+	defer func() { _ = c.close() }()
 	c.setDeadlineFromNow()
 
 	if serial == "" {

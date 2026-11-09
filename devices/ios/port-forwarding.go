@@ -47,7 +47,7 @@ func (pf *PortForwarder) Forward(srcPort, dstPort int) error {
 		return fmt.Errorf("failed to get device %s: %w", pf.udid, err)
 	}
 
-	connListener, err := forward.Forward(device, uint16(srcPort), uint16(dstPort))
+	connListener, err := forward.Forward(device, uint16(srcPort), uint16(dstPort)) //nolint:gosec // ports validated to be 0-65535 above
 	if err != nil {
 		return fmt.Errorf("failed to create port forwarder: %w", err)
 	}

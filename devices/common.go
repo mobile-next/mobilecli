@@ -1,16 +1,38 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+// LogEntry represents a single parsed log entry from a device
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem,omitempty"`
+	Category  string `json:"category,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+}
+
+// processNameFromPath extracts the binary name from a full image path
+func processNameFromPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		return path[idx+1:]
+	}
+	return path
+}
 
 type CrashReport struct {
 	ProcessName string `json:"processName"`
@@ -73,6 +95,21 @@ func buildMjpegURL(port, fps int, scale float64) string {
 	return url
 }
 
+// ScreenshotOptions contains options for taking a screenshot.
+// MaxSize caps max(width, height) in pixels keeping aspect ratio and takes
+// precedence over Scale; neither ever upscales.
+// Rect crops before Scale/MaxSize apply; it is expressed in screen points
+// (the same units as dump.ui bounds) and mapped to pixels via
+// ScreenWidthPoints, which is required when Rect is set.
+type ScreenshotOptions struct {
+	Format            string                   // "png" or "jpeg"
+	Quality           int                      // 1-100, only used for JPEG
+	Scale             float64                  // 0.0-1.0, 1.0 means no scaling
+	MaxSize           int                      // 0 means no limit
+	Clip              *types.ScreenElementRect // nil means no cropping
+	ScreenWidthPoints int                      // screen width in points, required when Rect is set
+}
+
 // ScreenCaptureConfig contains configuration for screen capture operations
 type ScreenCaptureConfig struct {
 	Format     string
@@ -81,13 +118,22 @@ type ScreenCaptureConfig struct {
 	FPS        int
 	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
 	OnProgress func(message string) // optional progress callback
+	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
+	StopChan   <-chan struct{}      // optional (avc only): stops this capture when closed, even while no frames are arriving
 }
 
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {
 	OnProgress func(message string) // optional progress callback
 	Hook       *ShutdownHook        // optional shutdown hook for cleanup tracking
+}
+
+// reportProgress calls OnProgress when one was given.
+func (c StartAgentConfig) reportProgress(message string) {
+	if c.OnProgress != nil {
+		c.OnProgress(message)
+	}
 }
 
 // ScreenElementRect represents the rectangle coordinates and dimensions
@@ -111,6 +157,31 @@ type LaunchOptions struct {
 	Activity string
 }
 
+// DumpOptions controls what a UI dump includes.
+type DumpOptions struct {
+	// Full includes windows normally left out, such as the on-screen keyboard.
+	Full bool
+}
+
+// values returned by ControllableDevice.Platform, DeviceType and State
+const (
+	PlatformIOS     = "ios"
+	PlatformAndroid = "android"
+
+	DeviceTypeReal      = "real"
+	DeviceTypeSimulator = "simulator"
+	DeviceTypeEmulator  = "emulator"
+
+	StateOnline  = "online"
+	StateOffline = "offline"
+)
+
+// screen capture stream formats
+const (
+	FormatMJPEG = "mjpeg"
+	FormatAVC   = "avc"
+)
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -119,17 +190,21 @@ type ControllableDevice interface {
 	Version() string    // OS version
 	State() string      // e.g., "online", "offline"
 
-	TakeScreenshot() ([]byte, error)
+	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
 	Reboot() error
 	Boot() error     // boot simulator/emulator
 	Shutdown() error // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
-	Swipe(x1, y1, x2, y2 int) error
+	Swipe(x1, y1, x2, y2, duration int) error
 	Gesture(actions []devicekit.TapAction) error
 	StartAgent(config StartAgentConfig) error
 	SendKeys(text string) error
+	GetClipboard() (string, error)
+	SetClipboard(text string) error
 	PressKeys(combos []KeyCombo) error
+	// Fill replaces the focused text field's text; "" clears it
+	Fill(text string) error
 	PressButton(key string) error
 	LaunchApp(bundleID string, opts LaunchOptions) error
 	TerminateApp(bundleID string) error
@@ -138,14 +213,16 @@ type ControllableDevice interface {
 	GetForegroundApp() (*ForegroundAppInfo, error)
 	InstallApp(path string) error
 	UninstallApp(packageName string) (*InstalledAppInfo, error)
+	ClearApp(bundleID string) error
 	Info() (*FullDeviceInfo, error)
 	StartScreenCapture(config ScreenCaptureConfig) error
-	DumpSource() ([]ScreenElement, error)
-	DumpSourceRaw() (any, error)
+	DumpSource(opts DumpOptions) ([]ScreenElement, error)
+	DumpSourceRaw(opts DumpOptions) (any, error)
 	GetOrientation() (string, error)
 	SetOrientation(orientation string) error
 	ListCrashReports() ([]CrashReport, error)
 	GetCrashReport(id string) ([]byte, error)
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
 
 	PushFile(localPath, remotePath string) error
 	PullFile(remotePath, localPath string) error
@@ -155,10 +232,23 @@ type ControllableDevice interface {
 	GetAppContainerPath(bundleID string) (string, error)
 }
 
+// LocationSettable is implemented by devices that can simulate a GPS location.
+// Devices that don't implement it report location override as unsupported.
+type LocationSettable interface {
+	SetLocation(lat, lon float64) error
+	ClearLocation() error
+}
+
 // AnimationConfigurable is implemented by devices that can toggle system
 // animations. Devices that don't implement it are treated as a no-op by callers.
 type AnimationConfigurable interface {
 	SetAnimationsEnabled(enabled bool) error
+}
+
+// AppearanceConfigurable is implemented by devices that can switch the system
+// appearance between light and dark mode.
+type AppearanceConfigurable interface {
+	SetAppearance(appearance string) error
 }
 
 // WebViewable is implemented by devices that support webview inspection and control.
@@ -234,7 +324,7 @@ func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error
 	} else {
 		iosCount = len(iosDevices)
 		for i := range iosDevices {
-			allDevices = append(allDevices, &iosDevices[i])
+			allDevices = append(allDevices, iosDevices[i])
 		}
 	}
 
@@ -326,6 +416,18 @@ type FullDeviceInfo struct {
 }
 
 // GetDeviceInfoList returns a list of DeviceInfo for all connected devices
+func deviceModel(d ControllableDevice) string {
+	switch device := d.(type) {
+	case *IOSDevice:
+		return device.ProductType
+	case *SimulatorDevice:
+		return device.Simulator.DeviceType
+	case *AndroidDevice:
+		return device.model
+	}
+	return ""
+}
+
 func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 	startTime := time.Now()
 	devices, err := GetAllControllableDevices(opts.IncludeOffline)
@@ -338,7 +440,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 		state := d.State()
 
 		// filter offline devices unless includeOffline is true
-		if !opts.IncludeOffline && state == "offline" {
+		if !opts.IncludeOffline && state == StateOffline {
 			continue
 		}
 
@@ -352,24 +454,6 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			continue
 		}
 
-		// get model for devices
-		model := ""
-		if d.Platform() == "ios" {
-			if d.DeviceType() == "real" {
-				if iosDevice, ok := d.(*IOSDevice); ok {
-					model = iosDevice.ProductType
-				}
-			} else if d.DeviceType() == "simulator" {
-				if simDevice, ok := d.(*SimulatorDevice); ok {
-					model = simDevice.Simulator.DeviceType
-				}
-			}
-		} else if d.Platform() == "android" {
-			if androidDevice, ok := d.(*AndroidDevice); ok {
-				model = androidDevice.model
-			}
-		}
-
 		deviceInfoList = append(deviceInfoList, DeviceInfo{
 			ID:       d.ID(),
 			Name:     d.Name(),
@@ -377,7 +461,7 @@ func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
 			Type:     d.DeviceType(),
 			Version:  d.Version(),
 			State:    state,
-			Model:    model,
+			Model:    deviceModel(d),
 		})
 	}
 	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))
@@ -390,6 +474,8 @@ type InstalledAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName,omitempty"`
 	Version     string `json:"version,omitempty"`
+	// VersionCode is the build identifier: CFBundleVersion on iOS, versionCode on Android.
+	VersionCode string `json:"versionCode,omitempty"`
 }
 
 // ForegroundAppInfo represents information about the currently foreground application
@@ -397,4 +483,7 @@ type ForegroundAppInfo struct {
 	PackageName string `json:"packageName"`
 	AppName     string `json:"appName"`
 	Version     string `json:"version"`
+	// Activity is the focused component within the app: activity class on
+	// Android, view controller class on iOS.
+	Activity string `json:"activity,omitempty"`
 }

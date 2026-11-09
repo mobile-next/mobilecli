@@ -78,7 +78,7 @@ func (g *GDBServer) formatPacket(pck string) string {
 }
 
 func (g *GDBServer) Recv() (string, error) {
-	if g.scanner.Scan() == false {
+	if !g.scanner.Scan() {
 		return "", g.scanner.Err()
 	}
 	return g.scanner.Text(), nil

@@ -4,14 +4,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/devices"
-	"github.com/mobile-next/mobilecli/utils"
+	"github.com/mobile-next/mobilecli/daemon"
+	"github.com/mobile-next/mobilecli/types"
 	"github.com/spf13/cobra"
 )
 
 var (
+	screenshotScale      float64
+	screenshotMaxSize    int
+	screenshotClip       string
 	screencaptureScale   float64
 	screencaptureFPS     int
 	screencaptureBitrate int
@@ -22,40 +27,81 @@ const (
 	maxScreencaptureBitrate = 10_000_000
 )
 
+// parseScreenshotClip parses an "x,y,width,height" flag value (in screen
+// points); an empty value means no cropping.
+func parseScreenshotClip(value string) (*types.ScreenElementRect, error) {
+	if value == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(value, ",")
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("invalid --clip %q, expected x,y,width,height", value)
+	}
+
+	numbers := make([]int, 4)
+	for i, part := range parts {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --clip %q, expected x,y,width,height", value)
+		}
+		numbers[i] = number
+	}
+
+	return &types.ScreenElementRect{X: numbers[0], Y: numbers[1], Width: numbers[2], Height: numbers[3]}, nil
+}
+
 var screenshotCmd = &cobra.Command{
 	Use:   "screenshot",
 	Short: "Take a screenshot of a connected device",
 	Long:  `Takes a screenshot of a specified device (using its ID) and saves it locally as a PNG file. Supports iOS (real/simulator) and Android (real/emulator).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		rect, err := parseScreenshotClip(screenshotClip)
+		if err != nil {
+			return err
+		}
+
+		// the daemon's cwd is not ours: send an absolute path, or our cwd as the
+		// directory for the generated default filename
+		outputPath := absLocalPath(screenshotOutputPath)
+		if outputPath == "" {
+			outputPath = cwdWithSeparator()
+		}
+
 		req := commands.ScreenshotRequest{
 			DeviceID:   deviceId,
 			Format:     screenshotFormat,
 			Quality:    screenshotJpegQuality,
-			OutputPath: screenshotOutputPath,
+			Scale:      screenshotScale,
+			MaxSize:    screenshotMaxSize,
+			Clip:       rect,
+			OutputPath: outputPath,
 		}
 
-		response := commands.ScreenshotCommand(req)
-
-		// Handle stdout output for binary data
-		if screenshotOutputPath == "-" && response.Status == "ok" {
-			if screenshotResp, ok := response.Data.(commands.ScreenshotResponse); ok && screenshotResp.Data != "" {
-				// Write binary data to stdout
-				imageBytes, err := base64.StdEncoding.DecodeString(screenshotResp.Data)
-				if err != nil {
-					return fmt.Errorf("failed to decode image data: %v", err)
-				}
-				_, err = os.Stdout.Write(imageBytes)
-				if err != nil {
-					return fmt.Errorf("failed to write to stdout: %v", err)
-				}
-				return nil
-			}
+		if outputPath != "-" {
+			return runViaDaemon("cli.screenshot", req)
 		}
 
-		// Print JSON response
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
+		raw, err := callDaemon("cli.screenshot", req, daemon.NoTimeout)
+		if err != nil {
+			printJson(errorEnvelope(err))
+			return err
+		}
+
+		var screenshotResp commands.ScreenshotResponse
+		if err := decodeEnvelope(raw, &screenshotResp); err != nil {
+			out, _ := indentedJSON(raw)
+			fmt.Println(out)
+			return err
+		}
+
+		// Write binary data to stdout
+		imageBytes, err := base64.StdEncoding.DecodeString(screenshotResp.Data)
+		if err != nil {
+			return fmt.Errorf("failed to decode image data: %v", err)
+		}
+		if _, err := os.Stdout.Write(imageBytes); err != nil {
+			return fmt.Errorf("failed to write to stdout: %v", err)
 		}
 		return nil
 	},
@@ -80,65 +126,13 @@ var screencaptureCmd = &cobra.Command{
 			return fmt.Errorf("%s", response.Error)
 		}
 
-		// Find the target device
-		targetDevice, err := commands.FindDeviceOrAutoSelect(deviceId)
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		// Start agent
-		err = targetDevice.StartAgent(devices.StartAgentConfig{
-			OnProgress: func(message string) {
-				utils.Verbose(message)
-			},
-			Hook: commands.GetShutdownHook(),
+		return streamViaDaemon("cli.screencapture", commands.ScreenCaptureStreamRequest{
+			DeviceID: deviceId,
+			Format:   screencaptureFormat,
+			Scale:    screencaptureScale,
+			FPS:      screencaptureFPS,
+			Bitrate:  screencaptureBitrate,
 		})
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		// set defaults if not provided
-		scale := screencaptureScale
-		if scale == 0.0 {
-			scale = devices.DefaultScale
-		}
-
-		fps := screencaptureFPS
-		if fps == 0 {
-			fps = devices.DefaultFramerate
-		}
-
-		// Start screen capture and stream to stdout
-		err = targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
-			Format:  screencaptureFormat,
-			Quality: devices.DefaultQuality,
-			Scale:   scale,
-			FPS:     fps,
-			Bitrate: screencaptureBitrate,
-			OnProgress: func(message string) {
-				utils.Verbose(message)
-			},
-			OnData: func(data []byte) bool {
-				_, writeErr := os.Stdout.Write(data)
-				if writeErr != nil {
-					fmt.Fprintf(os.Stderr, "Error writing data: %v\n", writeErr)
-					return false
-				}
-				return true
-			},
-		})
-
-		if err != nil {
-			response := commands.NewErrorResponse(fmt.Errorf("error starting screen capture: %v", err))
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
-		}
-
-		return nil
 	},
 }
 
@@ -151,6 +145,9 @@ func init() {
 	screenshotCmd.Flags().StringVarP(&screenshotOutputPath, "output", "o", "", "Output file path for screenshot (e.g., screen.png, or '-' for stdout)")
 	screenshotCmd.Flags().StringVarP(&screenshotFormat, "format", "f", "png", "Output format for screenshot (png or jpeg)")
 	screenshotCmd.Flags().IntVarP(&screenshotJpegQuality, "quality", "q", 90, "JPEG quality (1-100, only applies if format is jpeg)")
+	screenshotCmd.Flags().Float64Var(&screenshotScale, "scale", 1.0, "Scale factor for screenshot (0.0-1.0)")
+	screenshotCmd.Flags().IntVar(&screenshotMaxSize, "max-size", 0, "Maximum of width/height in pixels, keeping aspect ratio (takes precedence over --scale, 0 for no limit)")
+	screenshotCmd.Flags().StringVar(&screenshotClip, "clip", "", "Crop to x,y,width,height in screen points, applied before --scale/--max-size")
 
 	// screencapture command flags
 	screencaptureCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to capture from")

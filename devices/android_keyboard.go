@@ -1,58 +1,41 @@
 package devices
 
 import (
+	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 )
 
-// keycodeBack dismisses the on-screen keyboard when it's shown, same as a
-// physical back-button press.
-const keycodeBack = "4"
-
-// parseInputShown extracts the mInputShown value from `dumpsys input_method`
-// output. dumpsys packs multiple "key=value" fields on a single line (e.g.
-// "mRequestedShowExplicitly=false mShowForced=false"), so mInputShown isn't
-// always alone at the start of its line — each line is split into
-// whitespace-separated fields to find it.
-func parseInputShown(dumpsysOutput string) (bool, error) {
-	for _, line := range strings.Split(dumpsysOutput, "\n") {
-		for _, field := range strings.Fields(line) {
-			value, ok := strings.CutPrefix(field, "mInputShown=")
-			if !ok {
-				continue
-			}
-			visible, err := strconv.ParseBool(value)
-			if err != nil {
-				return false, fmt.Errorf("parse mInputShown value %q: %w", value, err)
-			}
-			return visible, nil
-		}
-	}
-	return false, fmt.Errorf("could not determine keyboard visibility: mInputShown not found in dumpsys input_method output")
+type keyboardStatusResult struct {
+	Visible bool `json:"visible"`
 }
 
-// IsKeyboardVisible reports whether the on-screen keyboard is currently shown.
-// This is a system-level property read via dumpsys, so it works regardless of
-// which app is foregrounded and whether it's debuggable.
+type keyboardHideResult struct {
+	Dismissed bool `json:"dismissed"`
+}
+
+// IsKeyboardVisible reports whether an input method window is on screen.
 func (d *AndroidDevice) IsKeyboardVisible() (bool, error) {
-	out, err := d.runAdbCommand("shell", "dumpsys", "input_method")
+	raw, err := d.serverRequest("device.io.keyboard.status", nil)
 	if err != nil {
 		return false, err
 	}
-	return parseInputShown(string(out))
+	var result keyboardStatusResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, fmt.Errorf("failed to parse keyboard status response: %w", err)
+	}
+	return result.Visible, nil
 }
 
+// HideKeyboard presses BACK if the keyboard is showing. It returns false when
+// no keyboard was showing, so it never navigates back on its own.
 func (d *AndroidDevice) HideKeyboard() (bool, error) {
-	visible, err := d.IsKeyboardVisible()
+	raw, err := d.serverRequest("device.io.keyboard.hide", nil)
 	if err != nil {
 		return false, err
 	}
-	if !visible {
-		return false, nil
+	var result keyboardHideResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, fmt.Errorf("failed to parse keyboard hide response: %w", err)
 	}
-	if _, err := d.runAdbCommand("shell", "input", "keyevent", keycodeBack); err != nil {
-		return false, err
-	}
-	return true, nil
+	return result.Dismissed, nil
 }

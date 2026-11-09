@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
-	"github.com/mobile-next/mobilecli/commands"
 	"github.com/mobile-next/mobilecli/devices"
 	"github.com/spf13/cobra"
 )
@@ -23,14 +20,7 @@ var devicesCmd = &cobra.Command{
 			DeviceType:     deviceType,
 		}
 
-		token, _ := getRemoteToken()
-
-		response := commands.DevicesCommand(opts, token)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.devices", opts)
 	},
 }
 

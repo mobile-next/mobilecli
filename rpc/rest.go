@@ -2,12 +2,15 @@ package rpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 // RESTTimeout is the deadline for a single REST call to the fleet server.
@@ -54,11 +57,12 @@ func RESTCall(token, method, path string, body any, result any) error {
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, base+path, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, base+path, reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", utils.UserAgent())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -68,7 +72,7 @@ func RESTCall(token, method, path string, body any, result any) error {
 	if err != nil {
 		return fmt.Errorf("failed to call fleet server: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

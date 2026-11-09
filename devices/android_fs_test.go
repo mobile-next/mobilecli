@@ -2,7 +2,7 @@ package devices
 
 import "testing"
 
-func Test_androidParseLsLine(t *testing.T) {
+func Test_androidParseLsLine(t *testing.T) { //nolint:funlen
 	tests := []struct {
 		name     string
 		line     string

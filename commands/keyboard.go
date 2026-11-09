@@ -2,12 +2,18 @@ package commands
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mobile-next/mobilecli/devices"
 )
 
+const (
+	keyboardCloseTimeout = 5 * time.Second
+	keyboardPollInterval = 100 * time.Millisecond
+)
+
 type KeyboardRequest struct {
-	DeviceID string
+	DeviceID string `json:"deviceId"`
 }
 
 type KeyboardHideResult struct {
@@ -19,7 +25,7 @@ type KeyboardStatusResult struct {
 }
 
 func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, error) {
-	device, err := FindDeviceOrAutoSelect(deviceID)
+	device, err := FindDeviceWithAgent(deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("error finding device: %w", err)
 	}
@@ -30,12 +36,36 @@ func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, 
 	return kb, nil
 }
 
+// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and
+// an error when the keyboard is still showing once the timeout has passed.
+func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.Duration) (bool, error) {
+	dismissed, err := kb.HideKeyboard()
+	if err != nil || !dismissed {
+		return false, err
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		visible, err := kb.IsKeyboardVisible()
+		if err != nil {
+			return false, err
+		}
+		if !visible {
+			return true, nil
+		}
+		if time.Now().After(deadline) {
+			return false, fmt.Errorf("keyboard is still visible after %s", timeout)
+		}
+		time.Sleep(keyboardPollInterval)
+	}
+}
+
 func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
 	kb, err := keyboardControllableDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
-	dismissed, err := kb.HideKeyboard()
+	dismissed, err := hideKeyboardAndWaitForClose(kb, keyboardCloseTimeout)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("keyboard hide failed: %w", err))
 	}

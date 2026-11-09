@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,7 +50,7 @@ func setCachedAgentPort(udid, bundleID string, port int) {
 // process of a specific bundle ID inside the given simulator.
 // Returns the PID and the .app bundle path.
 func findSimulatorPIDForBundle(udid, bundleID string) (pid int, appBundlePath string, err error) {
-	out, err := exec.Command("ps", "aux").Output()
+	out, err := exec.CommandContext(context.Background(), "ps", "aux").Output()
 	if err != nil {
 		return 0, "", fmt.Errorf("ps aux: %w", err)
 	}
@@ -99,7 +100,7 @@ func appBundleFromExecPath(execPath string) string {
 // bundleIDFromInfoPlist reads CFBundleIdentifier from an Info.plist using
 // the macOS `defaults read` command, which handles both XML and binary plists.
 func bundleIDFromInfoPlist(plistPath string) (string, error) {
-	out, err := exec.Command("defaults", "read", plistPath, "CFBundleIdentifier").Output()
+	out, err := exec.CommandContext(context.Background(), "defaults", "read", plistPath, "CFBundleIdentifier").Output()
 	if err != nil {
 		return "", fmt.Errorf("defaults read %s: %w", plistPath, err)
 	}
@@ -114,11 +115,14 @@ func writeIOSAgentDylib() (string, error) {
 		return "", fmt.Errorf("create temp dylib: %w", err)
 	}
 	if _, err := f.Write(agents.IOSAgentSimDylib); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", fmt.Errorf("write dylib: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write dylib: %w", err)
+	}
 	return f.Name(), nil
 }
 
@@ -170,6 +174,29 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
 
+// safariInForeground returns what drives the tabs of Safari, when Safari is the
+// app in front. Safari cannot take the agent, so its tabs are driven through the
+// web inspector of the simulator instead (see ios_webinspector.go). Not knowing
+// the foreground app leaves it to the injected agent, which reports why.
+func (s *SimulatorDevice) safariInForeground() (safariWebViews, bool) {
+	if s.deviceKitClient == nil {
+		if err := s.StartAgent(StartAgentConfig{}); err != nil {
+			utils.Verbose("could not start DeviceKit to look up the foreground app: %v", err)
+			return safariWebViews{}, false
+		}
+	}
+	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
+	if err != nil {
+		utils.Verbose("could not look up the foreground app: %v", err)
+		return safariWebViews{}, false
+	}
+	if activeApp.BundleID != safariBundleID {
+		return safariWebViews{}, false
+	}
+	inspector := webInspectorOf(s.UDID, func() (io.ReadWriteCloser, error) { return dialSimulatorWebInspector(s.UDID) })
+	return safariWebViews{inspector: inspector}, true
+}
+
 // ensureIOSAgentReady ensures the iOS agent is running inside the simulator
 // and returns the local TCP port to connect to.
 func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
@@ -199,7 +226,7 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer os.Remove(dylibPath)
+	defer func() { _ = os.Remove(dylibPath) }()
 
 	port, err := injectIOSAgent(pid, dylibPath)
 	if err != nil {
@@ -229,16 +256,25 @@ func (s *SimulatorDevice) webViewAction(wvID, method string) error {
 
 // WebViewReload reloads the page in the given webview.
 func (s *SimulatorDevice) WebViewReload(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewReload(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.reload")
 }
 
 // WebViewGoBack navigates the given webview back in history.
 func (s *SimulatorDevice) WebViewGoBack(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoBack(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.goBack")
 }
 
 // WebViewGoForward navigates the given webview forward in history.
 func (s *SimulatorDevice) WebViewGoForward(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoForward(wvID)
+	}
 	return s.webViewAction(wvID, "device.webview.goForward")
 }
 
@@ -256,28 +292,23 @@ func (s *SimulatorDevice) WebViewContent(wvID string) (string, error) {
 }
 
 // WebViewWaitForLoadState blocks until the webview reaches the given load state.
-// timeoutMs of 0 uses the agent's default (30s).
+// timeoutMs of 0 uses the agent's default.
 func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs int) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewWaitForLoadState(wvID, state, timeoutMs)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return err
 	}
-	const agentDefaultMs = 30_000
-	waitMs := agentDefaultMs
-	if timeoutMs > 0 {
-		waitMs = timeoutMs
-	}
-	params := map[string]any{"id": wvID, "timeout": waitMs}
-	if state != "" {
-		params["state"] = state
-	}
-	httpTimeout := time.Duration(waitMs)*time.Millisecond + 5*time.Second
-	_, err = agentRequestWithTimeout(port, "device.webview.waitForLoadState", params, httpTimeout)
-	return err
+	return webViewWaitForLoadState(port, wvID, state, timeoutMs)
 }
 
 // WebViewGoto navigates the webview identified by wvID to url.
 func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoto(wvID, url)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return err
@@ -288,32 +319,21 @@ func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
 
 // WebViewEvaluate runs expression in the webview and returns the JS result value.
 func (s *SimulatorDevice) WebViewEvaluate(wvID, expression string, args []any) (any, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewEvaluate(wvID, expression, args)
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]any{
-		"id":         wvID,
-		"expression": ensureReturnExpression(expression),
-	}
-	if len(args) > 0 {
-		params["args"] = args
-	}
-	raw, err := agentRequest(port, "device.webview.evaluate", params)
-	if err != nil {
-		return nil, err
-	}
-	var wrapper struct {
-		Result any `json:"result"`
-	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return nil, fmt.Errorf("parse evaluate result: %w", err)
-	}
-	return wrapper.Result, nil
+	return webViewEvaluate(port, wvID, expression, args)
 }
 
 // ListWebViews returns all embedded WKWebViews found in the foreground simulator app.
 func (s *SimulatorDevice) ListWebViews() ([]WebViewInfo, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.ListWebViews()
+	}
 	port, err := s.ensureIOSAgentReady()
 	if err != nil {
 		return nil, err

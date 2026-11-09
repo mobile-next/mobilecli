@@ -12,16 +12,9 @@ type DeviceInfoResponse struct {
 }
 
 func InfoCommand(deviceID string) *CommandResponse {
-	targetDevice, err := FindDeviceOrAutoSelect(deviceID)
+	targetDevice, err := FindDeviceWithAgent(deviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error starting agent: %v", err))
+		return NewErrorResponse(err)
 	}
 
 	info, err := targetDevice.Info()

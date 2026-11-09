@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #define TAG         "devicekit"
-#define AGENT_CLASS "com.mobilenext.mobilecli.MobilecliAgent"
+#define AGENT_CLASS "com.mobilenext.mobilecli.InjectedAgent"
 #define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 
 /* ── load mobilecli.dex into the target process ─────────────────────────── */
@@ -76,7 +76,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
             }
         }
 
-        LOG("loadClass(MobilecliAgent) failed");
+        LOG("loadClass(InjectedAgent) failed");
         return;
     }
 
@@ -97,7 +97,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
                 jstring msg = (jstring)(*env)->CallObjectMethod(env, exc, toStr);
                 if (msg && !(*env)->ExceptionCheck(env)) {
                     const char *s = (*env)->GetStringUTFChars(env, msg, NULL);
-                    LOG("MobilecliAgent.start() threw: %s", s ? s : "(null)");
+                    LOG("InjectedAgent.start() threw: %s", s ? s : "(null)");
                     if (s) (*env)->ReleaseStringUTFChars(env, msg, s);
                 } else {
                     (*env)->ExceptionClear(env);
@@ -106,7 +106,7 @@ static void bootstrap(JNIEnv *env, const char *dex_path, const char *opt_dir) {
         }
     }
 
-    LOG("MobilecliAgent started");
+    LOG("InjectedAgent started");
 }
 
 /* ── agent entry points ──────────────────────────────────────────────────── */

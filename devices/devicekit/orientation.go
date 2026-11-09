@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+const (
+	OrientationPortrait  = "portrait"
+	OrientationLandscape = "landscape"
+)
+
 func (c *DeviceKitClient) GetOrientation() (string, error) {
 	result, err := c.CallRPC("device.io.orientation.get", nil)
 	if err != nil {
@@ -20,21 +25,21 @@ func (c *DeviceKitClient) GetOrientation() (string, error) {
 
 	switch response.Orientation {
 	case "PORTRAIT":
-		return "portrait", nil
+		return OrientationPortrait, nil
 	case "LANDSCAPE":
-		return "landscape", nil
+		return OrientationLandscape, nil
 	default:
-		return "portrait", nil
+		return OrientationPortrait, nil
 	}
 }
 
 func (c *DeviceKitClient) SetOrientation(orientation string) error {
-	if orientation != "portrait" && orientation != "landscape" {
+	if orientation != OrientationPortrait && orientation != OrientationLandscape {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}
 
 	wdaOrientation := "PORTRAIT"
-	if orientation == "landscape" {
+	if orientation == OrientationLandscape {
 		wdaOrientation = "LANDSCAPE"
 	}
 

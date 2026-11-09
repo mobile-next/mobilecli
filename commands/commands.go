@@ -143,10 +143,7 @@ func FindDevice(deviceID string) (devices.ControllableDevice, error) {
 
 	for _, d := range allDevices {
 		if d.ID() == deviceID {
-			mu.Lock()
-			deviceCache[deviceID] = d
-			mu.Unlock()
-			return d, nil
+			return cacheDevice(d), nil
 		}
 	}
 
@@ -182,7 +179,7 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	}
 
 	if len(onlineDevices) > 1 {
-		err = fmt.Errorf("multiple devices found (%d), please specify --device with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
+		err = fmt.Errorf("multiple devices found (%d), please specify --device or MOBILECLI_DEVICE with one of: %s", len(onlineDevices), getDeviceIDList(onlineDevices))
 		return nil, err
 	}
 
@@ -196,11 +193,37 @@ func FindDeviceOrAutoSelect(deviceID string) (devices.ControllableDevice, error)
 	}
 
 	// not in cache, use the new device instance and cache it
-	device := onlineDevices[0]
+	return cacheDevice(onlineDevices[0]), nil
+}
+
+// cacheDevice stores d unless a concurrent lookup already cached the same ID,
+// and returns whichever instance is in the cache. Every caller must end up with
+// the same instance: a device guards its on-device state with its own mutexes,
+// and those protect nothing if each request holds a different copy.
+func cacheDevice(d devices.ControllableDevice) devices.ControllableDevice {
 	mu.Lock()
-	deviceCache[device.ID()] = device
-	mu.Unlock()
-	return device, nil
+	defer mu.Unlock()
+	if cached, exists := deviceCache[d.ID()]; exists {
+		return cached
+	}
+	deviceCache[d.ID()] = d
+	return d
+}
+
+// EvictDevicesNotIn drops cached devices that a fresh scan no longer reports,
+// so a long-lived daemon does not keep handing out unplugged devices.
+func EvictDevicesNotIn(presentIDs []string) {
+	present := make(map[string]bool, len(presentIDs))
+	for _, id := range presentIDs {
+		present[id] = true
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for id := range deviceCache {
+		if !present[id] {
+			delete(deviceCache, id)
+		}
+	}
 }
 
 // getDeviceIDList returns a comma-separated list of device IDs for error messages
@@ -210,4 +233,22 @@ func getDeviceIDList(devices []devices.ControllableDevice) string {
 		ids = append(ids, d.ID())
 	}
 	return fmt.Sprintf("[%s]", strings.Join(ids, ", "))
+}
+
+// FindDeviceWithAgent finds a device by ID (or auto-selects one) and makes sure
+// its agent is running, so callers can immediately drive the device.
+func FindDeviceWithAgent(deviceID string) (devices.ControllableDevice, error) {
+	targetDevice, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Hook: GetShutdownHook(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err)
+	}
+
+	return targetDevice, nil
 }

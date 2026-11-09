@@ -1,6 +1,8 @@
 package devices
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -129,25 +131,25 @@ func TestCollectElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
 	}
 }
 
-func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsNestsChildrenUnderAcceptedElements(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class: "android.widget.FrameLayout",
-			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 2400},
-			Children: []deviceKitNode{
+			Rect:  uiRect{X: 0, Y: 0, Width: 1080, Height: 2400},
+			Children: []uiNode{
 				{
 					Class:      "android.webkit.WebView",
 					ResourceID: "com.mobilenext.playground:id/webview",
-					Rect:       deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
-					Children: []deviceKitNode{
+					Rect:       uiRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+					Children: []uiNode{
 						{
 							Class: "android.view.View",
-							Rect:  deviceKitRect{X: 0, Y: 290, Width: 1080, Height: 2010},
-							Children: []deviceKitNode{
+							Rect:  uiRect{X: 0, Y: 290, Width: 1080, Height: 2010},
+							Children: []uiNode{
 								{
 									Class: "android.widget.TextView",
 									Text:  "Sample Login",
-									Rect:  deviceKitRect{X: 60, Y: 900, Width: 430, Height: 90},
+									Rect:  uiRect{X: 60, Y: 900, Width: 430, Height: 90},
 								},
 							},
 						},
@@ -157,7 +159,7 @@ func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 top-level element (WebView), got %d: %+v", len(output), output)
@@ -173,27 +175,27 @@ func TestCollectDeviceKitElementsNestsChildrenUnderAcceptedElements(t *testing.T
 	}
 }
 
-func TestCollectDeviceKitElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsHoistsChildrenOfRejectedNodesToTopLevel(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class: "android.widget.LinearLayout",
-			Rect:  deviceKitRect{X: 0, Y: 0, Width: 1080, Height: 1200},
-			Children: []deviceKitNode{
+			Rect:  uiRect{X: 0, Y: 0, Width: 1080, Height: 1200},
+			Children: []uiNode{
 				{
 					Class: "android.widget.Button",
 					Text:  "First",
-					Rect:  deviceKitRect{X: 0, Y: 0, Width: 200, Height: 100},
+					Rect:  uiRect{X: 0, Y: 0, Width: 200, Height: 100},
 				},
 			},
 		},
 		{
 			Class: "android.widget.Button",
 			Text:  "Second",
-			Rect:  deviceKitRect{X: 0, Y: 1300, Width: 200, Height: 100},
+			Rect:  uiRect{X: 0, Y: 1300, Width: 200, Height: 100},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 2 {
 		t.Fatalf("expected 2 top-level elements, got %d: %+v", len(output), output)
@@ -314,19 +316,19 @@ func TestCollectElementsDropsUnlabeledNonInteractableNodes(t *testing.T) {
 
 // devicekit sends a separate hint field; it becomes the placeholder, and the
 // masked password text is preserved.
-func TestCollectDeviceKitElementsHintBecomesPlaceholder(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsHintBecomesPlaceholder(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.widget.EditText",
 			Text:        "•",
 			Hint:        "Password",
 			ContentDesc: "password_field",
 			ResourceID:  "com.mobilenext.playground:id/password_field",
-			Rect:        deviceKitRect{X: 48, Y: 607, Width: 1184, Height: 149},
+			Rect:        uiRect{X: 48, Y: 607, Width: 1184, Height: 149},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -387,18 +389,18 @@ func TestCollectElementsLeavesEnabledNodeUnset(t *testing.T) {
 
 // devicekit reports enabled as a real bool; a disabled node must surface
 // Enabled=false the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksDisabledNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksDisabledNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:      "android.widget.Button",
 			Text:       "DISABLED BUTTON",
 			ResourceID: "com.mobilenext.playground:id/disabled_button",
 			Enabled:    false,
-			Rect:       deviceKitRect{X: 48, Y: 1666, Width: 1184, Height: 168},
+			Rect:       uiRect{X: 48, Y: 1666, Width: 1184, Height: 168},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -457,18 +459,18 @@ func TestCollectElementsLeavesUncheckedSwitchUnset(t *testing.T) {
 
 // devicekit reports checked as a real bool; a checked node must surface
 // Checked=true the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksCheckedNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksCheckedNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.widget.Switch",
 			ContentDesc: "toggle",
 			ResourceID:  "com.mobilenext.playground:id/toggle",
 			Checked:     true,
-			Rect:        deviceKitRect{X: 1050, Y: 1196, Width: 140, Height: 81},
+			Rect:        uiRect{X: 1050, Y: 1196, Width: 140, Height: 81},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
@@ -527,23 +529,308 @@ func TestCollectElementsLeavesUnselectedNodeUnset(t *testing.T) {
 
 // devicekit reports selected as a real bool; a selected node must surface
 // Selected=true the same way the uiautomator path does.
-func TestCollectDeviceKitElementsMarksSelectedNode(t *testing.T) {
-	nodes := []deviceKitNode{
+func TestCollectUiNodeElementsMarksSelectedNode(t *testing.T) {
+	nodes := []uiNode{
 		{
 			Class:       "android.view.View",
 			ContentDesc: "9:16",
 			ResourceID:  "com.mobilenext.playground:id/ratio_9_16",
 			Selected:    true,
-			Rect:        deviceKitRect{X: 0, Y: 0, Width: 140, Height: 140},
+			Rect:        uiRect{X: 0, Y: 0, Width: 140, Height: 140},
 		},
 	}
 
-	output := collectDeviceKitElements(nodes)
+	output := collectUiNodeElements(nodes)
 
 	if len(output) != 1 {
 		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
 	}
 	if output[0].Selected == nil || *output[0].Selected != true {
 		t.Errorf("expected Selected to be true, got %+v", output[0].Selected)
+	}
+}
+
+// Flutter icon-only controls (e.g. a "+" button) are clickable views with no
+// text, content-desc, hint, or resource-id. They must not be dropped from the
+// tree — see https://github.com/mobile-next/mobilewright/issues/234.
+func TestCollectUiNodeElementsKeepsUnlabeledClickableNode(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class:       "android.view.View",
+			ContentDesc: "Premium package (qty: 0)",
+			Clickable:   true,
+			Rect:        uiRect{X: 48, Y: 1563, Width: 1184, Height: 120},
+			Children: []uiNode{
+				{
+					Class:     "android.view.View",
+					Clickable: true,
+					Rect:      uiRect{X: 1112, Y: 1563, Width: 120, Height: 120},
+				},
+			},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element, got %d: %+v", len(output), output)
+	}
+	if len(output[0].Children) != 1 {
+		t.Fatalf("expected the unlabeled clickable child to be kept, got %+v", output[0].Children)
+	}
+	if output[0].Children[0].Rect.X != 1112 {
+		t.Errorf("expected child rect x=1112, got %+v", output[0].Children[0].Rect)
+	}
+}
+
+func screenElementValue(e types.ScreenElement) string {
+	if e.Value == nil {
+		return ""
+	}
+	return *e.Value
+}
+
+func sliderNode(sliderRange *types.ScreenElementRange) uiNode {
+	return uiNode{
+		Class:       "android.widget.SeekBar",
+		ContentDesc: "slider",
+		ResourceID:  "com.mobilenext.playground:id/slider",
+		Range:       sliderRange,
+		Rect:        uiRect{X: 79, Y: 1760, Width: 922, Height: 47},
+	}
+}
+
+func rangeOf(min, max, current float64) *types.ScreenElementRange {
+	return &types.ScreenElementRange{Min: min, Max: max, Current: current}
+}
+
+// A slider or progress bar reports its position through the accessibility
+// node's RangeInfo; it must surface as the element's range, and its current
+// position as the element's value.
+func TestCollectUiNodeElementsSliderReportsRangeAndValue(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{sliderNode(rangeOf(0, 100, 50))})
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Range == nil || *output[0].Range != *rangeOf(0, 100, 50) {
+		t.Errorf("expected range {0 100 50}, got %+v", output[0].Range)
+	}
+	if got := screenElementValue(output[0]); got != "50" {
+		t.Errorf("expected value %q, got %q", "50", got)
+	}
+}
+
+func TestCollectUiNodeElementsKeepsFractionalRangeValue(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{sliderNode(rangeOf(0, 1, 0.75))})
+
+	if got := screenElementValue(output[0]); got != "0.75" {
+		t.Errorf("expected value %q, got %q", "0.75", got)
+	}
+}
+
+func TestCollectUiNodeElementsLeavesRangeAndValueUnsetWithoutRange(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{sliderNode(nil)})
+
+	if output[0].Range != nil {
+		t.Errorf("expected no range, got %+v", output[0].Range)
+	}
+	if output[0].Value != nil {
+		t.Errorf("expected no value, got %q", *output[0].Value)
+	}
+}
+
+// A progress bar usually has no label or id, but its range alone makes it
+// worth listing so tests can assert on it.
+func TestCollectUiNodeElementsKeepsUnlabeledNodeWithRange(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class: "android.widget.ProgressBar",
+			Range: rangeOf(0, 100, 30),
+			Rect:  uiRect{X: 79, Y: 1900, Width: 922, Height: 16},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected the unlabeled progress bar to be kept, got %+v", output)
+	}
+	if got := screenElementValue(output[0]); got != "30" {
+		t.Errorf("expected value %q, got %q", "30", got)
+	}
+}
+
+func TestUiNodeDecodesRangeFromAgentJson(t *testing.T) {
+	var node uiNode
+	if err := json.Unmarshal([]byte(`{"class":"android.widget.SeekBar","range":{"min":0,"max":100,"current":42}}`), &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if node.Range == nil || *node.Range != *rangeOf(0, 100, 42) {
+		t.Errorf("expected range {0 100 42}, got %+v", node.Range)
+	}
+}
+
+func TestScreenElementRangeIsOmittedFromJsonWhenAbsent(t *testing.T) {
+	output, err := json.Marshal(types.ScreenElement{Type: "android.widget.Button"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if strings.Contains(string(output), "range") {
+		t.Errorf("expected no range key, got %s", output)
+	}
+}
+
+func textFieldNode(text string) uiNode {
+	return uiNode{
+		Class:       "android.widget.EditText",
+		Text:        text,
+		Hint:        "Text Field",
+		ContentDesc: "text_field",
+		ResourceID:  "com.mobilenext.playground:id/text_field",
+		Editable:    true,
+		Rect:        uiRect{X: 42, Y: 404, Width: 996, Height: 131},
+	}
+}
+
+// iOS reports a text field's content as value; android reports it as text.
+// Copy it to value too, keeping text, so getValue() works on both platforms
+// without changing anything that reads text.
+func TestCollectUiNodeElementsCopiesEditableTextToValue(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{textFieldNode("Hello World")})
+
+	if got := screenElementValue(output[0]); got != "Hello World" {
+		t.Errorf("expected value %q, got %q", "Hello World", got)
+	}
+	if got := screenElementText(output[0]); got != "Hello World" {
+		t.Errorf("expected text to stay %q, got %q", "Hello World", got)
+	}
+}
+
+func TestCollectUiNodeElementsLeavesValueUnsetForEmptyEditable(t *testing.T) {
+	output := collectUiNodeElements([]uiNode{textFieldNode("")})
+
+	if output[0].Value != nil {
+		t.Errorf("expected no value for an empty field, got %q", *output[0].Value)
+	}
+	if got := screenElementPlaceholder(output[0]); got != "Text Field" {
+		t.Errorf("expected placeholder %q, got %q", "Text Field", got)
+	}
+}
+
+func TestCollectUiNodeElementsDoesNotCopyTextOfNonEditableNode(t *testing.T) {
+	label := uiNode{
+		Class: "android.widget.TextView",
+		Text:  "Toggle",
+		Rect:  uiRect{X: 42, Y: 1200, Width: 300, Height: 60},
+	}
+
+	output := collectUiNodeElements([]uiNode{label})
+
+	if output[0].Value != nil {
+		t.Errorf("expected no value for a static label, got %q", *output[0].Value)
+	}
+}
+
+func TestUiNodeDecodesEditableFromAgentJson(t *testing.T) {
+	var node uiNode
+	if err := json.Unmarshal([]byte(`{"class":"android.widget.EditText","editable":true}`), &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !node.Editable {
+		t.Errorf("expected editable to be decoded")
+	}
+}
+
+// A Compose Button is a clickable android.view.View whose text lives on a child,
+// so clickable is the only hint that it is a button; it must surface Clickable=true.
+func TestCollectElementsMarksClickableNode(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:     "android.view.View",
+		Clickable: "true",
+		Bounds:    "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Clickable == nil || *output[0].Clickable != true {
+		t.Errorf("expected Clickable to be true, got %+v", output[0].Clickable)
+	}
+}
+
+// A node that isn't clickable must leave Clickable unset (nil), matching omitempty.
+func TestCollectElementsLeavesNonClickableNodeUnset(t *testing.T) {
+	d := &AndroidDevice{}
+	tree := uiAutomatorXmlNode{
+		Class:  "android.widget.TextView",
+		Text:   "New Order",
+		Bounds: "[0,0][140,140]",
+	}
+
+	output := d.collectElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].Clickable != nil {
+		t.Errorf("expected Clickable to be nil for a non-clickable node, got %+v", *output[0].Clickable)
+	}
+}
+
+// A Material3 AlertDialog puts its pane title on a plain View that has no text of its own.
+// That node must be kept, with its pane title, so the dialog's content stays under it.
+func TestCollectUiNodeElementsKeepsPaneTitleNode(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class:     "android.view.View",
+			PaneTitle: "Dialog",
+			Rect:      uiRect{X: 60, Y: 900, Width: 960, Height: 500},
+			Children: []uiNode{
+				{
+					Class: "android.widget.TextView",
+					Text:  "You must be 18 or older to order a Dark Matter Martini",
+					Rect:  uiRect{X: 120, Y: 960, Width: 840, Height: 120},
+				},
+			},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].PaneTitle == nil || *output[0].PaneTitle != "Dialog" {
+		t.Errorf("expected PaneTitle to be Dialog, got %+v", output[0].PaneTitle)
+	}
+	if len(output[0].Children) != 1 {
+		t.Errorf("expected the dialog text under the pane, got %+v", output[0].Children)
+	}
+}
+
+// A node without a pane title must leave PaneTitle unset (nil), matching omitempty.
+func TestCollectUiNodeElementsLeavesPaneTitleUnset(t *testing.T) {
+	nodes := []uiNode{
+		{
+			Class: "android.widget.TextView",
+			Text:  "New Order",
+			Rect:  uiRect{X: 0, Y: 0, Width: 140, Height: 140},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if output[0].PaneTitle != nil {
+		t.Errorf("expected PaneTitle to be nil, got %+v", *output[0].PaneTitle)
 	}
 }

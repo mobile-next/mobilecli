@@ -1,7 +1,10 @@
 package devicekit
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mobile-next/mobilecli/types"
 )
@@ -262,6 +265,135 @@ func TestFilterSourceElementsIncludesTextViewWithoutIdentifier(t *testing.T) {
 	}
 }
 
+func TestFilterSourceElementsIncludesAnyElementWithAccessibilityIdentifier(t *testing.T) {
+	// A container view tagged with accessibilityIdentifier must appear in the
+	// dump with its children nested, even though its type ("Other") is not
+	// whitelisted. See https://github.com/mobile-next/mobilecli/issues/341
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeOther",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:          "XCUIElementTypeOther",
+				Name:          strPtr("interviewBannerView"),
+				RawIdentifier: strPtr("interviewBannerView"),
+				Rect:          visibleRect(33, 194, 336, 20),
+				Children: []sourceTreeElement{
+					{
+						Type:  "XCUIElementTypeStaticText",
+						Label: strPtr("Interview starting soon"),
+						Rect:  visibleRect(66, 194, 173, 20),
+					},
+					{
+						Type:  "XCUIElementTypeButton",
+						Label: strPtr("Join"),
+						Rect:  visibleRect(338, 194, 31, 20),
+					},
+				},
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 top-level element (the tagged container), got %d: %+v", len(output), output)
+	}
+
+	container := output[0]
+	if container.Type != "Other" || container.Identifier == nil || *container.Identifier != "interviewBannerView" {
+		t.Fatalf("expected an Other container identified 'interviewBannerView', got %+v", container)
+	}
+
+	if len(container.Children) != 2 {
+		t.Fatalf("expected container to keep its 2 children nested, got %d: %+v", len(container.Children), container.Children)
+	}
+
+	if elementLabel(container.Children[0]) != "Interview starting soon" || elementLabel(container.Children[1]) != "Join" {
+		t.Errorf("expected children 'Interview starting soon' and 'Join', got %+v", container.Children)
+	}
+}
+
+func TestFilterSourceElementsRejectsUntaggedContainersWithEmptyIdentifier(t *testing.T) {
+	// An "Other" node whose rawIdentifier is an empty string is layout noise
+	// and must still be rejected, hoisting its children.
+	tree := sourceTreeElement{
+		Type:          "XCUIElementTypeOther",
+		RawIdentifier: strPtr(""),
+		Rect:          visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Inside"),
+				Rect:  visibleRect(0, 0, 100, 50),
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected the container to be rejected and its button hoisted, got %+v", output)
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+func TestFilterSourceElementsPreservesStateAttributes(t *testing.T) {
+	// devicekit-ios emits enabled (only when false), selected and hasFocus
+	// (only when true); they must survive filtering onto the ScreenElement.
+	tree := sourceTreeElement{
+		Type: "XCUIElementTypeOther",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:    "XCUIElementTypeButton",
+				Label:   strPtr("Disabled Submit"),
+				Enabled: boolPtr(false),
+				Rect:    visibleRect(24, 538, 354, 52),
+			},
+			{
+				Type:     "XCUIElementTypeButton",
+				Label:    strPtr("Active Tab"),
+				Selected: boolPtr(true),
+				HasFocus: boolPtr(true),
+				Rect:     visibleRect(0, 800, 100, 50),
+			},
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Plain"),
+				Rect:  visibleRect(200, 800, 100, 50),
+			},
+		},
+	}
+
+	output := filterSourceElements(tree)
+
+	if len(output) != 3 {
+		t.Fatalf("expected 3 elements, got %d: %+v", len(output), output)
+	}
+
+	disabled := output[0]
+	if disabled.Enabled == nil || *disabled.Enabled != false {
+		t.Errorf("expected 'Disabled Submit' to have Enabled=false, got %+v", disabled.Enabled)
+	}
+
+	active := output[1]
+	if active.Selected == nil || *active.Selected != true {
+		t.Errorf("expected 'Active Tab' to have Selected=true, got %+v", active.Selected)
+	}
+	if active.Focused == nil || *active.Focused != true {
+		t.Errorf("expected 'Active Tab' to have Focused=true, got %+v", active.Focused)
+	}
+
+	plain := output[2]
+	if plain.Enabled != nil || plain.Selected != nil || plain.Focused != nil {
+		t.Errorf("expected 'Plain' to have no state attributes, got %+v", plain)
+	}
+}
+
 func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 	// Leaf elements must not serialize an empty "children" array, so the
 	// JSON output stays unchanged for consumers that expect leaves.
@@ -277,5 +409,173 @@ func TestFilterSourceElementsOmitsChildrenFromJsonWhenEmpty(t *testing.T) {
 
 	if output[0].Children != nil {
 		t.Errorf("expected leaf element to have nil Children, got %+v", output[0].Children)
+	}
+}
+
+func TestFilterSourceElementsIncludesTypesBehindSemanticRoles(t *testing.T) {
+	// Clients map these types to semantic roles (slider, progressbar, alert,
+	// combobox, list, listitem, tab, link, header). A labeled element of any
+	// of them must survive filtering, or the role can never match on iOS.
+	roleTypes := []string{
+		"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+		"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+		"Cell", "Table", "CollectionView", "ScrollView",
+	}
+
+	for _, roleType := range roleTypes {
+		output := filterSourceElements(sourceTreeElement{
+			Type:  "XCUIElementType" + roleType,
+			Label: strPtr("labeled"),
+			Rect:  visibleRect(0, 100, 300, 44),
+		})
+
+		if len(output) != 1 || output[0].Type != roleType {
+			t.Errorf("expected a labeled %s to be included, got %+v", roleType, output)
+		}
+	}
+}
+
+func TestFilterSourceElementsIncludesUnlabeledAdjustableControls(t *testing.T) {
+	// Sliders and pickers are interactive yet often carry no label, so they
+	// are always included, like TextField and Switch.
+	for _, controlType := range []string{"Slider", "Picker", "PickerWheel"} {
+		output := filterSourceElements(sourceTreeElement{
+			Type: "XCUIElementType" + controlType,
+			Rect: visibleRect(0, 100, 300, 44),
+		})
+
+		if len(output) != 1 || output[0].Type != controlType {
+			t.Errorf("expected an unlabeled %s to be included, got %+v", controlType, output)
+		}
+	}
+}
+
+func TestFilterSourceElementsStillDropsUnlabeledContainers(t *testing.T) {
+	// Unlabeled containers stay out of the dump to keep it small; their
+	// children are hoisted as before.
+	output := filterSourceElements(sourceTreeElement{
+		Type: "XCUIElementTypeTable",
+		Rect: visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Join"),
+				Rect:  visibleRect(338, 194, 31, 20),
+			},
+		},
+	})
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected only the hoisted Button, got %+v", output)
+	}
+}
+
+func TestFilterSourceElementsTreatsEmptyIdentifiersAsAbsent(t *testing.T) {
+	// A container whose label/name/placeholder are present but empty is as
+	// anonymous as one without them: drop it and hoist its children.
+	output := filterSourceElements(sourceTreeElement{
+		Type:             "XCUIElementTypeTable",
+		Label:            strPtr(""),
+		Name:             strPtr(""),
+		PlaceholderValue: strPtr(""),
+		Rect:             visibleRect(0, 0, 402, 874),
+		Children: []sourceTreeElement{
+			{
+				Type:  "XCUIElementTypeButton",
+				Label: strPtr("Join"),
+				Rect:  visibleRect(338, 194, 31, 20),
+			},
+		},
+	})
+
+	if len(output) != 1 || output[0].Type != "Button" {
+		t.Fatalf("expected only the hoisted Button, got %+v", output)
+	}
+}
+
+func toggleSwitch(value string) sourceTreeElement {
+	return sourceTreeElement{
+		Type:          "XCUIElementTypeSwitch",
+		Label:         strPtr("Toggle switch"),
+		RawIdentifier: strPtr("toggle"),
+		Value:         strPtr(value),
+		Rect:          visibleRect(16, 428, 370, 52),
+	}
+}
+
+func isChecked(e types.ScreenElement) bool {
+	return e.Checked != nil && *e.Checked
+}
+
+// iOS reports a switch's state only as value "1" / "0"; it must also surface
+// as checked, the way Android reports it, so toBeChecked() works on both.
+func TestFilterSourceElementsMarksSwitchThatIsOnAsChecked(t *testing.T) {
+	output := filterSourceElements(toggleSwitch("1"))
+
+	if len(output) != 1 {
+		t.Fatalf("expected 1 element, got %d: %+v", len(output), output)
+	}
+	if !isChecked(output[0]) {
+		t.Errorf("expected checked, got %+v", output[0].Checked)
+	}
+	if output[0].Value == nil || *output[0].Value != "1" {
+		t.Errorf("expected value to stay %q, got %+v", "1", output[0].Value)
+	}
+}
+
+func TestFilterSourceElementsLeavesSwitchThatIsOffUnchecked(t *testing.T) {
+	output := filterSourceElements(toggleSwitch("0"))
+
+	if output[0].Checked != nil {
+		t.Errorf("expected checked to be unset, got %v", *output[0].Checked)
+	}
+}
+
+// A value of "1" means nothing about checked state on non-switch elements.
+func TestFilterSourceElementsDoesNotMarkNonSwitchAsChecked(t *testing.T) {
+	field := sourceTreeElement{
+		Type:          "XCUIElementTypeTextField",
+		RawIdentifier: strPtr("quantity"),
+		Value:         strPtr("1"),
+		Rect:          visibleRect(16, 200, 370, 44),
+	}
+
+	output := filterSourceElements(field)
+
+	if output[0].Checked != nil {
+		t.Errorf("expected checked to be unset, got %v", *output[0].Checked)
+	}
+}
+
+// Snapshotting a heavy screen can take the agent longer than the default RPC
+// timeout; dump ui has to wait for it instead of failing with "context
+// deadline exceeded", see https://github.com/mobile-next/mobilecli/issues/448
+func TestDumpUIWaitsForAnAgentSlowerThanTheDefaultRPCTimeout(t *testing.T) {
+	previous := defaultRPCTimeout
+	defaultRPCTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { defaultRPCTimeout = previous })
+
+	slowAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"type":"XCUIElementTypeApplication","rect":{"x":0,"y":0,"width":390,"height":844},"children":[{"type":"XCUIElementTypeButton","label":"Done","rect":{"x":16,"y":62,"width":44,"height":44}}]}}`))
+	}))
+	defer slowAgent.Close()
+
+	client := NewDeviceKitClient(slowAgent.URL)
+
+	if _, err := client.CallRPC("device.info", nil); err == nil {
+		t.Fatal("expected the agent to be slower than the default RPC timeout")
+	}
+
+	elements, err := client.GetSourceElements()
+	if err != nil {
+		t.Fatalf("GetSourceElements: %v", err)
+	}
+	if len(elements) != 1 || elementLabel(elements[0]) != "Done" {
+		t.Errorf("expected the Done button, got %+v", elements)
+	}
+
+	if _, err := client.GetSourceRaw(); err != nil {
+		t.Fatalf("GetSourceRaw: %v", err)
 	}
 }

@@ -2,6 +2,37 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 
+// WebKit hands back values NSJSONSerialization refuses to write, and it refuses by
+// throwing, which takes down the app this agent is injected into: a non-finite
+// NSNumber for 1/0 or NaN, and an NSDate for a JS Date. Answer with what
+// JSON.stringify makes of each, which is also what the android agent reports:
+// null for a non-finite number, an ISO 8601 string for a date.
+static id jsonSafe(id value) {
+    if ([value isKindOfClass:[NSNumber class]]) {
+        return isfinite([value doubleValue]) ? value : [NSNull null];
+    }
+    if ([value isKindOfClass:[NSDate class]]) {
+        if (!isfinite([value timeIntervalSince1970])) return [NSNull null];
+        NSISO8601DateFormatter *formatter = [[NSISO8601DateFormatter alloc] init];
+        formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
+        return [formatter stringFromDate:value];
+    }
+    if ([value isKindOfClass:[NSArray class]]) {
+        NSMutableArray *safe = [NSMutableArray arrayWithCapacity:[value count]];
+        for (id item in value) [safe addObject:jsonSafe(item)];
+        return safe;
+    }
+    if ([value isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *safe = [NSMutableDictionary dictionaryWithCapacity:[value count]];
+        for (id key in value) safe[[key description]] = jsonSafe(value[key]);
+        return safe;
+    }
+    if ([value isKindOfClass:[NSString class]] || value == [NSNull null]) {
+        return value;
+    }
+    return [value description];
+}
+
 @implementation IosBridge
 
 + (void)runOnMainThread:(dispatch_block_t)block {
@@ -140,7 +171,7 @@
     if ([jsResult isKindOfClass:[NSDictionary class]] && jsResult[@"__mce"]) {
         return @{@"__error": jsResult[@"__mce"] ?: @"unknown JS error"};
     }
-    return @{@"result": jsResult ?: [NSNull null]};
+    return @{@"result": jsResult ? jsonSafe(jsResult) : [NSNull null]};
 }
 
 + (void)gotoURL:(NSString *)urlStr inWebView:(UIView *)webView {

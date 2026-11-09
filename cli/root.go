@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/mobile-next/mobilecli/commands"
-	"github.com/mobile-next/mobilecli/server"
 	"github.com/mobile-next/mobilecli/utils"
 	"github.com/spf13/cobra"
 )
@@ -72,6 +72,9 @@ SCREEN & MEDIA:
   # Take a JPEG screenshot with quality
   mobilecli screenshot --device <device-id> -o screen.jpg -f jpeg -q 85
 
+  # Take a scaled-down screenshot (--scale or --max-size)
+  mobilecli screenshot --device <device-id> -o screen.png --max-size 800
+
   # Stream screen capture (MJPEG)
   mobilecli screencapture --device <device-id> -f mjpeg | ffplay -
 
@@ -85,11 +88,20 @@ INPUT/OUTPUT:
   # Swipe from one point to another
   mobilecli io swipe --device <device-id> 100,200,300,400
 
+  # Pinch around a point (screen center if omitted): --direction out zooms in, --direction in zooms out
+  mobilecli io pinch --device <device-id> 500,800 --direction out
+
   # Press hardware button (HOME, VOLUME_UP, VOLUME_DOWN, POWER)
   mobilecli io button --device <device-id> HOME
 
   # Send text input
   mobilecli io text --device <device-id> "Hello World"
+
+  # Read device clipboard
+  mobilecli io clipboard get --device <device-id>
+
+  # Write device clipboard
+  mobilecli io clipboard set --device <device-id> "Hello World"
 
 WEBVIEW:
   # List embedded webviews in the foreground app
@@ -169,12 +181,28 @@ FILESYSTEM:
   # Remove a file or directory
   mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 
+DEVICE LOGS:
+  # Stream logs from a device (Ctrl+C to stop)
+  mobilecli device logs --device <device-id>
+
+  # Stop after N entries
+  mobilecli device logs --device <device-id> --limit 100
+
+  # Filter (key=value to include, key!=value to exclude; --filter is repeatable)
+  mobilecli device logs --device <device-id> --filter process=SpringBoard
+  mobilecli device logs --device <device-id> --filter level=Error --filter process!=SpringBoard
+
+  # Filter keys: pid, process, tag, level, subsystem, category, message
+
 UTILITIES:
   # Open a URL or deep link
   mobilecli url --device <device-id> https://example.com
 
   # Dump UI tree
   mobilecli dump ui --device <device-id>
+
+  # Dump UI tree as text (alias of 'dump ui --format text')
+  mobilecli snapshot --device <device-id>
 
   # Start HTTP server
   mobilecli server start --listen localhost:12000 --cors
@@ -183,19 +211,29 @@ COMMON FLAGS:
   --device <id>        Device ID (from 'mobilecli devices' command)
   -v, --verbose        Enable verbose output
   --help               Show help for any command`,
-	CompletionOptions: cobra.CompletionOptions{
-		HiddenDefaultCmd: true,
-	},
-	Version:       server.Version,
+	Version:       utils.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		token, _ := getRemoteToken()
+		deviceId = resolveDeviceID(deviceId, os.Getenv)
+
+		token, err := getRemoteToken()
+		if err != nil {
+			utils.Verbose("no remote token: %v", err)
+		}
 		if token != "" {
 			commands.SetFleetConfig(token)
 		}
 		return nil
 	},
+}
+
+// resolveDeviceID falls back to MOBILECLI_DEVICE when --device isn't given
+func resolveDeviceID(flagValue string, getenv func(string) string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return getenv("MOBILECLI_DEVICE")
 }
 
 func initConfig() {
@@ -205,7 +243,7 @@ func initConfig() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
-	rootCmd.PersistentFlags().StringVar(&deviceId, "device", "", "Device ID (get from 'mobilecli devices' command)")
+	rootCmd.PersistentFlags().StringVar(&deviceId, "device", "", "Device ID (get from 'mobilecli devices' command), defaults to $MOBILECLI_DEVICE")
 	rootCmd.PersistentFlags().BoolVar(&insecureStorage, "insecure-storage", false, "store the auth token in a plaintext file instead of the OS keyring (for headless hosts with no keyring)")
 }
 

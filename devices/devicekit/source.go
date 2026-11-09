@@ -3,6 +3,7 @@ package devicekit
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,12 +25,39 @@ type sourceTreeElement struct {
 	Value            *string               `json:"value"`
 	PlaceholderValue *string               `json:"placeholderValue"`
 	RawIdentifier    *string               `json:"rawIdentifier"`
+	Enabled          *bool                 `json:"enabled"`
+	Selected         *bool                 `json:"selected"`
+	HasFocus         *bool                 `json:"hasFocus"`
 	Rect             sourceTreeElementRect `json:"rect"`
 	Children         []sourceTreeElement   `json:"children"`
 }
 
 func isVisible(rect sourceTreeElementRect) bool {
 	return rect.X >= 0 && rect.Y >= 0 && rect.Width > 0 && rect.Height > 0
+}
+
+// hasText reports whether an optional string attribute carries a value; an
+// empty string identifies an element no better than a missing one.
+func hasText(value *string) bool {
+	return value != nil && *value != ""
+}
+
+const elementTypeWebView = "WebView"
+
+// acceptedSourceTypes are the element types (XCUIElementType prefix stripped)
+// that filterSourceElements keeps.
+var acceptedSourceTypes = []string{
+	"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", elementTypeWebView,
+	// types that clients map to semantic roles (slider, progressbar,
+	// combobox, link, tab, header, alert, list, listitem)
+	"Slider", "ProgressIndicator", "ActivityIndicator", "Picker", "PickerWheel",
+	"Link", "Tab", "TabBar", "NavigationBar", "Toolbar", "Alert", "Sheet",
+	"Cell", "Table", "CollectionView", "ScrollView",
+}
+
+// alwaysIncludedSourceTypes are kept even without a label, name or identifier.
+var alwaysIncludedSourceTypes = []string{
+	"TextField", "TextView", "SecureTextField", "Button", "Switch", "SearchField", elementTypeWebView, "Slider", "Picker", "PickerWheel",
 }
 
 // filterSourceElements converts a WDA source tree into ScreenElements,
@@ -42,25 +70,19 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		childElements = append(childElements, filterSourceElements(child)...)
 	}
 
-	acceptedTypes := []string{"TextField", "TextView", "Button", "Switch", "Icon", "SearchField", "StaticText", "Image", "SecureTextField", "WebView"}
-
 	// strip XCUIElementType prefix if present
 	elementType := strings.TrimPrefix(source.Type, "XCUIElementType")
 
-	typeAccepted := false
-	for _, acceptedType := range acceptedTypes {
-		if elementType == acceptedType {
-			typeAccepted = true
-			break
-		}
-	}
+	// elements explicitly tagged with accessibilityIdentifier are always
+	// included, regardless of type, see https://github.com/mobile-next/mobilecli/issues/341
+	typeAccepted := slices.Contains(acceptedSourceTypes, elementType) || hasText(source.RawIdentifier)
 
 	if !typeAccepted || !isVisible(source.Rect) {
 		return childElements
 	}
 
-	hasIdentifier := source.Label != nil || source.Name != nil || source.RawIdentifier != nil || source.PlaceholderValue != nil
-	alwaysInclude := elementType == "TextField" || elementType == "TextView" || elementType == "SecureTextField" || elementType == "Button" || elementType == "Switch" || elementType == "SearchField" || elementType == "WebView"
+	hasIdentifier := hasText(source.Label) || hasText(source.Name) || hasText(source.RawIdentifier) || hasText(source.PlaceholderValue)
+	alwaysInclude := slices.Contains(alwaysIncludedSourceTypes, elementType)
 	if !hasIdentifier && !alwaysInclude {
 		return childElements
 	}
@@ -72,6 +94,9 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		Value:       source.Value,
 		Placeholder: source.PlaceholderValue,
 		Identifier:  source.RawIdentifier,
+		Enabled:     source.Enabled,
+		Selected:    source.Selected,
+		Focused:     source.HasFocus,
 		Rect: types.ScreenElementRect{
 			X:      int(source.Rect.X),
 			Y:      int(source.Rect.Y),
@@ -81,12 +106,19 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 		Children: childElements,
 	}
 
+	// a switch reports its state only as value "1" / "0"; report it as
+	// checked too, like android, which only sets it when true
+	if elementType == "Switch" && source.Value != nil && *source.Value == "1" {
+		isChecked := true
+		element.Checked = &isChecked
+	}
+
 	// WKWebView reports as several nested same-rect WebView wrappers; collapse
 	// them so a single element represents a single webview. Children are
 	// already collapsed bottom-up, so one merge per level unwinds the chain.
-	if element.Type == "WebView" && len(element.Children) == 1 {
+	if element.Type == elementTypeWebView && len(element.Children) == 1 {
 		child := element.Children[0]
-		if child.Type == "WebView" && child.Rect == element.Rect {
+		if child.Type == elementTypeWebView && child.Rect == element.Rect {
 			element.Children = child.Children
 		}
 	}
@@ -97,7 +129,7 @@ func filterSourceElements(source sourceTreeElement) []types.ScreenElement {
 func (c *DeviceKitClient) GetSourceRaw() (any, error) {
 	startTime := time.Now()
 
-	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "raw"})
+	result, err := c.CallRPCWithTimeout("device.dump.ui", map[string]string{"format": "raw"}, dumpUITimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
@@ -116,7 +148,7 @@ func (c *DeviceKitClient) GetSourceRaw() (any, error) {
 func (c *DeviceKitClient) GetSourceElements() ([]types.ScreenElement, error) {
 	startTime := time.Now()
 
-	result, err := c.CallRPC("device.dump.ui", map[string]string{"format": "json"})
+	result, err := c.CallRPCWithTimeout("device.dump.ui", map[string]string{"format": "json"}, dumpUITimeout)
 	if err != nil {
 		return nil, err
 	}

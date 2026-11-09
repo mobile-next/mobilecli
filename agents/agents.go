@@ -2,8 +2,19 @@ package agents
 
 import _ "embed"
 
-//go:embed android/mobilecli.so
-var AndroidMobilecliSO []byte
+//go:embed android/mobilecli-arm64-v8a.so
+var androidMobilecliSOArm64 []byte
+
+//go:embed android/mobilecli-x86_64.so
+var androidMobilecliSOX8664 []byte
+
+// AndroidMobilecliSO is the JVMTI agent loaded into a debuggable app, keyed by
+// the Android ABI it is built for. It must match the ABI the app process runs
+// as, or dlopen rejects it.
+var AndroidMobilecliSO = map[string][]byte{
+	"arm64-v8a": androidMobilecliSOArm64,
+	"x86_64":    androidMobilecliSOX8664,
+}
 
 //go:embed android/mobilecli.dex
 var AndroidMobilecliDEX []byte

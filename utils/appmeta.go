@@ -96,7 +96,7 @@ func parseIpaMetadata(path string) (*AppMetadata, error) {
 }
 
 func parseAppDirMetadata(path string) (*AppMetadata, error) {
-	data, err := os.ReadFile(filepath.Join(path, "Info.plist"))
+	data, err := os.ReadFile(filepath.Join(path, "Info.plist")) // #nosec G304 -- reading Info.plist from caller-specified app bundle is intended
 	if err != nil {
 		return nil, fmt.Errorf("failed to read Info.plist: %w", err)
 	}

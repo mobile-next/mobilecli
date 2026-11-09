@@ -15,9 +15,12 @@ JSON-RPC API for mobile device automation and control
 - [device.apps.terminate](#deviceappsterminate)
 - [device.apps.uninstall](#deviceappsuninstall)
 - [device.boot](#deviceboot)
+- [device.clipboard.get](#deviceclipboardget)
+- [device.clipboard.set](#deviceclipboardset)
 - [device.crashes.get](#devicecrashesget)
 - [device.crashes.list](#devicecrasheslist)
 - [device.dump.ui](#devicedumpui)
+- [device.fold.set](#devicefoldset)
 - [device.fs.ls](#devicefsls)
 - [device.fs.mkdir](#devicefsmkdir)
 - [device.fs.pull](#devicefspull)
@@ -25,17 +28,23 @@ JSON-RPC API for mobile device automation and control
 - [device.fs.rm](#devicefsrm)
 - [device.info](#deviceinfo)
 - [device.io.button](#deviceiobutton)
+- [device.io.fill](#deviceiofill)
 - [device.io.gesture](#deviceiogesture)
 - [device.io.keys](#deviceiokeys)
 - [device.io.longpress](#deviceiolongpress)
 - [device.io.orientation.get](#deviceioorientationget)
 - [device.io.orientation.set](#deviceioorientationset)
+- [device.io.pinch](#deviceiopinch)
 - [device.io.swipe](#deviceioswipe)
 - [device.io.tap](#deviceiotap)
 - [device.io.text](#deviceiotext)
+- [device.location.clear](#devicelocationclear)
+- [device.location.set](#devicelocationset)
+- [device.logs](#devicelogs)
 - [device.reboot](#devicereboot)
 - [device.screencapture](#devicescreencapture)
 - [device.screenshot](#devicescreenshot)
+- [device.settings.apply](#devicesettingsapply)
 - [device.shutdown](#deviceshutdown)
 - [device.url](#deviceurl)
 - [device.webview.content](#devicewebviewcontent)
@@ -61,7 +70,7 @@ JSON-RPC API for mobile device automation and control
 
 **Clear application data**
 
-Clears all data (cache, preferences, databases) for an application without uninstalling it. Supported on Android and iOS Simulator. Not supported on real iOS devices.
+Clears all data (cache, preferences, databases) for an application without uninstalling it, and resets its runtime permissions so the app asks for them again (on iOS Simulator, notification permission is only reset by reinstalling). Supported on Android and iOS Simulator. Not supported on real iOS devices.
 
 #### Parameters
 
@@ -369,6 +378,72 @@ Boot operation result
 ```
 
 
+### device.clipboard.get
+
+**Read clipboard**
+
+Reads the text currently on the device clipboard
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** `object`
+
+Clipboard contents
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.get",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.clipboard.set
+
+**Write clipboard**
+
+Replaces the text on the device clipboard, an empty string clears it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `text` | `string` | ✓ | Text to place on the clipboard |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.clipboard.set",
+  "params": {
+    "deviceId": "string",
+    "text": "string"
+  },
+  "id": 1
+}
+```
+
+
 ### device.crashes.get
 
 **Get a crash report**
@@ -447,6 +522,7 @@ Dumps the UI hierarchy of the device screen
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `json, raw` |  | Output format (json or raw) |
+| `full` | `boolean` |  | Include additional elements normally left out, such as the on-screen keyboard |
 
 #### Response
 
@@ -462,7 +538,42 @@ UI hierarchy data
   "method": "device.dump.ui",
   "params": {
     "deviceId": "string",
-    "format": "json"
+    "format": "json",
+    "full": false
+  },
+  "id": 1
+}
+```
+
+
+### device.fold.set
+
+**Fold or unfold a foldable device**
+
+Sets the hinge of a foldable device. Supported on foldable iOS simulators and Android emulators
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `state` | `string` | ✓ | 'folded' (0), 'half-open' (90), 'open' (180), or an angle in degrees between 0 and 180 |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.fold.set",
+  "params": {
+    "deviceId": "string",
+    "state": "string"
   },
   "id": 1
 }
@@ -717,6 +828,40 @@ Operation result
 ```
 
 
+### device.io.fill
+
+**Fill text field**
+
+Replaces the text of the focused text field; an empty string clears it. Unlike device.io.text, which types key by key, this sets the text in one step: on Android through accessibility, on iOS by clearing the field and typing
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `text` | `string` | ✓ | Text to put in the field, or an empty string to clear it |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.fill",
+  "params": {
+    "deviceId": "string",
+    "text": "string"
+  },
+  "id": 1
+}
+```
+
+
 ### device.io.gesture
 
 **Perform custom gesture**
@@ -893,6 +1038,48 @@ Operation result
 ```
 
 
+### device.io.pinch
+
+**Perform two-finger pinch gesture**
+
+Performs a two-finger pinch centered at (x, y) on the device screen. Direction "out" spreads the fingers apart to zoom in, "in" brings them together to zoom out. Omitting x and y pinches around the center of the screen.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `direction` | enum: `in, out` | ✓ | "in" to zoom out or "out" to zoom in |
+| `x` | `integer` |  | X coordinate of the pinch center, defaults to the screen center |
+| `y` | `integer` |  | Y coordinate of the pinch center, defaults to the screen center |
+| `distance` | `integer` |  | Pixels each finger travels, defaults to 200 |
+| `duration` | `integer` |  | Duration of the finger movement in milliseconds, defaults to 300 |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.pinch",
+  "params": {
+    "deviceId": "string",
+    "direction": "in",
+    "x": 0,
+    "y": 0,
+    "distance": 0,
+    "duration": 0
+  },
+  "id": 1
+}
+```
+
+
 ### device.io.swipe
 
 **Perform swipe gesture**
@@ -908,6 +1095,7 @@ Performs a swipe gesture from one coordinate to another on the device screen
 | `y1` | `integer` | ✓ | Starting Y coordinate |
 | `x2` | `integer` | ✓ | Ending X coordinate |
 | `y2` | `integer` | ✓ | Ending Y coordinate |
+| `duration` | `integer` |  | Duration of the swipe in milliseconds, omitted applies the platform default |
 
 #### Response
 
@@ -926,7 +1114,8 @@ Operation result
     "x1": 0,
     "y1": 0,
     "x2": 0,
-    "y2": 0
+    "y2": 0,
+    "duration": 0
   },
   "id": 1
 }
@@ -1003,6 +1192,112 @@ Operation result
 ```
 
 
+### device.location.clear
+
+**Clear device location override**
+
+Removes a location override, restoring the location the device reports on its own. On Android emulators, which have no real location, it restores the coordinates the emulator boots with
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.clear",
+  "params": {
+    "deviceId": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.location.set
+
+**Override device location**
+
+Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `latitude` | `number` | ✓ | Latitude in degrees, between -90 and 90 |
+| `longitude` | `number` | ✓ | Longitude in degrees, between -180 and 180 |
+
+#### Response
+
+**Type:** `object`
+
+Simulated location
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.location.set",
+  "params": {
+    "deviceId": "string",
+    "latitude": 0,
+    "longitude": 0
+  },
+  "id": 1
+}
+```
+
+
+### device.logs
+
+**Start device log streaming**
+
+Creates a log streaming session for the specified device and returns the URL to connect to. Supported on iOS real devices, iOS simulators, and Android devices.
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `limit` | `integer` |  | Stop the stream after this many log entries (0 or omitted for unlimited) |
+| `filters` | Array<`string`> |  | Filters applied to every entry, ANDed together. Each is 'key=value' to include or 'key!=value' to exclude, matched exactly. Valid keys: pid, process, tag, level, subsystem, category, message |
+
+#### Response
+
+**Type:** `object`
+
+Log streaming session. Connect to sessionUrl to receive application/x-ndjson, one JSON log entry per line. The session expires one minute after creation and accepts a single connection.
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.logs",
+  "params": {
+    "deviceId": "string",
+    "limit": 0,
+    "filters": [
+      "string"
+    ]
+  },
+  "id": 1
+}
+```
+
+
 ### device.reboot
 
 **Reboot a device**
@@ -1052,9 +1347,9 @@ Starts screen capture streaming for the specified device. Supports MJPEG (iOS an
 
 #### Response
 
-**Type:** `string`
+**Type:** `object`
 
-Video stream - multipart/x-mixed-replace for MJPEG or video/h264 for AVC
+Streaming session. Connect to sessionUrl to receive the stream (multipart/x-mixed-replace for MJPEG, video/h264 for AVC). The session expires one minute after creation and accepts a single connection.
 
 #### Example Request
 
@@ -1086,6 +1381,8 @@ Captures a screenshot from the specified device and returns it as base64 data
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `png, jpeg` |  | Image format (png or jpeg) |
 | `quality` | `integer` |  | Image quality (1-100, only used for JPEG) |
+| `scale` | `number` |  | Scale factor for the screenshot (0.0-1.0, default 1.0) |
+| `maxSize` | `integer` |  | Maximum of width/height in pixels, keeping aspect ratio; takes precedence over scale (0 means no limit) |
 | `clip` | [`Rect`](#rect) |  | Optional rectangle to crop the screenshot to, in screen coordinates |
 
 #### Response
@@ -1104,12 +1401,50 @@ Screenshot data
     "deviceId": "string",
     "format": "png",
     "quality": 1,
+    "scale": 1,
+    "maxSize": 0,
     "clip": {
       "x": 0,
       "y": 0,
       "width": 0,
       "height": 0
     }
+  },
+  "id": 1
+}
+```
+
+
+### device.settings.apply
+
+**Apply device settings**
+
+Applies device-level settings. Only the settings provided are changed
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `animations` | enum: `on, off` |  | Toggle system animations (Android only) |
+| `appearance` | enum: `light, dark` |  | System appearance |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.settings.apply",
+  "params": {
+    "deviceId": "string",
+    "animations": "on",
+    "appearance": "light"
   },
   "id": 1
 }
@@ -1364,7 +1699,7 @@ Operation result
 
 **List webviews**
 
-Returns all embedded webviews currently visible in the foreground app on the device. Browser apps (Safari, Chrome) are not included.
+Returns all embedded webviews currently visible in the foreground app on the device. When the foreground app is Chrome on Android or Safari on iOS, returns its tabs instead.
 
 #### Parameters
 
@@ -1698,7 +2033,7 @@ Describes where the device is provided from
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `type` | `string` | ✓ | Provider type (e.g. 'mobilenext', 'local') |
-| `sessionId` | `string` |  | Session identifier for this device allocation |
+| `allocationId` | `string` |  | Allocation identifier for this device |
 
 ### Rect
 

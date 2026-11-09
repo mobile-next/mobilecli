@@ -1,8 +1,7 @@
+//nolint:dupl // cobra command declarations for unrelated command groups share a shape, not logic
 package cli
 
 import (
-	"fmt"
-
 	"github.com/mobile-next/mobilecli/commands"
 	"github.com/spf13/cobra"
 )
@@ -17,12 +16,7 @@ var crashesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List crash reports from a device",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.CrashesListCommand(deviceId)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.device.crashes.list", commands.DeviceIDRequest{DeviceID: deviceId})
 	},
 }
 
@@ -31,12 +25,7 @@ var crashesGetCmd = &cobra.Command{
 	Short: "Get a crash report by ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response := commands.CrashesGetCommand(deviceId, args[0])
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.device.crashes.get", commands.CrashesGetRequest{DeviceID: deviceId, ID: args[0]})
 	},
 }
 

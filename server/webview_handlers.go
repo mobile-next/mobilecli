@@ -60,14 +60,14 @@ func unmarshal[T any](params json.RawMessage) (T, error) {
 }
 
 func resultOf(resp *commands.CommandResponse) (any, error) {
-	if resp.Status == "error" {
+	if resp.Status == statusError {
 		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Data, nil
 }
 
 func voidOf(resp *commands.CommandResponse) (any, error) {
-	if resp.Status == "error" {
+	if resp.Status == statusError {
 		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return okResponse, nil

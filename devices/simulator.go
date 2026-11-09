@@ -1,7 +1,12 @@
 package devices
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,6 +22,12 @@ import (
 	"github.com/mobile-next/mobilecli/devices/devicekit/mjpeg"
 	"github.com/mobile-next/mobilecli/utils"
 	"howett.net/plist"
+)
+
+// simctl device states
+const (
+	simStateBooted   = "Booted"
+	simStateShutdown = "Shutdown"
 )
 
 const (
@@ -72,18 +83,22 @@ func parseSimulatorVersion(runtime string) string {
 
 func (s SimulatorDevice) ID() string         { return s.UDID }
 func (s SimulatorDevice) Name() string       { return s.Simulator.Name }
-func (s SimulatorDevice) Platform() string   { return "ios" }
-func (s SimulatorDevice) DeviceType() string { return "simulator" }
+func (s SimulatorDevice) Platform() string   { return PlatformIOS }
+func (s SimulatorDevice) DeviceType() string { return DeviceTypeSimulator }
 func (s SimulatorDevice) Version() string    { return parseSimulatorVersion(s.Runtime) }
 func (s SimulatorDevice) State() string {
-	if s.Simulator.State == "Booted" {
-		return "online"
+	if s.Simulator.State == simStateBooted {
+		return StateOnline
 	}
-	return "offline"
+	return StateOffline
 }
 
-func (s SimulatorDevice) TakeScreenshot() ([]byte, error) {
-	return s.deviceKitClient.TakeScreenshot()
+func (s SimulatorDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	data, err := s.deviceKitClient.TakeScreenshot()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
 }
 
 // Reboot shuts down and then boots the iOS simulator.
@@ -113,7 +128,7 @@ func (s SimulatorDevice) Reboot() error {
 // runSimctl executes xcrun simctl with the provided arguments
 func runSimctl(args ...string) ([]byte, error) {
 	fullArgs := append([]string{"simctl"}, args...)
-	cmd := exec.Command("xcrun", fullArgs...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
@@ -161,9 +176,9 @@ func GetSimulators() ([]Simulator, error) {
 		// convert state integer to string
 		// state 1 = Shutdown (offline)
 		// state 3 = Booted (online)
-		stateStr := "Shutdown"
+		stateStr := simStateShutdown
 		if device.State == 3 {
-			stateStr = "Booted"
+			stateStr = simStateBooted
 		}
 
 		simulator := Simulator{
@@ -209,7 +224,7 @@ func (s SimulatorDevice) launchAppWithEnv(bundleID string, env map[string]string
 		fullArgs = append(fullArgs, "--stderr="+stderrPath)
 	}
 	fullArgs = append(fullArgs, s.UDID, bundleID)
-	cmd := exec.Command("xcrun", fullArgs...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
 
 	// Set environment variables with SIMCTL_CHILD_ prefix for this command only
 	cmd.Env = os.Environ()
@@ -269,10 +284,21 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	return err
 }
 
+// TerminateApp stops a running app. `xcrun simctl terminate` exits with
+// status 3 (ESRCH, "found nothing to terminate") both for an installed app
+// that is not running and for a bundle that is not installed; report those
+// the same way IOSDevice does so callers can tell the two apart.
 func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	_, err := runSimctl("terminate", s.UDID, bundleID)
 	if err != nil {
-		return err
+		if !isSimctlNothingToTerminate(err) {
+			return err
+		}
+		installed, listErr := s.isAppInstalled(bundleID)
+		if listErr != nil {
+			return err
+		}
+		return terminateErrorForMissingProcess(bundleID, installed)
 	}
 
 	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
@@ -285,6 +311,35 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	}
 
 	return nil
+}
+
+// isSimctlNothingToTerminate reports whether a runSimctl error is simctl's
+// exit status 3, which it uses for "found nothing to terminate".
+func isSimctlNothingToTerminate(err error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 3
+}
+
+// terminateErrorForMissingProcess mirrors IOSDevice.TerminateApp's errors for
+// an app that has no running process.
+func terminateErrorForMissingProcess(bundleID string, installed bool) error {
+	if !installed {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+	return fmt.Errorf("process of %s not found", bundleID)
+}
+
+func (s SimulatorDevice) isAppInstalled(bundleID string) (bool, error) {
+	apps, err := s.ListApps(false)
+	if err != nil {
+		return false, err
+	}
+	for _, app := range apps {
+		if app.PackageName == bundleID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func InstallApp(udid string, appPath string) error {
@@ -384,7 +439,7 @@ func (s *SimulatorDevice) Boot() error {
 		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
-	if state == "Booted" {
+	if state == simStateBooted {
 		return fmt.Errorf("simulator is already running")
 	}
 
@@ -396,7 +451,7 @@ func (s *SimulatorDevice) Boot() error {
 		}
 
 		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = "Booted"
+		s.Simulator.State = simStateBooted
 		return nil
 	}
 
@@ -413,7 +468,7 @@ func (s *SimulatorDevice) Boot() error {
 	}
 
 	utils.Verbose("Simulator booted successfully")
-	s.Simulator.State = "Booted"
+	s.Simulator.State = simStateBooted
 	return nil
 }
 
@@ -424,7 +479,7 @@ func (s *SimulatorDevice) Shutdown() error {
 		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
-	if state == "Shutdown" {
+	if state == simStateShutdown {
 		return fmt.Errorf("simulator is already offline")
 	}
 
@@ -435,68 +490,18 @@ func (s *SimulatorDevice) Shutdown() error {
 	}
 
 	utils.Verbose("Simulator shut down successfully")
-	s.Simulator.State = "Shutdown"
+	s.Simulator.State = simStateShutdown
 	return nil
 }
 
 func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
-	// check simulator state - it must be booted
-	state, err := s.getState()
-	if err != nil {
-		return fmt.Errorf("failed to get simulator state: %w", err)
+	if err := s.waitUntilBooted(config); err != nil {
+		return err
 	}
 
-	switch state {
-	case "Booted":
-		// already booted, continue to WDA
-	case "Shutdown":
-		// simulator is offline, user should boot it first
-		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
-	case "Booting":
-		// simulator is already booting, just wait for it to finish
-		if config.OnProgress != nil {
-			config.OnProgress("Waiting for Simulator to boot")
-		}
-
-		utils.Verbose("Simulator is booting, waiting for boot to complete...")
-		output, err := runSimctl("bootstatus", s.UDID)
-		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
-		}
-
-		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = "Booted"
-	case "ShuttingDown":
-		return fmt.Errorf("simulator is shutting down, please try again")
-	default:
-		return fmt.Errorf("unexpected simulator state: %s", state)
-	}
-
-	if currentPort, err := s.getDeviceKitPort(); err == nil {
-		// we ran this in the past already (between runs of mobilecli, it's still running on simulator)
-
-		// check if we already have a client pointing to the same port
-		expectedURL := fmt.Sprintf("localhost:%d", currentPort)
-		if s.deviceKitClient != nil {
-			// check if the existing client is already pointing to the same port
-			if _, err := s.deviceKitClient.GetStatus(); err == nil {
-				return nil // already connected to the right port
-			}
-		}
-
-		utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
-
-		// create new client or update with new port
-		s.deviceKitClient = devicekit.NewDeviceKitClient(expectedURL)
-		if _, err := s.deviceKitClient.GetStatus(); err == nil {
-			// double check succeeded
-			return nil // Already running and accessible
-		}
-
-		// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-		return fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
-	} else {
-		utils.Verbose("Failed to get existing WDA port: %v", err)
+	isConnected, err := s.connectToRunningAgent()
+	if err != nil || isConnected {
+		return err
 	}
 
 	agentBundleID, err := s.findInstalledAgentBundleID()
@@ -508,10 +513,73 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s' to install it", s.UDID)
 	}
 
-	if config.OnProgress != nil {
-		config.OnProgress("Starting Agent")
+	config.reportProgress("Starting Agent")
+	return s.launchAgent(agentBundleID, config)
+}
+
+// waitUntilBooted checks simulator state - it must be booted before the agent can start.
+func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
+	state, err := s.getState()
+	if err != nil {
+		return fmt.Errorf("failed to get simulator state: %w", err)
 	}
 
+	switch state {
+	case simStateBooted:
+		// already booted, continue to WDA
+	case simStateShutdown:
+		// simulator is offline, user should boot it first
+		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
+	case "Booting":
+		// simulator is already booting, just wait for it to finish
+		config.reportProgress("Waiting for Simulator to boot")
+
+		utils.Verbose("Simulator is booting, waiting for boot to complete...")
+		output, err := runSimctl("bootstatus", s.UDID)
+		if err != nil {
+			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+		}
+
+		utils.Verbose("Simulator booted successfully")
+		s.Simulator.State = simStateBooted
+	case "ShuttingDown":
+		return fmt.Errorf("simulator is shutting down, please try again")
+	default:
+		return fmt.Errorf("unexpected simulator state: %s", state)
+	}
+
+	return nil
+}
+
+// connectToRunningAgent reports whether an agent left running by an earlier
+// mobilecli (it keeps running on the simulator between runs) is now connected.
+func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
+	currentPort, err := s.getDeviceKitPort()
+	if err != nil {
+		utils.Verbose("Failed to get existing WDA port: %v", err)
+		return false, nil
+	}
+
+	// reuse the existing client only if it points to the same port
+	if s.deviceKitClient != nil && s.deviceKitClient.Port() == currentPort {
+		if _, err := s.deviceKitClient.GetStatus(); err == nil {
+			return true, nil
+		}
+	}
+
+	utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
+
+	// create new client or update with new port
+	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", currentPort))
+	if _, err := s.deviceKitClient.GetStatus(); err == nil {
+		return true, nil
+	}
+
+	// TODO: it's running, but we failed to get status, we might as well kill the process and try again
+	return false, fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
+}
+
+func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentConfig) error {
 	// find available port
 	usePort, err := utils.FindAvailablePortInRange(LOW_DEVICEKIT_PORT, HIGH_DEVICEKIT_PORT)
 	if err != nil {
@@ -540,9 +608,7 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 	// update WDA client to use the actual port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", usePort))
 
-	if config.OnProgress != nil {
-		config.OnProgress("Waiting for agent to start")
-	}
+	config.reportProgress("Waiting for agent to start")
 
 	err = s.deviceKitClient.WaitForAgentWithDiagnostics(func() (string, error) {
 		contents, err := os.ReadFile(hostStderrPath)
@@ -555,7 +621,9 @@ func (s *SimulatorDevice) StartAgent(config StartAgentConfig) error {
 		return string(contents), nil
 	})
 	if err != nil {
-		_ = s.TerminateApp(agentBundleID)
+		if err := s.TerminateApp(agentBundleID); err != nil {
+			utils.Verbose("failed to terminate agent: %v", err)
+		}
 		return err
 	}
 
@@ -566,12 +634,31 @@ func (s SimulatorDevice) PressButton(key string) error {
 	return s.deviceKitClient.PressButton(key)
 }
 
+func (s SimulatorDevice) IsKeyboardVisible() (bool, error) {
+	return s.deviceKitClient.IsKeyboardVisible()
+}
+
+func (s SimulatorDevice) HideKeyboard() (bool, error) {
+	return s.deviceKitClient.HideKeyboard()
+}
+
 func (s SimulatorDevice) SendKeys(text string) error {
 	return s.deviceKitClient.SendKeys(text)
 }
 
 func (s SimulatorDevice) PressKeys(combos []KeyCombo) error {
 	return s.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
+}
+
+// Fill presses the HID clear key, which empties the focused field in one event, then types
+func (s SimulatorDevice) Fill(text string) error {
+	if err := s.PressKeys([]KeyCombo{{Key: "clear"}}); err != nil {
+		return err
+	}
+	if text == "" {
+		return nil
+	}
+	return s.SendKeys(text)
 }
 
 func (s SimulatorDevice) Tap(x, y int) error {
@@ -582,8 +669,16 @@ func (s SimulatorDevice) LongPress(x, y, duration int) error {
 	return s.deviceKitClient.LongPress(x, y, duration)
 }
 
-func (s SimulatorDevice) Swipe(x1, y1, x2, y2 int) error {
-	return s.deviceKitClient.Swipe(x1, y1, x2, y2)
+func (s SimulatorDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	return s.deviceKitClient.Swipe(x1, y1, x2, y2, duration)
+}
+
+func (s SimulatorDevice) GetClipboard() (string, error) {
+	return s.deviceKitClient.GetClipboard()
+}
+
+func (s SimulatorDevice) SetClipboard(text string) error {
+	return s.deviceKitClient.SetClipboard(text)
 }
 
 func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
@@ -592,7 +687,7 @@ func (s SimulatorDevice) Gesture(actions []devicekit.TapAction) error {
 
 func (s *SimulatorDevice) OpenURL(url string) error {
 	// #nosec G204 -- udid is controlled, no shell interpretation
-	return exec.Command("xcrun", "simctl", "openurl", s.ID(), url).Run()
+	return exec.CommandContext(context.Background(), "xcrun", "simctl", "openurl", s.ID(), url).Run()
 }
 
 func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
@@ -623,6 +718,7 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 			PackageName: app.CFBundleIdentifier,
 			AppName:     app.CFBundleDisplayName,
 			Version:     version,
+			VersionCode: app.CFBundleVersion,
 		})
 	}
 
@@ -630,35 +726,7 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 }
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	// get active app info from WDA
-	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get active app info: %w", err)
-	}
-
-	// get all installed apps to enrich with version information
-	apps, err := s.ListApps(true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list apps: %w", err)
-	}
-
-	// find the matching app to get full details
-	for _, app := range apps {
-		if app.PackageName == activeApp.BundleID {
-			return &ForegroundAppInfo{
-				PackageName: app.PackageName,
-				AppName:     app.AppName,
-				Version:     app.Version,
-			}, nil
-		}
-	}
-
-	// if app not found in list (e.g., system app), return info from WDA only
-	return &ForegroundAppInfo{
-		PackageName: activeApp.BundleID,
-		AppName:     activeApp.Name,
-		Version:     "",
-	}, nil
+	return wdaForegroundApp(s.deviceKitClient, s.ListApps)
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
@@ -671,8 +739,8 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 		DeviceInfo: DeviceInfo{
 			ID:       s.UDID,
 			Name:     s.Simulator.Name,
-			Platform: "ios",
-			Type:     "simulator",
+			Platform: PlatformIOS,
+			Type:     DeviceTypeSimulator,
 			Version:  parseSimulatorVersion(s.Runtime),
 			State:    s.State(),
 			Model:    s.Simulator.DeviceType,
@@ -711,7 +779,7 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	args := []string{"simctl", "io", s.UDID, "recordVideo", "--codec=h264", "--force", localOutput}
 
 	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
-	cmd := exec.Command("xcrun", args...)
+	cmd := exec.CommandContext(context.Background(), "xcrun", args...)
 
 	// handle Ctrl+C: send SIGINT to the simctl process so it finalizes the video
 	sigChan := make(chan os.Signal, 1)
@@ -725,21 +793,26 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
+	// SIGINT lets simctl finalize the MP4; kill it if the signal can't be delivered
+	interrupt := func() {
+		if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+			utils.Verbose("failed to interrupt simctl recordVideo: %v", err)
+			_ = cmd.Process.Kill()
+		}
+	}
+
 	// if time limit is set, stop recording after the specified duration
 	var timer *time.Timer
 	if timeLimit > 0 {
-		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, func() {
-			_ = cmd.Process.Signal(syscall.SIGINT)
-		})
+		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, interrupt)
 	}
 
 	select {
 	case <-sigChan:
-		// forward SIGINT to simctl so it finalizes the MP4
-		_ = cmd.Process.Signal(syscall.SIGINT)
+		interrupt()
 		<-done
 	case <-stopChan:
-		_ = cmd.Process.Signal(syscall.SIGINT)
+		interrupt()
 		<-done
 	case <-done:
 	}
@@ -758,18 +831,18 @@ type ProcessInfo struct {
 	Command string
 }
 
-// listAllProcesses returns a list of all running processes with their PIDs and command info
-func listAllProcesses() ([]ProcessInfo, error) {
-	cmd := exec.Command("/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run ps command: %w", err)
-	}
-
-	lines := strings.Split(string(output), "\n")
+// parsePsOutput parses the output of "ps -o pid,command" into ProcessInfo entries.
+// ps right-aligns the PID column, so any PID narrower than the column width is
+// emitted with leading padding (e.g. " 1637 /path/to/binary"). The padding has to
+// be trimmed before the PID field is split off, otherwise those lines are silently
+// dropped and only processes whose PID happens to fill the column are ever returned.
+func parsePsOutput(output string) []ProcessInfo {
+	lines := strings.Split(output, "\n")
 	processes := make([]ProcessInfo, 0, len(lines))
 
 	for _, line := range lines {
+		// strip the right-alignment padding ps adds to the PID column
+		line = strings.TrimLeft(line, " \t")
 		if line == "" {
 			continue
 		}
@@ -780,8 +853,8 @@ func listAllProcesses() ([]ProcessInfo, error) {
 			continue
 		}
 
-		pidStr := strings.TrimSpace(line[:spaceIndex])
-		pid, err := strconv.Atoi(pidStr)
+		// skips the "PID COMMAND" header, which does not parse as a number
+		pid, err := strconv.Atoi(line[:spaceIndex])
 		if err != nil {
 			continue
 		}
@@ -794,7 +867,18 @@ func listAllProcesses() ([]ProcessInfo, error) {
 		})
 	}
 
-	return processes, nil
+	return processes
+}
+
+// listAllProcesses returns a list of all running processes with their PIDs and command info
+func listAllProcesses() ([]ProcessInfo, error) {
+	cmd := exec.CommandContext(context.Background(), "/bin/ps", "-o", "pid,command", "-E", "-ww", "-e")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ps command: %w", err)
+	}
+
+	return parsePsOutput(string(output)), nil
 }
 
 func findDeviceKitProcessForDevice(deviceUDID string) (int, string, error) {
@@ -868,11 +952,18 @@ func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 	return port, nil
 }
 
-func (s SimulatorDevice) DumpSource() ([]ScreenElement, error) {
+func (s SimulatorDevice) DumpSource(_ DumpOptions) ([]ScreenElement, error) {
+	// Flutter apps render into an opaque native view, so the accessibility dump
+	// misses typed/unlabeled/non-semantic widgets. When the foreground app is a
+	// Flutter app with a live Dart VM service, read its render tree instead. Any
+	// failure falls through to the accessibility dump.
+	if elements, ok := s.tryDumpFlutterSource(); ok {
+		return elements, nil
+	}
 	return s.deviceKitClient.GetSourceElements()
 }
 
-func (s SimulatorDevice) DumpSourceRaw() (any, error) {
+func (s SimulatorDevice) DumpSourceRaw(_ DumpOptions) (any, error) {
 	return s.deviceKitClient.GetSourceRaw()
 }
 
@@ -921,6 +1012,53 @@ func (s SimulatorDevice) InstallApp(path string) error {
 	return InstallApp(s.UDID, path)
 }
 
+func (s SimulatorDevice) ClearApp(bundleID string) error {
+	output, err := runSimctl("get_app_container", s.UDID, bundleID, "data")
+	if err != nil {
+		return fmt.Errorf("failed to get data container for %s: %w", bundleID, err)
+	}
+
+	containerPath := filepath.Clean(strings.TrimSpace(string(output)))
+	if containerPath == "" {
+		return fmt.Errorf("no data container found for %s", bundleID)
+	}
+
+	// sanity check before recursive deletion: path must be inside this simulator's app-data containers
+	expectedSubpath := filepath.Join("CoreSimulator", "Devices", s.UDID, "data", "Containers", "Data", "Application") + string(os.PathSeparator)
+	if !filepath.IsAbs(containerPath) || !strings.Contains(containerPath, expectedSubpath) {
+		return fmt.Errorf("refusing to clear unexpected container path: %s", containerPath)
+	}
+
+	if err := s.TerminateApp(bundleID); err != nil {
+		utils.Info("failed to terminate %s before clearing its data: %v", bundleID, err)
+	}
+
+	entries, err := os.ReadDir(containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to read data container: %w", err)
+	}
+
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(containerPath, entry.Name())); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", entry.Name(), err)
+		}
+	}
+
+	// cfprefsd caches the app's UserDefaults in memory, so deleting the plist alone isn't enough: the next
+	// launch reads the old values back. restart it so the cache is dropped; launchd brings it back on demand.
+	if _, err := runSimctl("spawn", s.UDID, "launchctl", "kill", "SIGKILL", "user/foreground/com.apple.cfprefsd.xpc.daemon"); err != nil {
+		return fmt.Errorf("failed to restart cfprefsd to drop cached preferences of %s: %w", bundleID, err)
+	}
+
+	// permissions live outside the data container; reset them so the app prompts again, like `pm clear` on
+	// android. notifications are not covered by simctl privacy and only reset on reinstall.
+	if _, err := runSimctl("privacy", s.UDID, "reset", "all", bundleID); err != nil {
+		return fmt.Errorf("failed to reset privacy permissions for %s: %w", bundleID, err)
+	}
+
+	return nil
+}
+
 func (s SimulatorDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	installedApps, err := s.ListInstalledApps()
 	if err != nil {
@@ -953,7 +1091,60 @@ func (s SimulatorDevice) SetOrientation(orientation string) error {
 	return s.deviceKitClient.SetOrientation(orientation)
 }
 
+// SetHingeAngle folds or unfolds a foldable simulator (e.g. iPhone Duo)
+func (s SimulatorDevice) SetHingeAngle(angle float64) error {
+	return s.deviceKitClient.SetHingeAngle(angle)
+}
+
+// SetAppearance switches the simulator between light and dark mode
+func (s SimulatorDevice) SetAppearance(appearance string) error {
+	return s.deviceKitClient.SetAppearance(appearance)
+}
+
 var diagnosticReportsDir = filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+
+// crashReportIsForSimulator reports whether an .ips diagnostic report at path was
+// produced by the simulator with the given UDID. ~/Library/Logs/DiagnosticReports
+// is shared with the host, so it also holds crashes of host processes (adb,
+// CoreSimulatorBridge, chronod, …) that must not be reported as the device's.
+// Simulator reports carry "is_simulated": 1 in their first-line JSON header and
+// name the device as com.apple.CoreSimulator.SimDevice.<UDID> in the body, which
+// together scope the listing to this one simulator.
+func crashReportIsForSimulator(path, udid string) bool {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	header := content
+	if nl := bytes.IndexByte(content, '\n'); nl >= 0 {
+		header = content[:nl]
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(header, &meta); err != nil {
+		return false
+	}
+	if sim, ok := meta["is_simulated"]; !ok || !isTruthyJSON(sim) {
+		return false
+	}
+
+	return bytes.Contains(content, []byte("SimDevice."+udid))
+}
+
+// isTruthyJSON treats the JSON values crash reports use for is_simulated (the
+// number 1 or the boolean true) as true.
+func isTruthyJSON(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case float64:
+		return t != 0
+	case json.Number:
+		return t.String() != "0"
+	default:
+		return false
+	}
+}
 
 func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
 	dir := diagnosticReportsDir
@@ -964,7 +1155,10 @@ func (s SimulatorDevice) ListCrashReports() ([]CrashReport, error) {
 
 	var filenames []string
 	for _, e := range entries {
-		if !e.IsDir() {
+		if e.IsDir() {
+			continue
+		}
+		if crashReportIsForSimulator(filepath.Join(dir, e.Name()), s.UDID) {
 			filenames = append(filenames, e.Name())
 		}
 	}
@@ -978,4 +1172,88 @@ func (s SimulatorDevice) GetCrashReport(id string) ([]byte, error) {
 	}
 
 	return os.ReadFile(filepath.Join(diagnosticReportsDir, id))
+}
+
+// simctlLogEntry is the raw structure from xcrun simctl log stream --style json
+type simctlLogEntry struct {
+	Timestamp        string `json:"timestamp"`
+	EventMessage     string `json:"eventMessage"`
+	MessageType      string `json:"messageType"`
+	Subsystem        string `json:"subsystem"`
+	Category         string `json:"category"`
+	ProcessImagePath string `json:"processImagePath"`
+	ProcessID        int    `json:"processID"`
+}
+
+func (s *SimulatorDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	args := []string{"simctl", "spawn", s.UDID, "log", "stream", "--level", "info", "--style", "json"}
+	utils.Verbose("Running: xcrun %s", strings.Join(args, " "))
+
+	cmd := exec.CommandContext(ctx, "xcrun", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start log stream: %w", err)
+	}
+
+	// abort kills the stream; a failure after the caller cancelled is not an error
+	abort := func(format string, cause any) error {
+		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		if ctx.Err() != nil {
+			return nil
+		}
+		return fmt.Errorf(format, cause, waitErr)
+	}
+
+	decoder := json.NewDecoder(stdout)
+
+	// read opening '[' of the JSON array
+	token, err := decoder.Token()
+	if err != nil {
+		return abort("failed to read opening token: %w (process exit: %v)", err)
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return abort("expected '[', got %v (process exit: %v)", token)
+	}
+
+	// decode entries one at a time until the stream ends
+	stoppedByCaller := false
+	for decoder.More() {
+		var raw simctlLogEntry
+		if err := decoder.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return abort("failed to decode log entry: %w (process exit: %v)", err)
+		}
+
+		processName := processNameFromPath(raw.ProcessImagePath)
+
+		if !onLog(LogEntry{
+			Timestamp: raw.Timestamp,
+			Message:   raw.EventMessage,
+			Level:     raw.MessageType,
+			Subsystem: raw.Subsystem,
+			Category:  raw.Category,
+			PID:       raw.ProcessID,
+			Process:   processName,
+		}) {
+			_ = cmd.Process.Kill()
+			stoppedByCaller = true
+			break
+		}
+	}
+
+	waitErr := cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if waitErr != nil {
+		return fmt.Errorf("log stream ended with error: %w", waitErr)
+	}
+	return nil
 }

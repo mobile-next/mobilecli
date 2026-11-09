@@ -3,41 +3,40 @@ package commands
 import (
 	"fmt"
 	"github.com/mobile-next/mobilecli/devices"
+	"github.com/mobile-next/mobilecli/types"
 )
 
-// DumpUIRequest represents the parameters for dumping UI tree
+// DumpUIRequest represents the parameters for dumping UI tree.
+// Format is "json" (default), "text" for indented one-line-per-element output,
+// or "raw" for the unprocessed agent tree.
+// Full includes elements normally left out, such as the on-screen keyboard.
 type DumpUIRequest struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format"`
+	Full     bool   `json:"full"`
 }
 
 // DumpUIResponse represents the response for a dump UI command
 type DumpUIResponse struct {
 	Elements []devices.ScreenElement `json:"elements,omitempty"`
 	RawData  any                     `json:"rawData,omitempty"`
+	Text     string                  `json:"text,omitempty"`
 }
 
 // DumpUICommand starts an agent and dumps the UI tree from the specified device
 func DumpUICommand(req DumpUIRequest) *CommandResponse {
 	// Find the target device
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
-	}
-
-	// Start agent if needed
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	var response DumpUIResponse
+	opts := devices.DumpOptions{Full: req.Full}
 
 	// Check if raw format is requested
 	if req.Format == "raw" {
-		rawData, err := targetDevice.DumpSourceRaw()
+		rawData, err := targetDevice.DumpSourceRaw(opts)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to dump raw UI from device %s: %w", targetDevice.ID(), err))
 		}
@@ -47,13 +46,20 @@ func DumpUICommand(req DumpUIRequest) *CommandResponse {
 		}
 	} else {
 		// Dump UI tree from the device
-		elements, err := targetDevice.DumpSource()
+		elements, err := targetDevice.DumpSource(opts)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to dump UI from device %s: %w", targetDevice.ID(), err))
 		}
 
-		response = DumpUIResponse{
-			Elements: elements,
+		types.AttachRefs(elements)
+		if req.Format == "text" {
+			response = DumpUIResponse{
+				Text: types.FormatText(elements),
+			}
+		} else {
+			response = DumpUIResponse{
+				Elements: elements,
+			}
 		}
 	}
 

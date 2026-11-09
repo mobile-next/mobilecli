@@ -7,13 +7,11 @@ on:
     tags:
       - "*.*.*"
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+      - '*.md'
   pull_request:
     branches: [ "main" ]
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+      - '*.md'
 
 jobs:
 
@@ -47,11 +45,12 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
 
     - name: Upload Android agent binaries
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: android-agents
         path: |
-          agents/android/mobilecli.so
+          agents/android/mobilecli-arm64-v8a.so
+          agents/android/mobilecli-x86_64.so
           agents/android/mobilecli.dex
         retention-days: 1
 
@@ -67,7 +66,7 @@ jobs:
       run: make -C agents/ios all
 
     - name: Upload iOS agent binaries
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: ios-agents
         path: |
@@ -89,13 +88,13 @@ jobs:
         go-version-file: go.mod
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
@@ -118,20 +117,20 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: Install dependencies
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
-        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
     - name: Check formatting
       run: |
         go fmt ./...
         git diff --exit-code
 
+    - name: Create placeholder agent binaries for typecheck
+      run: touch agents/android/mobilecli-arm64-v8a.so agents/android/mobilecli-x86_64.so agents/android/mobilecli.dex agents/ios/agent-sim.dylib
+
     - name: Lint
-      run: |
-        go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.2
-        make lint || true
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.13.1
+        verify: false
+      continue-on-error: true
 
   security:
     runs-on: ubuntu-latest
@@ -151,13 +150,13 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck -show verbose ./... || true
 
-  build_on_macos:
-
-    runs-on: macos-latest
+  # no cgo anywhere, so one linux runner cross-compiles every platform
+  build:
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
+    needs: [build_linux_agents, build_ios_agents]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -169,20 +168,16 @@ jobs:
         go-version-file: go.mod
 
     - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: android-agents
         path: agents/android/
 
     - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: ios-agents
         path: agents/ios/
-
-    - name: Install dependencies
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
 
     - name: Set version
       if: github.ref_type == 'tag'
@@ -191,16 +186,25 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i '' 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
+        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
 
     - name: Build
+      env:
+        CGO_ENABLED: 0
       run: |
-        GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-darwin-arm64
-        GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-darwin-amd64
-        ./mobilecli-darwin-arm64 --version
+        for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64; do
+          os="${target%/*}"
+          arch="${target#*/}"
+          ext=""
+          if [ "$os" = "windows" ]; then
+            ext=".exe"
+          fi
+          GOOS="$os" GOARCH="$arch" go build -ldflags="-s -w" -o "mobilecli-$os-$arch$ext"
+        done
+        ./mobilecli-linux-amd64 --version
 
     - name: Upload macos build artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: macos-build
         path: |
@@ -209,57 +213,8 @@ jobs:
         retention-days: 1
         overwrite: true
 
-  build_on_linux:
-
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-
-    - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
-      with:
-        name: android-agents
-        path: agents/android/
-
-    - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
-      with:
-        name: ios-agents
-        path: agents/ios/
-
-    - name: Install dependencies
-      run: |
-        go install golang.org/x/tools/cmd/goimports@latest
-        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-    - name: Set version
-      if: github.ref_type == 'tag'
-      run: |
-        if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
-          exit 1
-        fi
-        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' server/server.go
-
-    - name: Build
-      run: |
-        CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" -o mobilecli-linux-arm64
-        CGO_ENABLED=0 GOARCH=amd64 go build -ldflags="-s -w" -o mobilecli-linux-amd64
-        ./mobilecli-linux-amd64 --version
-
-    - name: Upload macos build artifact
-      uses: actions/upload-artifact@v6
+    - name: Upload linux build artifact
+      uses: actions/upload-artifact@v7
       with:
         name: linux-build
         path: |
@@ -268,61 +223,20 @@ jobs:
         retention-days: 1
         overwrite: true
 
-  build_on_windows:
-
-    runs-on: windows-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    needs: [build_linux_agents, build_ios_agents, test, lint, security]
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-
-    - name: Download Android agent binaries
-      uses: actions/download-artifact@v6
-      with:
-        name: android-agents
-        path: agents/android/
-
-    - name: Download iOS agent binaries
-      uses: actions/download-artifact@v6
-      with:
-        name: ios-agents
-        path: agents/ios/
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: go.mod
-
-    - name: Set version
-      if: github.ref_type == 'tag'
-      run: |
-        if ($env:GITHUB_REF_NAME -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-          Write-Error "Invalid release tag format: $env:GITHUB_REF_NAME"
-          exit 1
-        }
-        sed -i ('s/Version = \"dev\"/Version = \"' + $env:GITHUB_REF_NAME + '\"/') server/server.go
-
-    - name: Build
-      run: |
-        $env:GOARCH="amd64"; go build -ldflags="-s -w" -o mobilecli-windows-amd64.exe
-        $env:GOARCH="arm64"; go build -ldflags="-s -w" -o mobilecli-windows-arm64.exe
-
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v6
+    - name: Upload windows build artifact
+      uses: actions/upload-artifact@v7
       with:
         name: windows-build
         path: |
           mobilecli-windows-amd64.exe
           mobilecli-windows-arm64.exe
+        retention-days: 1
+        overwrite: true
 
   e2e_test:
     runs-on: self-hosted
     timeout-minutes: 10
-    needs: [build_on_macos]
+    needs: [build]
 
     steps:
     - uses: actions/checkout@v5
@@ -330,7 +244,7 @@ jobs:
         persist-credentials: false
 
     - name: Download macos build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: macos-build
         path: .
@@ -345,9 +259,22 @@ jobs:
         cd test
         npm install --ignore-scripts
 
+    # run the downloaded release binary as-is, never rebuild it here: what we test
+    # is what publish ships. MOBILECLI_HOME keeps the daemon away from ~/.mobilecli
     - name: run tests
-      run:
-        make test-e2e
+      env:
+        MOBILECLI_HOME: ${{ runner.temp }}/mobilecli-home
+      run: |
+        mkdir -p "$MOBILECLI_HOME"
+        ./mobilecli --version
+        ./mobilecli daemon stop || true
+        cd test && npx playwright test
+
+    - name: stop daemon
+      if: always()
+      env:
+        MOBILECLI_HOME: ${{ runner.temp }}/mobilecli-home
+      run: ./mobilecli daemon stop || true
 
   publish:
     if: github.ref_type == 'tag'
@@ -356,7 +283,7 @@ jobs:
     permissions:
       id-token: write  # Required for npm trusted publishing with OIDC
       contents: write
-    needs: [build_on_windows, build_on_linux, build_on_macos, e2e_test]
+    needs: [build, e2e_test, test, lint, security]
     steps:
     - uses: actions/checkout@v5
       with:
@@ -368,19 +295,19 @@ jobs:
         registry-url: 'https://registry.npmjs.org'
 
     - name: Download darwin build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: macos-build
         path: mobilecli-darwin
 
     - name: Download linux build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: linux-build
         path: mobilecli-linux
 
     - name: Download windows build
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v8
       with:
         name: windows-build
         path: mobilecli-windows
@@ -428,29 +355,41 @@ jobs:
         ls -l *.zip
         rm -rf dist
 
+    - name: Extract release notes from CHANGELOG.md
+      run: awk -v tag="$GITHUB_REF_NAME" '/^## \[/{f = ($0 ~ "^## \\[" tag "\\]")} f' CHANGELOG.md > release-notes.md
+
     - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
       with:
         name: Version ${{ github.ref_name }}
+        body_path: release-notes.md
         files: |
           mobilecli-*.zip
 
     - name: Publish
       run: |
-        # prepare binaries for distribution
-        mv ./mobilecli-darwin/mobilecli-darwin-arm64 publish/npm/bin
-        mv ./mobilecli-darwin/mobilecli-darwin-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-amd64 publish/npm/bin
-        mv ./mobilecli-linux/mobilecli-linux-arm64 publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-amd64.exe publish/npm/bin
-        mv ./mobilecli-windows/mobilecli-windows-arm64.exe publish/npm/bin
-        chmod +x publish/npm/bin/*
-        # copy README.md
+        # publish platform-specific packages
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          os="${platform%-*}"
+          binary="mobilecli-$platform"
+          if [ "$os" = "windows" ]; then
+            binary="$binary.exe"
+          fi
+          cp "mobilecli-$os/$binary" "publish/npm-$platform/"
+          chmod +x "publish/npm-$platform/$binary"
+          cd "publish/npm-$platform"
+          npm version "$GITHUB_REF_NAME" --no-git-tag-version
+          npm publish --access public --provenance
+          cd ../..
+        done
+
+        # publish main package (wrapper)
         cp README.md publish/npm
-        # publish to npm
         cd publish/npm
         npm version "$GITHUB_REF_NAME" --no-git-tag-version
-        npm install --ignore-scripts
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+          npm pkg set "optionalDependencies.@mobilenext/mobilecli-$platform=$GITHUB_REF_NAME"
+        done
         npm publish --access public --provenance

@@ -1,4 +1,5 @@
 import {expect} from '@playwright/test';
+import type {InstallResult, InstalledApp, UninstallResult} from './types';
 
 // Shared wire-format assertions.
 //
@@ -99,4 +100,46 @@ export function expectOkEnvelope(response: any): any {
 	expect(response.status, `expected status ok, got: ${JSON.stringify(response)}`).toBe('ok');
 	expect(response.data, 'ok envelope must carry data').toBeDefined();
 	return response.data;
+}
+
+// `apps list` reports all four fields on both platforms today. expectAppShape stays
+// lenient for arbitrary system apps; this one is the strict contract, asserted
+// against an app we ship ourselves, so dropping a field is caught as a regression.
+export function expectInstalledAppShape(app: unknown): asserts app is InstalledApp {
+	const fields: (keyof InstalledApp)[] = ['packageName', 'appName', 'version', 'versionCode'];
+	const record = app as Record<string, unknown>;
+	for (const field of fields) {
+		expect(typeof record?.[field], `app.${field}: ${JSON.stringify(app)}`).toBe('string');
+		expect((record[field] as string).length, `app.${field} is empty`).toBeGreaterThan(0);
+	}
+}
+
+// `apps install` echoes a human-readable message plus the metadata it read out of
+// the artifact. it reports no appName, unlike `apps list`.
+export function expectInstallResultShape(data: unknown): asserts data is InstallResult {
+	const result = data as {message?: unknown; app?: Record<string, unknown>};
+	expect(typeof result?.message, `install message: ${JSON.stringify(data)}`).toBe('string');
+	expect((result.message as string).length).toBeGreaterThan(0);
+
+	const fields: (keyof InstallResult['app'])[] = ['packageName', 'version', 'versionCode'];
+	for (const field of fields) {
+		expect(typeof result?.app?.[field], `install app.${field}: ${JSON.stringify(data)}`).toBe('string');
+		expect((result.app![field] as string).length, `install app.${field} is empty`).toBeGreaterThan(0);
+	}
+}
+
+// `apps uninstall` answers with just the bundle id it removed
+export function expectUninstallResultShape(data: unknown): asserts data is UninstallResult {
+	const result = data as {packageName?: unknown};
+	expect(typeof result?.packageName, `uninstall result: ${JSON.stringify(data)}`).toBe('string');
+	expect((result.packageName as string).length).toBeGreaterThan(0);
+}
+
+// the error half of the envelope: a failing command exits non-zero and prints
+// this instead of `data`
+export function expectErrorEnvelope(response: unknown): string {
+	const envelope = response as {status?: unknown; error?: unknown};
+	expect(envelope?.status, `expected status error, got: ${JSON.stringify(response)}`).toBe('error');
+	expect(typeof envelope.error, 'error envelope must carry a message').toBe('string');
+	return envelope.error as string;
 }

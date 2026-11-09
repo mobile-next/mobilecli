@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mobile-next/mobilecli/commands"
@@ -21,15 +20,10 @@ var fsPushCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.FsPushRequest{
 			DeviceID:   deviceId,
-			LocalPath:  args[0],
+			LocalPath:  absLocalPath(args[0]),
 			RemotePath: args[1],
 		}
-		response := commands.FsPushCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.fs.push", req)
 	},
 }
 
@@ -41,14 +35,9 @@ var fsPullCmd = &cobra.Command{
 		req := commands.FsPullRequest{
 			DeviceID:   deviceId,
 			RemotePath: args[0],
-			LocalPath:  args[1],
+			LocalPath:  absLocalPath(args[1]),
 		}
-		response := commands.FsPullCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.fs.pull", req)
 	},
 }
 
@@ -74,12 +63,7 @@ var fsLsCmd = &cobra.Command{
 			BundleID:   bundleID,
 			RemotePath: remotePath,
 		}
-		response := commands.FsListCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.fs.ls", req)
 	},
 }
 
@@ -106,12 +90,7 @@ var fsMkdirCmd = &cobra.Command{
 			RemotePath: remotePath,
 			Parents:    fsMkdirParents,
 		}
-		response := commands.FsMkdirCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.fs.mkdir", req)
 	},
 }
 
@@ -133,12 +112,7 @@ var fsRmCmd = &cobra.Command{
 			RemotePath: remotePath,
 			Recursive:  fsRmRecursive,
 		}
-		response := commands.FsRmCommand(req)
-		printJson(response)
-		if response.Status == "error" {
-			return fmt.Errorf("%s", response.Error)
-		}
-		return nil
+		return runViaDaemon("cli.fs.rm", req)
 	},
 }
 

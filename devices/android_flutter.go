@@ -1,0 +1,1070 @@
+package devices
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/mobile-next/mobilecli/types"
+	"github.com/mobile-next/mobilecli/utils"
+)
+
+// Flutter renders its whole UI into a single opaque native view, so uiautomator
+// and the accessibility tree only ever see what Flutter publishes to the a11y
+// layer — merged, typeless, and missing anything without semantics (e.g. a
+// CustomPaint chart). For a debuggable Flutter app we instead read the live
+// render tree from the Dart VM service: the JVMTI agent hands us the service
+// URI (with its auth token) via FlutterJNI.getVMServiceUri(), and here we walk
+// the render objects over the VM-service WebSocket using `invoke` — a reflective
+// method call that, unlike `evaluate`, needs no Dart expression compiler and so
+// works on a normally-launched app (no `flutter run`). Each render object's
+// global position comes from invoking RenderBox.localToGlobal(Offset.zero).
+
+// dartKindNull is the VM service kind of an instance ref holding null.
+const dartKindNull = "Null"
+
+const flutterVMCallTimeout = 15 * time.Second
+
+// vmServiceURIPattern extracts port and token from http://127.0.0.1:PORT/TOKEN/
+var vmServiceURIPattern = regexp.MustCompile(`^http://127\.0\.0\.1:(\d+)/([^/]*)/?$`)
+
+// flutterVMServiceURI attaches the agent to pkg and asks it for the running
+// Flutter app's Dart VM service URI. An empty string (no error) or an error
+// both mean "treat as not-Flutter and fall back to the accessibility dump".
+func (d *AndroidDevice) flutterVMServiceURI(pkg string) string {
+	port, err := d.ensureAgentReady(pkg)
+	if err != nil {
+		utils.Verbose("flutter: agent not ready for %s: %v", pkg, err)
+		return ""
+	}
+	raw, err := agentRequest(port, "device.flutter.vmServiceUri", nil)
+	if err != nil {
+		// "not a flutter app" is the expected negative — the FlutterJNI class is
+		// absent from a non-Flutter app's classloader.
+		utils.Verbose("flutter: vmServiceUri for %s: %v", pkg, err)
+		return ""
+	}
+	var r struct {
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return ""
+	}
+	return r.URI
+}
+
+// tryDumpFlutterSource returns the Flutter render tree for the foreground app,
+// or ok=false to signal the caller should use the accessibility dump. Detection
+// requires a debuggable app (the JVMTI agent only attaches to those), which is
+// also the only case where a Dart VM service exists.
+func (d *AndroidDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
+	foreground, err := d.GetForegroundApp()
+	if err != nil {
+		return nil, false
+	}
+	pkg := foreground.PackageName
+	if !d.isAppDebuggable(pkg) {
+		return nil, false
+	}
+	uri := d.flutterVMServiceURI(pkg)
+	if uri == "" {
+		return nil, false
+	}
+	start := time.Now()
+	elements, err := d.dumpFlutterSource(uri)
+	if err != nil {
+		utils.Verbose("flutter: render-tree dump failed, falling back: %v", err)
+		return nil, false
+	}
+	utils.Verbose("flutter: render-tree dump produced %d elements in %s", len(elements), time.Since(start))
+	return elements, true
+}
+
+// dumpFlutterSource reads the Flutter render tree over the VM service and
+// converts it to ScreenElements. uri is the on-device service URI; we forward a
+// host port to its device port and speak the VM-service protocol over WebSocket.
+func (d *AndroidDevice) dumpFlutterSource(uri string) ([]types.ScreenElement, error) {
+	m := vmServiceURIPattern.FindStringSubmatch(strings.TrimSpace(uri))
+	if m == nil {
+		return nil, fmt.Errorf("unexpected Dart VM service URI: %q", uri)
+	}
+	devicePort, token := m[1], m[2]
+
+	localPort, err := d.addForward("tcp:" + devicePort)
+	if err != nil {
+		return nil, fmt.Errorf("forward to VM service: %w", err)
+	}
+	defer func() {
+		if _, err := d.runAdbCommand("forward", "--remove", fmt.Sprintf("tcp:%d", localPort)); err != nil {
+			utils.Info("failed to remove adb forward tcp:%d: %v", localPort, err)
+		}
+	}()
+
+	// The device port is now reachable at the forwarded local port.
+	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/%s/ws", localPort, token)
+	return dumpFlutterTreeOverWS(wsURL, d.devicePixelRatio())
+}
+
+// devicePixelRatio maps Flutter's logical pixels to the physical pixels that
+// uiautomator (and taps) use. `wm density` reports dpi; dpr = dpi / 160.
+func (d *AndroidDevice) devicePixelRatio() float64 {
+	out, err := d.runAdbCommand("shell", "wm", "density")
+	if err == nil {
+		if m := regexp.MustCompile(`(\d+)`).FindStringSubmatch(string(out)); m != nil {
+			if dpi, err := strconv.Atoi(m[1]); err == nil && dpi > 0 {
+				return float64(dpi) / 160.0
+			}
+		}
+	}
+	return 1.0
+}
+
+// ---------------------------------------------------------------------------
+// VM-service WebSocket client (JSON-RPC 2.0, concurrent request/response)
+// ---------------------------------------------------------------------------
+
+type flutterVM struct {
+	conn         *websocket.Conn
+	writeMu      sync.Mutex
+	mu           sync.Mutex
+	seq          int
+	pending      map[int]chan vmResp
+	fatal        error // connection-level failure that ended the read loop
+	isolateID    string
+	dpr          float64
+	zeroOffsetID string        // objectId of Offset.zero, the localToGlobal argument
+	callSem      chan struct{} // bounds concurrent in-flight VM-service calls
+
+	// zeroMu guards zeroOffsetID, which is re-resolved from offsetClassID when it
+	// expires mid-walk (see localToGlobal).
+	zeroMu        sync.Mutex
+	offsetClassID string
+}
+
+// maxConcurrentVMCalls caps in-flight VM-service requests. The walk fans out one
+// goroutine per render child (cheap), but the underlying calls are throttled
+// here so we pipeline aggressively without flooding the VM service. Structural
+// goroutines wait on their children *after* their own calls return, so they
+// never hold a call slot across a wait — no deadlock regardless of tree shape.
+const maxConcurrentVMCalls = 48
+
+type vmResp struct {
+	result json.RawMessage
+	err    error
+}
+
+// vmRPCError is a JSON-RPC error returned by the VM service for one call. The
+// message is generic ("Invalid params"); data.details says what was wrong.
+type vmRPCError struct {
+	Code    int
+	Message string
+	Details string
+}
+
+func (e *vmRPCError) Error() string {
+	if e.Details != "" {
+		return fmt.Sprintf("vm error %d: %s: %s", e.Code, e.Message, e.Details)
+	}
+	return fmt.Sprintf("vm error %d: %s", e.Code, e.Message)
+}
+
+// vmInvalidParams is the JSON-RPC code for a rejected parameter, which the VM
+// service also returns for an object id that has expired from the id ring.
+const vmInvalidParams = -32602
+
+// isExpiredArgumentError reports whether an invoke failed because one of its
+// argumentIds no longer refers to a live object.
+func isExpiredArgumentError(err error) bool {
+	var rpcErr *vmRPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == vmInvalidParams &&
+		strings.Contains(rpcErr.Details, "argumentIds")
+}
+
+// isExpiredSentinel reports whether an invoke returned the Expired sentinel,
+// which the VM service may send instead of an error when an argument id expired.
+func isExpiredSentinel(r *vmInstanceRef) bool {
+	return r != nil && r.Type == "Sentinel" && r.Kind == "Expired"
+}
+
+func dialFlutterVM(wsURL string) (*flutterVM, error) {
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("connect to Dart VM service: %w", err)
+	}
+	vm := &flutterVM{
+		conn:    conn,
+		pending: make(map[int]chan vmResp),
+		callSem: make(chan struct{}, maxConcurrentVMCalls),
+	}
+	go vm.readLoop()
+	return vm, nil
+}
+
+func (vm *flutterVM) close() {
+	_ = vm.conn.Close()
+}
+
+func (vm *flutterVM) readLoop() {
+	for {
+		_, data, err := vm.conn.ReadMessage()
+		if err != nil {
+			vm.failAll(err)
+			return
+		}
+		var msg struct {
+			ID     *int            `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+				Data    struct {
+					Details string `json:"details"`
+				} `json:"data"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(data, &msg); err != nil || msg.ID == nil {
+			continue
+		}
+		vm.mu.Lock()
+		ch := vm.pending[*msg.ID]
+		delete(vm.pending, *msg.ID)
+		vm.mu.Unlock()
+		if ch == nil {
+			continue
+		}
+		if msg.Error != nil {
+			ch <- vmResp{err: &vmRPCError{Code: msg.Error.Code, Message: msg.Error.Message, Details: msg.Error.Data.Details}}
+		} else {
+			ch <- vmResp{result: msg.Result}
+		}
+	}
+}
+
+func (vm *flutterVM) failAll(err error) {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	if vm.fatal == nil {
+		vm.fatal = err
+	}
+	for id, ch := range vm.pending {
+		ch <- vmResp{err: err}
+		delete(vm.pending, id)
+	}
+}
+
+// fatalErr reports the connection-level failure that ended the read loop, if
+// any. Once the socket is gone every later call is doomed, so callers use this
+// to abort instead of reporting a half-walked tree as a complete dump.
+func (vm *flutterVM) fatalErr() error {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	return vm.fatal
+}
+
+func (vm *flutterVM) call(method string, params map[string]any) (json.RawMessage, error) {
+	// The read loop is gone, so nothing would ever answer this — fail now rather
+	// than block for the full timeout on every remaining node of the walk.
+	if err := vm.fatalErr(); err != nil {
+		return nil, err
+	}
+
+	vm.callSem <- struct{}{}
+	defer func() { <-vm.callSem }()
+
+	vm.mu.Lock()
+	vm.seq++
+	id := vm.seq
+	ch := make(chan vmResp, 1)
+	vm.pending[id] = ch
+	vm.mu.Unlock()
+
+	req := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
+	if params != nil {
+		req["params"] = params
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		vm.mu.Lock()
+		delete(vm.pending, id)
+		vm.mu.Unlock()
+		return nil, fmt.Errorf("encode vm service call %q: %w", method, err)
+	}
+
+	vm.writeMu.Lock()
+	err = vm.conn.WriteMessage(websocket.TextMessage, payload)
+	vm.writeMu.Unlock()
+	if err != nil {
+		vm.mu.Lock()
+		delete(vm.pending, id)
+		vm.mu.Unlock()
+		return nil, err
+	}
+
+	select {
+	case r := <-ch:
+		return r.result, r.err
+	case <-time.After(flutterVMCallTimeout):
+		vm.mu.Lock()
+		delete(vm.pending, id)
+		vm.mu.Unlock()
+		return nil, fmt.Errorf("vm service call %q timed out", method)
+	}
+}
+
+// vmInstanceRef / vmInstance model the subset of the VM-service Instance shape
+// we read: an object id, its class name, a scalar string value, and its fields.
+type vmInstanceRef struct {
+	Type       string `json:"type"`
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"` // populated for Class objects (the class name)
+	ValueAsStr string `json:"valueAsString"`
+	// ValueAsStrTruncated is set when a long String's valueAsString was cut short;
+	// getObject on it returns the full value.
+	ValueAsStrTruncated bool `json:"valueAsStringIsTruncated"`
+	ClassRef            *struct {
+		Name string `json:"name"`
+	} `json:"class"`
+}
+
+// doubleValue reads a Dart double. a debug (JIT) build reports kind Double with
+// the decimal text; a profile (AOT) build keeps double fields unboxed and the VM
+// service reports their raw IEEE-754 bits as kind Int.
+func (r *vmInstanceRef) doubleValue() (float64, bool) {
+	switch r.Kind {
+	case "Double":
+		v, err := strconv.ParseFloat(r.ValueAsStr, 64)
+		return v, err == nil
+	case "Int":
+		bits, err := strconv.ParseInt(r.ValueAsStr, 10, 64)
+		return math.Float64frombits(uint64(bits)), err == nil //nolint:gosec // reinterpreting the bit pattern, not converting a value
+	default:
+		return 0, false
+	}
+}
+
+func (r *vmInstanceRef) className() string {
+	if r != nil && r.ClassRef != nil {
+		return r.ClassRef.Name
+	}
+	return ""
+}
+
+type vmInstance struct {
+	vmInstanceRef
+	Fields []struct {
+		Decl *struct {
+			Name string `json:"name"`
+		} `json:"decl"`
+		Name  string         `json:"name"`
+		Value *vmInstanceRef `json:"value"`
+	} `json:"fields"`
+	Elements []vmInstanceRef `json:"elements"` // populated for List objects
+}
+
+func (o *vmInstance) field(name string) *vmInstanceRef {
+	for _, f := range o.Fields {
+		fn := f.Name
+		if f.Decl != nil {
+			fn = f.Decl.Name
+		}
+		if fn == name {
+			return f.Value
+		}
+	}
+	return nil
+}
+
+func (vm *flutterVM) getObject(objectID string) (*vmInstance, error) {
+	raw, err := vm.call("getObject", map[string]any{"isolateId": vm.isolateID, "objectId": objectID})
+	if err != nil {
+		return nil, err
+	}
+	var o vmInstance
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// invoke calls a method reflectively on a live object (no expression compiler).
+func (vm *flutterVM) invoke(target, selector string, args []string) (*vmInstanceRef, error) {
+	if args == nil {
+		args = []string{}
+	}
+	raw, err := vm.call("invoke", map[string]any{
+		"isolateId":   vm.isolateID,
+		"targetId":    target,
+		"selector":    selector,
+		"argumentIds": args,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var r vmInstanceRef
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (vm *flutterVM) resolveIsolate() error {
+	raw, err := vm.call("getVM", nil)
+	if err != nil {
+		return err
+	}
+	var v struct {
+		Isolates []struct {
+			ID string `json:"id"`
+		} `json:"isolates"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	if len(v.Isolates) == 0 {
+		return fmt.Errorf("no Dart isolate available")
+	}
+	vm.isolateID = v.Isolates[0].ID
+	return nil
+}
+
+// findClassIDs resolves class ids by exact name. getClassList already returns
+// every class ref with its name inline, so this is a single round trip — no
+// per-class getObject.
+func (vm *flutterVM) findClassIDs(names map[string]string) error {
+	raw, err := vm.call("getClassList", map[string]any{"isolateId": vm.isolateID})
+	if err != nil {
+		return err
+	}
+	var cl struct {
+		Classes []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"classes"`
+	}
+	if err := json.Unmarshal(raw, &cl); err != nil {
+		return err
+	}
+	for _, c := range cl.Classes {
+		if _, want := names[c.Name]; want && names[c.Name] == "" {
+			names[c.Name] = c.ID
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Render-tree walk
+// ---------------------------------------------------------------------------
+
+const (
+	rootRenderClass = "_ReusableRenderView"
+	offsetClass     = "Offset"
+	bindingClass    = "WidgetsFlutterBinding"
+)
+
+// enableSemantics turns on Flutter's semantics generation when it is off, so the
+// render walk can read labels/roles. Returns a SemanticsHandle objectId to
+// dispose afterwards, or "" if semantics were already on or the binding wasn't
+// found. When it enables semantics it waits briefly for the tree to build.
+func (vm *flutterVM) enableSemantics(bindingClassID string) string {
+	if bindingClassID == "" {
+		return ""
+	}
+	binding, err := vm.firstInstance(bindingClassID)
+	if err != nil {
+		return ""
+	}
+	if vm.invokeString(binding, "get:semanticsEnabled") == attrTrue {
+		return "" // already on (e.g. iOS with an active a11y client)
+	}
+	handle, err := vm.invoke(binding, "ensureSemantics", nil)
+	if err != nil || handle == nil || handle.ID == "" {
+		return ""
+	}
+	// The semantics tree builds over the next frame(s); give it a moment.
+	time.Sleep(500 * time.Millisecond)
+	return handle.ID
+}
+
+// disposeSemantics releases a SemanticsHandle from enableSemantics, restoring the
+// prior semantics-enabled state.
+func (vm *flutterVM) disposeSemantics(handleID string) {
+	_, _ = vm.invoke(handleID, "dispose", nil)
+}
+
+func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) {
+	vm.dpr = dpr
+	t0 := time.Now()
+	classes := map[string]string{rootRenderClass: "", offsetClass: "", bindingClass: ""}
+	if err := vm.findClassIDs(classes); err != nil {
+		return nil, err
+	}
+	if classes[rootRenderClass] == "" {
+		return nil, fmt.Errorf("could not locate the Flutter root render object (%s)", rootRenderClass)
+	}
+
+	// Ensure Flutter is generating its semantics tree. With no accessibility client
+	// active (the default on Android) debugSemantics is null, so labels/roles would
+	// be missing; ensureSemantics turns it on for the duration of this dump.
+	if handle := vm.enableSemantics(classes[bindingClass]); handle != "" {
+		defer vm.disposeSemantics(handle)
+	}
+
+	rootID, err := vm.firstInstance(classes[rootRenderClass])
+	if err != nil {
+		return nil, fmt.Errorf("no root render object instance: %w", err)
+	}
+	zeroID, err := vm.offsetZeroID(classes[offsetClass])
+	if err != nil {
+		return nil, fmt.Errorf("could not obtain Offset.zero: %w", err)
+	}
+	vm.zeroOffsetID = zeroID
+	vm.offsetClassID = classes[offsetClass]
+	utils.Verbose("flutter: bootstrap (classes+root+offset.zero) took %s", time.Since(t0))
+
+	t1 := time.Now()
+	els, err := vm.visit(rootID, rootRenderClass, nil, "")
+	utils.Verbose("flutter: tree walk took %s", time.Since(t1))
+	if err != nil {
+		return nil, err
+	}
+	// A walk whose goroutines were all past their entry check when the socket
+	// died returns no error, just a thin tree — catch that here.
+	if err := vm.fatalErr(); err != nil {
+		return nil, fmt.Errorf("vm service connection lost during the walk: %w", err)
+	}
+	if len(els) == 0 {
+		return nil, fmt.Errorf("render-tree walk produced no elements")
+	}
+	return els, nil
+}
+
+// renderChild is a child render object plus its class name (both come from the
+// parent's debugDescribeChildren, so no extra getObject is needed per node).
+type renderChild struct {
+	id    string
+	class string
+}
+
+// flutterSemantics is the accessibility metadata read from a SemanticsNode. It
+// is threaded down the render walk from the nearest enclosing boundary and
+// attached to the content leaves it covers.
+type flutterSemantics struct {
+	label        string
+	value        string
+	identifier   string
+	hint         string
+	checked      *bool
+	selected     *bool
+	focused      *bool
+	enabled      *bool
+	toggled      *bool // isToggled — a switch's on/off state
+	isButton     bool
+	isTextField  bool
+	inRadioGroup bool // isInMutuallyExclusiveGroup — a radio, not a checkbox
+	isSlider     bool
+	isLink       bool
+	isHeader     bool
+	// mergesDescendants is set when this boundary folds its whole subtree into one
+	// accessible node (e.g. a CheckboxListTile). Such a node is a single control,
+	// so it is emitted once and its content leaves are not emitted separately.
+	mergesDescendants bool
+}
+
+// isControl reports whether the semantics describe a single interactive control
+// (text field, button, checkbox/radio/switch, slider). Such a node is one
+// accessible element, so it is emitted once and its content render leaves are
+// not emitted separately.
+func (s *flutterSemantics) isControl() bool {
+	return s != nil && (s.isButton || s.isTextField || s.checked != nil ||
+		s.toggled != nil || s.isSlider)
+}
+
+// hasContent reports whether the semantics carry anything worth attaching.
+func (s *flutterSemantics) hasContent() bool {
+	return s != nil && (s.label != "" || s.identifier != "" || s.value != "" ||
+		s.hint != "" || s.isButton || s.isTextField || s.isSlider || s.isLink || s.isHeader ||
+		s.checked != nil || s.toggled != nil || s.selected != nil || s.focused != nil || s.enabled != nil)
+}
+
+func (vm *flutterVM) firstInstance(classID string) (string, error) {
+	raw, err := vm.call("getInstances", map[string]any{"isolateId": vm.isolateID, "objectId": classID, "limit": 1})
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		Instances []struct {
+			ID string `json:"id"`
+		} `json:"instances"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return "", err
+	}
+	if len(r.Instances) == 0 {
+		return "", fmt.Errorf("class %s has no live instances", classID)
+	}
+	return r.Instances[0].ID, nil
+}
+
+// offsetZeroID finds the const Offset.zero on the heap (fields _dx/_dy == 0.0),
+// used as the point argument to RenderBox.localToGlobal.
+func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
+	raw, err := vm.call("getInstances", map[string]any{"isolateId": vm.isolateID, "objectId": offsetClassID, "limit": 500})
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		Instances []struct {
+			ID string `json:"id"`
+		} `json:"instances"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return "", err
+	}
+	// Inspect the instances concurrently — call() throttles the fan-out.
+	found := make([]string, len(r.Instances))
+	var wg sync.WaitGroup
+	for i, inst := range r.Instances {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			o, err := vm.getObject(id)
+			if err != nil {
+				return
+			}
+			dx, dy := o.field("_dx"), o.field("_dy")
+			if dx == nil || dy == nil {
+				return
+			}
+			x, okX := dx.doubleValue()
+			y, okY := dy.doubleValue()
+			if okX && okY && x == 0 && y == 0 {
+				found[i] = id
+			}
+		}(i, inst.ID)
+	}
+	wg.Wait()
+	for _, id := range found {
+		if id != "" {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("offset.zero not found among live instances")
+}
+
+// visit walks a render object subtree, returning the meaningful ScreenElements
+// it contains. Pure-wrapper render objects (those with render children) are
+// hoisted — only leaf render objects with a non-zero size are emitted, which is
+// exactly the visible content (paragraphs, images, custom-painted widgets like
+// charts), each with its real Flutter type and global bounds.
+// A per-node RPC failure is not an error here — plenty of render objects
+// legitimately refuse localToGlobal or describe no children — but a dead
+// connection is, and it must not masquerade as an empty subtree.
+func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics, key string) ([]types.ScreenElement, error) {
+	if err := vm.fatalErr(); err != nil {
+		return nil, err
+	}
+
+	// Like semantics, the nearest enclosing widget Key is threaded down to the
+	// leaves it covers.
+	if k := vm.readWidgetKey(nodeID); k != "" {
+		key = k
+	}
+
+	// A render object that forms a semantics boundary carries the label/flags on
+	// its own debugSemantics (only the owner does — ancestors and merged
+	// descendants read empty), regardless of the boundary class
+	// (RenderSemanticsAnnotations, RenderIndexedSemantics, RenderMergeSemantics…).
+	// Adopt it for this subtree so the content leaves beneath (where Flutter has
+	// merged the label away) inherit it.
+	if s := vm.readNodeSemantics(nodeID); s.hasContent() {
+		// Semantics(identifier: …) wrapping a control is its own id-only node
+		// above the control's node — keep the id unless the inner node sets one.
+		if s.identifier == "" && sem != nil {
+			s.identifier = sem.identifier
+		}
+		sem = s
+		// A control or a merging boundary is one accessible element (its label and
+		// widgets belong together), so emit it once here and don't descend —
+		// otherwise its content leaves (a text field's label row, editable area and
+		// container; a checkbox's label and box) each emit separately.
+		if s.isControl() || s.mergesDescendants {
+			return vm.emitLeaf(nodeID, className, sem, key), nil
+		}
+	}
+
+	kids := vm.childrenOf(nodeID)
+
+	// Wrapper node (has render children): visit children concurrently and hoist
+	// their results to our level, preserving order.
+	if len(kids) > 0 {
+		results := make([][]types.ScreenElement, len(kids))
+		errs := make([]error, len(kids))
+		var wg sync.WaitGroup
+		for i, k := range kids {
+			wg.Add(1)
+			go func(i int, k renderChild) {
+				defer wg.Done()
+				results[i], errs[i] = vm.visit(k.id, k.class, sem, key)
+			}(i, k)
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return nil, err
+			}
+		}
+		var children []types.ScreenElement
+		for _, r := range results {
+			children = append(children, r...)
+		}
+		return children, nil
+	}
+
+	return vm.emitLeaf(nodeID, className, sem, key), nil
+}
+
+// emitLeaf builds the ScreenElement for a single node (a render leaf, or a
+// merging semantics boundary), or returns nil if it has no on-screen size.
+func (vm *flutterVM) emitLeaf(nodeID, className string, sem *flutterSemantics, key string) []types.ScreenElement {
+	rect, ok := vm.globalRect(nodeID)
+	if !ok {
+		utils.Verbose("flutter: dropping %s %s: could not read its global rect", className, nodeID)
+		return nil
+	}
+	if rect.Width <= 0 || rect.Height <= 0 {
+		return nil
+	}
+	el := types.ScreenElement{
+		Type: friendlyRenderType(className),
+		Rect: rect,
+	}
+	if text := vm.extractText(nodeID, className); text != "" {
+		el.Text = &text
+	}
+	applySemantics(&el, sem)
+	setIfNotEmpty(&el.Key, key)
+	return []types.ScreenElement{el}
+}
+
+// applySemantics attaches the nearest enclosing semantics to a leaf element:
+// label/value/identifier/placeholder and the checked/selected/focused/enabled
+// booleans, and refines the type for buttons and text fields.
+func applySemantics(el *types.ScreenElement, sem *flutterSemantics) {
+	if !sem.hasContent() {
+		return
+	}
+	setIfNotEmpty(&el.Label, sem.label)
+	setIfNotEmpty(&el.Value, sem.value)
+	setIfNotEmpty(&el.Identifier, sem.identifier)
+	setIfNotEmpty(&el.Placeholder, sem.hint)
+	applySemanticsState(el, sem)
+	if role := sem.role(); role != "" {
+		el.Type = role
+	}
+}
+
+func setIfNotEmpty(dst **string, value string) {
+	if value != "" {
+		*dst = &value
+	}
+}
+
+func applySemanticsState(el *types.ScreenElement, sem *flutterSemantics) {
+	// Checkable state: checkbox/radio use isChecked, switches use isToggled. Always
+	// emit it (true or false) so a control's state is unambiguous.
+	if state := sem.checked; state != nil {
+		c := *state
+		el.Checked = &c
+	} else if state := sem.toggled; state != nil {
+		c := *state
+		el.Checked = &c
+	}
+	// `selected` marks the active item of a group (a tab/list row) — it is
+	// redundant on a checkbox/radio/switch, where `checked` is the state, so only
+	// emit it for non-checkable elements.
+	if sem.selected != nil && *sem.selected && sem.checked == nil && sem.toggled == nil {
+		t := true
+		el.Selected = &t
+	}
+	if sem.focused != nil && *sem.focused {
+		t := true
+		el.Focused = &t
+	}
+	if sem.enabled != nil && !*sem.enabled {
+		f := false
+		el.Enabled = &f
+	}
+}
+
+// role refines the element type to roles mobilewright's getByRole understands,
+// or "" to keep the type as is. A checked- or toggled-state keeps the node
+// identifiable as a control even when off.
+func (sem *flutterSemantics) role() string {
+	switch {
+	case sem.isTextField:
+		return "TextField"
+	case sem.isButton:
+		return "Button"
+	case sem.checked != nil && sem.inRadioGroup:
+		return "Radio"
+	case sem.checked != nil:
+		return "Checkbox"
+	case sem.toggled != nil:
+		return "Switch"
+	case sem.isSlider:
+		return "Slider"
+	case sem.isLink:
+		return "Link"
+	case sem.isHeader:
+		return "Header"
+	}
+	return ""
+}
+
+// readNodeSemantics reads the accessibility metadata attached to a render
+// object via its debugSemantics SemanticsNode (label/value/identifier/hint and
+// flags). Returns an empty (no-content) struct when the node has no semantics.
+func (vm *flutterVM) readNodeSemantics(renderNodeID string) *flutterSemantics {
+	sem := &flutterSemantics{}
+	sn, err := vm.invoke(renderNodeID, "get:debugSemantics", nil)
+	if err != nil || sn == nil || sn.ID == "" || sn.Kind == dartKindNull {
+		return sem
+	}
+	sem.label = vm.invokeString(sn.ID, "get:label")
+	sem.value = vm.invokeString(sn.ID, "get:value")
+	sem.identifier = vm.invokeString(sn.ID, "get:identifier")
+	sem.mergesDescendants = vm.invokeString(sn.ID, "get:mergeAllDescendantsIntoThisNode") == attrTrue
+
+	data, err := vm.invoke(sn.ID, "getSemanticsData", nil)
+	if err != nil || data == nil || data.ID == "" {
+		return sem
+	}
+	obj, err := vm.getObject(data.ID)
+	if err != nil {
+		return sem
+	}
+	if ah := obj.field("attributedHint"); ah != nil && ah.ID != "" {
+		sem.hint = vm.invokeString(ah.ID, "get:string")
+	}
+	if fc := obj.field("flagsCollection"); fc != nil && fc.ID != "" {
+		if fco, err := vm.getObject(fc.ID); err == nil {
+			sem.isButton = fieldIsTrue(fco, "isButton")
+			sem.isTextField = fieldIsTrue(fco, "isTextField")
+			sem.inRadioGroup = fieldIsTrue(fco, "isInMutuallyExclusiveGroup")
+			sem.isSlider = fieldIsTrue(fco, "isSlider")
+			sem.isLink = fieldIsTrue(fco, "isLink")
+			sem.isHeader = fieldIsTrue(fco, "isHeader")
+			sem.checked = vm.triState(fco.field("isChecked"))
+			sem.toggled = vm.triState(fco.field("isToggled"))
+			sem.selected = vm.triState(fco.field("isSelected"))
+			sem.focused = vm.triState(fco.field("isFocused"))
+			sem.enabled = vm.triState(fco.field("isEnabled"))
+		}
+	}
+	return sem
+}
+
+// invokeString invokes a no-arg selector expected to return a String and returns
+// its value (empty on error or non-string).
+func (vm *flutterVM) invokeString(target, selector string) string {
+	r, err := vm.invoke(target, selector, nil)
+	if err != nil || r == nil {
+		return ""
+	}
+	return r.ValueAsStr
+}
+
+func fieldIsTrue(o *vmInstance, name string) bool {
+	f := o.field(name)
+	return f != nil && f.ValueAsStr == attrTrue
+}
+
+// triState resolves a SemanticsFlags tri-state member to a *bool. In this Flutter
+// version these are enums (Tristate{true,false,none}, CheckedState{checked,
+// unchecked,mixed}); older versions expose plain bools. none/mixed → nil.
+func (vm *flutterVM) triState(ref *vmInstanceRef) *bool {
+	if ref == nil || ref.ID == "" || ref.Kind == dartKindNull {
+		return nil
+	}
+	if ref.ValueAsStr == attrTrue {
+		t := true
+		return &t
+	}
+	if ref.ValueAsStr == "false" {
+		f := false
+		return &f
+	}
+	// Tristate.{isTrue,isFalse,none} and CheckedState.{isTrue,isFalse,mixed};
+	// none/mixed fall through to nil.
+	switch s := vm.invokeString(ref.ID, "toString"); {
+	case strings.HasSuffix(s, ".isTrue"):
+		t := true
+		return &t
+	case strings.HasSuffix(s, ".isFalse"):
+		f := false
+		return &f
+	}
+	return nil
+}
+
+// childrenOf returns a render object's render children type-agnostically via
+// RenderObject.debugDescribeChildren() — every RenderObject implements it,
+// regardless of how it stores children (single-child, container, or sliver).
+// Each returned DiagnosticsNode's `value` is the child render object.
+func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
+	list, err := vm.invoke(nodeID, "debugDescribeChildren", nil)
+	if err != nil || list.ID == "" {
+		return nil
+	}
+	obj, err := vm.getObject(list.ID)
+	if err != nil {
+		return nil
+	}
+	var kids []renderChild
+	for _, node := range obj.Elements {
+		if node.ID == "" {
+			continue
+		}
+		val, err := vm.invoke(node.ID, "get:value", nil)
+		if err != nil || val.ID == "" || val.Kind == dartKindNull {
+			continue
+		}
+		// debugDescribeChildren only lists children, but guard anyway.
+		if !strings.Contains(val.className(), "Render") {
+			continue
+		}
+		kids = append(kids, renderChild{id: val.ID, class: val.className()})
+	}
+	return kids
+}
+
+// globalRect returns a render object's global bounds in physical pixels via
+// RenderBox.localToGlobal(Offset.zero) and RenderBox.size.
+func (vm *flutterVM) globalRect(nodeID string) (types.ScreenElementRect, bool) {
+	off, err := vm.localToGlobal(nodeID)
+	if err != nil || off.ID == "" {
+		return types.ScreenElementRect{}, false
+	}
+	ox, oy, ok := vm.offsetPair(off.ID)
+	if !ok {
+		return types.ScreenElementRect{}, false
+	}
+	size, err := vm.invoke(nodeID, "get:size", nil)
+	if err != nil || size.ID == "" {
+		return types.ScreenElementRect{}, false
+	}
+	sw, sh, ok := vm.offsetPair(size.ID)
+	if !ok {
+		return types.ScreenElementRect{}, false
+	}
+	return types.ScreenElementRect{
+		X:      int(ox*vm.dpr + 0.5),
+		Y:      int(oy*vm.dpr + 0.5),
+		Width:  int(sw*vm.dpr + 0.5),
+		Height: int(sh*vm.dpr + 0.5),
+	}, true
+}
+
+// localToGlobal invokes RenderBox.localToGlobal(Offset.zero). Every invoke and
+// getObject adds ids to the isolate's VM-service id ring, and a large tree makes
+// thousands of them, so the Offset.zero id resolved before the walk can be
+// evicted partway through. The VM then rejects it as an invalid argument; in
+// that case re-resolve Offset.zero and retry once.
+func (vm *flutterVM) localToGlobal(nodeID string) (*vmInstanceRef, error) {
+	vm.zeroMu.Lock()
+	zeroID := vm.zeroOffsetID
+	vm.zeroMu.Unlock()
+
+	off, err := vm.invoke(nodeID, "localToGlobal", []string{zeroID})
+	if !isExpiredArgumentError(err) && !isExpiredSentinel(off) {
+		return off, err
+	}
+	zeroID, err = vm.refreshZeroOffsetID(zeroID)
+	if err != nil {
+		return nil, err
+	}
+	return vm.invoke(nodeID, "localToGlobal", []string{zeroID})
+}
+
+// refreshZeroOffsetID re-resolves Offset.zero once stale, the id the caller
+// used, has expired. The walk is concurrent, so many nodes hit the same expired
+// id at once; they wait for a single lookup and share its result.
+func (vm *flutterVM) refreshZeroOffsetID(stale string) (string, error) {
+	vm.zeroMu.Lock()
+	defer vm.zeroMu.Unlock()
+	if vm.zeroOffsetID != stale {
+		return vm.zeroOffsetID, nil // already re-resolved by another goroutine
+	}
+	id, err := vm.offsetZeroID(vm.offsetClassID)
+	if err != nil {
+		return "", fmt.Errorf("re-resolve expired Offset.zero: %w", err)
+	}
+	utils.Verbose("flutter: Offset.zero id %s expired, re-resolved as %s", stale, id)
+	vm.zeroOffsetID = id
+	return id, nil
+}
+
+// offsetPair reads the two doubles of an Offset or Size (both store _dx/_dy).
+func (vm *flutterVM) offsetPair(objectID string) (float64, float64, bool) {
+	o, err := vm.getObject(objectID)
+	if err != nil {
+		return 0, 0, false
+	}
+	dx, dy := o.field("_dx"), o.field("_dy")
+	if dx == nil || dy == nil {
+		return 0, 0, false
+	}
+	x, okX := dx.doubleValue()
+	y, okY := dy.doubleValue()
+	if !okX || !okY {
+		return 0, 0, false
+	}
+	return x, y, true
+}
+
+// extractText reads the plain text of a paragraph/editable render object.
+func (vm *flutterVM) extractText(nodeID, className string) string {
+	if !strings.Contains(className, "Paragraph") && !strings.Contains(className, "Editable") {
+		return ""
+	}
+	span, err := vm.invoke(nodeID, "get:text", nil)
+	if err != nil || span.ID == "" {
+		return ""
+	}
+	plain, err := vm.invoke(span.ID, "toPlainText", nil)
+	if err != nil {
+		return ""
+	}
+	return plain.ValueAsStr
+}
+
+// friendlyRenderType turns a render class name into a widget-ish type, e.g.
+// RenderParagraph -> Paragraph, _RenderColoredBox -> ColoredBox.
+func friendlyRenderType(name string) string {
+	name = strings.TrimPrefix(name, "_")
+	name = strings.TrimPrefix(name, "Render")
+	if name == "" {
+		return "FlutterWidget"
+	}
+	// Map render-object names to the widget/role name callers expect. Paragraph is
+	// the render object behind a Text widget; "Text" is what getByRole("text")
+	// (ROLE_TYPE_MAP.text) and getByType match.
+	if widget, ok := renderTypeAliases[name]; ok {
+		return widget
+	}
+	return name
+}
+
+// renderTypeAliases maps render-object class names to the friendlier widget name.
+var renderTypeAliases = map[string]string{
+	"Paragraph": "Text",
+}

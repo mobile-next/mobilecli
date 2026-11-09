@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -19,6 +21,20 @@ import (
 
 // insecureStorage is bound to the global --insecure-storage flag.
 var insecureStorage bool
+
+// useFileStorage reports whether the token lives in the credentials file rather
+// than the OS keyring. That is the case when --insecure-storage is set, and
+// always on Termux, which has no keyring and where probing for one kills the
+// process: the seccomp filter rejects the faccessat2 syscall that
+// exec.LookPath makes, so the keyring backend crashes with SIGSYS. We detect
+// Termux by TERMUX_VERSION, since the binary is built with GOOS=linux.
+func useFileStorage() bool {
+	return insecureStorage || isTermux()
+}
+
+func isTermux() bool {
+	return os.Getenv("TERMUX_VERSION") != ""
+}
 
 // credentialsFilePath returns the path to the plaintext token file used when
 // --insecure-storage is set: $XDG_CONFIG_HOME/mobilecli/credentials, falling
@@ -40,7 +56,13 @@ func credentialsFilePath() (string, error) {
 // storeToken saves the token in the keyring, or in the credentials file when
 // --insecure-storage is set.
 func storeToken(token string) error {
-	if insecureStorage {
+	if useFileStorage() {
+		// on Termux we fall back to the plaintext file without being asked to, so
+		// tell the user. skip it when --insecure-storage was passed explicitly,
+		// since they already opted into plaintext storage.
+		if isTermux() && !insecureStorage {
+			fmt.Fprintln(os.Stderr, "Notice: Termux has no OS keyring, storing token in plaintext credentials file")
+		}
 		return storeTokenInFile(token)
 	}
 	if err := keyring.Set(keyringService, keyringUser, token); err != nil {
@@ -72,7 +94,7 @@ func loadToken() (string, error) {
 		return token, nil
 	}
 
-	if insecureStorage {
+	if useFileStorage() {
 		return loadTokenFromFile()
 	}
 
@@ -86,12 +108,57 @@ func loadToken() (string, error) {
 	return token, nil
 }
 
+// tokenLoadTimeout bounds how long loading a token from the OS keyring may
+// block. Some keyring backends never return - notably the freedesktop Secret
+// Service when its login collection is locked and no interactive prompter is
+// available (e.g. commands auto-started from an SSH session). Without this
+// bound, every command that touches the keyring would hang forever.
+const tokenLoadTimeout = 3 * time.Second
+
+var (
+	tokenLoadOnce sync.Once
+	tokenLoadVal  string
+	tokenLoadErr  error
+)
+
+// loadTokenWithTimeout is loadToken with a hard deadline, memoized so the
+// timeout is paid at most once per process. Callers that must not hang, like
+// the root pre-run and daemon startup, use this instead of loadToken.
+func loadTokenWithTimeout() (string, error) {
+	tokenLoadOnce.Do(func() {
+		tokenLoadVal, tokenLoadErr = loadTokenDeadline(loadToken, tokenLoadTimeout)
+	})
+	return tokenLoadVal, tokenLoadErr
+}
+
+// loadTokenDeadline runs fn but gives up after timeout. It is split out from
+// loadTokenWithTimeout so the deadline behavior can be unit-tested.
+func loadTokenDeadline(fn func() (string, error), timeout time.Duration) (string, error) {
+	type result struct {
+		token string
+		err   error
+	}
+
+	ch := make(chan result, 1)
+	go func() {
+		token, err := fn()
+		ch <- result{token: token, err: err}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.token, r.err
+	case <-time.After(timeout):
+		return "", fmt.Errorf("timed out after %s reading credentials; the OS keyring may be locked (unlock it, or use --insecure-storage)", timeout)
+	}
+}
+
 func loadTokenFromFile() (string, error) {
 	path, err := credentialsFilePath()
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the fixed credentials file under the user config dir
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", keyring.ErrNotFound
@@ -108,7 +175,7 @@ func loadTokenFromFile() (string, error) {
 // deleteToken removes the stored token. It returns keyring.ErrNotFound when no
 // token was stored, so logout can report "not logged in".
 func deleteToken() error {
-	if insecureStorage {
+	if useFileStorage() {
 		path, err := credentialsFilePath()
 		if err != nil {
 			return err

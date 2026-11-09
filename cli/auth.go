@@ -2,15 +2,20 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
+
+	"github.com/mobile-next/mobilecli/utils"
 )
 
 const (
@@ -19,7 +24,7 @@ const (
 
 	deviceFlowClientID = "ed38b523-56e8-4719-837b-7074fac152b5"
 	deviceCodeURL      = "https://app.mobilenext.ai/login/device/code"
-	deviceTokenURL     = "https://app.mobilenext.ai/login/device/token"
+	deviceTokenURL     = "https://app.mobilenext.ai/login/device/token" // #nosec G101 -- public endpoint URL, not a credential
 	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 
 	authHTTPTimeout = 30 * time.Second
@@ -63,7 +68,7 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to your account",
-	Long:  `Authenticates using a device code flow. Displays a URL and code to enter in your browser.`,
+	Long:  `Opens your browser to approve the login and pick an organization. Falls back to a device code (URL + code to type) over SSH, in CI, headless, or with --no-browser.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if authProvider != "mobilenext" {
 			return fmt.Errorf("unsupported provider %q, supported values: \"mobilenext\"", authProvider)
@@ -73,13 +78,33 @@ var authLoginCmd = &cobra.Command{
 	},
 }
 
+// postJSON posts a JSON body to the auth server with mobilecli's User-Agent, so
+// device-login traffic is attributable to the CLI in the server access logs.
+func postJSON(url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", utils.UserAgent())
+	return authHTTPClient.Do(req)
+}
+
 func requestDeviceCode() (*deviceCodeResponse, error) {
-	reqBody, _ := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
-	resp, err := authHTTPClient.Post(deviceCodeURL, "application/json", bytes.NewReader(reqBody))
+	reqBody, err := json.Marshal(deviceCodeRequest{ClientID: deviceFlowClientID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build device code request: %w", err)
+	}
+
+	resp, err := postJSON(deviceCodeURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request device code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			utils.Verbose("failed to close device code response: %v", closeErr)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -112,18 +137,24 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 	for time.Now().Before(deadline) {
 		time.Sleep(pollInterval)
 
-		reqBody, _ := json.Marshal(deviceTokenRequest{
+		reqBody, err := json.Marshal(deviceTokenRequest{
 			ClientID:   deviceFlowClientID,
 			DeviceCode: deviceCode,
 			GrantType:  deviceGrantType,
 		})
-		resp, err := authHTTPClient.Post(deviceTokenURL, "application/json", bytes.NewReader(reqBody))
+		if err != nil {
+			return "", fmt.Errorf("failed to build token request: %w", err)
+		}
+
+		resp, err := postJSON(deviceTokenURL, reqBody)
 		if err != nil {
 			return "", fmt.Errorf("failed to poll for token: %w", err)
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			utils.Verbose("failed to close token response: %v", closeErr)
+		}
 		if err != nil {
 			return "", fmt.Errorf("failed to read response: %w", err)
 		}
@@ -155,16 +186,13 @@ func pollForToken(deviceCode string, interval, expiresIn int) (string, error) {
 }
 
 func runAuthLogin() error {
-	codeResp, err := requestDeviceCode()
-	if err != nil {
-		return err
+	var token string
+	var err error
+	if shouldSkipBrowser(noBrowser, runtime.GOOS, os.Getenv) {
+		token, err = runDeviceCodeLogin()
+	} else {
+		token, err = runOAuthLogin(oauthAuthorizeURL, oauthTokenURL)
 	}
-
-	fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
-	fmt.Printf("And enter the code: %s\n\n", codeResp.UserCode)
-	fmt.Println("Waiting for authorization...")
-
-	token, err := pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
 	if err != nil {
 		return err
 	}
@@ -172,9 +200,24 @@ func runAuthLogin() error {
 	if err := storeToken(token); err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
+	// the daemon caches the fleet token at startup; make it pick up the new one
+	stopDaemonIfRunning()
 
 	fmt.Println("Successfully logged in")
 	return nil
+}
+
+func runDeviceCodeLogin() (string, error) {
+	codeResp, err := requestDeviceCode()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Printf("To log in, open this URL in your browser:\n\n\t%s\n\n", codeResp.VerificationURI)
+	fmt.Printf("Your code: %s\n\n", codeResp.UserCode)
+	fmt.Println("Waiting for authorization...")
+
+	return pollForToken(codeResp.DeviceCode, codeResp.Interval, codeResp.ExpiresIn)
 }
 
 var authLogoutCmd = &cobra.Command{
@@ -182,7 +225,10 @@ var authLogoutCmd = &cobra.Command{
 	Short: "Log out of your account",
 	Long:  `Logs out of your current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := deleteToken(); err != nil {
+		// delete first: a daemon started in between must not find a valid token
+		err := deleteToken()
+		stopDaemonIfRunning()
+		if err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				fmt.Println("mobilecli is not logged in")
 				return nil
@@ -200,7 +246,7 @@ var authTokenCmd = &cobra.Command{
 	Short: "Display the current auth token",
 	Long:  `Displays the authentication token for the current session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := loadToken()
+		token, err := loadTokenWithTimeout()
 		if err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				return fmt.Errorf("no auth token found for mobilecli")
@@ -213,8 +259,29 @@ var authTokenCmd = &cobra.Command{
 	},
 }
 
+var authStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show whether you are logged in",
+	Long:  `Shows whether you are logged in, without printing the auth token.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := loadTokenWithTimeout()
+		if errors.Is(err, keyring.ErrNotFound) {
+			fmt.Println("Not logged in")
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get auth token: %w", err)
+		}
+
+		fmt.Println("mobilenext.ai")
+		fmt.Println("  - Logged in to mobilenext.ai")
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(authCmd)
-	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd)
+	authCmd.AddCommand(authLoginCmd, authLogoutCmd, authTokenCmd, authStatusCmd)
 	authLoginCmd.Flags().StringVar(&authProvider, "provider", "mobilenext", "authentication provider (supported values: \"mobilenext\")")
+	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print the login URL and code instead of opening a browser")
 }

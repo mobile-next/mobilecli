@@ -1,26 +1,19 @@
 # mobilecli
 
+**English** | [日本語](README.ja.md) | [简体中文](README.zh-CN.md)
+
 A universal command-line tool for managing iOS and Android devices, simulators, emulators and apps from [Mobile Next](https://github.com/mobile-next/).
 
-<p align="center">
+<p align="left">
   <a href="https://github.com/mobile-next/mobilecli">
     <img src="https://img.shields.io/github/stars/mobile-next/mobilecli" alt="Mobile Next Stars" />
-  </a>
-  <a href="https://github.com/mobile-next/mobilecli">
-    <img src="https://img.shields.io/github/contributors/mobile-next/mobilecli?color=green" alt="Mobile Next Downloads" />
   </a>
   <a href="https://www.npmjs.com/package/mobilecli">
     <img src="https://img.shields.io/npm/dm/mobilecli?logo=npm&style=flat&color=red" alt="npm">
   </a>
-  <a href="https://github.com/mobile-next/mobilecli/releases">
-    <img src="https://img.shields.io/github/release/mobile-next/mobilecli">
-  </a>
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-</p>
-
-<p align="center">
   <a href="http://mobilenext.ai/join-slack">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
@@ -35,9 +28,11 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
 - **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
-- **App Management**: Launch, terminate, install, uninstall, list, and get foreground apps
+- **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
+- **Location Override**: Fake the GPS location reported by a device
 - **Crash Reports**: List and fetch crash reports from iOS and Android devices
+- **Device Logs**: Stream real-time device logs with filtering from iOS and Android devices
 - **Webview Inspection**: List, navigate, query DOM, and evaluate JavaScript in embedded webviews
 
 ### 🎯 Platform Support
@@ -55,40 +50,35 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Android SDK** with `adb` in PATH (for Android device support)
 - **Xcode Command Line Tools** (for iOS simulator support on macOS)
 
-#### Run instantly with npx
-```bash
-npx mobilecli@latest
-```
-
 #### Install globally with npm
 ```bash
 npm install -g mobilecli@latest
 ```
 
-#### Install from Source 🛠️
+#### Shell Completion ⌨️
 ```bash
-git clone https://github.com/mobile-next/mobilecli.git
-cd mobilecli
-make build
+# zsh
+echo 'source <(mobilecli completion zsh)' >> ~/.zshrc
+
+# bash 4.1+ (requires bash-completion; macOS ships bash 3.2)
+echo 'source <(mobilecli completion bash)' >> ~/.bashrc
+
+# fish
+mobilecli completion fish > ~/.config/fish/completions/mobilecli.fish
 ```
 
-### Install Dependencies
+Run `mobilecli completion --help` for PowerShell and other options.
 
-#### 🍎 For iOS Simulator Support
+### Agent Setup 🤖
 
-Xcode is required. Make sure you have it installed with the runtimes relevant for you installed. You will have to create Simulators and have them booted before `mobilecli` can use them.
+Install `mobilecli` and add the skill so your coding agent knows how to use it:
 
-`mobilecli` will automatically install an agent on the device that is required for functions such as tapping on elements, pressing buttons and streaming screen capture.
-
-#### 🤖 For Android Support
 ```bash
-# Install Android SDK and ensure adb is in PATH
-# Download from: https://developer.android.com/studio/command-line/adb
-# or
-brew install --cask android-platform-tools
+npm install -g mobilecli@latest
+npx skills add https://github.com/mobile-next/mobilecli
 ```
 
-## Usage
+## CLI Reference
 
 ### List Connected Devices 🔍
 
@@ -100,34 +90,23 @@ mobilecli devices
 mobilecli devices --include-offline
 ```
 
-Example output:
-```json
-[
-  {
-    "id": "12345678-1234567890ABCDEF",
-    "name": "iPhone 15",
-    "platform": "ios",
-    "type": "real",
-    "state": "online"
-  },
-  {
-    "id": "Pixel_6",
-    "name": "Pixel 6",
-    "platform": "android",
-    "type": "emulator",
-    "state": "online"
-  },
-  {
-    "id": "iPhone_13",
-    "name": "iPhone 13",
-    "platform": "ios",
-    "type": "simulator",
-    "state": "offline"
-  }
-]
-```
-
 **Note**: Offline emulators and simulators can be booted using the `mobilecli device boot` command.
+
+### Default Device 🎯
+
+When only one device is online, mobilecli selects it automatically and `--device` isn't needed.
+
+With several devices online, set `MOBILECLI_DEVICE` to skip `--device` on every command. An explicit `--device` still takes precedence.
+
+```bash
+export MOBILECLI_DEVICE=<device-id>
+
+# Taps on $MOBILECLI_DEVICE
+mobilecli io tap 100,200
+
+# Overrides $MOBILECLI_DEVICE for this command only
+mobilecli io tap --device <other-device-id> 100,200
+```
 
 ### Take Screenshots 📸
 
@@ -138,11 +117,36 @@ mobilecli screenshot --device <device-id>
 # Take a JPEG screenshot with custom quality
 mobilecli screenshot --device <device-id> --format jpeg --quality 80
 
+# Scale the screenshot down to half size
+mobilecli screenshot --device <device-id> --scale 0.5
+
+# Limit the largest dimension to 800 pixels, keeping aspect ratio
+mobilecli screenshot --device <device-id> --max-size 800
+
+# Crop to a region (x,y,width,height in screen points), applied before scaling
+mobilecli screenshot --device <device-id> --clip 10,80,300,200
+
 # Save to specific path
 mobilecli screenshot --device <device-id> --output screenshot.png
 
 # Output to stdout
 mobilecli screenshot --device <device-id> --output -
+```
+
+### UI Tree 🌳
+
+```bash
+# Dump the UI tree as indented text, each element with a ref like @e5
+mobilecli snapshot --device <device-id>
+
+# Same as snapshot
+mobilecli dump ui --device <device-id> --format text
+
+# Dump the UI tree as JSON, including each element's rect
+mobilecli dump ui --device <device-id>
+
+# Tap an element by its ref from the latest dump
+mobilecli io tap --device <device-id> @e5
 ```
 
 ### Stream Screen 🎥
@@ -179,7 +183,41 @@ mobilecli io button --device <device-id> POWER
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
+
+# Replace the focused field's text in one step ('' clears it)
+mobilecli io fill --device <device-id> 'hello world'
+
+# Read device clipboard
+mobilecli io clipboard get --device <device-id>
+
+# Write device clipboard
+mobilecli io clipboard set --device <device-id> 'hello world'
+
+# Send keys combination to paste (cmd+v for iOS, ctrl+v for Android)
+mobilecli io keys --device <device-id> "cmd+v"
 ```
+
+### Location Override 📍
+
+```bash
+# Fake the device location (latitude,longitude)
+mobilecli device location set --device <device-id> 37.7749,-122.4194
+
+# Hold the override until Ctrl-C, then clear it automatically
+mobilecli device location set --device <device-id> 37.7749,-122.4194 --wait
+
+# Restore the real location
+mobilecli device location clear --device <device-id>
+```
+
+Caveats per platform:
+
+| Platform | Notes |
+|----------|-------|
+| iOS Simulator | Works out of the box, the override survives mobilecli exiting |
+| iOS Real Device | The override only lives as long as the mobilecli process that set it, so `--wait` is required. `clear` has to come from that same process |
+| Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
+| Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
 ### Supported Hardware Buttons
 
@@ -209,18 +247,10 @@ mobilecli apps install <path> --device <device-id>
 
 # Uninstall an app
 mobilecli apps uninstall <bundle-id> --device <device-id>
-```
 
-Example output for `apps foreground`:
-```json
-{
-  "status": "ok",
-  "data": {
-    "packageName": "com.example.app",
-    "appName": "Example App",
-    "version": "1.0.0"
-  }
-}
+# Clear app data (cache, preferences, databases) and reset permissions, without uninstalling
+# Supported on Android and iOS Simulator
+mobilecli apps clear <bundle-id> --device <device-id>
 ```
 
 ### Filesystem 📂
@@ -267,39 +297,6 @@ mobilecli fs rm --device <device-id> -r /sdcard/myfolder
 mobilecli fs rm --device <device-id> -r /data/user/0/com.example.app/files/cache
 ```
 
-Example output for `apps path`:
-```json
-{
-  "status": "ok",
-  "data": {
-    "path": "/data/user/0/com.example.app"
-  }
-}
-```
-
-Example output for `fs ls`:
-```json
-{
-  "status": "ok",
-  "data": [
-    {
-      "name": "files",
-      "path": "/data/user/0/com.example.app/files",
-      "size": 4096,
-      "modTime": "2026-05-11T19:20:00Z",
-      "isDir": true
-    },
-    {
-      "name": "shared_prefs",
-      "path": "/data/user/0/com.example.app/shared_prefs",
-      "size": 4096,
-      "modTime": "2026-05-11T12:49:00Z",
-      "isDir": true
-    }
-  ]
-}
-```
-
 **Notes:**
 - Paths under `/data/user/` are accessed via `run-as`, so the app must be debuggable.
 - Pushing to `/data/user/` stages the file through `/data/local/tmp/` then copies it into the container.
@@ -309,7 +306,7 @@ Example output for `fs ls`:
 
 On **iOS**, the on-device agent is required for touch input (taps, swipes, button presses), screen capture streaming, and UI tree inspection. These capabilities are not available through standard iOS tooling without an agent running on the device.
 
-On **Android**, most features work without the agent, but installing it enables non-ASCII text input (e.g. Japanese, Chinese, Korean, emoji) which is not possible through `adb` alone.
+On **Android**, no agent is needed. Running `mobilecli agent status` on an Android device simply reports that.
 
 ```bash
 # Check if the agent is installed on a device
@@ -342,6 +339,10 @@ Example output for `agent status`:
 ### Webview Inspection 🌐
 
 Inspect and interact with embedded webviews (`WKWebView` on iOS, `android.webkit.WebView` on Android) running inside native apps.
+
+On Android the same commands also drive the tabs of Chrome when it is the foreground app, over the Chrome DevTools Protocol. Chrome freezes the tabs it is not showing, so only the visible tab (`isVisible: true`) answers `eval` and the commands built on it.
+
+On iOS, real devices and simulators alike, the same commands also drive the tabs of Safari when it is the foreground app, through the device's Web Inspector service. A real device needs **Settings > Apps > Safari > Advanced > Web Inspector** turned on. Safari does not keep the tabs it is not showing running: a command on such a tab fails after 2 seconds, so use the tab listed with `isVisible: true`.
 
 ```bash
 # List embedded webviews in the foreground app
@@ -425,6 +426,47 @@ Example output for `crashes list`:
 
 **Note**: On iOS real devices, crash reports are fetched via the Apple crashreport service. On iOS simulators, they are read from `~/Library/Logs/DiagnosticReports/`. On Android, crashes are parsed from `adb logcat -b crash`.
 
+### Device Logs 📋
+
+```bash
+# Stream logs from a device (Ctrl+C to stop)
+mobilecli device logs --device <device-id>
+
+# Stop after 100 entries
+mobilecli device logs --device <device-id> --limit 100
+
+# Filter by field (exact match)
+mobilecli device logs --filter process=SpringBoard
+mobilecli device logs --filter tag=ActivityManager
+
+# Exclude by field
+mobilecli device logs --filter process!=SpringBoard
+
+# Combine filters (AND logic)
+mobilecli device logs --filter level=Error --filter process!=SpringBoard
+```
+
+Supported filter keys: `pid`, `process`, `tag`, `level`, `subsystem`, `category`, `message`
+
+Each log entry is printed as a JSON line:
+```json
+{"timestamp":"2026-04-15 12:17:14.224451+0300","message":"Start proc...","level":"Default","subsystem":"com.apple.UIKit","category":"EventDispatch","pid":54052,"process":"SpringBoard"}
+```
+
+Logs are also available over the [HTTP API](#http-api-) via the `device.logs` method, which takes the same `limit` and `filters` and returns a URL to stream from:
+
+```bash
+curl -X POST http://localhost:12000/rpc -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "method": "device.logs", "id": 1,
+  "params": { "deviceId": "<device-id>", "limit": 100, "filters": ["level=Error", "process!=SpringBoard"] }
+}'
+# => {"jsonrpc":"2.0","id":1,"result":{"sessionUrl":"/sessions/<session-id>/logs"}}
+
+curl -N http://localhost:12000/sessions/<session-id>/logs
+```
+
+The session expires one minute after creation and accepts a single connection. Disconnecting stops the log stream on the device.
+
 ### Remote Devices ☁️
 
 ```bash
@@ -457,10 +499,26 @@ npx skills add mobile-next/mobilecli -g
 
 Then ask your agent things like "take a screenshot of my emulator" or "tap the login button" — the skill triggers automatically.
 
+## Daemon ⚙️
+
+Every device command talks to a per-user background daemon that keeps discovered devices, iOS tunnels and on-device agents alive between invocations, so only the first command pays the discovery cost. The daemon starts automatically on the first device command (`mobilecli --help` and `--version` never start it) and exits after 30 minutes without requests.
+
+```bash
+# Inspect or control it explicitly
+mobilecli daemon status
+mobilecli daemon stop
+
+# Run it in the foreground (e.g. under a service manager), with a custom idle timeout
+mobilecli daemon start --idle-timeout 0
+```
+
+The CLI and daemon talk JSON-RPC over a unix domain socket in `~/.mobilecli/` (override with `MOBILECLI_HOME`); the daemon's log is `~/.mobilecli/daemon.log`. A daemon left over from an older mobilecli version is restarted automatically. `auth login` and `auth logout` stop a running daemon so it picks up the new credentials.
+
+On Android, the daemon keeps a small server running on the device (`com.mobilenext.mobilecli.DeviceServer`) that holds the device's only UiAutomation connection, so other UiAutomator clients such as `uiautomator dump` or Appium cannot run alongside it. The daemon stops that server when it exits, so `mobilecli daemon stop` hands the device back to other tools; the server also exits by itself after 30 minutes without requests (`MOBILECLI_DEVICE_SERVER_IDLE_TIMEOUT=5m` shortens that).
+
 ## HTTP API 🔌
 
-***mobilecli*** provides an http interface for all the functionality that is available through command line. As a matter of fact, it is preferable to
-use mobilecli as a webserver, so it can cache and keep tunnels alive, speeding up your interactions with the mobile device or simulator/emulator.
+***mobilecli*** provides an http interface for all the functionality that is available through command line. The server is a thin front for the daemon above, so HTTP clients and the CLI share one set of devices and tunnels.
 
 For the full list of available JSON-RPC methods and their parameters, see the [OpenRPC specification](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md).
 
@@ -470,6 +528,7 @@ mobile server start
 
 curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
 curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+```
 
 ## WebSocket Support 🔌
 
@@ -507,6 +566,8 @@ make test
 ```
 
 ## Support 💬
+
+Something not working? Check [docs/troubleshooting.md](docs/troubleshooting.md) first.
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 

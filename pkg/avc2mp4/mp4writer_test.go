@@ -2,6 +2,7 @@ package avc2mp4
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 )
 
@@ -21,44 +22,66 @@ func nalu(nalType byte) NALUnit {
 	return NALUnit{Type: nalType, Data: []byte{nalType, 0xAA}}
 }
 
-// grouping closes an access unit when the next slice or SPS arrives, so a unit
-// is a run of NAL units followed by the SEI carrying its timestamp
+// the encoder emits the timecode SEI right before the picture it stamps, so a
+// timestamp belongs to the slice that follows it
+func timestampsOf(units []accessUnit) []uint64 {
+	timestamps := make([]uint64, len(units))
+	for i, unit := range units {
+		timestamps[i] = unit.timestampUs
+	}
+	return timestamps
+}
+
 func TestGroupAccessUnitsIgnoresNalusBeforeFirstSPS(t *testing.T) {
 	// a recording can start mid-stream; everything before the first SPS is
 	// undecodable and must be dropped
 	units := groupAccessUnits([]NALUnit{
-		nalu(1),
 		seiWithTimestamp(1_000_000),
+		nalu(1),
 		nalu(nalTypeSPS),
-		nalu(5),
 		seiWithTimestamp(2_000_000),
+		nalu(5),
 	})
 
-	if len(units) != 1 {
-		t.Fatalf("expected 1 access unit, got %d", len(units))
-	}
-	if units[0].timestampUs != 2_000_000 {
-		t.Errorf("expected timestamp 2000000, got %d", units[0].timestampUs)
+	if got := timestampsOf(units); !slices.Equal(got, []uint64{2_000_000}) {
+		t.Fatalf("expected only the keyframe at 2000000, got %v", got)
 	}
 }
 
-func TestGroupAccessUnitsSplitsOnEachSlice(t *testing.T) {
+func TestGroupAccessUnitsGivesEachSliceTheTimestampBeforeIt(t *testing.T) {
 	units := groupAccessUnits([]NALUnit{
 		nalu(nalTypeSPS),
-		nalu(5),
 		seiWithTimestamp(1_000_000),
-		nalu(1),
+		nalu(5),
 		seiWithTimestamp(2_000_000),
 		nalu(1),
 		seiWithTimestamp(3_000_000),
+		nalu(1),
 	})
 
-	if len(units) != 3 {
-		t.Fatalf("expected 3 access units, got %d", len(units))
+	if got := timestampsOf(units); !slices.Equal(got, []uint64{1_000_000, 2_000_000, 3_000_000}) {
+		t.Fatalf("expected one access unit per slice, got %v", got)
 	}
-	for i, want := range []uint64{1_000_000, 2_000_000, 3_000_000} {
-		if units[i].timestampUs != want {
-			t.Errorf("access unit %d: expected timestamp %d, got %d", i, want, units[i].timestampUs)
+}
+
+func TestGroupAccessUnitsKeepsParameterSetsWithTheirKeyframe(t *testing.T) {
+	units := groupAccessUnits([]NALUnit{
+		nalu(nalTypeSPS),
+		nalu(8),
+		seiWithTimestamp(1_000_000),
+		nalu(5),
+		nalu(nalTypeSPS),
+		nalu(8),
+		seiWithTimestamp(2_000_000),
+		nalu(5),
+	})
+
+	if len(units) != 2 {
+		t.Fatalf("expected 2 access units, got %d", len(units))
+	}
+	for i, unit := range units {
+		if len(unit.nalus) != 3 || unit.nalus[0].Type != nalTypeSPS || unit.nalus[2].Type != 5 {
+			t.Errorf("access unit %d: expected SPS, PPS, IDR together, got %d nalus", i, len(unit.nalus))
 		}
 	}
 }
@@ -75,15 +98,49 @@ func TestGroupAccessUnitsDropsUnitsWithoutTimestamp(t *testing.T) {
 	}
 }
 
+// High profile encoders emit B-frames: decode order P B B B while presentation
+// order is B B B P. these are real timestamps from a devicekit-ios stream.
+func unitsAt(timestampsUs ...uint64) []accessUnit {
+	units := make([]accessUnit, len(timestampsUs))
+	for i, ts := range timestampsUs {
+		units[i] = accessUnit{timestampUs: ts}
+	}
+	return units
+}
+
+func TestSampleTimesStayMonotonicWhenFramesAreReordered(t *testing.T) {
+	pts, dts := sampleTimesMs(unitsAt(8700544384, 8700511052, 8700494386, 8700527718, 8700611048))
+
+	if !slices.IsSorted(dts) {
+		t.Errorf("dts must never go backwards, got %v", dts)
+	}
+	for i := range pts {
+		if dts[i] > pts[i] {
+			t.Errorf("sample %d: dts %d is after pts %d", i, dts[i], pts[i])
+		}
+	}
+	if longest := slices.Max(pts); longest > 1000 {
+		t.Errorf("five frames at 60fps should span well under a second, got pts up to %dms", longest)
+	}
+}
+
+func TestSampleTimesMatchWhenFramesAreInOrder(t *testing.T) {
+	pts, dts := sampleTimesMs(unitsAt(5_000_000, 5_016_000, 5_033_000))
+
+	if !slices.Equal(pts, dts) || !slices.Equal(pts, []uint64{0, 16, 33}) {
+		t.Errorf("expected pts == dts == [0 16 33], got pts=%v dts=%v", pts, dts)
+	}
+}
+
 // the timecode SEI is ours, not part of the encoded stream, so it must not be
 // muxed into the output
 func TestGroupAccessUnitsExcludesTimecodeSEIFromPayload(t *testing.T) {
 	units := groupAccessUnits([]NALUnit{
 		nalu(nalTypeSPS),
-		nalu(5),
 		seiWithTimestamp(1_000_000),
-		nalu(1),
+		nalu(5),
 		seiWithTimestamp(2_000_000),
+		nalu(1),
 	})
 
 	if len(units) == 0 {
@@ -103,11 +160,11 @@ func TestGroupAccessUnitsKeepsForeignSEIInPayload(t *testing.T) {
 	foreignSEI := NALUnit{Type: nalTypeSEI, Data: []byte{0x06, 0x01, 0x02, 0x80}}
 	units := groupAccessUnits([]NALUnit{
 		nalu(nalTypeSPS),
-		nalu(5),
-		foreignSEI,
 		seiWithTimestamp(1_000_000),
-		nalu(1),
+		foreignSEI,
+		nalu(5),
 		seiWithTimestamp(2_000_000),
+		nalu(1),
 	})
 
 	found := false

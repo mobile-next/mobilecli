@@ -1,7 +1,9 @@
 package devices
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,10 +99,26 @@ func (r *RemoteDevice) fireRPC(method string, extra params) error {
 	return err
 }
 
-func (r *RemoteDevice) TakeScreenshot() ([]byte, error) {
+func (r *RemoteDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	p := params{}
+	if opts.Format != "" {
+		p["format"] = opts.Format
+	}
+	if opts.Quality > 0 {
+		p["quality"] = opts.Quality
+	}
+	if opts.Scale > 0 && opts.Scale != 1.0 {
+		p["scale"] = opts.Scale
+	}
+	if opts.MaxSize > 0 {
+		p["maxSize"] = opts.MaxSize
+	}
+	if opts.Clip != nil {
+		p["clip"] = opts.Clip
+	}
 	resp, err := rpcCall[struct {
 		Data string `json:"data"`
-	}](r, "device.screenshot", params{})
+	}](r, "device.screenshot", p)
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +141,28 @@ func (r *RemoteDevice) LongPress(x, y, duration int) error {
 	return r.fireRPC("device.io.longpress", params{"x": x, "y": y, "duration": duration})
 }
 
-func (r *RemoteDevice) Swipe(x1, y1, x2, y2 int) error {
-	return r.fireRPC("device.io.swipe", params{"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+func (r *RemoteDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	p := params{"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+	if duration > 0 {
+		p["duration"] = duration
+	}
+
+	return r.fireRPC("device.io.swipe", p)
+}
+
+func (r *RemoteDevice) GetClipboard() (string, error) {
+	resp, err := rpcCall[struct {
+		Text string `json:"text"`
+	}](r, "device.clipboard.get", params{})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Text, nil
+}
+
+func (r *RemoteDevice) SetClipboard(text string) error {
+	return r.fireRPC("device.clipboard.set", params{"text": text})
 }
 
 func (r *RemoteDevice) Gesture(actions []devicekit.TapAction) error {
@@ -141,6 +179,10 @@ func (r *RemoteDevice) PressKeys(combos []KeyCombo) error {
 		keys[i] = strings.Join(append(append([]string{}, combo.Modifiers...), combo.Key), "+")
 	}
 	return r.fireRPC("device.io.keys", params{"keys": keys})
+}
+
+func (r *RemoteDevice) Fill(text string) error {
+	return r.fireRPC("device.io.fill", params{"text": text})
 }
 
 func (r *RemoteDevice) PressButton(key string) error {
@@ -178,6 +220,16 @@ func (r *RemoteDevice) Reboot() error {
 	return r.fireRPC("device.reboot", params{})
 }
 
+func (r *RemoteDevice) IsKeyboardVisible() (bool, error) {
+	result, err := rpcCall[keyboardStatusResult](r, "device.io.keyboard.status", nil)
+	return result.Visible, err
+}
+
+func (r *RemoteDevice) HideKeyboard() (bool, error) {
+	result, err := rpcCall[keyboardHideResult](r, "device.io.keyboard.hide", nil)
+	return result.Dismissed, err
+}
+
 func (r *RemoteDevice) GetOrientation() (string, error) {
 	resp, err := rpcCall[struct {
 		Orientation string `json:"orientation"`
@@ -192,6 +244,10 @@ func (r *RemoteDevice) SetOrientation(orientation string) error {
 	return r.fireRPC("device.io.orientation.set", params{"orientation": orientation})
 }
 
+func (r *RemoteDevice) SetAppearance(appearance string) error {
+	return r.fireRPC("device.settings.apply", params{"appearance": appearance})
+}
+
 func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }
@@ -204,20 +260,20 @@ func (r *RemoteDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 	return rpcCall[*ForegroundAppInfo](r, "device.apps.foreground", params{})
 }
 
-func (r *RemoteDevice) DumpSource() ([]ScreenElement, error) {
+func (r *RemoteDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 	resp, err := rpcCall[struct {
 		Elements []ScreenElement `json:"elements"`
-	}](r, "device.dump.ui", params{})
+	}](r, "device.dump.ui", params{"full": opts.Full})
 	if err != nil {
 		return nil, err
 	}
 	return resp.Elements, nil
 }
 
-func (r *RemoteDevice) DumpSourceRaw() (any, error) {
+func (r *RemoteDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
 	resp, err := rpcCall[struct {
 		RawData any `json:"rawData"`
-	}](r, "device.dump.ui", params{"format": "raw"})
+	}](r, "device.dump.ui", params{"format": "raw", "full": opts.Full})
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +306,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -262,7 +318,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 
 	start := time.Now()
 
-	req, err := http.NewRequest(http.MethodPut, u.String(), f)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, u.String(), f)
 	if err != nil {
 		return fmt.Errorf("failed to create upload request: %w", err)
 	}
@@ -273,7 +329,7 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("upload failed with status %d", resp.StatusCode)
@@ -284,6 +340,14 @@ func uploadFileToURL(filePath, uploadURL string) error {
 	utils.Verbose("upload completed in %.1f seconds, speed: %.3f MB/sec", elapsed, speedMB)
 
 	return nil
+}
+
+func httpGet(u string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) error {
@@ -297,11 +361,11 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	}
 
 	utils.Verbose("downloading from %v", parsed)
-	resp, err := http.Get(parsed.String())
+	resp, err := httpGet(parsed.String())
 	if err != nil {
 		return fmt.Errorf("HTTP GET failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -311,7 +375,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	deadline := time.NewTimer(1 * time.Minute)
 	var onProgress func(float64, float64)
@@ -329,6 +393,7 @@ func downloadFile(downloadURL, outputPath string, cb *ScreenRecordCallbacks) err
 	start := time.Now()
 	written, err := io.Copy(f, body)
 	deadline.Stop()
+	err = errors.Join(err, f.Close())
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -380,6 +445,10 @@ func (r *RemoteDevice) InstallApp(path string) error {
 
 func (r *RemoteDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
 	return nil, fmt.Errorf("uninstall app is not supported on remote devices")
+}
+
+func (r *RemoteDevice) ClearApp(bundleID string) error {
+	return r.fireRPC("device.apps.clear", params{"bundleId": bundleID})
 }
 
 // ScreenRecordCallbacks provides optional progress callbacks for screen recording
@@ -438,9 +507,10 @@ func (pr *progressReader) updateProgress(n int) {
 }
 
 func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <-chan struct{}, cb *ScreenRecordCallbacks) error {
-	_, err := rpcCall[struct {
-		Status string `json:"status"`
-		Output string `json:"output"`
+	started, err := rpcCall[struct {
+		Status      string `json:"status"`
+		Output      string `json:"output"`
+		RecordingID string `json:"recordingId"`
 	}](r, "device.screenrecord", params{
 		"output":    outputPath,
 		"timeLimit": timeLimit,
@@ -482,7 +552,7 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 		Status   string `json:"status"`
 		Duration int    `json:"duration"`
 		URL      string `json:"url"`
-	}](r, "device.screenrecord.stop", params{})
+	}](r, "device.screenrecord.stop", recordingStopParams(started.RecordingID))
 	if err != nil {
 		return err
 	}
@@ -495,6 +565,15 @@ func (r *RemoteDevice) ScreenRecord(outputPath string, timeLimit int, stopChan <
 	}
 
 	return nil
+}
+
+// recordingStopParams stops only this recording when the remote named it;
+// remotes that predate recording ids get a plain stop.
+func recordingStopParams(recordingID string) params {
+	if recordingID == "" {
+		return params{}
+	}
+	return params{"recordingId": recordingID}
 }
 
 func (r *RemoteDevice) StartScreenCapture(config ScreenCaptureConfig) error {
@@ -514,4 +593,8 @@ func (r *RemoteDevice) GetCrashReport(id string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(result.Content), nil
+}
+
+func (r *RemoteDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	return fmt.Errorf("device logs not yet supported for remote devices")
 }

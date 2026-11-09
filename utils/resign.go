@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/sha1" // #nosec G505 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
 	"encoding/hex"
 	"fmt"
@@ -89,41 +90,82 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
-	// re-sign embedded frameworks
-	frameworksDir := filepath.Join(appPath, "Frameworks")
-	if entries, err := os.ReadDir(frameworksDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".framework") || strings.HasSuffix(entry.Name(), ".dylib") {
-				frameworkPath := filepath.Join(frameworksDir, entry.Name())
-				Verbose("Signing framework: %s", entry.Name())
-				err = codesign(frameworkPath, identity, "")
-				if err != nil {
-					return "", fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
-				}
-			}
-		}
+	if err = signAppBundle(appPath, identity, entitlementsPath); err != nil {
+		return "", err
 	}
 
-	// re-sign app extensions and xctest bundles
-	pluginsDir := filepath.Join(appPath, "PlugIns")
-	if entries, err := os.ReadDir(pluginsDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".appex") || strings.HasSuffix(entry.Name(), ".xctest") {
-				pluginPath := filepath.Join(pluginsDir, entry.Name())
-				Verbose("Signing plugin: %s", entry.Name())
-				err = codesign(pluginPath, identity, entitlementsPath)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
-				}
-			}
-		}
+	return repackageIPA(tempDir)
+}
+
+// signAppBundle signs inside out: frameworks, then plugins, then the app itself.
+func signAppBundle(appPath, identity, entitlementsPath string) error {
+	if err := signFrameworks(appPath, identity); err != nil {
+		return err
+	}
+	if err := signPlugins(appPath, identity, entitlementsPath); err != nil {
+		return err
+	}
+	if err := signLooseDylibs(appPath, identity); err != nil {
+		return err
 	}
 
 	Verbose("Signing main app bundle")
-	if err = codesign(appPath, identity, entitlementsPath); err != nil {
-		return "", fmt.Errorf("failed to sign app bundle: %w", err)
+	if err := codesign(appPath, identity, entitlementsPath); err != nil {
+		return fmt.Errorf("failed to sign app bundle: %w", err)
 	}
+	return nil
+}
 
+// signFrameworks re-signs embedded frameworks; an app without a Frameworks dir has none.
+func signFrameworks(appPath, identity string) error {
+	frameworksDir := filepath.Join(appPath, "Frameworks")
+	entries, err := os.ReadDir(frameworksDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read Frameworks directory: %w", err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".framework") && !strings.HasSuffix(entry.Name(), ".dylib") {
+			continue
+		}
+		Verbose("Signing framework: %s", entry.Name())
+		if err := codesign(filepath.Join(frameworksDir, entry.Name()), identity, ""); err != nil {
+			return fmt.Errorf("failed to sign framework %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+// signPlugins re-signs app extensions and xctest bundles; an app without a PlugIns dir has none.
+func signPlugins(appPath, identity, entitlementsPath string) error {
+	pluginsDir := filepath.Join(appPath, "PlugIns")
+	entries, err := os.ReadDir(pluginsDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read PlugIns directory: %w", err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".appex") && !strings.HasSuffix(entry.Name(), ".xctest") {
+			continue
+		}
+		pluginPath := filepath.Join(pluginsDir, entry.Name())
+		if err := signLooseDylibs(pluginPath, identity); err != nil {
+			return err
+		}
+		Verbose("Signing plugin: %s", entry.Name())
+		if err := codesign(pluginPath, identity, entitlementsPath); err != nil {
+			return fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+// repackageIPA zips the Payload dir under tempDir into a new temp IPA and returns its path.
+func repackageIPA(tempDir string) (string, error) {
 	outputIPA, err := os.CreateTemp("", "resigned_*.ipa")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp IPA file: %w", err)
@@ -134,7 +176,7 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	_ = os.Remove(outputPath)
 
 	Verbose("Repackaging IPA to %s", outputPath)
-	cmd := exec.Command("zip", "-qr", outputPath, "Payload")
+	cmd := exec.CommandContext(context.Background(), "zip", "-qr", outputPath, "Payload")
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -143,6 +185,40 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string) (s
 	}
 
 	return outputPath, nil
+}
+
+// looseDylibs lists the dylibs sitting directly in a bundle's root. Xcode debug
+// builds put the real code there (<Name>.debug.dylib next to a stub executable,
+// plus __preview.dylib). signing the bundle does not sign them, and dyld refuses
+// an unsigned one at launch: "mapped file has no cdhash, completely unsigned".
+func looseDylibs(bundlePath string) ([]string, error) {
+	entries, err := os.ReadDir(bundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bundle %s: %w", bundlePath, err)
+	}
+	var dylibs []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".dylib") {
+			dylibs = append(dylibs, filepath.Join(bundlePath, entry.Name()))
+		}
+	}
+	return dylibs, nil
+}
+
+// signLooseDylibs must run before the bundle itself is signed: code is signed
+// inside-out, and the bundle's seal covers these files.
+func signLooseDylibs(bundlePath, identity string) error {
+	dylibs, err := looseDylibs(bundlePath)
+	if err != nil {
+		return err
+	}
+	for _, dylib := range dylibs {
+		Verbose("Signing dylib: %s", filepath.Base(dylib))
+		if err := codesign(dylib, identity, ""); err != nil {
+			return fmt.Errorf("failed to sign dylib %s: %w", filepath.Base(dylib), err)
+		}
+	}
+	return nil
 }
 
 func findAppBundle(tempDir string) (string, error) {
@@ -200,7 +276,7 @@ func readBundleID(appPath string) (string, error) {
 }
 
 func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error) {
-	cmd := exec.Command("openssl", "smime", "-inform", "DER", "-verify", "-noverify", "-in", profilePath)
+	cmd := exec.CommandContext(context.Background(), "openssl", "smime", "-inform", "DER", "-verify", "-noverify", "-in", profilePath)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode profile %s: %w", profilePath, err)
@@ -330,7 +406,7 @@ note: provisioning profiles require a paid Apple Developer Program membership ($
 }
 
 func findSigningIdentity(profile *provisioningProfile) (string, error) {
-	cmd := exec.Command("/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
+	cmd := exec.CommandContext(context.Background(), "/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list signing identities: %w", err)
@@ -398,7 +474,10 @@ func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
 		return "", fmt.Errorf("failed to write entitlements: %w", err)
 	}
 
-	_ = tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("failed to write entitlements: %w", err)
+	}
 	return tmpFile.Name(), nil
 }
 
@@ -409,7 +488,7 @@ func codesign(path, identity, entitlementsPath string) error {
 	}
 	args = append(args, path)
 
-	cmd := exec.Command("codesign", args...)
+	cmd := exec.CommandContext(context.Background(), "codesign", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("codesign failed: %w\n%s", err, output)

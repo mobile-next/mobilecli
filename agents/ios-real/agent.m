@@ -234,6 +234,57 @@ if (__port > 0) {
                             [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"status":@"ok"}} options:0 error:nil] :
                             [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32000),@"message":@"timed out"}} options:0 error:nil];
                     }
+                } else if ([method isEqualToString:@"device.flutter.vmServiceUri"]) {
+                    // Return the running Flutter app's Dart VM service URI (with
+                    // its auth token) by reading it in-process from the engine.
+                    // Reached via the on-screen FlutterViewController -> engine ->
+                    // its FlutterDartVMServicePublisher.url. `publisher` is a
+                    // private ivar of FlutterEngine, read via KVC (the one
+                    // version-sensitive point); `url` is a public property. A
+                    // ClassNotFound / nil result means "not a Flutter app", which
+                    // the caller treats as a signal to fall back to the a11y dump.
+                    // (In-process mDNS was ruled out: DNS-SD needs C function-
+                    // pointer callbacks an LLDB expression cannot define.)
+                    __block NSString *uri = nil;
+                    id sem = dispatch_semaphore_create(0);
+                    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                        @try {
+                            Class fvcCls = NSClassFromString(@"FlutterViewController");
+                            Class wsCls = (Class)objc_getClass("UIWindowScene");
+                            id app = (id)[(Class)objc_getClass("UIApplication") sharedApplication];
+                            id fvc = nil;
+                            for (id sc in (NSArray *)[app connectedScenes]) {
+                                if (![(NSObject *)sc isKindOfClass:wsCls]) continue;
+                                for (id win in (NSArray *)[sc windows]) {
+                                    NSMutableArray *stk = [NSMutableArray array];
+                                    id root = [win rootViewController];
+                                    if (root) [stk addObject:root];
+                                    while ([stk count]) {
+                                        id vc = stk[0]; [stk removeObjectAtIndex:0];
+                                        if (fvcCls && [(NSObject *)vc isKindOfClass:fvcCls]) { fvc = vc; break; }
+                                        NSArray *kids = (NSArray *)[vc childViewControllers];
+                                        if (kids) [stk addObjectsFromArray:kids];
+                                        id presented = [vc presentedViewController];
+                                        if (presented) [stk addObject:presented];
+                                    }
+                                    if (fvc) break;
+                                }
+                                if (fvc) break;
+                            }
+                            if (fvc) {
+                                id engine = [fvc engine];
+                                id pub = engine ? [engine valueForKey:@"publisher"] : nil;
+                                id url = pub ? [pub url] : nil;
+                                if (url) uri = [(NSURL *)url absoluteString];
+                            }
+                        } @catch (id __e) { uri = nil; }
+                        dispatch_semaphore_signal(sem);
+                    }];
+                    dispatch_semaphore_wait(sem, dispatch_time(0, 5000000000LL));
+                    if (uri)
+                        resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"result":@{@"uri":uri}} options:0 error:nil];
+                    else
+                        resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32602),@"message":@"not a flutter app"}} options:0 error:nil];
                 }
                 if (!resp) resp = [NSJSONSerialization dataWithJSONObject:@{@"jsonrpc":@"2.0",@"id":rqId,@"error":@{@"code":@(-32601),@"message":[NSString stringWithFormat:@"method not found: %@", method]}} options:0 error:nil];
                 if (!resp) resp = [@"{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}" dataUsingEncoding:NSUTF8StringEncoding];

@@ -86,17 +86,9 @@ type ForegroundAppRequest struct {
 
 // ForegroundAppCommand gets the currently foreground app on a device
 func ForegroundAppCommand(req ForegroundAppRequest) *CommandResponse {
-	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
-	}
-
-	// start agent if needed (for WDA)
-	err = targetDevice.StartAgent(devices.StartAgentConfig{
-		Hook: GetShutdownHook(),
-	})
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to start agent on device %s: %v", targetDevice.ID(), err))
+		return NewErrorResponse(err)
 	}
 
 	app, err := targetDevice.GetForegroundApp()
@@ -140,7 +132,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with .ipa files"))
 		}
 
-		if targetDevice.Platform() != "ios" || targetDevice.DeviceType() != "real" {
+		if targetDevice.Platform() != devices.PlatformIOS || targetDevice.DeviceType() != devices.DeviceTypeReal {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
 		}
 
@@ -195,6 +187,31 @@ func AppPathCommand(req AppPathRequest) *CommandResponse {
 
 	return NewSuccessResponse(map[string]any{
 		"path": path,
+	})
+}
+
+type ClearAppRequest struct {
+	DeviceID string `json:"deviceId"`
+	BundleID string `json:"bundleId"`
+}
+
+func ClearAppCommand(req ClearAppRequest) *CommandResponse {
+	if req.BundleID == "" {
+		return NewErrorResponse(fmt.Errorf("bundle ID is required"))
+	}
+
+	targetDevice, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("error finding device: %w", err))
+	}
+
+	err = targetDevice.ClearApp(req.BundleID)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to clear app on device %s: %w", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(map[string]any{
+		"message": fmt.Sprintf("Cleared app '%s' on device %s", req.BundleID, targetDevice.ID()),
 	})
 }
 

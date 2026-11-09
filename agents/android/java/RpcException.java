@@ -1,6 +1,7 @@
 package com.mobilenext.mobilecli;
 
 class RpcException extends Exception {
+	private static final long serialVersionUID = 1L;
 	static final int PARSE_ERROR      = -32700;
 	static final int INVALID_REQUEST  = -32600;
 	static final int METHOD_NOT_FOUND = -32601;
