@@ -697,7 +697,7 @@ func (d *IOSDevice) IsKeyboardVisible() (bool, error) {
 }
 
 func (d *IOSDevice) HideKeyboard() (bool, error) {
-	return false, errHideKeyboardNotSupportedOnIOS
+	return false, errHideKeyboardNotSupportedOnRealIOS
 }
 
 func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {

@@ -638,10 +638,6 @@ func (s SimulatorDevice) IsKeyboardVisible() (bool, error) {
 	return s.deviceKitClient.IsKeyboardVisible()
 }
 
-func (s SimulatorDevice) HideKeyboard() (bool, error) {
-	return false, errHideKeyboardNotSupportedOnIOS
-}
-
 func (s SimulatorDevice) SendKeys(text string) error {
 	return s.deviceKitClient.SendKeys(text)
 }

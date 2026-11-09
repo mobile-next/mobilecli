@@ -256,7 +256,7 @@ var ioKeyboardStatusCmd = &cobra.Command{
 var ioKeyboardHideCmd = &cobra.Command{
 	Use:   "hide",
 	Short: "Hide the on-screen keyboard",
-	Long:  `Dismisses the on-screen keyboard on the specified device. Not supported on iOS yet.`,
+	Long:  `Dismisses the on-screen keyboard on the specified device. Not supported on real iOS devices yet.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runViaDaemon("cli.io.keyboard.hide", commands.KeyboardRequest{DeviceID: deviceId})
 	},

@@ -297,8 +297,8 @@ func extendedWriteDeadline(method string) (time.Duration, bool) {
 	case "device.dump.ui":
 		return 60 * time.Second, true
 	case "device.io.keyboard.hide":
-		// covers the hide call, the wait for the keyboard to close and a last slow status
-		return 30 * time.Second, true
+		// covers a status check, attaching LLDB on an iOS simulator (30s at most) and the wait for the keyboard to close
+		return 60 * time.Second, true
 	}
 	return 0, false
 }

@@ -60,6 +60,16 @@ static id jsonSafe(id value) {
     return windows;
 }
 
++ (void)dismissKeyboard {
+    [self runOnMainThread:^{
+        for (UIWindow *window in [self allWindows]) {
+            if (window.isKeyWindow) {
+                [window endEditing:YES];
+            }
+        }
+    }];
+}
+
 + (void)collectWebViews:(UIView *)view into:(NSMutableArray<NSDictionary *> *)result depth:(int)depth {
     if (depth > 50) return;
 

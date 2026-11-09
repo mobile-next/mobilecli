@@ -264,9 +264,9 @@ type WebViewable interface {
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
 
-// errHideKeyboardNotSupportedOnIOS is returned by iOS devices: XCTest's private
-// dismissKeyboard blocks the agent for about a minute and leaves the keyboard up.
-var errHideKeyboardNotSupportedOnIOS = errors.New("hiding the keyboard is not supported on iOS yet")
+// errHideKeyboardNotSupportedOnRealIOS is returned by real iOS devices, which
+// have no working way to dismiss the keyboard yet.
+var errHideKeyboardNotSupportedOnRealIOS = errors.New("hiding the keyboard is not supported on real iOS devices yet")
 
 // KeyboardControllable is implemented by devices that can query and dismiss
 // the on-screen keyboard.
