@@ -3,7 +3,6 @@ package devices
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -263,10 +262,6 @@ type WebViewable interface {
 	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
 }
-
-// errHideKeyboardNotSupportedOnRealIOS is returned by real iOS devices, which
-// have no working way to dismiss the keyboard yet.
-var errHideKeyboardNotSupportedOnRealIOS = errors.New("hiding the keyboard is not supported on real iOS devices yet")
 
 // KeyboardControllable is implemented by devices that can query and dismiss
 // the on-screen keyboard.

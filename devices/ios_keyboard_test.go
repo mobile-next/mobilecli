@@ -23,7 +23,7 @@ func simulatorWithNoKeyboardShowing(t *testing.T) *SimulatorDevice {
 func TestRealIOSDevicesRefuseToHideTheKeyboard(t *testing.T) {
 	_, err := (&IOSDevice{}).HideKeyboard()
 
-	assert.ErrorIs(t, err, errHideKeyboardNotSupportedOnRealIOS)
+	assert.ErrorIs(t, err, ErrHideKeyboardNotSupportedOnRealIOS)
 }
 
 func TestSimulatorHideWithNoKeyboardShowingDoesNothing(t *testing.T) {

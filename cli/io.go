@@ -256,7 +256,7 @@ var ioKeyboardStatusCmd = &cobra.Command{
 var ioKeyboardHideCmd = &cobra.Command{
 	Use:   "hide",
 	Short: "Hide the on-screen keyboard",
-	Long:  `Dismisses the on-screen keyboard on the specified device. Not supported on real iOS devices yet.`,
+	Long:  `Dismisses the on-screen keyboard on the specified device. Not supported on real iOS devices yet. On iOS simulators it only works in apps you installed.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runViaDaemon("cli.io.keyboard.hide", commands.KeyboardRequest{DeviceID: deviceId})
 	},
@@ -273,12 +273,12 @@ func init() {
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioFillCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioPinchCmd)
 	ioCmd.AddCommand(ioKeyboardCmd)
 
 	// io keyboard subcommands
 	ioKeyboardCmd.AddCommand(ioKeyboardStatusCmd)
 	ioKeyboardCmd.AddCommand(ioKeyboardHideCmd)
-	ioCmd.AddCommand(ioPinchCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")

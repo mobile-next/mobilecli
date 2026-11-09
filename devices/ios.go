@@ -692,12 +692,16 @@ func (d *IOSDevice) PressButton(key string) error {
 	return d.deviceKitClient.PressButton(key)
 }
 
+// ErrHideKeyboardNotSupportedOnRealIOS is returned for real iOS devices, which
+// have no working way to dismiss the keyboard yet.
+var ErrHideKeyboardNotSupportedOnRealIOS = errors.New("hiding the keyboard is not supported on real iOS devices yet")
+
 func (d *IOSDevice) IsKeyboardVisible() (bool, error) {
 	return d.deviceKitClient.IsKeyboardVisible()
 }
 
 func (d *IOSDevice) HideKeyboard() (bool, error) {
-	return false, errHideKeyboardNotSupportedOnRealIOS
+	return false, ErrHideKeyboardNotSupportedOnRealIOS
 }
 
 func deviceWithRsdProvider(device goios.DeviceEntry, udid string, address string, rsdPort int) (goios.DeviceEntry, error) {

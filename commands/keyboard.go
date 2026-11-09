@@ -27,13 +27,26 @@ type KeyboardStatusResult struct {
 func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, error) {
 	device, err := FindDeviceWithAgent(deviceID)
 	if err != nil {
-		return nil, fmt.Errorf("error finding device: %w", err)
+		return nil, err
 	}
 	kb, ok := device.(devices.KeyboardControllable)
 	if !ok {
 		return nil, fmt.Errorf("keyboard commands are not supported on %s (%s)", device.ID(), device.Platform())
 	}
 	return kb, nil
+}
+
+// rejectHideOnRealIOS runs before the agent starts, because starting it on a real
+// device can send the app under test to the background.
+func rejectHideOnRealIOS(deviceID string) error {
+	device, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
+	}
+	if device.Platform() == devices.PlatformIOS && device.DeviceType() == devices.DeviceTypeReal {
+		return devices.ErrHideKeyboardNotSupportedOnRealIOS
+	}
+	return nil
 }
 
 // hideKeyboardAndWaitForClose returns false when no keyboard was showing, and
@@ -61,6 +74,9 @@ func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.D
 }
 
 func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
+	if err := rejectHideOnRealIOS(req.DeviceID); err != nil {
+		return NewErrorResponse(err)
+	}
 	kb, err := keyboardControllableDevice(req.DeviceID)
 	if err != nil {
 		return NewErrorResponse(err)

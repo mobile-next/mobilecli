@@ -34,11 +34,6 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
-// a var so tests can shorten it
-var defaultRPCTimeout = 10 * time.Second
-
-// dumpUITimeout gives the agent time to snapshot a heavy screen, while keeping
-// the request below the http client's own timeout
 // RPCError is an error the agent itself answered with.
 type RPCError struct {
 	Code    int
@@ -49,6 +44,11 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
 }
 
+// a var so tests can shorten it
+var defaultRPCTimeout = 10 * time.Second
+
+// dumpUITimeout gives the agent time to snapshot a heavy screen, while keeping
+// the request below the http client's own timeout
 const dumpUITimeout = 55 * time.Second
 
 func (c *DeviceKitClient) CallRPC(method string, params any) (json.RawMessage, error) {

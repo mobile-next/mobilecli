@@ -184,7 +184,7 @@ mobilecli io button --device <device-id> POWER
 # Check whether the on-screen keyboard is showing
 mobilecli io keyboard status --device <device-id>
 
-# Hide the on-screen keyboard (not on real iOS devices yet, fails if it stays up)
+# Hide the on-screen keyboard (not on real iOS devices yet, on simulators only in apps you installed)
 mobilecli io keyboard hide --device <device-id>
 
 # Send text
