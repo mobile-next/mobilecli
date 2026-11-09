@@ -36,8 +36,9 @@ func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, 
 	return kb, nil
 }
 
-// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and
-// an error when the keyboard is still showing once the timeout has passed.
+// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and an
+// error when the keyboard cannot be seen to close before the timeout has passed.
+// A failed status check is retried, because the hide itself has already worked.
 func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.Duration) (bool, error) {
 	dismissed, err := kb.HideKeyboard()
 	if err != nil || !dismissed {
@@ -47,13 +48,13 @@ func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.D
 	deadline := time.Now().Add(timeout)
 	for {
 		visible, err := kb.IsKeyboardVisible()
-		if err != nil {
-			return false, err
-		}
-		if !visible {
+		if err == nil && !visible {
 			return true, nil
 		}
 		if time.Now().After(deadline) {
+			if err != nil {
+				return false, fmt.Errorf("could not confirm the keyboard closed: %w", err)
+			}
 			return false, fmt.Errorf("keyboard is still visible after %s", timeout)
 		}
 		time.Sleep(keyboardPollInterval)
