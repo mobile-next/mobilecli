@@ -11,6 +11,9 @@ const (
 	dyldChainedPtr64       = 2 // DYLD_CHAINED_PTR_64
 	dyldChainedPtr64Offset = 6 // DYLD_CHAINED_PTR_64_OFFSET
 	chainedPtrStartNone    = 0xFFFF
+
+	dyldChainedImport              = 1 // DYLD_CHAINED_IMPORT
+	dyldChainedSymbolsUncompressed = 0
 )
 
 // fixupSeg is one dyld_chained_starts_in_segment: where a segment's fixup chains
@@ -20,6 +23,19 @@ type fixupSeg struct {
 	ptrFormat     uint16
 	segmentOffset uint64
 	pageStarts    []uint16
+}
+
+// requireSupportedFixupFormats refuses layouts the parser would misread: wrong
+// names mean wrong pointers written into the live app. A toolchain change can
+// select another format with no source change.
+func requireSupportedFixupFormats(header []byte) error {
+	if format := binary.LittleEndian.Uint32(header[20:]); format != dyldChainedImport {
+		return fmt.Errorf("unsupported chained imports format %d", format)
+	}
+	if format := binary.LittleEndian.Uint32(header[24:]); format != dyldChainedSymbolsUncompressed {
+		return fmt.Errorf("unsupported chained symbols format %d", format)
+	}
+	return nil
 }
 
 // ParseChainedFixups returns the imported symbol names (in ordinal order), a
@@ -35,6 +51,9 @@ func ParseChainedFixups(data []byte, hdrOff uint32) (imports []string, weak []bo
 	impOff := binary.LittleEndian.Uint32(data[h+8:])
 	symOff := binary.LittleEndian.Uint32(data[h+12:])
 	impCnt := binary.LittleEndian.Uint32(data[h+16:])
+	if err := requireSupportedFixupFormats(data[h:]); err != nil {
+		return nil, nil, nil, err
+	}
 	// imports format 1: {lib_ordinal:8, weak_import:1, name_offset:23}
 	for i := uint32(0); i < impCnt; i++ {
 		v := binary.LittleEndian.Uint32(data[h+int(impOff)+int(i)*4:])

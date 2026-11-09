@@ -57,13 +57,23 @@ func cachedDeviceAgent(key deviceAgentKey) (*injectedAgent, bool) {
 	return agent, ok
 }
 
-// rememberInjectedAgent caches a new agent and drops the app's earlier processes:
-// a relaunched app has a new pid, and its old agent died with the old process.
+// cachedAgentForApp ignores an agent left by another app: iOS can give a dead
+// app's pid to a new app, and the old agent died with the old process.
+func cachedAgentForApp(key deviceAgentKey, bundleID string) (*injectedAgent, bool) {
+	agent, ok := cachedDeviceAgent(key)
+	if !ok || agent.bundleID != bundleID {
+		return nil, false
+	}
+	return agent, true
+}
+
+// rememberInjectedAgent caches a new agent and drops the entries it replaces: the
+// app's earlier processes, whose agents died with them, and any entry on this pid.
 func rememberInjectedAgent(key deviceAgentKey, agent *injectedAgent) {
 	deviceAgentMu.Lock()
 	defer deviceAgentMu.Unlock()
 	for otherKey, other := range deviceAgentCache {
-		if otherKey.udid != key.udid || other.bundleID != agent.bundleID {
+		if otherKey.udid != key.udid || (other.bundleID != agent.bundleID && otherKey != key) {
 			continue
 		}
 		if other.forwarder != nil {
@@ -127,7 +137,7 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	defer lock.Unlock()
 
 	key := deviceAgentKey{udid: d.Udid, pid: activeApp.ProcessID}
-	agent, ok := cachedDeviceAgent(key)
+	agent, ok := cachedAgentForApp(key, activeApp.BundleID)
 	if ok && isAgentReady(agent.localPort) {
 		utils.Verbose("reusing cached agent port %d", agent.localPort)
 		return agent.localPort, nil

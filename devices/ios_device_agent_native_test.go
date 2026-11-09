@@ -107,6 +107,19 @@ func TestSwitchingAppsKeepsTheOtherAppsAgent(t *testing.T) {
 	}
 }
 
+func TestReusedPidDoesNotReachTheDeadAppsAgent(t *testing.T) {
+	reusedPid := deviceAgentKey{udid: "pid-reuse-device", pid: 1}
+
+	rememberInjectedAgent(reusedPid, &injectedAgent{bundleID: "com.example.dead"})
+
+	if agent, ok := cachedAgentForApp(reusedPid, "com.example.new"); ok {
+		t.Errorf("the new app reached the dead app's agent: %v", agent)
+	}
+	if _, ok := cachedAgentForApp(reusedPid, "com.example.dead"); !ok {
+		t.Error("the app that owns the agent must still find it")
+	}
+}
+
 func TestEachDeviceHasItsOwnSetupLock(t *testing.T) {
 	firstLookup := deviceAgentLock("device-a")
 	secondLookup := deviceAgentLock("device-a")
