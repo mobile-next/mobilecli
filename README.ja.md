@@ -14,7 +14,7 @@
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-  <a href="http://mobilenext.ai/join-slack">
+  <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=badge">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -514,6 +514,6 @@ make test
 
 不具合の報告や機能リクエストは [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) ページをご利用ください。
 
-ぜひ今すぐ <a href="http://mobilenext.ai/join-slack">Slack チャンネルに参加</a>してください 💜
+ぜひ今すぐ <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=contributing">Slack チャンネルに参加</a>してください 💜
 
-<a href="https://mobilenext.ai/">Mobile Next</a> と私たちが作っているものについて、より詳しく知ることができます。
+<a href="https://mobilenext.ai/?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=part-of-mobile-next">Mobile Next</a> と私たちが作っているものについて、より詳しく知ることができます。
