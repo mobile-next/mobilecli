@@ -34,6 +34,16 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
+// RPCError is an error the agent itself answered with.
+type RPCError struct {
+	Code    int
+	Message string
+}
+
+func (e *RPCError) Error() string {
+	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
+}
+
 // a var so tests can shorten it
 var defaultRPCTimeout = 10 * time.Second
 
@@ -86,7 +96,7 @@ func (c *DeviceKitClient) CallRPCWithTimeout(method string, params any, timeout 
 	}
 
 	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		return nil, &RPCError{Code: rpcResp.Error.Code, Message: rpcResp.Error.Message}
 	}
 
 	return rpcResp.Result, nil

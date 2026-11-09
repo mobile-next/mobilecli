@@ -1,0 +1,101 @@
+package commands
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/mobile-next/mobilecli/devices"
+)
+
+const (
+	keyboardCloseTimeout = 5 * time.Second
+	keyboardPollInterval = 100 * time.Millisecond
+)
+
+type KeyboardRequest struct {
+	DeviceID string `json:"deviceId"`
+}
+
+type KeyboardHideResult struct {
+	Dismissed bool `json:"dismissed"`
+}
+
+type KeyboardStatusResult struct {
+	Visible bool `json:"visible"`
+}
+
+func keyboardControllableDevice(deviceID string) (devices.KeyboardControllable, error) {
+	device, err := FindDeviceWithAgent(deviceID)
+	if err != nil {
+		return nil, err
+	}
+	kb, ok := device.(devices.KeyboardControllable)
+	if !ok {
+		return nil, fmt.Errorf("keyboard commands are not supported on %s (%s)", device.ID(), device.Platform())
+	}
+	return kb, nil
+}
+
+// rejectHideOnRealIOS runs before the agent starts, because starting it on a real
+// device can send the app under test to the background.
+func rejectHideOnRealIOS(deviceID string) error {
+	device, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return fmt.Errorf("error finding device: %w", err)
+	}
+	if device.Platform() == devices.PlatformIOS && device.DeviceType() == devices.DeviceTypeReal {
+		return devices.ErrHideKeyboardNotSupportedOnRealIOS
+	}
+	return nil
+}
+
+// hideKeyboardAndWaitForClose returns false when no keyboard was showing, and
+// an error when the keyboard is still showing once the timeout has passed.
+func hideKeyboardAndWaitForClose(kb devices.KeyboardControllable, timeout time.Duration) (bool, error) {
+	dismissed, err := kb.HideKeyboard()
+	if err != nil || !dismissed {
+		return false, err
+	}
+
+	deadline := time.Now().Add(timeout)
+	for {
+		visible, err := kb.IsKeyboardVisible()
+		if err != nil {
+			return false, err
+		}
+		if !visible {
+			return true, nil
+		}
+		if time.Now().After(deadline) {
+			return false, fmt.Errorf("keyboard is still visible after %s", timeout)
+		}
+		time.Sleep(keyboardPollInterval)
+	}
+}
+
+func KeyboardHideCommand(req KeyboardRequest) *CommandResponse {
+	if err := rejectHideOnRealIOS(req.DeviceID); err != nil {
+		return NewErrorResponse(err)
+	}
+	kb, err := keyboardControllableDevice(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	dismissed, err := hideKeyboardAndWaitForClose(kb, keyboardCloseTimeout)
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("keyboard hide failed: %w", err))
+	}
+	return NewSuccessResponse(KeyboardHideResult{Dismissed: dismissed})
+}
+
+func KeyboardStatusCommand(req KeyboardRequest) *CommandResponse {
+	kb, err := keyboardControllableDevice(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	visible, err := kb.IsKeyboardVisible()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("keyboard status failed: %w", err))
+	}
+	return NewSuccessResponse(KeyboardStatusResult{Visible: visible})
+}

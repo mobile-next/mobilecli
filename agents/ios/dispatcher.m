@@ -40,6 +40,11 @@ NSData *dispatch_rpc(NSData *body) {
     NSString *method = req[@"method"];
     NSDictionary *params = req[@"params"];
 
+    if ([method isEqualToString:@"device.io.keyboard.hide"]) {
+        [IosBridge dismissKeyboard];
+        return rpc_result(reqId, @{@"status": @"ok"});
+    }
+
     if ([method isEqualToString:@"device.webview.list"]) {
         return rpc_result(reqId, [IosBridge listWebViews]);
     }

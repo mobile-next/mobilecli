@@ -634,6 +634,10 @@ func (s SimulatorDevice) PressButton(key string) error {
 	return s.deviceKitClient.PressButton(key)
 }
 
+func (s SimulatorDevice) IsKeyboardVisible() (bool, error) {
+	return s.deviceKitClient.IsKeyboardVisible()
+}
+
 func (s SimulatorDevice) SendKeys(text string) error {
 	return s.deviceKitClient.SendKeys(text)
 }

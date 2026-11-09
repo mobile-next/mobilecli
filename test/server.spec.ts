@@ -279,6 +279,8 @@ test.describe('rpc method validation', () => {
 		{method: 'device.io.button', params: {button: 'HOME'}},
 		{method: 'device.io.text', params: {text: 'hello'}},
 		{method: 'device.io.keys', params: {keys: ['a']}},
+		{method: 'device.io.keyboard.status', params: {}},
+		{method: 'device.io.keyboard.hide', params: {}},
 		{method: 'device.io.orientation.get', params: {}},
 		{method: 'device.io.orientation.set', params: {orientation: 'portrait'}},
 		{method: 'device.boot', params: {}},

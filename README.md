@@ -181,6 +181,12 @@ mobilecli io button --device <device-id> HOME
 mobilecli io button --device <device-id> VOLUME_UP
 mobilecli io button --device <device-id> POWER
 
+# Check whether the on-screen keyboard is showing
+mobilecli io keyboard status --device <device-id>
+
+# Hide the on-screen keyboard (not on real iOS devices yet, on simulators only in apps you installed)
+mobilecli io keyboard hide --device <device-id>
+
 # Send text
 mobilecli io text --device <device-id> 'hello world'
 

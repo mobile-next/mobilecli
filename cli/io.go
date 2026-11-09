@@ -238,6 +238,30 @@ var ioPinchCmd = &cobra.Command{
 	},
 }
 
+var ioKeyboardCmd = &cobra.Command{
+	Use:   "keyboard",
+	Short: "On-screen keyboard operations",
+	Long:  `Query or dismiss the on-screen keyboard on a device.`,
+}
+
+var ioKeyboardStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check whether the on-screen keyboard is visible",
+	Long:  `Reports whether the on-screen keyboard is currently visible on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.io.keyboard.status", commands.KeyboardRequest{DeviceID: deviceId})
+	},
+}
+
+var ioKeyboardHideCmd = &cobra.Command{
+	Use:   "hide",
+	Short: "Hide the on-screen keyboard",
+	Long:  `Dismisses the on-screen keyboard on the specified device. Not supported on real iOS devices yet. On iOS simulators it only works in apps you installed.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.io.keyboard.hide", commands.KeyboardRequest{DeviceID: deviceId})
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(ioCmd)
 
@@ -250,6 +274,11 @@ func init() {
 	ioCmd.AddCommand(ioFillCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
 	ioCmd.AddCommand(ioPinchCmd)
+	ioCmd.AddCommand(ioKeyboardCmd)
+
+	// io keyboard subcommands
+	ioKeyboardCmd.AddCommand(ioKeyboardStatusCmd)
+	ioKeyboardCmd.AddCommand(ioKeyboardHideCmd)
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
@@ -261,6 +290,8 @@ func init() {
 	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
 	ioFillCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to fill the focused text field on")
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
+	ioKeyboardStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check keyboard status on")
+	ioKeyboardHideCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to hide keyboard on")
 	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
 	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
 	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 200, "pixels each finger travels")

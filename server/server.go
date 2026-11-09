@@ -296,6 +296,9 @@ func extendedWriteDeadline(method string) (time.Duration, bool) {
 		return 35 * time.Second, true
 	case "device.dump.ui":
 		return 60 * time.Second, true
+	case "device.io.keyboard.hide":
+		// covers a status check, attaching LLDB on an iOS simulator (30s at most) and the wait for the keyboard to close
+		return 60 * time.Second, true
 	}
 	return 0, false
 }
@@ -826,6 +829,33 @@ func handleIoButton(params json.RawMessage) (any, error) {
 
 	response := commands.ButtonCommand(req)
 	return okResult(response)
+}
+
+func parseKeyboardRequest(params json.RawMessage) (commands.KeyboardRequest, error) {
+	var req commands.KeyboardRequest
+	if len(params) == 0 {
+		return req, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return req, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+	return req, nil
+}
+
+func handleIoKeyboardStatus(params json.RawMessage) (any, error) {
+	req, err := parseKeyboardRequest(params)
+	if err != nil {
+		return nil, err
+	}
+	return commandResult(commands.KeyboardStatusCommand(req))
+}
+
+func handleIoKeyboardHide(params json.RawMessage) (any, error) {
+	req, err := parseKeyboardRequest(params)
+	if err != nil {
+		return nil, err
+	}
+	return commandResult(commands.KeyboardHideCommand(req))
 }
 
 func handleIoGesture(params json.RawMessage) (any, error) {

@@ -126,6 +126,8 @@ public class DeviceServer {
 				return UiTreeSerializer.dump(automation, p.optLong("waitUntilIdle", 0), p.optBoolean("full", false));
 			case "device.screenshot":
 				return screenshot(automation, p);
+			case "device.io.keyboard.status":
+				return new JSONObject().put("visible", isKeyboardShown(automation));
 			case "device.io.keyboard.hide":
 				return new JSONObject().put("dismissed", hideKeyboard(automation));
 			case "device.io.gesture":
@@ -248,15 +250,18 @@ public class DeviceServer {
 	// ponytail: no headless way to *show* the IME — Android only raises it for a
 	// focused editable view in the target app, so only hide is offered here.
 	private static boolean hideKeyboard(UiAutomation automation) {
-		boolean imeShown = false;
-		for (AccessibilityWindowInfo w : automation.getWindows()) {
-			if (w.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) imeShown = true;
-		}
-		if (!imeShown) return false;
+		if (!isKeyboardShown(automation)) return false;
 
 		long now = SystemClock.uptimeMillis();
 		automation.injectInputEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0), true);
 		automation.injectInputEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK, 0), true);
 		return true;
+	}
+
+	private static boolean isKeyboardShown(UiAutomation automation) {
+		for (AccessibilityWindowInfo w : automation.getWindows()) {
+			if (w.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) return true;
+		}
+		return false;
 	}
 }
