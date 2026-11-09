@@ -143,7 +143,7 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 		return agent.localPort, nil
 	}
 	if !ok {
-		devicePort, err := d.injectFreshAgent(activeApp.BundleID, activeApp.ProcessID)
+		devicePort, err := d.findOrInjectAgent(activeApp.BundleID, activeApp.ProcessID)
 		if err != nil {
 			return 0, err
 		}
@@ -153,9 +153,10 @@ func (d *IOSDevice) ensureIOSDeviceAgentReady() (int, error) {
 	return d.connectToAgent(agent)
 }
 
-// injectFreshAgent performs the slow path: map the agent into the app over the
-// debug proxy. Returns the device port the agent's server bound.
-func (d *IOSDevice) injectFreshAgent(bundleID string, pid int) (int, error) {
+// findOrInjectAgent performs the slow path: map the agent into the app over the
+// debug proxy, unless the app already has one from an earlier daemon. Returns the
+// device port the agent's server bound.
+func (d *IOSDevice) findOrInjectAgent(bundleID string, pid int) (int, error) {
 	utils.Verbose("getting enhanced device info")
 	device, err := d.getEnhancedDevice()
 	if err != nil {
@@ -167,12 +168,12 @@ func (d *IOSDevice) injectFreshAgent(bundleID string, pid int) (int, error) {
 	}
 	utils.Verbose("debug proxy port from RSD: %d", proxyPort)
 
-	utils.Verbose("mapping agent dylib into %s (pid %d)", bundleID, pid)
+	utils.Verbose("finding or mapping the agent in %s (pid %d)", bundleID, pid)
 	devicePort, err := injectAgentNative(device, proxyPort, pid)
 	if err != nil {
-		return 0, fmt.Errorf("inject agent: %w", err)
+		return 0, fmt.Errorf("set up agent: %w", err)
 	}
-	utils.Verbose("agent started on device port %d", devicePort)
+	utils.Verbose("agent is on device port %d", devicePort)
 	return devicePort, nil
 }
 
@@ -199,7 +200,7 @@ func (d *IOSDevice) connectToAgent(agent *injectedAgent) (int, error) {
 	for !isAgentReady(localPort) {
 		if time.Now().After(deadline) {
 			_ = pf.Stop()
-			return 0, fmt.Errorf("iOS device agent did not respond within 3s")
+			return 0, fmt.Errorf("iOS device agent did not respond within 3s; relaunch the app")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

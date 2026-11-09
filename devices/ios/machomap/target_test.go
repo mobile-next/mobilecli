@@ -29,6 +29,16 @@ type fakeDebugserver struct {
 	packets []string
 
 	refusesMemoryWrites bool
+	returnValues        []uint64 // one per call, in order; fakeReturned once they run out
+}
+
+func (f *fakeDebugserver) nextReturnValue() uint64 {
+	if len(f.returnValues) == 0 {
+		return fakeReturned
+	}
+	value := f.returnValues[0]
+	f.returnValues = f.returnValues[1:]
+	return value
 }
 
 func (f *fakeDebugserver) reply(payload string) {
@@ -94,7 +104,7 @@ func (f *fakeDebugserver) serve() {
 		case readPC:
 			f.reply(registerValue(f.pc))
 		case readX0:
-			f.reply(registerValue(fakeReturned))
+			f.reply(registerValue(f.nextReturnValue()))
 		default:
 			f.reply("OK")
 		}

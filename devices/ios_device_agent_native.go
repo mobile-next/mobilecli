@@ -71,7 +71,22 @@ func probeError(err error) error {
 	if errors.Is(err, machomap.ErrUnexpectedStop) {
 		return fmt.Errorf("%w: %w", errAppBusyDuringProbe, err)
 	}
+	if errors.Is(err, machomap.ErrClassMethodNotFound) {
+		return fmt.Errorf("the agent in this app is from an older mobilecli; relaunch the app: %w", err)
+	}
 	return fmt.Errorf("probe existing agent: %w", err)
+}
+
+// existingAgentPort reads the port an already injected agent reported, where 0
+// means it has no server. The value comes from a C int in a 64-bit register, so
+// only the low bits are valid.
+func existingAgentPort(pid int, reported uint64) (int, error) {
+	port := int(uint32(reported)) // #nosec G115 -- the method returns a C int in a 64-bit register
+	if port == 0 {
+		return 0, fmt.Errorf("agent in pid %d has no server; relaunch the app", pid)
+	}
+	utils.Verbose("found existing agent on device port %d", port)
+	return port, nil
 }
 
 func injectAgentOnce(device goios.DeviceEntry, proxyPort, pid int) (int, error) {
@@ -127,14 +142,15 @@ func mapAgentOverConn(conn io.ReadWriter, pid int) (int, error) {
 	resolver := machomap.NewExportTrieResolver(rsp)
 
 	// Idempotency: never map the same image twice into one process — duplicate
-	// ObjC class registration fails and leaves the image half-wired. If the agent
-	// is already present (e.g. after a daemon restart while the app kept running),
-	// the in-process port cache is gone and the agent's ephemeral port cannot be
-	// recovered, so ask the caller to relaunch the app.
-	if already, err := machomap.ClassIsRegistered(rsp, resolver, "MobileServer"); err != nil {
+	// ObjC class registration fails and leaves the image half-wired. An agent that
+	// is already present (e.g. the daemon exited while the app kept running) still
+	// knows its port, so ask it.
+	activePort, registered, err := machomap.CallClassMethod(rsp, resolver, "MobileServer", "activePort")
+	if err != nil {
 		return 0, probeError(err)
-	} else if already {
-		return 0, fmt.Errorf("agent already injected in pid %d; relaunch the app to re-inject", pid)
+	}
+	if registered {
+		return existingAgentPort(pid, activePort)
 	}
 
 	res, err := machomap.Map(rsp, agents.IOSAgentDevDylib, resolver, machomap.Options{RunInit: true})
