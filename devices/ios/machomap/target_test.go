@@ -27,6 +27,8 @@ type fakeDebugserver struct {
 	isStuck bool
 	pc      uint64
 	packets []string
+
+	refusesMemoryWrites bool
 }
 
 func (f *fakeDebugserver) reply(payload string) {
@@ -72,6 +74,10 @@ func (f *fakeDebugserver) serve() {
 			return
 		}
 		f.packets = append(f.packets, packet)
+		if f.refusesMemoryWrites && strings.HasPrefix(packet, "M") {
+			f.reply("E01")
+			continue
+		}
 		switch packet {
 		case soloResume:
 			if f.isStuck {
@@ -141,6 +147,27 @@ func TestCallRunsAllThreadsWhenTheBorrowedThreadIsStuck(t *testing.T) {
 	}
 	if !slices.Contains(server.packets, "vCont;c") {
 		t.Error("the stuck call was not finished with every thread running")
+	}
+}
+
+func TestRestoreStillRestoresRegistersWhenTheStackWriteFails(t *testing.T) {
+	server := &fakeDebugserver{refusesMemoryWrites: true}
+	target := borrowedThreadOn(t, server)
+	target.saved = "7"
+	target.stackBackup = []byte{0}
+
+	err := target.Restore()
+
+	if err == nil {
+		t.Error("the failed stack write was not reported")
+	}
+	restoreRegisters := fmt.Sprintf("QRestoreRegisterState:7;thread:%x;", fakeThread)
+	if !slices.Contains(server.packets, restoreRegisters) {
+		t.Error("registers were not restored after the stack write failed")
+	}
+	removeBreakpoint := fmt.Sprintf("z0,%x,4", fakeLanding)
+	if !slices.Contains(server.packets, removeBreakpoint) {
+		t.Error("the breakpoint was not removed after the stack write failed")
 	}
 }
 

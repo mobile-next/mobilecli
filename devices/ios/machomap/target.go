@@ -1,6 +1,7 @@
 package machomap
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -158,15 +159,15 @@ func (t *Target) run() (string, error) {
 	return t.c.Request("vCont;c")
 }
 
-// Restore undoes the borrow: stack window, registers, breakpoint.
+// Restore undoes the borrow: stack window, registers, breakpoint. Every step runs
+// even if an earlier one fails, because the thread must not resume with borrowed
+// registers. The stack window is below the saved stack pointer, so a failed stack
+// write alone does not disturb the restored thread.
 func (t *Target) Restore() error {
-	if err := t.c.WriteMem(t.stackLo, t.stackBackup, 1024); err != nil {
-		return err
-	}
-	if err := t.c.OK(fmt.Sprintf("QRestoreRegisterState:%s;thread:%x;", t.saved, t.thread)); err != nil {
-		return err
-	}
-	return t.c.OK(fmt.Sprintf("z0,%x,4", t.landing))
+	stackErr := t.c.WriteMem(t.stackLo, t.stackBackup, 1024)
+	registersErr := t.c.OK(fmt.Sprintf("QRestoreRegisterState:%s;thread:%x;", t.saved, t.thread))
+	breakpointErr := t.c.OK(fmt.Sprintf("z0,%x,4", t.landing))
+	return errors.Join(stackErr, registersErr, breakpointErr)
 }
 
 func isDigits(s string) bool {
