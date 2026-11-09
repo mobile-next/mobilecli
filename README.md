@@ -14,7 +14,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-  <a href="http://mobilenext.ai/join-slack">
+  <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=badge">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -571,7 +571,7 @@ Something not working? Check [docs/troubleshooting.md](docs/troubleshooting.md) 
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
-Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
+Be sure to <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=contributing">join our slack channel</a> today 💜
 
-To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
+To learn more about <a href="https://mobilenext.ai/?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=part-of-mobile-next">Mobile Next</a> and what we're building.
 
