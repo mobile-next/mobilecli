@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mobile-next/mobilecli/devices/ios/machomap"
 )
 
 // TestNativeAgentMapperBootsOverTunnel maps the embedded agent dylib
@@ -117,6 +120,87 @@ func TestReusedPidDoesNotReachTheDeadAppsAgent(t *testing.T) {
 	}
 	if _, ok := cachedAgentForApp(reusedPid, "com.example.dead"); !ok {
 		t.Error("the app that owns the agent must still find it")
+	}
+}
+
+// injectionThatFails counts its calls and returns failure until succeedOnCall.
+func injectionThatFails(failure error, succeedOnCall int, calls *int) func() (int, error) {
+	return func() (int, error) {
+		*calls++
+		if *calls == succeedOnCall {
+			return 1234, nil
+		}
+		return 0, failure
+	}
+}
+
+func TestInjectionRetriesWhenTheAppWasBusy(t *testing.T) {
+	calls := 0
+
+	port, err := retryWhileAppIsBusy(injectionThatFails(probeError(machomap.ErrUnexpectedStop), 2, &calls))
+
+	if err != nil || port != 1234 {
+		t.Errorf("port = %d, err = %v; want 1234 and no error", port, err)
+	}
+	if calls != 2 {
+		t.Errorf("attached %d times, want 2", calls)
+	}
+}
+
+func TestInjectionGivesUpWhenTheAppStaysBusy(t *testing.T) {
+	calls := 0
+
+	_, err := retryWhileAppIsBusy(injectionThatFails(probeError(machomap.ErrUnexpectedStop), -1, &calls))
+
+	if !errors.Is(err, errAppBusyDuringProbe) {
+		t.Errorf("err = %v, want the busy error", err)
+	}
+	if calls != injectAttempts {
+		t.Errorf("attached %d times, want %d", calls, injectAttempts)
+	}
+}
+
+func TestInjectionDoesNotRetryOtherFailures(t *testing.T) {
+	calls := 0
+	failedMap := fmt.Errorf("map agent dylib: %w", machomap.ErrUnexpectedStop)
+
+	_, err := retryWhileAppIsBusy(injectionThatFails(failedMap, -1, &calls))
+
+	if err == nil {
+		t.Error("the failed map was not reported")
+	}
+	if calls != 1 {
+		t.Errorf("attached %d times, want 1: a half-written map must not be retried", calls)
+	}
+}
+
+func TestInjectionRetriesARefusedAttachAfterABusyProbe(t *testing.T) {
+	failures := []error{probeError(machomap.ErrUnexpectedStop), attachError(1, "E96")}
+	calls := 0
+
+	port, err := retryWhileAppIsBusy(func() (int, error) {
+		calls++
+		if calls <= len(failures) {
+			return 0, failures[calls-1]
+		}
+		return 1234, nil
+	})
+
+	if err != nil || port != 1234 {
+		t.Errorf("port = %d, err = %v; want 1234 and no error", port, err)
+	}
+}
+
+func TestInjectionFailsAtOnceWhenTheAppIsNotDebuggable(t *testing.T) {
+	calls := 0
+
+	_, err := retryWhileAppIsBusy(injectionThatFails(attachError(1, "E96"), -1, &calls))
+
+	if !errors.Is(err, errAttachRefused) {
+		t.Errorf("err = %v, want the refused attach", err)
+	}
+	if calls != 1 {
+		t.Errorf("attached %d times, want 1", calls)
 	}
 }
 

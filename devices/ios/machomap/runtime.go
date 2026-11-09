@@ -35,6 +35,15 @@ func ClassIsRegistered(c *RSP, res Resolver, name string) (bool, error) {
 	if err := c.WriteMem(scratch, append([]byte(name), 0), 0); err != nil {
 		return false, err
 	}
+	// objc_getClass can wait on a lock until every thread runs, and the default
+	// return breakpoint sits in shared code that another thread could then hit
+	landingPage, err := t.Call(h["mmap"], 0, 0x1000, protRead|protExec, mapAnon|mapPrivate, neg1, 0)
+	if err != nil {
+		return false, err
+	}
+	if err := t.SetLanding(landingPage); err != nil {
+		return false, err
+	}
 	cls, err := t.Call(h["objc_getClass"], scratch)
 	if err != nil {
 		return false, err

@@ -19,6 +19,10 @@ const (
 // other threads run too.
 const soloCallTimeout = 5 * time.Second
 
+// ErrUnexpectedStop means a called function stopped somewhere other than its
+// return breakpoint, such as on a trap inside the runtime.
+var ErrUnexpectedStop = errors.New("unexpected stop")
+
 // Target borrows a stopped thread in the attached process so we can call
 // functions in it: save its registers, back up a stack window, and plant a
 // breakpoint at a known return address. Restore() puts everything back.
@@ -118,7 +122,7 @@ func (t *Target) Call(fn uint64, args ...uint64) (uint64, error) {
 		return 0, err
 	}
 	if !strings.HasPrefix(resp, "T05") || pc != t.landing {
-		return 0, fmt.Errorf("unexpected stop calling %#x: resp=%.60q pc=%#x", fn, resp, pc)
+		return 0, fmt.Errorf("%w calling %#x: resp=%.60q pc=%#x landing=%#x", ErrUnexpectedStop, fn, resp, pc, t.landing)
 	}
 	return t.c.ReadReg(0, t.thread)
 }
