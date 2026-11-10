@@ -500,20 +500,12 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
-	if _, err := d.deviceKitClient.GetStatus(); err == nil {
-		return nil
-	}
-	utils.Verbose("WebdriverAgent is not running, starting it")
-
-	agentBundleId, err := d.findInstalledAgentBundleID()
-	if err != nil {
-		return err
-	}
-
+	// A healthy default port may belong to another connected iPhone. Bind the
+	// selected UDID's tunnel and forwarder before querying any agent endpoint.
 	config.reportProgress("Starting tunnel")
 
 	// start tunnel if needed (only for iOS 17+)
-	err = d.startTunnel()
+	err := d.startTunnel()
 	if err != nil {
 		return err
 	}
@@ -531,6 +523,10 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		return nil
 	}
 
+	agentBundleId, err := d.findInstalledAgentBundleID()
+	if err != nil {
+		return err
+	}
 	return d.launchAgent(agentBundleId, config)
 }
 
@@ -565,9 +561,10 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 		d.mu.Unlock()
 		utils.Verbose("WDA port forwarder already running on port %d", srcPort)
 
-		// ensure deviceKitClient is set if not already
+		// Restore the client from this device's forwarder, never a default or
+		// previously supplied endpoint belonging to another device.
 		d.mu.Lock()
-		if d.deviceKitClient == nil {
+		if d.deviceKitClient == nil || d.deviceKitClient.Port() != srcPort {
 			d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", srcPort))
 		}
 		d.mu.Unlock()
