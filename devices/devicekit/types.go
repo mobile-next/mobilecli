@@ -33,6 +33,9 @@ func NewDeviceKitClient(hostPort string) *DeviceKitClient {
 
 // Port returns the port this client talks to, parsed from its base URL.
 func (c *DeviceKitClient) Port() int {
+	if c == nil {
+		return 0
+	}
 	parsed, err := url.Parse(c.baseURL)
 	if err != nil {
 		return 0

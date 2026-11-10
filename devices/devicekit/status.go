@@ -8,6 +8,9 @@ import (
 )
 
 func (c *DeviceKitClient) GetStatus() (map[string]any, error) {
+	if c == nil || c.httpClient == nil {
+		return nil, fmt.Errorf("devicekit client not initialized: agent not started for this device")
+	}
 	url := fmt.Sprintf("%s/health", c.baseURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
