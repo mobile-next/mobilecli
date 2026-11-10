@@ -1324,7 +1324,7 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 // false when the current rotation could not be read and the size is the
 // natural one.
 func (d *AndroidDevice) currentScreenSize() (width, height int, known bool, err error) {
-	// one round trip: callers ask for the size before every screenshot and swipe
+	// one round trip for wm size and the rotation on Android 13+
 	output, err := d.runAdbCommand("shell", "wm size && { cmd display get-displays 2>/dev/null; true; }")
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("failed to get screen size: %v", err)
@@ -1401,12 +1401,20 @@ func parseRotationFromCmdDisplay(output string) (int, bool) {
 	return 0, false
 }
 
-// parseRotationFromDumpsysDisplay reads the rotation of the first logical
+var logicalDisplayHeaderRe = regexp.MustCompile(`^Display (\d+):$`)
+
+// parseRotationFromDumpsysDisplay reads the rotation of the default logical
 // display from "dumpsys display" output. mBaseDisplayInfo stays in the natural
 // orientation, mOverrideDisplayInfo follows the display
 func parseRotationFromDumpsysDisplay(output string) (int, bool) {
+	inDefaultDisplay := false
 	for _, line := range strings.Split(output, "\n") {
-		if strings.Contains(line, "mOverrideDisplayInfo=DisplayInfo{") {
+		line = strings.TrimSpace(line)
+		if header := logicalDisplayHeaderRe.FindStringSubmatch(line); header != nil {
+			inDefaultDisplay = header[1] == defaultDisplayID
+			continue
+		}
+		if inDefaultDisplay && strings.HasPrefix(line, "mOverrideDisplayInfo=DisplayInfo{") {
 			return parseDisplayInfoRotation(line)
 		}
 	}

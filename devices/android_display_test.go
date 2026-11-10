@@ -195,6 +195,17 @@ func Test_parseRotationFromDumpsysDisplay(t *testing.T) {
 			wantRead: true,
 		},
 		{
+			name: "display 0 wins even when listed after another display",
+			output: `  Logical Displays: size=2
+  Display 3:
+    mOverrideDisplayInfo=DisplayInfo{"Second Screen", displayId 3, real 2424 x 1080, rotation 3, state ON, type INTERNAL}
+  Display 0:
+    mBaseDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0, real 1080 x 2400, rotation 0, state ON, type INTERNAL}
+    mOverrideDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0, real 1080 x 2400, rotation 0, state ON, type INTERNAL}`,
+			want:     0,
+			wantRead: true,
+		},
+		{
 			name:   "invalid input",
 			output: "some random text",
 		},
