@@ -18,11 +18,15 @@ static BOOL send_all(int fd, NSData *data) {
     return YES;
 }
 
+static int activePort = 0;
+
 @implementation MobileServer {
     RpcHandler _handler;
     int _serverFd;
     int _port;
 }
+
++ (int)activePort { return activePort; }
 
 - (instancetype)initWithHandler:(RpcHandler)handler {
     self = [super init];
@@ -74,6 +78,7 @@ static BOOL send_all(int fd, NSData *data) {
         _serverFd = -1;
         return NO;
     }
+    activePort = _port;
     NSLog(@"[mobilecli] bound to 127.0.0.1:%d", _port);
     return YES;
 }
@@ -81,7 +86,10 @@ static BOOL send_all(int fd, NSData *data) {
 - (void)run {
     while (1) {
         int clientFd = accept(_serverFd, NULL, NULL);
-        if (clientFd < 0) continue;
+        if (clientFd < 0) {
+            usleep(100000); // a failed listening socket must not spin a core in the app
+            continue;
+        }
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             [self handleConnection:clientFd];
         });

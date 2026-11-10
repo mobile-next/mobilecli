@@ -37,6 +37,8 @@ func NewExportTrieResolver(c *RSP) *ExportTrieResolver {
 			"class_getInstanceVariable":     "/usr/lib/libobjc.A.dylib",
 			"ivar_getOffset":                "/usr/lib/libobjc.A.dylib",
 			"class_getMethodImplementation": "/usr/lib/libobjc.A.dylib",
+			"class_getClassMethod":          "/usr/lib/libobjc.A.dylib",
+			"method_getImplementation":      "/usr/lib/libobjc.A.dylib",
 		},
 		loadAddr: map[string]uint64{},
 	}
