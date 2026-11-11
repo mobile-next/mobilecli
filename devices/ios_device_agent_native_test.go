@@ -18,7 +18,7 @@ import (
 // TestNativeAgentMapperBootsOverTunnel maps the embedded agent dylib
 // into a live foreground app and confirms its server bound a port — the full
 // injectAgentNative path minus the go-ios transport, exercised over the userspace
-// tunnel forwarder so it needs no WDA/devicekit setup.
+// tunnel forwarder so it needs no DeviceKit agent setup.
 //
 // Gated on NATIVE_INJECT_TEST; skipped otherwise so CI without a device stays
 // green. Env: NATIVE_INJECT_HOST (tunnel IPv6), NATIVE_INJECT_TUNNEL_PORT (local

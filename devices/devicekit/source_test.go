@@ -17,7 +17,7 @@ func visibleRect(x, y, width, height float64) sourceTreeElementRect {
 	return sourceTreeElementRect{X: x, Y: y, Width: width, Height: height}
 }
 
-// A realistic subtree as returned by WDA: the webview content (static texts,
+// A realistic subtree as returned by the agent: the webview content (static texts,
 // text fields, buttons) is nested inside the WebView node, separated by
 // several "Other" wrapper nodes that the filter rejects.
 func sampleLoginScreenTree() sourceTreeElement {

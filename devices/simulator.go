@@ -251,7 +251,7 @@ func removeSimulatorAgentDiagnostics(homeDir string, udid string, exceptPath str
 	entries, err := os.ReadDir(diagnosticsDirectory)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			utils.Verbose("Failed to read WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to read DeviceKit agent startup diagnostics: %v", err)
 		}
 		return
 	}
@@ -267,7 +267,7 @@ func removeSimulatorAgentDiagnostics(homeDir string, udid string, exceptPath str
 		}
 
 		if err := os.Remove(diagnosticPath); err != nil && !os.IsNotExist(err) {
-			utils.Verbose("Failed to remove WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to remove DeviceKit agent startup diagnostics: %v", err)
 		}
 	}
 }
@@ -304,7 +304,7 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			utils.Verbose("Failed to locate WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to locate DeviceKit agent startup diagnostics: %v", err)
 		} else {
 			removeSimulatorAgentDiagnostics(homeDir, s.UDID, "")
 		}
@@ -526,7 +526,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 
 	switch state {
 	case simStateBooted:
-		// already booted, continue to WDA
+		// already booted, continue to the agent
 	case simStateShutdown:
 		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
@@ -556,7 +556,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 	currentPort, err := s.getDeviceKitPort()
 	if err != nil {
-		utils.Verbose("Failed to get existing WDA port: %v", err)
+		utils.Verbose("Failed to get existing agent port: %v", err)
 		return false, nil
 	}
 
@@ -567,7 +567,7 @@ func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 		}
 	}
 
-	utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
+	utils.Verbose("DeviceKit agent is already running on port %d", currentPort)
 
 	// create new client or update with new port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", currentPort))
@@ -576,7 +576,7 @@ func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 	}
 
 	// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-	return false, fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
+	return false, fmt.Errorf("DeviceKit agent is running but not accessible on port %d", currentPort)
 }
 
 func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentConfig) error {
@@ -605,7 +605,7 @@ func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentCon
 	}
 	removeSimulatorAgentDiagnostics(homeDir, s.UDID, hostStderrPath)
 
-	// update WDA client to use the actual port
+	// update the DeviceKit client to use the actual port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", usePort))
 
 	config.reportProgress("Waiting for agent to start")
@@ -643,7 +643,7 @@ func (s SimulatorDevice) SendKeys(text string) error {
 }
 
 func (s SimulatorDevice) PressKeys(combos []KeyCombo) error {
-	return s.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
+	return s.deviceKitClient.PressKeys(toDeviceKitKeyCombos(combos))
 }
 
 // Fill presses the HID clear key, which empties the focused field in one event, then types
@@ -722,13 +722,13 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 }
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	return wdaForegroundApp(s.deviceKitClient, s.ListApps)
+	return deviceKitForegroundApp(s.deviceKitClient, s.ListApps)
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := s.deviceKitClient.GetWindowSize()
+	windowSize, err := s.deviceKitClient.GetWindowSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+		return nil, fmt.Errorf("failed to get window size from DeviceKit agent: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -742,9 +742,9 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 			Model:    s.Simulator.DeviceType,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  wdaSize.ScreenSize.Width,
-			Height: wdaSize.ScreenSize.Height,
-			Scale:  wdaSize.Scale,
+			Width:  windowSize.ScreenSize.Width,
+			Height: windowSize.ScreenSize.Height,
+			Scale:  windowSize.Scale,
 		},
 	}, nil
 }
@@ -927,11 +927,11 @@ func extractEnvValue(output, envVar string) (string, error) {
 func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 	pid, processInfo, err := findDeviceKitProcessForDevice(s.UDID)
 	if err != nil {
-		utils.Verbose("Could not find WDA process: %v", err)
+		utils.Verbose("Could not find DeviceKit agent process: %v", err)
 		return 0, err
 	}
 
-	utils.Verbose("Found WDA process PID=%d", pid)
+	utils.Verbose("Found DeviceKit agent process PID=%d", pid)
 
 	portStr, err := extractEnvValue(processInfo, envVar)
 	if err != nil {
@@ -944,7 +944,7 @@ func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 		return 0, fmt.Errorf("invalid %s value: %s", envVar, portStr)
 	}
 
-	utils.Verbose("Extracted %s=%d from WDA process", envVar, port)
+	utils.Verbose("Extracted %s=%d from DeviceKit agent process", envVar, port)
 	return port, nil
 }
 

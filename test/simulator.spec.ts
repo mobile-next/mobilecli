@@ -1140,7 +1140,7 @@ function verifyRawViewtreeDump(response: any): void {
 	expect(data).toBeDefined();
 	expect(data.rawData).toBeDefined();
 
-	// rawData should contain the tree structure directly from WDA
+	// rawData should contain the tree structure directly from the agent
 	const rawData = data.rawData;
 	expect(Array.isArray(rawData.children)).toBe(true);
 }
