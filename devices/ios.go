@@ -359,7 +359,7 @@ func (d *IOSDevice) cleanupDeviceKit() error {
 	return nil
 }
 
-// cleanupPortForwarders stops the agent, MJPEG, and DeviceKit port forwarders
+// cleanupPortForwarders stops the DeviceKit agent, MJPEG, DeviceKit HTTP and AVC port forwarders
 func (d *IOSDevice) cleanupPortForwarders() error {
 	d.mu.Lock()
 	agentForwarder := d.portForwarderDeviceKitAgent
@@ -371,9 +371,9 @@ func (d *IOSDevice) cleanupPortForwarders() error {
 	var errs []error
 
 	if agentForwarder != nil && agentForwarder.IsRunning() {
-		utils.Verbose("Stopping agent port forwarder for device %s", d.Udid)
+		utils.Verbose("Stopping DeviceKit agent port forwarder for device %s", d.Udid)
 		if err := agentForwarder.Stop(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to stop agent port forwarder: %w", err))
+			errs = append(errs, fmt.Errorf("failed to stop DeviceKit agent port forwarder: %w", err))
 		}
 	}
 
@@ -553,7 +553,7 @@ func (d *IOSDevice) findInstalledAgentBundleID() (string, error) {
 	return "", fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
 }
 
-// ensureDeviceKitAgentForwarder sets up agent port forwarding if not already running.
+// ensureDeviceKitAgentForwarder sets up DeviceKit agent port forwarding if not already running.
 func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 	d.mu.Lock()
 	needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
@@ -563,7 +563,7 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 		d.mu.Lock()
 		srcPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
 		d.mu.Unlock()
-		utils.Verbose("agent port forwarder already running on port %d", srcPort)
+		utils.Verbose("DeviceKit agent port forwarder already running on port %d", srcPort)
 
 		// ensure deviceKitClient is set if not already
 		d.mu.Lock()
@@ -590,7 +590,7 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 	d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
 	d.mu.Unlock()
 
-	utils.Verbose("agent port forwarder set up on port %d", port)
+	utils.Verbose("DeviceKit agent port forwarder set up on port %d", port)
 	return nil
 }
 
