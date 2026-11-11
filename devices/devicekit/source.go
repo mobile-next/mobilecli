@@ -60,7 +60,7 @@ var alwaysIncludedSourceTypes = []string{
 	"TextField", "TextView", "SecureTextField", "Button", "Switch", "SearchField", elementTypeWebView, "Slider", "Picker", "PickerWheel",
 }
 
-// filterSourceElements converts a WDA source tree into ScreenElements,
+// filterSourceElements converts the agent's source tree into ScreenElements,
 // preserving hierarchy: filtered descendants of an accepted element become its
 // Children, while descendants of rejected elements are hoisted to the nearest
 // accepted ancestor.

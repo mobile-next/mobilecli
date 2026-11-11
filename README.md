@@ -14,7 +14,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-  <a href="http://mobilenext.ai/join-slack">
+  <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=badge">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -180,6 +180,12 @@ mobilecli io longpress --device <device-id> 100,200 --duration 2000
 mobilecli io button --device <device-id> HOME
 mobilecli io button --device <device-id> VOLUME_UP
 mobilecli io button --device <device-id> POWER
+
+# Check whether the on-screen keyboard is showing
+mobilecli io keyboard status --device <device-id>
+
+# Hide the on-screen keyboard (on real iOS devices only in debuggable apps, on simulators only in apps you installed)
+mobilecli io keyboard hide --device <device-id>
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
@@ -567,9 +573,11 @@ make test
 
 ## Support 💬
 
+Something not working? Check [docs/troubleshooting.md](docs/troubleshooting.md) first.
+
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
-Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
+Be sure to <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=contributing">join our slack channel</a> today 💜
 
-To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
+To learn more about <a href="https://mobilenext.ai/?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=part-of-mobile-next">Mobile Next</a> and what we're building.
 

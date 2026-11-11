@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -152,7 +153,15 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 
 	const tmpSO = "/data/local/tmp/mobilecli.so"
 
-	if err := d.pushTempFile(agents.AndroidMobilecliSO, tmpSO); err != nil {
+	abi, err := d.appABI(pkg)
+	if err != nil {
+		return "", err
+	}
+	so, err := agentSOForABI(abi)
+	if err != nil {
+		return "", err
+	}
+	if err := d.pushTempFile(so, tmpSO); err != nil {
 		return "", fmt.Errorf("push .so: %w", err)
 	}
 	if err := d.copyToAppDir(pkg, tmpSO, agentDir+"/mobilecli.so", "755"); err != nil {
@@ -167,6 +176,53 @@ func (d *AndroidDevice) installWebViewKit(pkg string) (string, error) {
 	}
 
 	return agentDir, nil
+}
+
+// appABI returns the ABI the app's process runs as, which the agent .so must
+// match. A 64-bit app runs as the device's primary ABI even when its native code
+// is for another one (arm64 under translation on an x86_64 emulator), and ART
+// won't load an agent through that translation, so only a 32-bit package ABI
+// overrides the device's.
+func (d *AndroidDevice) appABI(pkg string) (string, error) {
+	out, err := d.runAdbCommand("shell", "getprop", "ro.product.cpu.abi")
+	if err != nil {
+		return "", fmt.Errorf("read device ABI: %w", err)
+	}
+	packageABI := ""
+	if dumpsys, err := d.runAdbCommand("shell", "dumpsys", "package", pkg); err == nil {
+		packageABI = primaryCPUABI(string(dumpsys))
+	}
+	return processABI(packageABI, strings.TrimSpace(string(out))), nil
+}
+
+// processABI is the ABI an app process runs as: its package ABI when that is
+// 32-bit, otherwise the device's.
+func processABI(packageABI, deviceABI string) string {
+	if packageABI == "armeabi" || packageABI == "armeabi-v7a" || packageABI == "x86" {
+		return packageABI
+	}
+	return deviceABI
+}
+
+var primaryCPUABIPattern = regexp.MustCompile(`primaryCpuAbi=(\S+)`)
+
+// primaryCPUABI reads primaryCpuAbi from `dumpsys package` output, or "" when it
+// is missing or null.
+func primaryCPUABI(dumpsys string) string {
+	m := primaryCPUABIPattern.FindStringSubmatch(dumpsys)
+	if m == nil || m[1] == "null" {
+		return ""
+	}
+	return m[1]
+}
+
+// agentSOForABI returns the agent .so built for abi.
+func agentSOForABI(abi string) ([]byte, error) {
+	so, ok := agents.AndroidMobilecliSO[abi]
+	if !ok {
+		return nil, fmt.Errorf("no in-app agent for ABI %q (only arm64-v8a and x86_64)", abi)
+	}
+	return so, nil
 }
 
 // webViewSocketTarget is the abstract socket the in-app agent listens on.

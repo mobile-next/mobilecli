@@ -60,6 +60,53 @@ static id jsonSafe(id value) {
     return windows;
 }
 
++ (void)dismissKeyboard {
+    [self runOnMainThread:^{
+        for (UIWindow *window in [self allWindows]) {
+            if (window.isKeyWindow) {
+                [window endEditing:YES];
+            }
+        }
+    }];
+}
+
++ (nullable UIViewController *)findController:(Class)controllerClass from:(nullable UIViewController *)root {
+    NSMutableArray<UIViewController *> *pending = [NSMutableArray array];
+    if (root) [pending addObject:root];
+    while (pending.count > 0) {
+        UIViewController *controller = pending.firstObject;
+        [pending removeObjectAtIndex:0];
+        if ([controller isKindOfClass:controllerClass]) return controller;
+        [pending addObjectsFromArray:controller.childViewControllers];
+        if (controller.presentedViewController) [pending addObject:controller.presentedViewController];
+    }
+    return nil;
+}
+
+// Reads the Dart VM service URI from the running engine. `publisher` is a private
+// ivar of FlutterEngine, the one version-sensitive point. Nil means this is not a
+// Flutter app, which callers treat as a signal to use the accessibility dump.
++ (nullable NSString *)flutterVMServiceURI {
+    Class controllerClass = NSClassFromString(@"FlutterViewController");
+    if (!controllerClass) return nil;
+
+    __block NSString *uri = nil;
+    [self runOnMainThread:^{
+        @try {
+            for (UIWindow *window in [self allWindows]) {
+                UIViewController *controller = [self findController:controllerClass from:window.rootViewController];
+                if (!controller) continue;
+                NSURL *url = [[[controller valueForKey:@"engine"] valueForKey:@"publisher"] valueForKey:@"url"];
+                uri = url.absoluteString;
+                return;
+            }
+        } @catch (NSException *exception) {
+            uri = nil;
+        }
+    }];
+    return uri;
+}
+
 + (void)collectWebViews:(UIView *)view into:(NSMutableArray<NSDictionary *> *)result depth:(int)depth {
     if (depth > 50) return;
 
@@ -145,10 +192,12 @@ static id jsonSafe(id value) {
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        // looked up by name: a link-time import would stop the agent from being
+        // mapped into an app that has not loaded WebKit
         [(WKWebView *)webView callAsyncJavaScript:body
                                         arguments:@{}
                                           inFrame:nil
-                                   inContentWorld:WKContentWorld.pageWorld
+                                   inContentWorld:[NSClassFromString(@"WKContentWorld") pageWorld]
                                 completionHandler:^(id result, NSError *error) {
             if (timedOut) return;
             jsResult = result;

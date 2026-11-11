@@ -34,6 +34,16 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
+// RPCError is an error the agent itself answered with.
+type RPCError struct {
+	Code    int
+	Message string
+}
+
+func (e *RPCError) Error() string {
+	return fmt.Sprintf("RPC error %d: %s", e.Code, e.Message)
+}
+
 // a var so tests can shorten it
 var defaultRPCTimeout = 10 * time.Second
 
@@ -86,7 +96,7 @@ func (c *DeviceKitClient) CallRPCWithTimeout(method string, params any, timeout 
 	}
 
 	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		return nil, &RPCError{Code: rpcResp.Error.Code, Message: rpcResp.Error.Message}
 	}
 
 	return rpcResp.Result, nil
@@ -108,22 +118,22 @@ func (c *DeviceKitClient) WaitForAgentWithDiagnostics(readDiagnostic AgentStartu
 		select {
 		case <-ctx.Done():
 			if diagnostic := readAgentStartupDiagnostic(readDiagnostic); diagnostic != "" {
-				return fmt.Errorf("timed out waiting for WebDriverAgent to be ready; agent stderr:\n%s", diagnostic)
+				return fmt.Errorf("timed out waiting for DeviceKit agent to be ready; agent stderr:\n%s", diagnostic)
 			}
-			return fmt.Errorf("timed out waiting for WebDriverAgent to be ready")
+			return fmt.Errorf("timed out waiting for DeviceKit agent to be ready")
 
 		case <-ticker.C:
 			_, err := c.GetStatus()
 			if err != nil {
-				utils.Verbose("WebDriverAgent not ready yet: %v", err)
+				utils.Verbose("DeviceKit agent not ready yet: %v", err)
 				diagnostic := readAgentStartupDiagnostic(readDiagnostic)
 				if isFatalAgentStartupDiagnostic(diagnostic) {
-					return fmt.Errorf("WebDriverAgent failed to start:\n%s", diagnostic)
+					return fmt.Errorf("DeviceKit agent failed to start:\n%s", diagnostic)
 				}
 				continue
 			}
 
-			utils.Verbose("WebDriverAgent is ready!")
+			utils.Verbose("DeviceKit agent is ready!")
 			return nil
 		}
 	}
@@ -136,7 +146,7 @@ func readAgentStartupDiagnostic(readDiagnostic AgentStartupDiagnostic) string {
 
 	diagnostic, err := readDiagnostic()
 	if err != nil {
-		utils.Verbose("Failed to read WebDriverAgent startup diagnostics: %v", err)
+		utils.Verbose("Failed to read DeviceKit agent startup diagnostics: %v", err)
 		return ""
 	}
 

@@ -15,7 +15,7 @@ func (c *DeviceKitMjpegClient) StartScreenCapture(format string, callback func([
 	}
 
 	// the MJPEG server on the device may not be ready immediately after the
-	// WDA HTTP endpoint comes up, so retry the connection for a few seconds
+	// agent HTTP endpoint comes up, so retry the connection for a few seconds
 	var resp *http.Response
 	deadline := time.Now().Add(10 * time.Second)
 	for {

@@ -220,6 +220,16 @@ func (r *RemoteDevice) Reboot() error {
 	return r.fireRPC("device.reboot", params{})
 }
 
+func (r *RemoteDevice) IsKeyboardVisible() (bool, error) {
+	result, err := rpcCall[keyboardStatusResult](r, "device.io.keyboard.status", nil)
+	return result.Visible, err
+}
+
+func (r *RemoteDevice) HideKeyboard() (bool, error) {
+	result, err := rpcCall[keyboardHideResult](r, "device.io.keyboard.hide", nil)
+	return result.Dismissed, err
+}
+
 func (r *RemoteDevice) GetOrientation() (string, error) {
 	resp, err := rpcCall[struct {
 		Orientation string `json:"orientation"`

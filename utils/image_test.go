@@ -57,7 +57,7 @@ func TestResizeFactor(t *testing.T) {
 func TestProcessScreenshot_PngWithoutResizeIsReturnedUnchanged(t *testing.T) {
 	original := makeTestPng(t, 64, 32)
 
-	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, nil, 0)
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, nil, 0, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, original, out, "PNG with no resize should be passed through untouched")
@@ -66,7 +66,7 @@ func TestProcessScreenshot_PngWithoutResizeIsReturnedUnchanged(t *testing.T) {
 func TestProcessScreenshot_ScaleHalvesDimensions(t *testing.T) {
 	original := makeTestPng(t, 64, 32)
 
-	out, err := ProcessScreenshot(original, "png", 90, 0.5, 0, nil, 0)
+	out, err := ProcessScreenshot(original, "png", 90, 0.5, 0, nil, 0, 0)
 
 	require.NoError(t, err)
 	width, height := decodeDimensions(t, out)
@@ -77,7 +77,7 @@ func TestProcessScreenshot_ScaleHalvesDimensions(t *testing.T) {
 func TestProcessScreenshot_MaxSizeCapsLargestDimension(t *testing.T) {
 	original := makeTestPng(t, 64, 32)
 
-	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 16, nil, 0)
+	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 16, nil, 0, 0)
 
 	require.NoError(t, err)
 	assert.True(t, IsJPEG(out), "Output should be a JPEG")
@@ -89,7 +89,7 @@ func TestProcessScreenshot_MaxSizeCapsLargestDimension(t *testing.T) {
 func TestProcessScreenshot_JpegWithoutResizeIsConverted(t *testing.T) {
 	original := makeTestPng(t, 64, 32)
 
-	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 0, nil, 0)
+	out, err := ProcessScreenshot(original, "jpeg", 90, 1.0, 0, nil, 0, 0)
 
 	require.NoError(t, err)
 	assert.True(t, IsJPEG(out), "Output should be a JPEG")
@@ -99,7 +99,7 @@ func TestProcessScreenshot_JpegWithoutResizeIsConverted(t *testing.T) {
 }
 
 func TestProcessScreenshot_InvalidPngReturnsError(t *testing.T) {
-	_, err := ProcessScreenshot([]byte("not a png"), "png", 90, 0.5, 0, nil, 0)
+	_, err := ProcessScreenshot([]byte("not a png"), "png", 90, 0.5, 0, nil, 0, 0)
 	assert.Error(t, err)
 }
 
@@ -107,7 +107,7 @@ func TestProcessScreenshot_RectCropsToElementBounds(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 10, Y: 20, Width: 30, Height: 40}
 
-	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100)
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
 
 	require.NoError(t, err)
 	width, height := decodeDimensions(t, out)
@@ -125,7 +125,7 @@ func TestProcessScreenshot_RectInPointsIsScaledToPixels(t *testing.T) {
 	original := makeTestPng(t, 200, 400) // 2x density: screen is 100 points wide
 	rect := &types.ScreenElementRect{X: 10, Y: 20, Width: 30, Height: 40}
 
-	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100)
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
 
 	require.NoError(t, err)
 	width, height := decodeDimensions(t, out)
@@ -133,11 +133,44 @@ func TestProcessScreenshot_RectInPointsIsScaledToPixels(t *testing.T) {
 	assert.Equal(t, 80, height)
 }
 
+func TestProcessScreenshot_RectInLandscapeUsesTheLongSideAsWidth(t *testing.T) {
+	// the device reports its screen as portrait (100x200 points) while the
+	// app is rotated, so the 3x screenshot is 600x300 pixels
+	original := makeTestPng(t, 600, 300)
+	rect := &types.ScreenElementRect{X: 150, Y: 50, Width: 40, Height: 20}
+
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
+
+	require.NoError(t, err)
+	width, height := decodeDimensions(t, out)
+	assert.Equal(t, 120, width)
+	assert.Equal(t, 60, height)
+
+	img, err := png.Decode(bytes.NewReader(out))
+	require.NoError(t, err)
+	r, g, _, _ := img.At(img.Bounds().Min.X, img.Bounds().Min.Y).RGBA()
+	assert.Equal(t, uint32(450&0xff), r>>8, "Top-left pixel should come from x=450 of the source")
+	assert.Equal(t, uint32(150), g>>8, "Top-left pixel should come from y=150 of the source")
+}
+
+func TestProcessScreenshot_RectInPortraitWithLandscapeScreenSize(t *testing.T) {
+	// the device reports its rotated size, while the screenshot stays portrait
+	original := makeTestPng(t, 300, 600)
+	rect := &types.ScreenElementRect{X: 10, Y: 150, Width: 40, Height: 20}
+
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 200, 100)
+
+	require.NoError(t, err)
+	width, height := decodeDimensions(t, out)
+	assert.Equal(t, 120, width)
+	assert.Equal(t, 60, height)
+}
+
 func TestProcessScreenshot_RectAppliesBeforeMaxSize(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 0, Y: 0, Width: 40, Height: 80}
 
-	out, err := ProcessScreenshot(original, "png", 90, 1.0, 40, rect, 100)
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 40, rect, 100, 200)
 
 	require.NoError(t, err)
 	width, height := decodeDimensions(t, out)
@@ -149,7 +182,7 @@ func TestProcessScreenshot_RectPartiallyOutsideIsClamped(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 80, Y: 180, Width: 50, Height: 50}
 
-	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100)
+	out, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
 
 	require.NoError(t, err)
 	width, height := decodeDimensions(t, out)
@@ -161,7 +194,7 @@ func TestProcessScreenshot_RectFullyOutsideReturnsError(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 150, Y: 0, Width: 10, Height: 10}
 
-	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100)
+	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
 
 	assert.ErrorContains(t, err, "outside the screenshot bounds")
 }
@@ -170,7 +203,7 @@ func TestProcessScreenshot_RectWithoutScreenWidthReturnsError(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 0, Y: 0, Width: 10, Height: 10}
 
-	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 0)
+	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 0, 0)
 
 	assert.ErrorContains(t, err, "screen width")
 }
@@ -179,7 +212,7 @@ func TestProcessScreenshot_RectWithNonPositiveSizeReturnsError(t *testing.T) {
 	original := makeTestPng(t, 100, 200)
 	rect := &types.ScreenElementRect{X: 0, Y: 0, Width: 0, Height: 10}
 
-	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100)
+	_, err := ProcessScreenshot(original, "png", 90, 1.0, 0, rect, 100, 200)
 
 	assert.ErrorContains(t, err, "must be positive")
 }

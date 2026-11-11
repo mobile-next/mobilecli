@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mobile-next/mobilecli/types"
@@ -33,12 +34,8 @@ var vmServiceLineURL = regexp.MustCompile(`http://127\.0\.0\.1:\d+/[A-Za-z0-9_=-
 // tryDumpFlutterSource returns the Flutter render tree for the foreground app,
 // or ok=false to signal the caller should use the accessibility dump.
 func (s *SimulatorDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
-	foreground, err := s.GetForegroundApp()
-	if err != nil {
-		return nil, false
-	}
-	bundleID := foreground.PackageName
-	if !s.isFlutterAppBundle(bundleID) {
+	bundleID, mayBeFlutter := s.foregroundFlutterCandidate()
+	if !mayBeFlutter {
 		return nil, false
 	}
 	uri := s.flutterVMServiceURI(bundleID)
@@ -56,17 +53,95 @@ func (s *SimulatorDevice) tryDumpFlutterSource() ([]types.ScreenElement, bool) {
 	return elements, true
 }
 
+// simulatorFlutterCandidates caches the verdict of foregroundFlutterCandidate,
+// keyed by simulator udid. SimulatorDevice methods run against a copy of the
+// device, so the cache cannot live in the struct the way it does for a real
+// device.
+var (
+	simulatorFlutterMu         sync.Mutex
+	simulatorFlutterCandidates = map[string]flutterCandidate{}
+)
+
+// cachedFlutterCandidate returns the verdict remembered for the process running
+// on a simulator, and whether there is one. A different pid means the app was
+// relaunched or reinstalled, which is a miss: the bundle may be another build.
+func cachedFlutterCandidate(udid string, pid int) (isCandidate bool, ok bool) {
+	if pid == 0 {
+		return false, false
+	}
+
+	simulatorFlutterMu.Lock()
+	defer simulatorFlutterMu.Unlock()
+
+	cached, exists := simulatorFlutterCandidates[udid]
+	if !exists || cached.pid != pid {
+		return false, false
+	}
+	return cached.isCandidate, true
+}
+
+// rememberFlutterCandidate stores the verdict for a process. A pid of 0 means
+// the agent did not report one, and a verdict that cannot be invalidated is
+// worse than no verdict at all, so it is dropped.
+func rememberFlutterCandidate(udid string, pid int, isCandidate bool) {
+	if pid == 0 {
+		return
+	}
+
+	simulatorFlutterMu.Lock()
+	defer simulatorFlutterMu.Unlock()
+	simulatorFlutterCandidates[udid] = flutterCandidate{pid: pid, isCandidate: isCandidate}
+}
+
+// foregroundFlutterCandidate decides whether looking for a Dart VM is worth it,
+// and names the foreground app. Reading the app bundle costs a simctl call, more
+// than the whole accessibility dump of a light screen, and every dump would pay
+// it; the answer cannot change while the process runs, so it is remembered per
+// process id, as on a real device. A relaunched or reinstalled app gets a new
+// pid and is looked at again.
+func (s *SimulatorDevice) foregroundFlutterCandidate() (bundleID string, mayBeFlutter bool) {
+	activeApp, err := s.deviceKitClient.GetActiveAppIdentity()
+	if err != nil {
+		utils.Verbose("flutter: cannot tell the foreground app, skipping the flutter dump: %v", err)
+		return "", false
+	}
+	if activeApp.BundleID == "" {
+		utils.Verbose("flutter: no foreground app, skipping the flutter dump")
+		return "", false
+	}
+
+	if isCandidate, ok := cachedFlutterCandidate(s.UDID, activeApp.ProcessID); ok {
+		return activeApp.BundleID, isCandidate
+	}
+
+	isCandidate, err := s.isFlutterAppBundle(activeApp.BundleID)
+	if err != nil {
+		// a failed lookup is not a verdict: remembering it would leave a Flutter
+		// app on the accessibility dump until it is relaunched
+		utils.Verbose("flutter: cannot read %s's app bundle, skipping the flutter dump: %v", activeApp.BundleID, err)
+		return activeApp.BundleID, false
+	}
+	rememberFlutterCandidate(s.UDID, activeApp.ProcessID, isCandidate)
+
+	return activeApp.BundleID, isCandidate
+}
+
 // isFlutterAppBundle reports whether the installed app embeds Flutter.framework.
-func (s *SimulatorDevice) isFlutterAppBundle(bundleID string) bool {
+// An error means the bundle could not be found, not that it is not Flutter.
+func (s *SimulatorDevice) isFlutterAppBundle(bundleID string) (bool, error) {
 	out, err := runSimctl("get_app_container", s.UDID, bundleID, "app")
 	if err != nil {
-		return false
+		return false, err
 	}
 	appPath := strings.TrimSpace(string(out))
 	if appPath == "" {
-		return false
+		return false, fmt.Errorf("simctl reported no app container for %s", bundleID)
 	}
-	info, err := os.Stat(filepath.Join(appPath, "Frameworks", "Flutter.framework"))
+	return isDirectory(filepath.Join(appPath, "Frameworks", "Flutter.framework")), nil
+}
+
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
 }
 
