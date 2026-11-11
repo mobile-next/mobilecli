@@ -1,3 +1,12 @@
+## [1.0.23](https://github.com/mobile-next/mobilecli/releases/tag/1.0.23) (2026-11-11)
+* Feat: new `io keyboard status` and `io keyboard hide` commands ([#333](https://github.com/mobile-next/mobilecli/pull/333), [devicekit-ios#60](https://github.com/mobile-next/devicekit-ios/pull/60))
+* Fix: map `screenshot --clip` to pixels when the screen is rotated ([#517](https://github.com/mobile-next/mobilecli/pull/517))
+* Feat(ios): inject the agent on real devices over the debug proxy instead of lldb, much better performance ([#559](https://github.com/mobile-next/mobilecli/pull/559))
+* Feat(ios): hide the keyboard on real devices via debug proxy (debuggable apps only, deterministic and desn't tap on screen) ([#560](https://github.com/mobile-next/mobilecli/pull/560))
+* Fix(ios): find the agent again after the daemon exits ([#562](https://github.com/mobile-next/mobilecli/pull/562))
+* Feat(android): leave System UI out of `snapshot` unless using `--full` ([#556](https://github.com/mobile-next/mobilecli/pull/556))
+* Fix(android): report the screen size and orientation the display is rotated to ([#545](https://github.com/mobile-next/mobilecli/pull/545)), thanks to [@edusperoni](https://github.com/edusperoni)
+
 ## [1.0.22](https://github.com/mobile-next/mobilecli/releases/tag/1.0.22) (2026-10-31)
 * Fix: re-resolve Offset.zero when it expires during a flutter dump, so widgets on large Flutter screens are no longer left out ([#546](https://github.com/mobile-next/mobilecli/pull/546)), thanks to [@aluedeke](https://github.com/aluedeke)
 * Perf(ios): make dump ui ~3x faster on heavy screens: no simctl calls or view controller snapshot before every simulator dump, and a faster agent dump ([#523](https://github.com/mobile-next/mobilecli/pull/523), [devicekit-ios#105](https://github.com/mobile-next/devicekit-ios/pull/105)), thanks to [@avilashp-sportsbet](https://github.com/avilashp-sportsbet)
