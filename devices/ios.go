@@ -334,17 +334,17 @@ func (d *IOSDevice) hasResourcesToCleanup() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	hasWda := d.deviceKitCancel != nil
-	hasWdaPort := d.portForwarderDeviceKitAgent != nil && d.portForwarderDeviceKitAgent.IsRunning()
+	hasAgent := d.deviceKitCancel != nil
+	hasAgentPort := d.portForwarderDeviceKitAgent != nil && d.portForwarderDeviceKitAgent.IsRunning()
 	hasMjpegPort := d.portForwarderMjpeg != nil && d.portForwarderMjpeg.IsRunning()
 	hasHTTPPort := d.portForwarderDeviceKit != nil && d.portForwarderDeviceKit.IsRunning()
 	hasStreamPort := d.portForwarderAvc != nil && d.portForwarderAvc.IsRunning()
 	hasTunnel := d.tunnelManager != nil && d.tunnelManager.IsTunnelRunning()
 
-	return hasWda || hasWdaPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
+	return hasAgent || hasAgentPort || hasMjpegPort || hasHTTPPort || hasStreamPort || hasTunnel
 }
 
-// cleanupDeviceKit cancels the WebDriverAgent context
+// cleanupDeviceKit cancels the DeviceKit agent context
 func (d *IOSDevice) cleanupDeviceKit() error {
 	d.mu.Lock()
 	cancel := d.deviceKitCancel
@@ -352,17 +352,17 @@ func (d *IOSDevice) cleanupDeviceKit() error {
 	d.mu.Unlock()
 
 	if cancel != nil {
-		utils.Verbose("Canceling WebDriverAgent for device %s", d.Udid)
+		utils.Verbose("Canceling DeviceKit agent for device %s", d.Udid)
 		cancel()
 	}
 
 	return nil
 }
 
-// cleanupPortForwarders stops WDA, MJPEG, and DeviceKit port forwarders
+// cleanupPortForwarders stops the agent, MJPEG, and DeviceKit port forwarders
 func (d *IOSDevice) cleanupPortForwarders() error {
 	d.mu.Lock()
-	wdaForwarder := d.portForwarderDeviceKitAgent
+	agentForwarder := d.portForwarderDeviceKitAgent
 	mjpegForwarder := d.portForwarderMjpeg
 	httpForwarder := d.portForwarderDeviceKit
 	streamForwarder := d.portForwarderAvc
@@ -370,10 +370,10 @@ func (d *IOSDevice) cleanupPortForwarders() error {
 
 	var errs []error
 
-	if wdaForwarder != nil && wdaForwarder.IsRunning() {
-		utils.Verbose("Stopping WDA port forwarder for device %s", d.Udid)
-		if err := wdaForwarder.Stop(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to stop WDA port forwarder: %w", err))
+	if agentForwarder != nil && agentForwarder.IsRunning() {
+		utils.Verbose("Stopping agent port forwarder for device %s", d.Udid)
+		if err := agentForwarder.Stop(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop agent port forwarder: %w", err))
 		}
 	}
 
@@ -487,7 +487,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 
 	// starting an agent on a real device requires quite a few things to happen in the right order:
 	// 1. we check if agent is installed on device (with custom bundle identifier). if we don't have it, this is the process:
-	//    a. we download the wda bundle from github
+	//    a. we download the agent bundle from github
 	//    b. we need to unzip it to a temp directory
 	//    c. we need to modify the Info.plist to set the correct bundle identifier
 	//    d. we need to create an entitlements file
@@ -503,7 +503,7 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	if _, err := d.deviceKitClient.GetStatus(); err == nil {
 		return nil
 	}
-	utils.Verbose("WebdriverAgent is not running, starting it")
+	utils.Verbose("DeviceKit agent is not running, starting it")
 
 	agentBundleId, err := d.findInstalledAgentBundleID()
 	if err != nil {
@@ -523,11 +523,11 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		return err
 	}
 
-	// check if wda is already running, now that we have a port forwarder set up
+	// check if the agent is already running, now that we have a port forwarder set up
 	status, err := d.deviceKitClient.GetStatus()
-	utils.Verbose("WebDriverAgent status %s", status)
+	utils.Verbose("DeviceKit agent status %s", status)
 	if err == nil {
-		utils.Verbose("WebDriverAgent is already running")
+		utils.Verbose("DeviceKit agent is already running")
 		return nil
 	}
 
@@ -553,7 +553,7 @@ func (d *IOSDevice) findInstalledAgentBundleID() (string, error) {
 	return "", fmt.Errorf("agent is not installed, use 'mobilecli agent install --device %s --provisioning-profile <path>' to install it", d.ID())
 }
 
-// ensureDeviceKitAgentForwarder sets up WDA port forwarding if not already running.
+// ensureDeviceKitAgentForwarder sets up agent port forwarding if not already running.
 func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 	d.mu.Lock()
 	needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
@@ -563,7 +563,7 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 		d.mu.Lock()
 		srcPort, _ := d.portForwarderDeviceKitAgent.GetPorts()
 		d.mu.Unlock()
-		utils.Verbose("WDA port forwarder already running on port %d", srcPort)
+		utils.Verbose("agent port forwarder already running on port %d", srcPort)
 
 		// ensure deviceKitClient is set if not already
 		d.mu.Lock()
@@ -590,7 +590,7 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 	d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
 	d.mu.Unlock()
 
-	utils.Verbose("WDA port forwarder set up on port %d", port)
+	utils.Verbose("agent port forwarder set up on port %d", port)
 	return nil
 }
 
@@ -634,7 +634,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		bundleID, testRunnerBundleID, xctestConfig = agentRunnerBundleID, agentRunnerBundleID, "devicekit-iosUITests.xctest"
 	}
 
-	utils.Verbose("Running wda with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
+	utils.Verbose("Running DeviceKit agent with bundleid: %s, testbundleid: %s, xctestconfig: %s", bundleID, testRunnerBundleID, xctestConfig)
 
 	// ensure tunnel is running for iOS 17+
 	err := d.startTunnel()
@@ -647,11 +647,11 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		return fmt.Errorf("failed to get enhanced device connection: %w", err)
 	}
 
-	// check if wda is already running (thread-safe)
+	// check if the agent is already running (thread-safe)
 	d.mu.Lock()
 	if d.deviceKitCancel != nil {
 		d.mu.Unlock()
-		utils.Verbose("WebDriverAgent is already running")
+		utils.Verbose("DeviceKit agent is already running")
 		return nil
 	}
 
@@ -660,7 +660,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 	d.deviceKitCancel = cancel
 	d.mu.Unlock()
 
-	// start WDA in background using testmanagerd similar to go-ios runwda command
+	// start the agent in background using testmanagerd
 	go func() {
 		_, err := testmanagerd.RunTestWithConfig(ctx, testmanagerd.TestConfig{
 			BundleId:           bundleID,
@@ -673,9 +673,9 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		})
 
 		if err != nil {
-			utils.Verbose("WebDriverAgent process ended with error: %v", err)
+			utils.Verbose("DeviceKit agent process ended with error: %v", err)
 		} else {
-			utils.Verbose("WebDriverAgent process ended")
+			utils.Verbose("DeviceKit agent process ended")
 		}
 
 		// clear cancel function when done (thread-safe)
@@ -684,7 +684,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 		d.mu.Unlock()
 	}()
 
-	utils.Verbose("WebDriverAgent launched in background")
+	utils.Verbose("DeviceKit agent launched in background")
 	return nil
 }
 
@@ -898,7 +898,7 @@ func (d *IOSDevice) SendKeys(text string) error {
 }
 
 func (d *IOSDevice) PressKeys(combos []KeyCombo) error {
-	return d.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
+	return d.deviceKitClient.PressKeys(toDeviceKitKeyCombos(combos))
 }
 
 // Fill presses the HID clear key, which empties the focused field in one event, then types
@@ -959,13 +959,13 @@ func (d *IOSDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
 }
 
 func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	return wdaForegroundApp(d.deviceKitClient, d.ListApps)
+	return deviceKitForegroundApp(d.deviceKitClient, d.ListApps)
 }
 
 func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := d.deviceKitClient.GetWindowSize()
+	windowSize, err := d.deviceKitClient.GetWindowSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+		return nil, fmt.Errorf("failed to get window size from DeviceKit agent: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -979,9 +979,9 @@ func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 			Model:    d.ProductType,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  wdaSize.ScreenSize.Width,
-			Height: wdaSize.ScreenSize.Height,
-			Scale:  wdaSize.Scale,
+			Width:  windowSize.ScreenSize.Width,
+			Height: windowSize.ScreenSize.Height,
+			Scale:  windowSize.Scale,
 		},
 	}, nil
 }
@@ -1178,8 +1178,8 @@ func (d *IOSDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 
 	// mjpeg is served on the same port as the agent HTTP server at /mjpeg
 	d.mu.Lock()
-	wdaPort := d.deviceKitClient.Port()
-	mjpegURL := buildMjpegURL(wdaPort, config.FPS, config.Scale)
+	agentPort := d.deviceKitClient.Port()
+	mjpegURL := buildMjpegURL(agentPort, config.FPS, config.Scale)
 	d.mjpegClient = mjpeg.NewDeviceKitMjpegClient(mjpegURL)
 	d.mu.Unlock()
 
@@ -1687,7 +1687,7 @@ func (d *IOSDevice) StartDeviceKitAvc(hook *ShutdownHook) (*DeviceKitInfo, error
 		return nil, err
 	}
 
-	// Start WebDriverAgent to be able to tap on the screen
+	// Start DeviceKit agent to be able to tap on the screen
 	err = d.StartAgent(StartAgentConfig{
 		OnProgress: func(message string) {
 			utils.Verbose(message)

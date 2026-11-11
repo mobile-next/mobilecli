@@ -8,15 +8,15 @@ import (
 )
 
 // springboardBundleID is the home screen. A real device lists it among its
-// installed apps as "SpringBoard"; a simulator does not list it, and WDA names
+// installed apps as "SpringBoard"; a simulator does not list it, and the agent names
 // it with a single space.
 const springboardBundleID = "com.apple.springboard"
 
-// wdaForegroundApp asks WDA which app is in the foreground and enriches the
+// deviceKitForegroundApp asks the DeviceKit agent which app is in the foreground and enriches the
 // answer with version details from the device's installed-app list. Shared by
-// the physical-device and simulator implementations, which both talk to WDA.
-func wdaForegroundApp(client *devicekit.DeviceKitClient, listApps func(onlyLaunchable bool) ([]InstalledAppInfo, error)) (*ForegroundAppInfo, error) {
-	// get active app info from WDA
+// the physical-device and simulator implementations, which both talk to the DeviceKit agent.
+func deviceKitForegroundApp(client *devicekit.DeviceKitClient, listApps func(onlyLaunchable bool) ([]InstalledAppInfo, error)) (*ForegroundAppInfo, error) {
+	// get active app info from the agent
 	activeApp, err := client.GetActiveAppInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active app info: %w", err)
@@ -28,12 +28,12 @@ func wdaForegroundApp(client *devicekit.DeviceKitClient, listApps func(onlyLaunc
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
 
-	return foregroundAppFromWDA(activeApp, apps), nil
+	return foregroundAppFromAgent(activeApp, apps), nil
 }
 
-// foregroundAppFromWDA describes the app WDA reports in the foreground, using
+// foregroundAppFromAgent describes the app the agent reports in the foreground, using
 // the installed-app entry when there is one.
-func foregroundAppFromWDA(activeApp *devicekit.ActiveAppInfo, apps []InstalledAppInfo) *ForegroundAppInfo {
+func foregroundAppFromAgent(activeApp *devicekit.ActiveAppInfo, apps []InstalledAppInfo) *ForegroundAppInfo {
 	for _, app := range apps {
 		if app.PackageName == activeApp.BundleID {
 			return &ForegroundAppInfo{
@@ -45,19 +45,19 @@ func foregroundAppFromWDA(activeApp *devicekit.ActiveAppInfo, apps []InstalledAp
 		}
 	}
 
-	// not in the list (e.g., a system app): describe it from WDA alone
+	// not in the list (e.g., a system app): describe it from the agent alone
 	return &ForegroundAppInfo{
 		PackageName: activeApp.BundleID,
-		AppName:     wdaAppName(activeApp),
+		AppName:     agentAppName(activeApp),
 		Version:     "",
 		Activity:    activeApp.ViewController,
 	}
 }
 
-// wdaAppName is the name WDA reports for an app, or, when that name is blank,
+// agentAppName is the name the agent reports for an app, or, when that name is blank,
 // the name a real device lists for the home screen and the bundle ID for any
 // other app, as the Android foreground app does for an app without a label.
-func wdaAppName(activeApp *devicekit.ActiveAppInfo) string {
+func agentAppName(activeApp *devicekit.ActiveAppInfo) string {
 	name := strings.TrimSpace(activeApp.Name)
 	if name != "" {
 		return name

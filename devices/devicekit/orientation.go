@@ -38,13 +38,13 @@ func (c *DeviceKitClient) SetOrientation(orientation string) error {
 		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
 	}
 
-	wdaOrientation := "PORTRAIT"
+	agentOrientation := "PORTRAIT"
 	if orientation == OrientationLandscape {
-		wdaOrientation = "LANDSCAPE"
+		agentOrientation = "LANDSCAPE"
 	}
 
 	params := map[string]string{
-		"orientation": wdaOrientation,
+		"orientation": agentOrientation,
 	}
 
 	_, err := c.CallRPC("device.io.orientation.set", params)

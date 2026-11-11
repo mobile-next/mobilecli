@@ -16,8 +16,8 @@ type GestureAction struct {
 	Button   int     `json:"button"`
 }
 
-// ConvertActions converts WDA-style TapActions to the agents' gesture actions.
-// WDA uses: pointerMove (position) -> pointerDown -> pointerMove (drag) -> pointerUp
+// ConvertActions converts W3C pointer actions (TapActions) to the agents' gesture actions.
+// W3C pointer actions use: pointerMove (position) -> pointerDown -> pointerMove (drag) -> pointerUp
 // The agents use: press (with position) -> move -> release
 //
 // The conversion is stateful per sequence, not per finger: a multi-finger
