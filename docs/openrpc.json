@@ -943,7 +943,7 @@
         },
         {
           "name": "full",
-          "description": "Include additional elements normally left out, such as the on-screen keyboard",
+          "description": "Include additional elements normally left out, such as the on-screen keyboard and the Android status bar",
           "required": false,
           "schema": {
             "type": "boolean",
