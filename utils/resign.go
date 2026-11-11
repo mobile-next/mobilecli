@@ -31,10 +31,10 @@ type entitlements struct {
 
 // ResignOptions controls optional changes made while re-signing an IPA.
 type ResignOptions struct {
-	DeriveBundleIDFromProfile bool
+	// RequiredBundleIDSuffix, when set, renames the app to the profile's bundle ID,
+	// which must end with this suffix. Empty keeps the IPA's original bundle ID.
+	RequiredBundleIDSuffix string
 }
-
-const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
 
 // ResignIPA re-signs an IPA file so it can be installed on a specific device.
 // it returns the path to a new temporary IPA file that should be cleaned up by the caller.
@@ -528,26 +528,26 @@ func bundleIDFromProfile(profile *provisioningProfile, originalBundleID string) 
 	return bundleID, nil
 }
 
-// configureBundleID optionally derives the runner ID from the profile, validates
-// its discovery suffix, and rewrites the main bundle only when the ID changes.
+// configureBundleID optionally derives the bundle ID from the profile, validates
+// the required suffix, and rewrites the main bundle only when the ID changes.
 func configureBundleID(appPath string, profile *provisioningProfile, originalBundleID string, opts ResignOptions) error {
-	if !opts.DeriveBundleIDFromProfile {
+	if opts.RequiredBundleIDSuffix == "" {
 		return nil
 	}
 	bundleID, err := bundleIDFromProfile(profile, originalBundleID)
 	if err != nil {
 		return err
 	}
-	if !strings.HasSuffix(bundleID, agentRunnerBundleID) {
-		return fmt.Errorf("profile bundle ID %q must end with %q for agent discovery", bundleID, agentRunnerBundleID)
+	if !strings.HasSuffix(bundleID, opts.RequiredBundleIDSuffix) {
+		return fmt.Errorf("profile bundle ID %q must end with %q", bundleID, opts.RequiredBundleIDSuffix)
 	}
 	if bundleID == originalBundleID {
 		return nil
 	}
 	if err := rewriteBundleID(appPath, bundleID); err != nil {
-		return fmt.Errorf("failed to rewrite agent bundle ID: %w", err)
+		return fmt.Errorf("failed to rewrite bundle ID: %w", err)
 	}
-	Verbose("Changed agent bundle ID from %s to %s", originalBundleID, bundleID)
+	Verbose("Changed bundle ID from %s to %s", originalBundleID, bundleID)
 	return nil
 }
 
@@ -561,8 +561,11 @@ func rewriteBundleID(appPath, bundleID string) error {
 	}
 	var info map[string]any
 	format, err := plist.Unmarshal(data, &info)
-	if err != nil || info == nil {
-		return fmt.Errorf("failed to parse Info.plist dictionary: %v", err)
+	if err != nil {
+		return fmt.Errorf("failed to parse Info.plist: %w", err)
+	}
+	if info == nil {
+		return fmt.Errorf("Info.plist is not a dictionary")
 	}
 	info["CFBundleIdentifier"] = bundleID
 	data, err = plist.Marshal(info, format)

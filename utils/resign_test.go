@@ -78,6 +78,8 @@ func TestLooseDylibsIsEmptyForAReleaseBuild(t *testing.T) {
 	}
 }
 
+const agentRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+
 // TestBundleIDFromProfile covers explicit and wildcard IDs and invalid profile identifiers.
 func TestBundleIDFromProfile(t *testing.T) {
 	for _, tc := range []struct {
@@ -129,7 +131,7 @@ func TestRewriteBundleID(t *testing.T) {
 			if err != nil || !bytes.Equal(data, unchanged) {
 				t.Fatalf("disabled option changed plist: %v", err)
 			}
-			if err := configureBundleID(app, profile, agentRunnerBundleID, ResignOptions{DeriveBundleIDFromProfile: true}); err != nil {
+			if err := configureBundleID(app, profile, agentRunnerBundleID, ResignOptions{RequiredBundleIDSuffix: agentRunnerBundleID}); err != nil {
 				t.Fatal(err)
 			}
 			updated, err := os.ReadFile(path)
@@ -149,13 +151,13 @@ func TestRewriteBundleID(t *testing.T) {
 // TestConfigureBundleIDValidation checks suffix validation and skips rewriting unchanged IDs.
 func TestConfigureBundleIDValidation(t *testing.T) {
 	profile := &provisioningProfile{TeamIdentifier: []string{"TEAM"}, Entitlements: entitlements{ApplicationIdentifier: "TEAM.unrelated"}}
-	if err := configureBundleID(t.TempDir(), profile, agentRunnerBundleID, ResignOptions{DeriveBundleIDFromProfile: true}); err == nil {
+	if err := configureBundleID(t.TempDir(), profile, agentRunnerBundleID, ResignOptions{RequiredBundleIDSuffix: agentRunnerBundleID}); err == nil {
 		t.Fatal("accepted unrelated profile")
 	}
 	for _, appID := range []string{"TEAM.*", "TEAM." + agentRunnerBundleID} {
 		profile.Entitlements.ApplicationIdentifier = appID
 		// No Info.plist exists: unchanged identifiers must not trigger a rewrite.
-		if err := configureBundleID(t.TempDir(), profile, agentRunnerBundleID, ResignOptions{DeriveBundleIDFromProfile: true}); err != nil {
+		if err := configureBundleID(t.TempDir(), profile, agentRunnerBundleID, ResignOptions{RequiredBundleIDSuffix: agentRunnerBundleID}); err != nil {
 			t.Fatal(err)
 		}
 	}
