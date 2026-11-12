@@ -60,3 +60,17 @@ func TestWindowFailsWhenXcodeHasNoSimulatorWindowApp(t *testing.T) {
 		t.Fatal("expected an error when neither Simulator.app nor DeviceHub.app exists")
 	}
 }
+
+func TestWindowPrefersSimulatorAppWhenXcodeHasBothApps(t *testing.T) {
+	developerDir := xcodeWithApps(t, "Developer/Applications/Simulator.app", "Applications/DeviceHub.app")
+
+	args, err := simulatorWindowCommand(developerDir, windowTestUDID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	simulatorApp := filepath.Join(developerDir, "Applications", "Simulator.app")
+	if args[0] != simulatorApp {
+		t.Fatalf("expected Simulator.app to be opened, got %v", args)
+	}
+}
