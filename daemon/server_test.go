@@ -14,8 +14,9 @@ import (
 )
 
 // echoDispatcher answers "echo" with its params, "fail" with an error,
-// "stream" with three notifications, and "block" by waiting for ctx.
-func echoDispatcher(blocked chan struct{}) Dispatcher {
+// "stream" with three notifications, and "block" by waiting for ctx: it
+// closes entered once it is running and blocked once ctx is cancelled.
+func echoDispatcher(entered chan struct{}, blocked chan struct{}) Dispatcher {
 	return func(ctx context.Context, method string, params json.RawMessage, notify func(any) error) (any, error) {
 		switch method {
 		case "echo":
@@ -30,6 +31,7 @@ func echoDispatcher(blocked chan struct{}) Dispatcher {
 			}
 			return map[string]string{"done": "yes"}, nil
 		case "block":
+			close(entered)
 			<-ctx.Done()
 			close(blocked)
 			return nil, ctx.Err()
@@ -45,6 +47,7 @@ func echoDispatcher(blocked chan struct{}) Dispatcher {
 type runningDaemon struct {
 	paths   FilePaths
 	done    chan error
+	entered chan struct{}
 	blocked chan struct{}
 	cancel  context.CancelFunc
 	result  error
@@ -72,13 +75,13 @@ func startTestDaemon(t *testing.T, idle time.Duration, busy func() bool) *runnin
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	rd := &runningDaemon{paths: paths, done: make(chan error, 1), blocked: make(chan struct{}), cancel: cancel}
+	rd := &runningDaemon{paths: paths, done: make(chan error, 1), entered: make(chan struct{}), blocked: make(chan struct{}), cancel: cancel}
 	go func() {
 		rd.done <- Run(ctx, Options{
 			Paths:       paths,
 			Version:     "test-1",
 			IdleTimeout: idle,
-			Dispatch:    echoDispatcher(rd.blocked),
+			Dispatch:    echoDispatcher(rd.entered, rd.blocked),
 			Busy:        busy,
 		})
 	}()
@@ -258,7 +261,7 @@ func TestShutdownCancelsInFlightHandlerContext(t *testing.T) {
 		_, err := CallStream(context.Background(), "block", nil, nil)
 		callDone <- err
 	}()
-	waitUntilHandlerIsRunning(t)
+	rd.waitUntilHandlerIsRunning(t)
 
 	require.NoError(t, Shutdown())
 
@@ -274,9 +277,13 @@ func TestShutdownCancelsInFlightHandlerContext(t *testing.T) {
 	}
 }
 
-// waitUntilHandlerIsRunning gives a call started in another goroutine time to
-// reach its handler.
-func waitUntilHandlerIsRunning(t *testing.T) {
+// waitUntilHandlerIsRunning waits for a "block" call started in another
+// goroutine to reach its handler.
+func (rd *runningDaemon) waitUntilHandlerIsRunning(t *testing.T) {
 	t.Helper()
-	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-rd.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler never started")
+	}
 }

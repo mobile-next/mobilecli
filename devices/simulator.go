@@ -803,13 +803,14 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 		timer = time.AfterFunc(time.Duration(timeLimit)*time.Second, interrupt)
 	}
 
+	var stopErr error
 	select {
 	case <-sigChan:
 		interrupt()
-		awaitRecordVideoExit(cmd, done)
+		stopErr = awaitRecordVideoExit(cmd, done)
 	case <-stopChan:
 		interrupt()
-		awaitRecordVideoExit(cmd, done)
+		stopErr = awaitRecordVideoExit(cmd, done)
 	case <-done:
 	}
 
@@ -819,25 +820,22 @@ func (s *SimulatorDevice) ScreenRecord(localOutput string, timeLimit int, stopCh
 
 	signal.Stop(sigChan)
 	close(sigChan)
-	return nil
+	return stopErr
 }
 
-// recordVideoStopTimeout bounds how long an interrupted simctl recordVideo
-// gets to finalize the video before it is killed, so a hung simctl never
-// leaves the simulator's recorder claimed. It stays under the daemon's
-// shutdown grace.
-const recordVideoStopTimeout = 8 * time.Second
-
 // awaitRecordVideoExit waits for the interrupted simctl recordVideo (cmd,
-// whose Wait result arrives on done) to exit, killing it after
-// recordVideoStopTimeout.
-func awaitRecordVideoExit(cmd *exec.Cmd, done <-chan error) {
+// whose Wait result arrives on done) to exit. A simctl that has not finalized
+// the video within recordingStopTimeout is killed and reported as an error:
+// the file it leaves behind is not a complete recording.
+func awaitRecordVideoExit(cmd *exec.Cmd, done <-chan error) error {
 	select {
 	case <-done:
-	case <-time.After(recordVideoStopTimeout):
-		utils.Info("simctl recordVideo did not stop within %s, killing it", recordVideoStopTimeout)
+		return nil
+	case <-time.After(recordingStopTimeout):
+		utils.Info("simctl recordVideo did not stop within %s, killing it", recordingStopTimeout)
 		_ = cmd.Process.Kill()
 		<-done
+		return fmt.Errorf("recording did not stop within %s and was killed", recordingStopTimeout)
 	}
 }
 

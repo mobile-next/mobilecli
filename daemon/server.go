@@ -47,9 +47,13 @@ const (
 	errCodeInvalid     = -32600
 
 	idleTick          = 10 * time.Second
-	shutdownGrace     = 10 * time.Second
 	handlerTouchEvery = 30 * time.Second
 )
+
+// ShutdownGrace is how long a stopping daemon waits for in-flight requests
+// to finish before it exits. Work that must complete on shutdown (stopping a
+// recording, cleaning up after it) has to fit inside it.
+const ShutdownGrace = 10 * time.Second
 
 type server struct {
 	opts         Options
@@ -138,7 +142,7 @@ func (s *server) waitInflight() {
 	go func() { s.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(shutdownGrace):
+	case <-time.After(ShutdownGrace):
 		utils.Info("daemon: timed out waiting for in-flight requests")
 	}
 }

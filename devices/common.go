@@ -9,10 +9,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mobile-next/mobilecli/daemon"
 	"github.com/mobile-next/mobilecli/devices/devicekit"
 	"github.com/mobile-next/mobilecli/types"
 	"github.com/mobile-next/mobilecli/utils"
 )
+
+// recordingStopTimeout bounds how long a stopped native recorder (adb
+// screenrecord, simctl recordVideo) gets to finalize its video and exit.
+// Past it the recorder is killed, so a missed or ignored stop never leaves
+// the device's recorder claimed. It is derived from the daemon's shutdown
+// grace, leaving room after it to clean up before the daemon exits.
+const recordingStopTimeout = daemon.ShutdownGrace - 2*time.Second
 
 // LogEntry represents a single parsed log entry from a device
 type LogEntry struct {

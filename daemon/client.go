@@ -155,13 +155,13 @@ func Shutdown() error {
 	if _, err := Call(methodShutdown, nil); err != nil {
 		return err
 	}
-	if err := waitForSocketGone(paths.Socket, shutdownGrace); err != nil {
+	if err := waitForSocketGone(paths.Socket, ShutdownGrace); err != nil {
 		return err
 	}
 	if info.PID == 0 || info.PID == os.Getpid() {
 		return nil
 	}
-	return pollUntil(shutdownGrace, func() bool { return !processExists(info.PID) }, "daemon process did not exit")
+	return pollUntil(ShutdownGrace, func() bool { return !processExists(info.PID) }, "daemon process did not exit")
 }
 
 // WaitForSocket polls until something accepts connections on the socket.
