@@ -557,7 +557,15 @@ wscat -c ws://localhost:12000/ws
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Requires the on-device agent. Install it with `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision`. A valid Apple provisioning profile is needed to re-sign the agent for your device.
+
+The on-device agent requires a valid development provisioning profile for your device and a corresponding signing certificate with its private key in your Mac's keychain:
+
+```bash
+mobilecli agent install --device <device-id> \
+  --provisioning-profile "/path/to/profile.mobileprovision"
+```
+
+Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App ID profiles (e.g. Xcode-managed) are supported too: the agent is renamed to the profile's bundle ID, which must end with `com.mobilenext.devicekit-iosUITests.xctrunner`.
 
 ## Development 👩‍💻
 

@@ -253,6 +253,8 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
+// installAgentOnRealIOS downloads the runner, re-signs it using the supplied
+// provisioning profile and its bundle identifier, and installs it on the device.
 func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfile string) error {
 	filename := "devicekit-ios-runner.ipa"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
@@ -265,7 +267,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfil
 
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
 		utils.Verbose("re-signing agent with provisioning profile %s", provisioningProfile)
-		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "")
+		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "", utils.ResignOptions{RequiredBundleIDSuffix: iosRunnerBundleID})
 		if err != nil {
 			return "", fmt.Errorf("failed to re-sign agent: %w", err)
 		}
