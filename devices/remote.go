@@ -208,7 +208,7 @@ func (r *RemoteDevice) TerminateApp(bundleID string) error {
 	return r.fireRPC("device.apps.terminate", params{"bundleId": bundleID})
 }
 
-func (r *RemoteDevice) Boot() error {
+func (r *RemoteDevice) Boot(_ BootOptions) error {
 	return r.fireRPC("device.boot", params{})
 }
 

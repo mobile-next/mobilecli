@@ -183,6 +183,12 @@ const (
 	FormatAVC   = "avc"
 )
 
+// BootOptions controls how a simulator/emulator is booted
+type BootOptions struct {
+	// Headed shows the device window; by default the device boots hidden
+	Headed bool
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -193,8 +199,8 @@ type ControllableDevice interface {
 
 	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
 	Reboot() error
-	Boot() error     // boot simulator/emulator
-	Shutdown() error // shutdown simulator/emulator
+	Boot(opts BootOptions) error // boot simulator/emulator
+	Shutdown() error             // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
 	Swipe(x1, y1, x2, y2, duration int) error

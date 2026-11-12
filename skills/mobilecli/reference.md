@@ -20,6 +20,8 @@ All commands support the global `--device <id>` flag to specify the target devic
 * **Boot Device** (start an offline simulator or emulator):
   ```bash
   mobilecli device boot --device <device-id>
+  # the device boots without a window; add --headed to show it
+  mobilecli device boot --device <device-id> --headed
   ```
 * **Shutdown / Reboot**:
   ```bash

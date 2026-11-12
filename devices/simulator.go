@@ -433,7 +433,7 @@ func (s *SimulatorDevice) getState() (string, error) {
 }
 
 // Boot boots the iOS simulator
-func (s *SimulatorDevice) Boot() error {
+func (s *SimulatorDevice) Boot(opts BootOptions) error {
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
@@ -445,30 +445,39 @@ func (s *SimulatorDevice) Boot() error {
 
 	if state == "Booting" {
 		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
-		output, err := runSimctl("bootstatus", s.UDID)
+	} else {
+		utils.Verbose("Booting simulator %s...", s.UDID)
+		output, err := runSimctl("boot", s.UDID)
 		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+			return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 		}
 
-		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = simStateBooted
-		return nil
+		utils.Verbose("Waiting for simulator to finish booting...")
 	}
 
-	utils.Verbose("Booting simulator %s...", s.UDID)
-	output, err := runSimctl("boot", s.UDID)
-	if err != nil {
-		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
-	}
-
-	utils.Verbose("Waiting for simulator to finish booting...")
-	output, err = runSimctl("bootstatus", s.UDID)
+	output, err := runSimctl("bootstatus", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
 
 	utils.Verbose("Simulator booted successfully")
 	s.Simulator.State = simStateBooted
+
+	if opts.Headed {
+		return s.showWindow()
+	}
+
+	return nil
+}
+
+// showWindow opens Simulator.app, which shows a window for every booted simulator
+func (s *SimulatorDevice) showWindow() error {
+	cmd := exec.CommandContext(context.Background(), "open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", s.UDID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to open Simulator.app: %w\n%s", s.UDID, err, output)
+	}
+
 	return nil
 }
 

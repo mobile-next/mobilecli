@@ -163,6 +163,9 @@ Note that screencapture is one way. You will have to use `io tap` commands to ta
 # Boot an offline emulator or simulator
 mobilecli device boot --device <device-id>
 
+# Boot it with a visible window
+mobilecli device boot --device <device-id> --headed
+
 # Shutdown a running emulator or simulator
 mobilecli device shutdown --device <device-id>
 

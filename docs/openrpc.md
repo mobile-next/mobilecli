@@ -357,6 +357,7 @@ Boots the specified device (simulators/emulators only)
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
+| `headed` | `boolean` |  | Show the simulator or emulator window. Defaults to false, which boots the device without a window |
 
 #### Response
 
@@ -371,7 +372,8 @@ Boot operation result
   "jsonrpc": "2.0",
   "method": "device.boot",
   "params": {
-    "deviceId": "string"
+    "deviceId": "string",
+    "headed": false
   },
   "id": 1
 }

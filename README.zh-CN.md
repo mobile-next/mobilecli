@@ -117,6 +117,9 @@ mobilecli screencapture --device <device-id> --format mjpeg | ffplay -
 # Boot an offline emulator or simulator
 mobilecli device boot --device <device-id>
 
+# Boot it with a visible window
+mobilecli device boot --device <device-id> --headed
+
 # Shutdown a running emulator or simulator
 mobilecli device shutdown --device <device-id>
 
