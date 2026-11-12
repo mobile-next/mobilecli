@@ -38,7 +38,7 @@ func TestWindowOpensSimulatorAppOnTheBootedDevice(t *testing.T) {
 	}
 }
 
-func TestWindowOpensDeviceHubWhenXcodeHasNoSimulatorApp(t *testing.T) {
+func TestWindowOpensDeviceHubOnTheBootedDeviceWhenXcodeHasNoSimulatorApp(t *testing.T) {
 	developerDir := xcodeWithApps(t, "Applications/DeviceHub.app")
 
 	args, err := simulatorWindowCommand(developerDir, windowTestUDID)
@@ -46,7 +46,8 @@ func TestWindowOpensDeviceHubWhenXcodeHasNoSimulatorApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := []string{filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")}
+	deviceHubApp := filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")
+	expected := []string{"-a", deviceHubApp, "devices://device/open?id=" + windowTestUDID}
 	if !slices.Equal(args, expected) {
 		t.Fatalf("expected %v, got %v", expected, args)
 	}

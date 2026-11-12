@@ -479,10 +479,10 @@ func simulatorWindowCommand(developerDir, udid string) ([]string, error) {
 		return []string{simulatorApp, "--args", "-CurrentDeviceUDID", udid}, nil
 	}
 
-	// Device Hub has no known way to select a device, so it is only opened
+	// Device Hub opens on its last selected device, so ask it for this device's window
 	deviceHubApp := filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")
 	if _, err := os.Stat(deviceHubApp); err == nil {
-		return []string{deviceHubApp}, nil
+		return []string{"-a", deviceHubApp, "devices://device/open?id=" + udid}, nil
 	}
 
 	return nil, fmt.Errorf("neither Simulator.app nor DeviceHub.app found in the Xcode at %s", developerDir)
