@@ -470,12 +470,39 @@ func (s *SimulatorDevice) Boot(opts BootOptions) error {
 	return nil
 }
 
-// showWindow opens Simulator.app, which shows a window for every booted simulator
+// simulatorWindowCommand returns the "open" arguments that show the simulator's
+// window, using the app that ships with the Xcode at developerDir. Xcode up to 26
+// ships Simulator.app; Xcode 27 replaced it with Device Hub.
+func simulatorWindowCommand(developerDir, udid string) ([]string, error) {
+	simulatorApp := filepath.Join(developerDir, "Applications", "Simulator.app")
+	if _, err := os.Stat(simulatorApp); err == nil {
+		return []string{simulatorApp, "--args", "-CurrentDeviceUDID", udid}, nil
+	}
+
+	// Device Hub has no known way to select a device, so it is only opened
+	deviceHubApp := filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")
+	if _, err := os.Stat(deviceHubApp); err == nil {
+		return []string{deviceHubApp}, nil
+	}
+
+	return nil, fmt.Errorf("neither Simulator.app nor DeviceHub.app found in the Xcode at %s", developerDir)
+}
+
+// showWindow opens the app that shows simulator windows: Simulator.app, or Device Hub
 func (s *SimulatorDevice) showWindow() error {
-	cmd := exec.CommandContext(context.Background(), "open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", s.UDID)
-	output, err := cmd.CombinedOutput()
+	output, err := exec.CommandContext(context.Background(), "xcode-select", "-p").Output()
 	if err != nil {
-		return fmt.Errorf("simulator %s booted, but failed to open Simulator.app: %w\n%s", s.UDID, err, output)
+		return fmt.Errorf("simulator %s booted, but failed to locate Xcode to show its window: %w", s.UDID, err)
+	}
+
+	openArgs, err := simulatorWindowCommand(strings.TrimSpace(string(output)), s.UDID)
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w", s.UDID, err)
+	}
+
+	output, err = exec.CommandContext(context.Background(), "open", openArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w\n%s", s.UDID, err, output)
 	}
 
 	return nil
