@@ -47,9 +47,13 @@ const (
 	errCodeInvalid     = -32600
 
 	idleTick          = 10 * time.Second
-	shutdownGrace     = 10 * time.Second
 	handlerTouchEvery = 30 * time.Second
 )
+
+// ShutdownGrace is how long a stopping daemon waits for in-flight requests
+// to finish before it exits. Work that must complete on shutdown (stopping a
+// recording, cleaning up after it) has to fit inside it.
+const ShutdownGrace = 10 * time.Second
 
 type server struct {
 	opts         Options
@@ -59,6 +63,10 @@ type server struct {
 	wg           sync.WaitGroup
 	shutdown     chan struct{}
 	shutdownOnce sync.Once
+	// handlers is the parent of every request's context; cancelling it on
+	// shutdown stops in-flight streams (a recording finalizes and cleans up)
+	handlers       context.Context
+	cancelHandlers context.CancelFunc
 }
 
 // Run listens on the unix socket and serves until ctx is cancelled, the idle
@@ -85,7 +93,9 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("restrict %s: %w", opts.Paths.Socket, err)
 	}
 
-	s := &server{opts: opts, startedAt: time.Now(), shutdown: make(chan struct{})}
+	handlers, cancelHandlers := context.WithCancel(context.Background())
+	defer cancelHandlers()
+	s := &server{opts: opts, startedAt: time.Now(), shutdown: make(chan struct{}), handlers: handlers, cancelHandlers: cancelHandlers}
 	s.touch()
 
 	if err := writePidFile(opts.Paths.Pid, pidInfo{PID: os.Getpid(), Version: opts.Version, StartedAt: s.startedAt}); err != nil {
@@ -111,6 +121,9 @@ func Run(ctx context.Context, opts Options) error {
 	// join the accept loop first: once it has returned no more wg.Add calls
 	// can race with the wg.Wait inside waitInflight
 	<-accepting
+	// stop in-flight requests as if their clients went away, so a recording
+	// stops and cleans up instead of outliving the daemon on the device
+	s.cancelHandlers()
 	s.waitInflight()
 	if opts.OnShutdown != nil {
 		opts.OnShutdown()
@@ -129,7 +142,7 @@ func (s *server) waitInflight() {
 	go func() { s.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(shutdownGrace):
+	case <-time.After(ShutdownGrace):
 		utils.Info("daemon: timed out waiting for in-flight requests")
 	}
 }
@@ -205,7 +218,7 @@ func (s *server) handleConn(conn net.Conn) {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.handlers)
 	defer cancel()
 	go cancelOnDisconnect(conn, cancel)
 

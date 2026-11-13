@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 			Paths:       paths,
 			Version:     os.Getenv(testDaemonVersionEnv),
 			IdleTimeout: time.Minute,
-			Dispatch:    echoDispatcher(make(chan struct{})),
+			Dispatch:    echoDispatcher(make(chan struct{}), make(chan struct{})),
 		})
 		if err != nil {
 			os.Exit(3)
