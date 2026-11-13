@@ -1286,6 +1286,26 @@ func (d *IOSDevice) SetAppearance(appearance string) error {
 	return d.deviceKitClient.SetAppearance(appearance)
 }
 
+// GetVoiceOver reports whether VoiceOver is running (iOS 27+)
+func (d *IOSDevice) GetVoiceOver() (bool, error) {
+	return d.deviceKitClient.GetVoiceOver()
+}
+
+// SetVoiceOver turns VoiceOver on or off (iOS 27+)
+func (d *IOSDevice) SetVoiceOver(enabled bool) error {
+	return d.deviceKitClient.SetVoiceOver(enabled)
+}
+
+// VoiceOverSpeech returns what VoiceOver speaks for the focused element
+func (d *IOSDevice) VoiceOverSpeech() (string, error) {
+	return d.deviceKitClient.VoiceOverSpeech()
+}
+
+// MoveVoiceOver moves the VoiceOver cursor and returns what it speaks
+func (d *IOSDevice) MoveVoiceOver(direction string) (string, error) {
+	return d.deviceKitClient.MoveVoiceOver(direction)
+}
+
 // DeviceKitInfo contains information about the started DeviceKit session
 type DeviceKitInfo struct {
 	HTTPPort   int `json:"httpPort"`

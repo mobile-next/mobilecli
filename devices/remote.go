@@ -254,6 +254,35 @@ func (r *RemoteDevice) SetAppearance(appearance string) error {
 	return r.fireRPC("device.settings.apply", params{"appearance": appearance})
 }
 
+// The VoiceOver methods forward to the fleet's mobilecli, which drives the
+// device's agent; a fleet without them answers "method not found".
+
+func (r *RemoteDevice) GetVoiceOver() (bool, error) {
+	resp, err := rpcCall[struct {
+		Enabled bool `json:"enabled"`
+	}](r, "device.voiceover.get", params{})
+	return resp.Enabled, err
+}
+
+func (r *RemoteDevice) SetVoiceOver(enabled bool) error {
+	return r.fireRPC("device.voiceover.set", params{"enabled": enabled})
+}
+
+func (r *RemoteDevice) VoiceOverSpeech() (string, error) {
+	return r.voiceOverUtterance("device.voiceover.speech", params{})
+}
+
+func (r *RemoteDevice) MoveVoiceOver(direction string) (string, error) {
+	return r.voiceOverUtterance("device.voiceover.move", params{"direction": direction})
+}
+
+func (r *RemoteDevice) voiceOverUtterance(method string, extra params) (string, error) {
+	resp, err := rpcCall[struct {
+		Utterance string `json:"utterance"`
+	}](r, method, extra)
+	return resp.Utterance, err
+}
+
 func (r *RemoteDevice) Info() (*FullDeviceInfo, error) {
 	return rpcCall[*FullDeviceInfo](r, "device.info", params{})
 }

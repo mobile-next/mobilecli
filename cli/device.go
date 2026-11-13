@@ -82,6 +82,47 @@ var deviceFoldCmd = &cobra.Command{
 	},
 }
 
+var voiceOverCmd = &cobra.Command{
+	Use:   "voiceover",
+	Short: "VoiceOver commands",
+	Long:  `Commands for turning VoiceOver on and off, reading what it speaks, and moving its cursor. Supported on iOS 27+ simulators and real devices. VoiceOver stays on after mobilecli exits, and while it is on a tap focuses an element instead of activating it.`,
+}
+
+var voiceOverGetCmd = &cobra.Command{
+	Use:   "get",
+	Short: "Get whether VoiceOver is on",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.device.voiceover.get", commands.VoiceOverGetRequest{DeviceID: deviceId})
+	},
+}
+
+var voiceOverSetCmd = &cobra.Command{
+	Use:   "set [on|off]",
+	Short: "Turn VoiceOver on or off",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.device.voiceover.set", commands.VoiceOverSetRequest{DeviceID: deviceId, State: args[0]})
+	},
+}
+
+var voiceOverSpeechCmd = &cobra.Command{
+	Use:   "speech",
+	Short: "Read what VoiceOver speaks for the focused element",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.device.voiceover.speech", commands.VoiceOverSpeechRequest{DeviceID: deviceId})
+	},
+}
+
+var voiceOverMoveCmd = &cobra.Command{
+	Use:   "move [next|previous|in|out]",
+	Short: "Move the VoiceOver cursor and read what it speaks",
+	Long:  `Moves the VoiceOver cursor to the next or previous element, or into or out of a container, and prints what VoiceOver speaks there. "in" and "out" need VoiceOver's Navigation Style set to Groups.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.device.voiceover.move", commands.VoiceOverMoveRequest{DeviceID: deviceId, Direction: args[0]})
+	},
+}
+
 var bootHeaded bool
 
 var deviceBootCmd = &cobra.Command{
@@ -151,11 +192,17 @@ func init() {
 	deviceCmd.AddCommand(deviceShutdownCmd)
 	deviceCmd.AddCommand(orientationCmd)
 	deviceCmd.AddCommand(deviceFoldCmd)
+	deviceCmd.AddCommand(voiceOverCmd)
 	deviceCmd.AddCommand(settingsCmd)
 
 	// add orientation subcommands
 	orientationCmd.AddCommand(orientationGetCmd)
 	orientationCmd.AddCommand(orientationSetCmd)
+
+	voiceOverCmd.AddCommand(voiceOverGetCmd)
+	voiceOverCmd.AddCommand(voiceOverSetCmd)
+	voiceOverCmd.AddCommand(voiceOverSpeechCmd)
+	voiceOverCmd.AddCommand(voiceOverMoveCmd)
 
 	// add settings subcommands
 	settingsCmd.AddCommand(settingsApplyCmd)
@@ -169,6 +216,10 @@ func init() {
 	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")
 	deviceFoldCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to fold or unfold")
+	voiceOverGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get the VoiceOver state from")
+	voiceOverSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to turn VoiceOver on or off")
+	voiceOverSpeechCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to read VoiceOver speech from")
+	voiceOverMoveCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to move the VoiceOver cursor on")
 	settingsApplyCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to apply settings to")
 	settingsApplyCmd.Flags().StringVar(&settingsAnimations, "animations", "", "Toggle system animations: 'on' or 'off'")
 	settingsApplyCmd.Flags().StringVar(&settingsAppearance, "appearance", "", "System appearance: 'light' or 'dark'")
