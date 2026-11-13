@@ -165,6 +165,52 @@ func TestJavaCrashWithConstructorFrame(t *testing.T) {
 	assert.Equal(t, "com.example.myapp.MyService", crashes[0].ProcessName)
 }
 
+// a uiautomator crash taken from an emulator: the exception surfaces in the
+// framework, and the crashing program's own code is further down the stack
+const uiautomatorCrashLog = `2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: FATAL EXCEPTION: main
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: PID: 30490
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: java.lang.IllegalStateException: UiAutomationService android.accessibilityservice.IAccessibilityServiceClient$Stub$Proxy@d09dec2already registered!
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3348)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at android.os.Parcel.createException(Parcel.java:3324)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at android.view.accessibility.IAccessibilityManager$Stub$Proxy.registerUiTestAutomationService(IAccessibilityManager.java:1154)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at android.app.UiAutomation.connect(UiAutomation.java:331)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at com.android.uiautomator.core.UiAutomationShellWrapper.connect(UiAutomationShellWrapper.java:36)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at com.android.commands.uiautomator.DumpCommand.run(DumpCommand.java:78)
+2026-10-03 00:43:17.468 30490 30490 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit.main(RuntimeInit.java:371)`
+
+func TestJavaCrashWithoutProcessLineSkipsFrameworkFrames(t *testing.T) {
+	crashes := ParseAndroidCrashLog(uiautomatorCrashLog)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "com.android.uiautomator.core.UiAutomationShellWrapper", crashes[0].ProcessName)
+}
+
+func TestJavaCrashSkipsJavaAndKotlinFramesToFindTheAppFrame(t *testing.T) {
+	log := `2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: FATAL EXCEPTION: main
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: java.lang.NumberFormatException: For input string: "x"
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at java.lang.Integer.parseInt(Integer.java:797)
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at kotlin.text.StringsKt__StringNumberConversionsJVMKt.toInt(StringNumberConversionsJVM.kt:10)
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at androidx.fragment.app.Fragment.performCreate(Fragment.java:3094)
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at com.example.myapp.SettingsFragment.onCreate(SettingsFragment.kt:21)`
+
+	crashes := ParseAndroidCrashLog(log)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "com.example.myapp.SettingsFragment", crashes[0].ProcessName)
+}
+
+func TestJavaCrashWithOnlyFrameworkFramesFallsBackToTheFirstFrame(t *testing.T) {
+	log := `2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: FATAL EXCEPTION: main
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: java.lang.RuntimeException
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:288)
+2026-03-27 14:00:00.000 12345 12345 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1004)`
+
+	crashes := ParseAndroidCrashLog(log)
+
+	require.Len(t, crashes, 1)
+	assert.Equal(t, "android.os.Looper", crashes[0].ProcessName)
+}
+
 func TestExtractedNativeCrashDoesNotIncludeJavaCrash(t *testing.T) {
 	content, err := ExtractAndroidCrash(sampleCrashLog, "2026-03-02_10:58:32.108_1300")
 
