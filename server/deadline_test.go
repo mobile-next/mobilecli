@@ -12,11 +12,13 @@ import (
 // on devices where the install took longer than the default WriteTimeout.
 func TestExtendedWriteDeadlineForSlowMethods(t *testing.T) {
 	slowMethods := map[string]time.Duration{
-		"device.boot":              3 * time.Minute,
-		"device.apps.install":      3 * time.Minute,
-		"device.apps.uninstall":    3 * time.Minute,
-		"device.screenrecord.stop": 35 * time.Second,
-		"device.dump.ui":           60 * time.Second,
+		"device.boot":               3 * time.Minute,
+		"device.apps.install":       3 * time.Minute,
+		"device.apps.uninstall":     3 * time.Minute,
+		"device.screenrecord.stop":  35 * time.Second,
+		"device.io.keyboard.status": 60 * time.Second,
+		"device.io.keyboard.hide":   60 * time.Second,
+		"device.dump.ui":            60 * time.Second,
 	}
 
 	for method, want := range slowMethods {

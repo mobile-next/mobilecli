@@ -13,7 +13,7 @@ import (
 const (
 	// screenRecordReadyTimeout bounds how long a start waits for the recording
 	// to be confirmed live before giving up. Sized generously above a
-	// worst-case cold DeviceKit start on real iOS devices (WDA/app launch +
+	// worst-case cold DeviceKit start on real iOS devices (agent/app launch +
 	// two 10s broadcast-picker button polls + the 5s post-click TCP wait).
 	screenRecordReadyTimeout = 60 * time.Second
 

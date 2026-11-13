@@ -20,16 +20,16 @@ type AgentInstallRequest struct {
 }
 
 const (
-	agentVersionIOS   = "0.0.36"
+	agentVersionIOS   = "0.0.38"
 	iosRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
 	noAgentForAndroid = "no agent needed for android devices"
 )
 
 // pinned SHA-256 checksums for agent artifacts, keyed by download filename
 var agentChecksums = map[string]string{
-	"devicekit-ios-Sim-arm64.zip":  "f7ce6b8f496e4fb7abb4917f4492152d8629aa61f6cb98ab50f2000f5c07cf5c",
-	"devicekit-ios-Sim-x86_64.zip": "405bcc5536eb2e2f3b187c83e4265c87afd98d36c8f3318c41fa609a6ec59902",
-	"devicekit-ios-runner.ipa":     "951870bd8c1ee668345008d1803b14fd1e5bc4ee31d08e9581c29cf8f75cf3d3",
+	"devicekit-ios-Sim-arm64.zip":  "2eb7d66af4023f209e53a9305273198aa343249f35bbc601e8a927a290b4b076",
+	"devicekit-ios-Sim-x86_64.zip": "063a2c7457638d12a493e79546a8825ec1914d6415398fbf941454ad814a8eb3",
+	"devicekit-ios-runner.ipa":     "33af1d6b64c2ce8f8775e88b1cf339162aba9d67b6650d8b4058bf1050ee61e2",
 }
 
 // AgentMessageResponse is the data of agent status/uninstall responses.
@@ -107,6 +107,10 @@ func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
 				return agentStatusResponse("Agent is already installed", agent)
 			}
 
+			if err := requireProvisioningProfile(device, req.ProvisioningProfile); err != nil {
+				return NewErrorResponse(err)
+			}
+
 			utils.Verbose("installed agent version %s differs from expected %s, uninstalling before reinstall", agent.Version, expectedVersion)
 			if _, err := device.UninstallApp(agent.PackageName); err != nil {
 				return NewErrorResponse(fmt.Errorf("failed to uninstall existing agent: %w", err))
@@ -132,8 +136,8 @@ func installAgent(device devices.ControllableDevice, provisioningProfile string)
 		case devices.DeviceTypeSimulator:
 			return installAgentOnSimulator(device)
 		case devices.DeviceTypeReal:
-			if provisioningProfile == "" {
-				return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+			if err := requireProvisioningProfile(device, provisioningProfile); err != nil {
+				return err
 			}
 			return installAgentOnRealIOS(device, provisioningProfile)
 		default:
@@ -142,6 +146,15 @@ func installAgent(device devices.ControllableDevice, provisioningProfile string)
 	default:
 		return fmt.Errorf("unsupported platform: %s", device.Platform())
 	}
+}
+
+// requireProvisioningProfile runs before an old agent is removed, so a missing
+// profile cannot leave a real device with no agent.
+func requireProvisioningProfile(device devices.ControllableDevice, provisioningProfile string) error {
+	if device.DeviceType() == devices.DeviceTypeReal && provisioningProfile == "" {
+		return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+	}
+	return nil
 }
 
 // AgentUninstallCommand removes the on-device agent.
@@ -240,6 +253,8 @@ func installAgentOnSimulator(device devices.ControllableDevice) error {
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
 }
 
+// installAgentOnRealIOS downloads the runner, re-signs it using the supplied
+// provisioning profile and its bundle identifier, and installs it on the device.
 func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfile string) error {
 	filename := "devicekit-ios-runner.ipa"
 	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
@@ -252,7 +267,7 @@ func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfil
 
 	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
 		utils.Verbose("re-signing agent with provisioning profile %s", provisioningProfile)
-		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "")
+		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "", utils.ResignOptions{RequiredBundleIDSuffix: iosRunnerBundleID})
 		if err != nil {
 			return "", fmt.Errorf("failed to re-sign agent: %w", err)
 		}

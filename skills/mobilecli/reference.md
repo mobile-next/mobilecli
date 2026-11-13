@@ -20,6 +20,8 @@ All commands support the global `--device <id>` flag to specify the target devic
 * **Boot Device** (start an offline simulator or emulator):
   ```bash
   mobilecli device boot --device <device-id>
+  # the device boots without a window; add --headed to show it
+  mobilecli device boot --device <device-id> --headed
   ```
 * **Shutdown / Reboot**:
   ```bash
@@ -51,6 +53,10 @@ All commands support the global `--device <id>` flag to specify the target devic
 * **Launch / Terminate**:
   ```bash
   mobilecli apps launch <bundle-id> --device <device-id>
+  # iOS: repeat --arg and --env as needed
+  mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
+  # Android: each --arg is key=value and is passed as a string intent extra (--es key value)
+  mobilecli apps launch <package-name> --device <device-id> --arg featureX=true
   mobilecli apps terminate <bundle-id> --device <device-id>
   ```
 * **Install / Uninstall**:
@@ -148,7 +154,7 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Raw XML/JSON source from agent
   mobilecli dump ui --device <device-id> --format raw
 
-  # Include elements normally left out, such as the on-screen keyboard (Android)
+  # Include elements normally left out, such as the on-screen keyboard and status bar (Android)
   mobilecli dump ui --device <device-id> --full
   ```
 * **List Webviews**:

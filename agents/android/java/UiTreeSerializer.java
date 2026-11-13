@@ -11,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
@@ -18,6 +19,8 @@ import java.util.concurrent.TimeoutException;
 class UiTreeSerializer {
 
 	private static final String TAG = "UiTreeSerializer";
+
+	private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
 
 	// The UI must be quiet for this long before waitForIdle returns, bounded by
 	// the caller-supplied global timeout. Mirrors UiDevice.waitForIdle semantics.
@@ -38,6 +41,7 @@ class UiTreeSerializer {
 		clearNodeCache(automation);
 
 		List<AccessibilityNodeInfo> roots = new ArrayList<>();
+		boolean activeWindowIsSystemUi = false;
 		for (AccessibilityWindowInfo window : automation.getWindows()) {
 			// The soft keyboard is noise for most callers: skip IME windows unless asked for a full dump.
 			if (!full && window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
@@ -45,8 +49,19 @@ class UiTreeSerializer {
 				continue;
 			}
 			AccessibilityNodeInfo root = window.getRoot();
-			if (root != null) roots.add(root);
+			boolean active = window.isActive();
 			window.recycle();
+			if (root == null) {
+				continue;
+			}
+			if (active && isSystemUi(root)) {
+				activeWindowIsSystemUi = true;
+			}
+			roots.add(root);
+		}
+
+		if (!full && !activeWindowIsSystemUi) {
+			dropSystemUiBesideApps(roots);
 		}
 
 		// Windows can be present yet expose null roots (not queryable at the
@@ -65,6 +80,38 @@ class UiTreeSerializer {
 		} finally {
 			for (AccessibilityNodeInfo root : roots) root.recycle();
 		}
+	}
+
+	// The status bar clock ticks every second, so a dump with it never matches the
+	// one before. It is only noise next to an app: on the lock screen, the
+	// notification shade, or mid launch before the app has a window, System UI is
+	// the screen itself and stays.
+	@SuppressWarnings("deprecation") // recycle() is a no-op on API 33+, still frees pools below
+	private static void dropSystemUiBesideApps(List<AccessibilityNodeInfo> roots) {
+		boolean hasApp = false;
+		for (AccessibilityNodeInfo root : roots) {
+			if (!isSystemUi(root)) {
+				hasApp = true;
+				break;
+			}
+		}
+		if (!hasApp) {
+			return;
+		}
+		Iterator<AccessibilityNodeInfo> it = roots.iterator();
+		while (it.hasNext()) {
+			AccessibilityNodeInfo root = it.next();
+			if (isSystemUi(root)) {
+				root.recycle();
+				it.remove();
+			}
+		}
+	}
+
+	// Status bar, navigation bar and notification shade all belong to System UI.
+	private static boolean isSystemUi(AccessibilityNodeInfo root) {
+		CharSequence packageName = root.getPackageName();
+		return packageName != null && SYSTEM_UI_PACKAGE.contentEquals(packageName);
 	}
 
 	// This connection is long-lived, so node reads are served from the framework's

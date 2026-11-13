@@ -4,7 +4,7 @@
 
 static int mobilecli_port = 0;
 
-// callable from lldb after dlopen:  expr (int)mobilecli_get_port()
+// called by whatever injected the agent, to learn the port its server bound
 __attribute__((visibility("default")))
 int mobilecli_get_port(void) { return mobilecli_port; }
 

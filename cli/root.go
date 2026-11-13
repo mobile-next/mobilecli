@@ -33,6 +33,9 @@ var rootCmd = &cobra.Command{
   # Boot an offline emulator/simulator device
   mobilecli device boot --device <device-id>
 
+  # Boot it with a visible window
+  mobilecli device boot --device <device-id> --headed
+
   # Shutdown a running emulator/simulator device
   mobilecli device shutdown --device <device-id>
 

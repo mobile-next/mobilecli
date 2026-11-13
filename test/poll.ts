@@ -15,11 +15,24 @@ const POLL_OPTIONS = {
 	intervals: new Array(ATTEMPTS).fill(INTERVAL_MS),
 };
 
+// What a read that threw resolves to, so the poll keeps going and a timeout
+// shows the last error as the received value.
+type FailedRead = {readFailed: string};
+
+function readOrFailure<T>(read: () => T): T | FailedRead {
+	try {
+		return read();
+	} catch (error) {
+		return {readFailed: String(error)};
+	}
+}
+
 // Reads the device repeatedly until the assertion chained onto it passes:
 //
 //   await eventually(() => foregroundPackage(id), 'settings never came up').toBe(SETTINGS_PACKAGE);
 //
-// The returned value is a normal expect matcher, so any assertion works.
+// The returned value is a normal expect matcher, so any assertion works. A read
+// that throws, like a dump taken while an app is still starting, is retried too.
 export function eventually<T>(read: () => T, message: string) {
-	return expect.poll(read, {...POLL_OPTIONS, message});
+	return expect.poll(() => readOrFailure(read), {...POLL_OPTIONS, message});
 }

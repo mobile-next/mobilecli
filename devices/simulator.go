@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,7 +99,7 @@ func (s SimulatorDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints, opts.ScreenHeightPoints)
 }
 
 // Reboot shuts down and then boots the iOS simulator.
@@ -127,8 +128,17 @@ func (s SimulatorDevice) Reboot() error {
 
 // runSimctl executes xcrun simctl with the provided arguments
 func runSimctl(args ...string) ([]byte, error) {
+	return runSimctlWithEnv(nil, args...)
+}
+
+// runSimctlWithEnv runs simctl with extra environment variables added to the
+// current environment.
+func runSimctlWithEnv(env []string, args ...string) ([]byte, error) {
 	fullArgs := append([]string{"simctl"}, args...)
 	cmd := exec.CommandContext(context.Background(), "xcrun", fullArgs...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute xcrun simctl command: %w", err)
@@ -251,7 +261,7 @@ func removeSimulatorAgentDiagnostics(homeDir string, udid string, exceptPath str
 	entries, err := os.ReadDir(diagnosticsDirectory)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			utils.Verbose("Failed to read WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to read DeviceKit agent startup diagnostics: %v", err)
 		}
 		return
 	}
@@ -267,7 +277,7 @@ func removeSimulatorAgentDiagnostics(homeDir string, udid string, exceptPath str
 		}
 
 		if err := os.Remove(diagnosticPath); err != nil && !os.IsNotExist(err) {
-			utils.Verbose("Failed to remove WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to remove DeviceKit agent startup diagnostics: %v", err)
 		}
 	}
 }
@@ -276,12 +286,34 @@ func (s SimulatorDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if opts.Activity != "" {
 		return fmt.Errorf("--activity is not supported on iOS")
 	}
-	args := []string{"launch", s.UDID, bundleID}
+	_, err := runSimctlWithEnv(simctlLaunchEnv(opts.Env), simctlLaunchArgs(s.UDID, bundleID, opts)...)
+	return err
+}
+
+// simctlLaunchArgs builds the `simctl launch` command line. Everything after the
+// bundle id is passed to the app as its arguments.
+func simctlLaunchArgs(udid, bundleID string, opts LaunchOptions) []string {
+	args := []string{"launch", udid, bundleID}
 	if len(opts.Locales) > 0 {
 		args = append(args, "-AppleLanguages", "("+strings.Join(opts.Locales, ", ")+")")
 	}
-	_, err := runSimctl(args...)
-	return err
+	return append(args, opts.Arguments...)
+}
+
+// simctlLaunchEnv turns app environment variables into the SIMCTL_CHILD_ form
+// that simctl launch passes to the launched app, sorted for stable output.
+func simctlLaunchEnv(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	result := make([]string, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, "SIMCTL_CHILD_"+k+"="+env[k])
+	}
+	return result
 }
 
 // TerminateApp stops a running app. `xcrun simctl terminate` exits with
@@ -304,7 +336,7 @@ func (s SimulatorDevice) TerminateApp(bundleID string) error {
 	if strings.HasSuffix(bundleID, agentRunnerBundleID) {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			utils.Verbose("Failed to locate WebDriverAgent startup diagnostics: %v", err)
+			utils.Verbose("Failed to locate DeviceKit agent startup diagnostics: %v", err)
 		} else {
 			removeSimulatorAgentDiagnostics(homeDir, s.UDID, "")
 		}
@@ -433,7 +465,7 @@ func (s *SimulatorDevice) getState() (string, error) {
 }
 
 // Boot boots the iOS simulator
-func (s *SimulatorDevice) Boot() error {
+func (s *SimulatorDevice) Boot(opts BootOptions) error {
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
@@ -445,30 +477,66 @@ func (s *SimulatorDevice) Boot() error {
 
 	if state == "Booting" {
 		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
-		output, err := runSimctl("bootstatus", s.UDID)
+	} else {
+		utils.Verbose("Booting simulator %s...", s.UDID)
+		output, err := runSimctl("boot", s.UDID)
 		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+			return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 		}
 
-		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = simStateBooted
-		return nil
+		utils.Verbose("Waiting for simulator to finish booting...")
 	}
 
-	utils.Verbose("Booting simulator %s...", s.UDID)
-	output, err := runSimctl("boot", s.UDID)
-	if err != nil {
-		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
-	}
-
-	utils.Verbose("Waiting for simulator to finish booting...")
-	output, err = runSimctl("bootstatus", s.UDID)
+	output, err := runSimctl("bootstatus", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
 
 	utils.Verbose("Simulator booted successfully")
 	s.Simulator.State = simStateBooted
+
+	if opts.Headed {
+		return s.showWindow()
+	}
+
+	return nil
+}
+
+// simulatorWindowCommand returns the "open" arguments that show the simulator's
+// window, using the app that ships with the Xcode at developerDir. Xcode up to 26
+// ships Simulator.app; Xcode 27 replaced it with Device Hub.
+func simulatorWindowCommand(developerDir, udid string) ([]string, error) {
+	simulatorApp := filepath.Join(developerDir, "Applications", "Simulator.app")
+	if _, err := os.Stat(simulatorApp); err == nil {
+		return []string{simulatorApp, "--args", "-CurrentDeviceUDID", udid}, nil
+	}
+
+	// Device Hub opens on its last selected device, so ask it for this device's window
+	deviceHubApp := filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")
+	if _, err := os.Stat(deviceHubApp); err == nil {
+		return []string{"-a", deviceHubApp, "devices://device/open?id=" + udid}, nil
+	}
+
+	return nil, fmt.Errorf("neither Simulator.app nor DeviceHub.app found in the Xcode at %s", developerDir)
+}
+
+// showWindow opens the app that shows simulator windows: Simulator.app, or Device Hub
+func (s *SimulatorDevice) showWindow() error {
+	output, err := exec.CommandContext(context.Background(), "xcode-select", "-p").Output()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to locate Xcode to show its window: %w", s.UDID, err)
+	}
+
+	openArgs, err := simulatorWindowCommand(strings.TrimSpace(string(output)), s.UDID)
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w", s.UDID, err)
+	}
+
+	output, err = exec.CommandContext(context.Background(), "open", openArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w\n%s", s.UDID, err, output)
+	}
+
 	return nil
 }
 
@@ -526,7 +594,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 
 	switch state {
 	case simStateBooted:
-		// already booted, continue to WDA
+		// already booted, continue to the agent
 	case simStateShutdown:
 		// simulator is offline, user should boot it first
 		return fmt.Errorf("simulator is offline, use 'mobilecli device boot --device %s' to start the simulator", s.UDID)
@@ -556,7 +624,7 @@ func (s *SimulatorDevice) waitUntilBooted(config StartAgentConfig) error {
 func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 	currentPort, err := s.getDeviceKitPort()
 	if err != nil {
-		utils.Verbose("Failed to get existing WDA port: %v", err)
+		utils.Verbose("Failed to get existing agent port: %v", err)
 		return false, nil
 	}
 
@@ -567,7 +635,7 @@ func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 		}
 	}
 
-	utils.Verbose("WebDriverAgent is already running on port %d", currentPort)
+	utils.Verbose("DeviceKit agent is already running on port %d", currentPort)
 
 	// create new client or update with new port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", currentPort))
@@ -576,7 +644,7 @@ func (s *SimulatorDevice) connectToRunningAgent() (bool, error) {
 	}
 
 	// TODO: it's running, but we failed to get status, we might as well kill the process and try again
-	return false, fmt.Errorf("WebDriverAgent is running but not accessible on port %d", currentPort)
+	return false, fmt.Errorf("DeviceKit agent is running but not accessible on port %d", currentPort)
 }
 
 func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentConfig) error {
@@ -605,7 +673,7 @@ func (s *SimulatorDevice) launchAgent(agentBundleID string, config StartAgentCon
 	}
 	removeSimulatorAgentDiagnostics(homeDir, s.UDID, hostStderrPath)
 
-	// update WDA client to use the actual port
+	// update the DeviceKit client to use the actual port
 	s.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("localhost:%d", usePort))
 
 	config.reportProgress("Waiting for agent to start")
@@ -634,12 +702,16 @@ func (s SimulatorDevice) PressButton(key string) error {
 	return s.deviceKitClient.PressButton(key)
 }
 
+func (s SimulatorDevice) IsKeyboardVisible() (bool, error) {
+	return s.deviceKitClient.IsKeyboardVisible()
+}
+
 func (s SimulatorDevice) SendKeys(text string) error {
 	return s.deviceKitClient.SendKeys(text)
 }
 
 func (s SimulatorDevice) PressKeys(combos []KeyCombo) error {
-	return s.deviceKitClient.PressKeys(toWdaKeyCombos(combos))
+	return s.deviceKitClient.PressKeys(toDeviceKitKeyCombos(combos))
 }
 
 // Fill presses the HID clear key, which empties the focused field in one event, then types
@@ -718,13 +790,13 @@ func (s *SimulatorDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, err
 }
 
 func (s *SimulatorDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
-	return wdaForegroundApp(s.deviceKitClient, s.ListApps)
+	return deviceKitForegroundApp(s.deviceKitClient, s.ListApps)
 }
 
 func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
-	wdaSize, err := s.deviceKitClient.GetWindowSize()
+	windowSize, err := s.deviceKitClient.GetWindowSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from WDA: %w", err)
+		return nil, fmt.Errorf("failed to get window size from DeviceKit agent: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -738,9 +810,9 @@ func (s *SimulatorDevice) Info() (*FullDeviceInfo, error) {
 			Model:    s.Simulator.DeviceType,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  wdaSize.ScreenSize.Width,
-			Height: wdaSize.ScreenSize.Height,
-			Scale:  wdaSize.Scale,
+			Width:  windowSize.ScreenSize.Width,
+			Height: windowSize.ScreenSize.Height,
+			Scale:  windowSize.Scale,
 		},
 	}, nil
 }
@@ -923,11 +995,11 @@ func extractEnvValue(output, envVar string) (string, error) {
 func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 	pid, processInfo, err := findDeviceKitProcessForDevice(s.UDID)
 	if err != nil {
-		utils.Verbose("Could not find WDA process: %v", err)
+		utils.Verbose("Could not find DeviceKit agent process: %v", err)
 		return 0, err
 	}
 
-	utils.Verbose("Found WDA process PID=%d", pid)
+	utils.Verbose("Found DeviceKit agent process PID=%d", pid)
 
 	portStr, err := extractEnvValue(processInfo, envVar)
 	if err != nil {
@@ -940,7 +1012,7 @@ func (s *SimulatorDevice) getDeviceKitEnvPort(envVar string) (int, error) {
 		return 0, fmt.Errorf("invalid %s value: %s", envVar, portStr)
 	}
 
-	utils.Verbose("Extracted %s=%d from WDA process", envVar, port)
+	utils.Verbose("Extracted %s=%d from DeviceKit agent process", envVar, port)
 	return port, nil
 }
 

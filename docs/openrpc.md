@@ -361,6 +361,7 @@ Boots the specified device (simulators/emulators only)
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
+| `headed` | `boolean` |  | Show the simulator or emulator window. Defaults to false, which boots the device without a window |
 
 #### Response
 
@@ -375,7 +376,8 @@ Boot operation result
   "jsonrpc": "2.0",
   "method": "device.boot",
   "params": {
-    "deviceId": "string"
+    "deviceId": "string",
+    "headed": false
   },
   "id": 1
 }
@@ -526,7 +528,7 @@ Dumps the UI hierarchy of the device screen
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `format` | enum: `json, raw` |  | Output format (json or raw) |
-| `full` | `boolean` |  | Include additional elements normally left out, such as the on-screen keyboard |
+| `full` | `boolean` |  | Include additional elements normally left out, such as the on-screen keyboard and the Android status bar |
 
 #### Response
 

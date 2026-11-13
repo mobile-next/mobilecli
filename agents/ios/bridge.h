@@ -5,6 +5,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface IosBridge : NSObject
 + (void)runOnMainThread:(dispatch_block_t)block;
++ (void)dismissKeyboard;
++ (nullable NSString *)flutterVMServiceURI;
 + (NSArray<NSDictionary *> *)listWebViews;
 + (nullable UIView *)webViewWithID:(NSString *)wvId;
 + (NSDictionary *)evaluateJS:(NSString *)expression inWebView:(UIView *)webView;

@@ -123,13 +123,16 @@ var voiceOverMoveCmd = &cobra.Command{
 	},
 }
 
+var bootHeaded bool
+
 var deviceBootCmd = &cobra.Command{
 	Use:   "boot",
 	Short: "Boot a simulator or emulator",
-	Long:  `Boots a specified offline simulator or emulator.`,
+	Long:  `Boots a specified offline simulator or emulator. The device boots without a window; pass --headed to show it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.BootRequest{
 			DeviceID: deviceId,
+			Headed:   bootHeaded,
 		}
 
 		return runViaDaemon("cli.device.boot", req)
@@ -208,6 +211,7 @@ func init() {
 	deviceRebootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to reboot")
 	deviceInfoCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get info from")
 	deviceBootCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to boot")
+	deviceBootCmd.Flags().BoolVar(&bootHeaded, "headed", false, "show the simulator or emulator window")
 	deviceShutdownCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to shutdown")
 	orientationGetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get orientation from")
 	orientationSetCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to set orientation on")

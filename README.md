@@ -14,7 +14,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
   <a href="https://github.com/mobile-next/mobilecli/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue.svg" alt="mobilecli is released under the FSL-1.1-Apache-2.0 License">
   </a>
-  <a href="http://mobilenext.ai/join-slack">
+  <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=badge">
       <img src="https://img.shields.io/badge/join-Slack-blueviolet?logo=slack&style=flat" alt="Slack community channel" />
   </a>
 </p>
@@ -163,6 +163,9 @@ Note that screencapture is one way. You will have to use `io tap` commands to ta
 # Boot an offline emulator or simulator
 mobilecli device boot --device <device-id>
 
+# Boot it with a visible window
+mobilecli device boot --device <device-id> --headed
+
 # Shutdown a running emulator or simulator
 mobilecli device shutdown --device <device-id>
 
@@ -180,6 +183,12 @@ mobilecli io longpress --device <device-id> 100,200 --duration 2000
 mobilecli io button --device <device-id> HOME
 mobilecli io button --device <device-id> VOLUME_UP
 mobilecli io button --device <device-id> POWER
+
+# Check whether the on-screen keyboard is showing
+mobilecli io keyboard status --device <device-id>
+
+# Hide the on-screen keyboard (on real iOS devices only in debuggable apps, on simulators only in apps you installed)
+mobilecli io keyboard hide --device <device-id>
 
 # Send text
 mobilecli io text --device <device-id> 'hello world'
@@ -259,6 +268,12 @@ mobilecli apps foreground --device <device-id>
 
 # Launch an app
 mobilecli apps launch <bundle-id> --device <device-id>
+
+# Launch an app with arguments and environment variables (iOS)
+mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
+
+# Launch an app with string intent extras (Android, each --arg is key=value and becomes --es key value)
+mobilecli apps launch <package-name> --device <device-id> --arg featureX=true --arg apiUrl=https://staging.example.com
 
 # Terminate an app
 mobilecli apps terminate <bundle-id> --device <device-id>
@@ -572,7 +587,15 @@ wscat -c ws://localhost:12000/ws
 ## Platform-Specific Notes
 
 ### iOS Real Devices
-- Requires the on-device agent. Install it with `mobilecli agent install --device <device-id> --provisioning-profile /path/to/profile.mobileprovision`. A valid Apple provisioning profile is needed to re-sign the agent for your device.
+
+The on-device agent requires a valid development provisioning profile for your device and a corresponding signing certificate with its private key in your Mac's keychain:
+
+```bash
+mobilecli agent install --device <device-id> \
+  --provisioning-profile "/path/to/profile.mobileprovision"
+```
+
+Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App ID profiles (e.g. Xcode-managed) are supported too: the agent is renamed to the profile's bundle ID, which must end with `com.mobilenext.devicekit-iosUITests.xctrunner`.
 
 ## Development 👩‍💻
 
@@ -592,7 +615,7 @@ Something not working? Check [docs/troubleshooting.md](docs/troubleshooting.md) 
 
 For issues and feature requests, please use the [GitHub Issues](https://github.com/mobile-next/mobilecli/issues) page.
 
-Be sure to <a href="http://mobilenext.ai/join-slack">join our slack channel</a> today 💜
+Be sure to <a href="https://mobilenext.ai/join-slack?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=contributing">join our slack channel</a> today 💜
 
-To learn more about <a href="https://mobilenext.ai/">Mobile Next</a> and what we're building.
+To learn more about <a href="https://mobilenext.ai/?utm_source=github&utm_medium=readme&utm_campaign=mobilecli&utm_content=part-of-mobile-next">Mobile Next</a> and what we're building.
 

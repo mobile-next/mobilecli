@@ -18,7 +18,10 @@ import (
 // through an adb forward: the persistent DeviceServer, the AvcServer control
 // socket and the in-app webview agent.
 
-const defaultAgentTimeout = 10 * time.Second
+const (
+	defaultAgentTimeout = 10 * time.Second
+	jsonRPCVersion      = "2.0"
+)
 
 // errAgentUnreachable marks a failure to reach an agent at all, as opposed to
 // an error the agent itself reported. Callers that can restart their agent use
@@ -47,7 +50,7 @@ func agentRequest(port int, method string, params any) (json.RawMessage, error) 
 }
 
 func agentRequestWithTimeout(port int, method string, params any, timeout time.Duration) (json.RawMessage, error) {
-	payload, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", ID: "1", Method: method, Params: params})
+	payload, err := json.Marshal(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: "1", Method: method, Params: params})
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}

@@ -359,7 +359,7 @@ func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints)
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints, opts.ScreenHeightPoints)
 }
 
 // takeScreenshotWithDex captures, scales, and encodes on-device via the
@@ -478,6 +478,14 @@ func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error)
 }
 
 func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	extras, err := launchExtras(opts.Arguments)
+	if err != nil {
+		return err
+	}
+	if len(opts.Env) > 0 {
+		return fmt.Errorf("--env is not supported on Android")
+	}
+
 	if len(opts.Locales) > 0 {
 		for _, l := range opts.Locales {
 			if !validLocaleTag.MatchString(l) {
@@ -492,7 +500,6 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	}
 
 	var component string
-	var err error
 	if opts.Activity != "" {
 		component, err = buildLaunchComponent(bundleID, opts.Activity)
 	} else {
@@ -502,7 +509,7 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 		return err
 	}
 
-	output, err := d.runAdbShell(launchArgs(component, d.isAppRunning(bundleID))...)
+	output, err := d.runAdbShell(launchArgs(component, d.isAppRunning(bundleID), extras)...)
 	if err != nil {
 		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
 	}
@@ -515,12 +522,28 @@ func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 // permission prompt, stays on top: a plain start just resumes it. When the app isn't
 // running, clear the task so the launch shows the app. When it is running, keep the
 // task so launching brings the app to the front as it was.
-func launchArgs(component string, isRunning bool) []string {
+func launchArgs(component string, isRunning bool, extras []string) []string {
 	args := []string{"am", "start", "--display", defaultDisplayID}
 	if !isRunning {
 		args = append(args, "--activity-clear-task")
 	}
+	args = append(args, extras...)
 	return append(args, "-n", component)
+}
+
+// launchExtras turns key=value launch arguments into `am start --es key value`
+// string extras, which the app reads from its launch intent. The value may
+// contain '=' and may be empty.
+func launchExtras(arguments []string) ([]string, error) {
+	extras := make([]string, 0, len(arguments)*3)
+	for _, argument := range arguments {
+		key, value, found := strings.Cut(argument, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("invalid --arg %q, on Android each argument must be key=value", argument)
+		}
+		extras = append(extras, "--es", key, value)
+	}
+	return extras, nil
 }
 
 // isAppRunning reports whether the package has a live process. pidof exits non-zero
@@ -822,8 +845,18 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 	}
 }
 
+// emulatorBootArgs returns the emulator arguments for booting an avd. the window
+// is hidden unless a headed boot is requested.
+func emulatorBootArgs(avdName string, opts BootOptions) []string {
+	args := []string{"-netdelay", "none", "-netspeed", "full", "-avd", avdName}
+	if !opts.Headed {
+		args = append(args, "-qt-hide-window")
+	}
+	return args
+}
+
 // Boot launches an offline Android emulator and waits for it to be ready
-func (d *AndroidDevice) Boot() error {
+func (d *AndroidDevice) Boot(opts BootOptions) error {
 	if d.state != StateOffline {
 		return fmt.Errorf("emulator is already running")
 	}
@@ -834,7 +867,7 @@ func (d *AndroidDevice) Boot() error {
 	defer cancel()
 
 	// launch emulator in background without context (so it persists after function returns)
-	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), "-netdelay", "none", "-netspeed", "full", "-avd", d.id, "-qt-hide-window")
+	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), emulatorBootArgs(d.id, opts)...)
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
@@ -1295,26 +1328,9 @@ func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
-
-	// run adb shell wm size
-	output, err := d.runAdbCommand("shell", "wm", "size")
+	width, height, _, err := d.currentScreenSize()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
-	}
-
-	// split result by space, and then take 2nd argument split by "x"
-	screenSize := strings.Split(string(output), " ")
-	pair := strings.Trim(screenSize[len(screenSize)-1], "\r\n")
-	parts := strings.SplitN(pair, "x", 2)
-
-	widthInt, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
-	}
-
-	heightInt, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to get screen size: %v", err)
+		return nil, err
 	}
 
 	return &FullDeviceInfo{
@@ -1328,11 +1344,126 @@ func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
 			Model:    d.model,
 		},
 		ScreenSize: &ScreenSize{
-			Width:  widthInt,
-			Height: heightInt,
+			Width:  width,
+			Height: height,
 			Scale:  1,
 		},
 	}, nil
+}
+
+// currentScreenSize returns the screen size in the orientation the display is
+// in right now, which taps, the ui tree and screenshots all use. `wm size`
+// reports the natural orientation, so a quarter turn swaps its sides. known is
+// false when the current rotation could not be read and the size is the
+// natural one.
+func (d *AndroidDevice) currentScreenSize() (width, height int, known bool, err error) {
+	// one round trip for wm size and the rotation on Android 13+
+	output, err := d.runAdbCommand("shell", "wm size && { cmd display get-displays 2>/dev/null; true; }")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	width, height, err = parseWmSize(string(output))
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	rotation, known := parseRotationFromCmdDisplay(string(output))
+	if !known {
+		rotation, known = d.getRotationFromDumpsysDisplay()
+	}
+	if known && rotation%2 == 1 {
+		width, height = height, width
+	}
+	return width, height, known, nil
+}
+
+// parseWmSize reads the size the display is drawn at from `wm size` output,
+// which adds an "Override size" line when one is set
+func parseWmSize(output string) (int, int, error) {
+	var size string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if value, ok := strings.CutPrefix(line, "Override size: "); ok {
+			size = value
+		} else if value, ok := strings.CutPrefix(line, "Physical size: "); ok && size == "" {
+			size = value
+		}
+	}
+
+	parts := strings.SplitN(size, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("failed to get screen size from %q", strings.TrimSpace(output))
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	return width, height, nil
+}
+
+// getRotationFromDumpsysDisplay covers devices before Android 13, which have no
+// "cmd display get-displays"
+func (d *AndroidDevice) getRotationFromDumpsysDisplay() (int, bool) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return 0, false
+	}
+	return parseRotationFromDumpsysDisplay(string(output))
+}
+
+var displayInfoRotationRe = regexp.MustCompile(`, rotation ([0-3]),`)
+
+// parseRotationFromCmdDisplay reads the current rotation, in quarter turns
+// from the natural orientation, from "cmd display get-displays" output.
+// Android 13 indents each display line. user_rotation is only the rotation
+// setting: apps that lock their orientation and auto-rotate both draw in
+// another one. It reads the default display, the one `wm size` measures and
+// screenshots, dump and input work on, even when another display is the one on
+func parseRotationFromCmdDisplay(output string) (int, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Display id "+defaultDisplayID+":") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+var logicalDisplayHeaderRe = regexp.MustCompile(`^Display (\d+):$`)
+
+// parseRotationFromDumpsysDisplay reads the rotation of the default logical
+// display from "dumpsys display" output. mBaseDisplayInfo stays in the natural
+// orientation, mOverrideDisplayInfo follows the display
+func parseRotationFromDumpsysDisplay(output string) (int, bool) {
+	inDefaultDisplay := false
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if header := logicalDisplayHeaderRe.FindStringSubmatch(line); header != nil {
+			inDefaultDisplay = header[1] == defaultDisplayID
+			continue
+		}
+		if inDefaultDisplay && strings.HasPrefix(line, "mOverrideDisplayInfo=DisplayInfo{") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+func parseDisplayInfoRotation(displayInfo string) (int, bool) {
+	matches := displayInfoRotationRe.FindStringSubmatch(displayInfo)
+	if len(matches) != 2 {
+		return 0, false
+	}
+	rotation, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, false
+	}
+	return rotation, true
 }
 
 // isPackageInstalled reports whether packageName is installed on the device.
@@ -1923,8 +2054,17 @@ func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, err
 	return appInfo, nil
 }
 
-// GetOrientation gets the current device orientation
+// GetOrientation gets the orientation the screen is drawn in right now
 func (d *AndroidDevice) GetOrientation() (string, error) {
+	// natural-landscape tablets are in landscape at rotation 0, so go by the sides
+	width, height, known, err := d.currentScreenSize()
+	if err == nil && known {
+		if width > height {
+			return devicekit.OrientationLandscape, nil
+		}
+		return devicekit.OrientationPortrait, nil
+	}
+
 	output, err := d.runAdbCommand("shell", "settings", "get", "system", "user_rotation")
 	if err != nil {
 		return "", fmt.Errorf("failed to get orientation: %v", err)

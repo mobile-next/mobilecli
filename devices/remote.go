@@ -201,6 +201,12 @@ func (r *RemoteDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
 	if opts.Activity != "" {
 		p["activity"] = opts.Activity
 	}
+	if len(opts.Arguments) > 0 {
+		p["args"] = opts.Arguments
+	}
+	if len(opts.Env) > 0 {
+		p["env"] = opts.Env
+	}
 	return r.fireRPC("device.apps.launch", p)
 }
 
@@ -208,7 +214,7 @@ func (r *RemoteDevice) TerminateApp(bundleID string) error {
 	return r.fireRPC("device.apps.terminate", params{"bundleId": bundleID})
 }
 
-func (r *RemoteDevice) Boot() error {
+func (r *RemoteDevice) Boot(_ BootOptions) error {
 	return r.fireRPC("device.boot", params{})
 }
 
@@ -218,6 +224,16 @@ func (r *RemoteDevice) Shutdown() error {
 
 func (r *RemoteDevice) Reboot() error {
 	return r.fireRPC("device.reboot", params{})
+}
+
+func (r *RemoteDevice) IsKeyboardVisible() (bool, error) {
+	result, err := rpcCall[keyboardStatusResult](r, "device.io.keyboard.status", nil)
+	return result.Visible, err
+}
+
+func (r *RemoteDevice) HideKeyboard() (bool, error) {
+	result, err := rpcCall[keyboardHideResult](r, "device.io.keyboard.hide", nil)
+	return result.Dismissed, err
 }
 
 func (r *RemoteDevice) GetOrientation() (string, error) {

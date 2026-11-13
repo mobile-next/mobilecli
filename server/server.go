@@ -296,6 +296,10 @@ func extendedWriteDeadline(method string) (time.Duration, bool) {
 		return 35 * time.Second, true
 	case "device.dump.ui":
 		return 60 * time.Second, true
+	case "device.io.keyboard.status", "device.io.keyboard.hide":
+		// status can have to start the on-device agent; hide adds injecting the
+		// in-app agent and the wait for the keyboard to close
+		return 60 * time.Second, true
 	}
 	return 0, false
 }
@@ -312,7 +316,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.JSONRPC != "2.0" {
+	if req.JSONRPC != jsonRPCVersion {
 		sendJSONRPCError(w, req.ID, ErrCodeInvalidRequest, "Invalid Request", "'jsonrpc' must be '2.0'")
 		return
 	}
@@ -357,7 +361,7 @@ func handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 func sendJSONRPCResponse(w http.ResponseWriter, id any, result any) {
 	response := JSONRPCResponse{
-		JSONRPC: "2.0",
+		JSONRPC: jsonRPCVersion,
 		Result:  result,
 		ID:      id,
 	}
@@ -747,6 +751,7 @@ type DeviceSettingsApplyParams struct {
 
 type DeviceBootParams struct {
 	DeviceID string `json:"deviceId"`
+	Headed   bool   `json:"headed,omitempty"`
 }
 
 type DeviceShutdownParams struct {
@@ -760,14 +765,16 @@ type DeviceRebootParams struct {
 type DumpUIParams struct {
 	DeviceID string `json:"deviceId"`
 	Format   string `json:"format,omitempty"` // "json" or "raw"
-	Full     bool   `json:"full,omitempty"`   // include the on-screen keyboard and other normally hidden windows
+	Full     bool   `json:"full,omitempty"`   // include the on-screen keyboard, the Android status bar and other normally hidden windows
 }
 
 type AppsLaunchParams struct {
-	DeviceID string   `json:"deviceId"`
-	BundleID string   `json:"bundleId"`
-	Locales  []string `json:"locales,omitempty"`
-	Activity string   `json:"activity,omitempty"`
+	DeviceID string            `json:"deviceId"`
+	BundleID string            `json:"bundleId"`
+	Locales  []string          `json:"locales,omitempty"`
+	Activity string            `json:"activity,omitempty"`
+	Args     []string          `json:"args,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
 }
 
 type AppsTerminateParams struct {
@@ -826,6 +833,33 @@ func handleIoButton(params json.RawMessage) (any, error) {
 
 	response := commands.ButtonCommand(req)
 	return okResult(response)
+}
+
+func parseKeyboardRequest(params json.RawMessage) (commands.KeyboardRequest, error) {
+	var req commands.KeyboardRequest
+	if len(params) == 0 {
+		return req, fmt.Errorf("'params' is required with fields: deviceId")
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return req, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId", err)
+	}
+	return req, nil
+}
+
+func handleIoKeyboardStatus(params json.RawMessage) (any, error) {
+	req, err := parseKeyboardRequest(params)
+	if err != nil {
+		return nil, err
+	}
+	return commandResult(commands.KeyboardStatusCommand(req))
+}
+
+func handleIoKeyboardHide(params json.RawMessage) (any, error) {
+	req, err := parseKeyboardRequest(params)
+	if err != nil {
+		return nil, err
+	}
+	return commandResult(commands.KeyboardHideCommand(req))
 }
 
 func handleIoGesture(params json.RawMessage) (any, error) {
@@ -1110,6 +1144,7 @@ func handleDeviceBoot(params json.RawMessage) (any, error) {
 
 	req := commands.BootRequest{
 		DeviceID: bootParams.DeviceID,
+		Headed:   bootParams.Headed,
 	}
 
 	response := commands.BootCommand(req)
@@ -1187,6 +1222,8 @@ func handleAppsLaunch(params json.RawMessage) (any, error) {
 		BundleID: appsLaunchParams.BundleID,
 		Locales:  appsLaunchParams.Locales,
 		Activity: appsLaunchParams.Activity,
+		Args:     appsLaunchParams.Args,
+		Env:      appsLaunchParams.Env,
 	}
 
 	response := commands.LaunchAppCommand(req)
@@ -1413,7 +1450,7 @@ func handleServerShutdown(params json.RawMessage) (any, error) {
 
 func sendJSONRPCError(w http.ResponseWriter, id any, code int, message string, data any) {
 	response := JSONRPCResponse{
-		JSONRPC: "2.0",
+		JSONRPC: jsonRPCVersion,
 		Error: map[string]any{
 			"code":    code,
 			"message": message,
@@ -1438,7 +1475,7 @@ func sendBanner(w http.ResponseWriter, r *http.Request) {
 // newJsonRpcNotification creates a JSON-RPC notification message
 func newJsonRpcNotification(message string) map[string]any {
 	return map[string]any{
-		"jsonrpc": "2.0",
+		"jsonrpc": jsonRPCVersion,
 		"method":  "notification/message",
 		"params": map[string]string{
 			"message": message,

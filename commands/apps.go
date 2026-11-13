@@ -11,10 +11,12 @@ import (
 
 // AppRequest represents the parameters for app-related commands
 type AppRequest struct {
-	DeviceID string   `json:"deviceId"`
-	BundleID string   `json:"bundleId"`
-	Locales  []string `json:"locales,omitempty"`
-	Activity string   `json:"activity,omitempty"`
+	DeviceID string            `json:"deviceId"`
+	BundleID string            `json:"bundleId"`
+	Locales  []string          `json:"locales,omitempty"`
+	Activity string            `json:"activity,omitempty"`
+	Args     []string          `json:"args,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
 }
 
 // LaunchAppCommand launches an app on the specified device
@@ -28,7 +30,18 @@ func LaunchAppCommand(req AppRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.LaunchApp(req.BundleID, devices.LaunchOptions{Locales: req.Locales, Activity: req.Activity})
+	for k := range req.Env {
+		if k == "" || strings.Contains(k, "=") {
+			return NewErrorResponse(fmt.Errorf("invalid environment variable name: %q", k))
+		}
+	}
+
+	err = targetDevice.LaunchApp(req.BundleID, devices.LaunchOptions{
+		Locales:   req.Locales,
+		Activity:  req.Activity,
+		Arguments: req.Args,
+		Env:       req.Env,
+	})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to launch app on device %s: %v", targetDevice.ID(), err))
 	}
@@ -114,6 +127,8 @@ type InstallAppResult struct {
 	App     *utils.AppMetadata `json:"app,omitempty"`
 }
 
+// InstallAppCommand installs an app on the selected device, optionally re-signing
+// a physical-device iOS IPA while preserving its original bundle identifier.
 func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 	if req.Path == "" {
 		return NewErrorResponse(fmt.Errorf("path is required"))
@@ -136,7 +151,7 @@ func InstallAppCommand(req InstallAppRequest) *CommandResponse {
 			return NewErrorResponse(fmt.Errorf("--force-resign only works with real iOS devices"))
 		}
 
-		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity)
+		resignedPath, err := utils.ResignIPA(req.Path, targetDevice.ID(), req.ProvisioningProfile, req.SigningIdentity, utils.ResignOptions{})
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("failed to re-sign IPA: %w", err))
 		}

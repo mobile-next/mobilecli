@@ -73,8 +73,8 @@ func init() {
 	// dump ui command flags
 	dumpUICmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
 	dumpUICmd.Flags().StringVar(&dumpUIFormat, "format", "", "Output format: 'text' for indented element lines, 'raw' for unprocessed tree from agent (Default: json)")
-	dumpUICmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard")
+	dumpUICmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard and the Android status bar")
 
 	snapshotCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to dump UI tree from")
-	snapshotCmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard")
+	snapshotCmd.Flags().BoolVar(&dumpUIFull, "full", false, "Include additional elements normally left out, such as the on-screen keyboard and the Android status bar")
 }

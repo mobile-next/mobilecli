@@ -2,12 +2,31 @@
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <unistd.h>
+#import <errno.h>
+
+// send() can write less than it was given, which a large outerHTML reply will hit.
+static BOOL send_all(int fd, NSData *data) {
+    const uint8_t *cursor = data.bytes;
+    size_t left = data.length;
+    while (left > 0) {
+        ssize_t written = send(fd, cursor, left, 0);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) return NO;
+        cursor += written;
+        left -= (size_t)written;
+    }
+    return YES;
+}
+
+static int activePort = 0;
 
 @implementation MobileServer {
     RpcHandler _handler;
     int _serverFd;
     int _port;
 }
+
++ (int)activePort { return activePort; }
 
 - (instancetype)initWithHandler:(RpcHandler)handler {
     self = [super init];
@@ -59,6 +78,7 @@
         _serverFd = -1;
         return NO;
     }
+    activePort = _port;
     NSLog(@"[mobilecli] bound to 127.0.0.1:%d", _port);
     return YES;
 }
@@ -66,7 +86,10 @@
 - (void)run {
     while (1) {
         int clientFd = accept(_serverFd, NULL, NULL);
-        if (clientFd < 0) continue;
+        if (clientFd < 0) {
+            usleep(100000); // a failed listening socket must not spin a core in the app
+            continue;
+        }
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             [self handleConnection:clientFd];
         });
@@ -119,8 +142,11 @@
         (unsigned long)response.length];
 
     NSData *headerData = [headers dataUsingEncoding:NSASCIIStringEncoding];
-    send(fd, headerData.bytes, headerData.length, 0);
-    send(fd, response.bytes, response.length, 0);
+    int noSigpipe = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
+    if (send_all(fd, headerData)) {
+        send_all(fd, response);
+    }
     close(fd);
 }
 

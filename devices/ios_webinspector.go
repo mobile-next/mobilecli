@@ -15,6 +15,7 @@ import (
 	"time"
 
 	goios "github.com/danielpaulus/go-ios/ios"
+	iosutil "github.com/mobile-next/mobilecli/devices/ios"
 )
 
 // Safari cannot take the injected agent: it is not a debuggable build. A device
@@ -58,7 +59,7 @@ type webInspectorDialer func() (io.ReadWriteCloser, error)
 
 // dialDeviceWebInspector connects to the web inspector service of a real device.
 func dialDeviceWebInspector(udid string) (io.ReadWriteCloser, error) {
-	device, err := goios.GetDevice(udid)
+	device, err := iosutil.GetDevice(udid)
 	if err != nil {
 		return nil, fmt.Errorf("device not found: %s: %w", udid, err)
 	}

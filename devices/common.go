@@ -100,14 +100,15 @@ func buildMjpegURL(port, fps int, scale float64) string {
 // precedence over Scale; neither ever upscales.
 // Rect crops before Scale/MaxSize apply; it is expressed in screen points
 // (the same units as dump.ui bounds) and mapped to pixels via
-// ScreenWidthPoints, which is required when Rect is set.
+// ScreenWidthPoints and ScreenHeightPoints, which are required when Rect is set.
 type ScreenshotOptions struct {
-	Format            string                   // "png" or "jpeg"
-	Quality           int                      // 1-100, only used for JPEG
-	Scale             float64                  // 0.0-1.0, 1.0 means no scaling
-	MaxSize           int                      // 0 means no limit
-	Clip              *types.ScreenElementRect // nil means no cropping
-	ScreenWidthPoints int                      // screen width in points, required when Rect is set
+	Format             string                   // "png" or "jpeg"
+	Quality            int                      // 1-100, only used for JPEG
+	Scale              float64                  // 0.0-1.0, 1.0 means no scaling
+	MaxSize            int                      // 0 means no limit
+	Clip               *types.ScreenElementRect // nil means no cropping
+	ScreenWidthPoints  int                      // screen width in points, required when Rect is set
+	ScreenHeightPoints int                      // screen height in points, required when Rect is set
 }
 
 // ScreenCaptureConfig contains configuration for screen capture operations
@@ -152,9 +153,14 @@ type FileEntry struct {
 
 // LaunchOptions carries optional parameters for launching an app.
 // Activity is Android-only; passing it to an iOS device is an error.
+// Arguments are process arguments on iOS. On Android each one must be key=value
+// and is passed as a string intent extra. Env is iOS-only; passing it to an
+// Android device is an error.
 type LaunchOptions struct {
-	Locales  []string
-	Activity string
+	Locales   []string
+	Activity  string
+	Arguments []string
+	Env       map[string]string
 }
 
 // DumpOptions controls what a UI dump includes.
@@ -182,6 +188,12 @@ const (
 	FormatAVC   = "avc"
 )
 
+// BootOptions controls how a simulator/emulator is booted
+type BootOptions struct {
+	// Headed shows the device window; by default the device boots hidden
+	Headed bool
+}
+
 type ControllableDevice interface {
 	ID() string
 	Name() string
@@ -192,8 +204,8 @@ type ControllableDevice interface {
 
 	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
 	Reboot() error
-	Boot() error     // boot simulator/emulator
-	Shutdown() error // shutdown simulator/emulator
+	Boot(opts BootOptions) error // boot simulator/emulator
+	Shutdown() error             // shutdown simulator/emulator
 	Tap(x, y int) error
 	LongPress(x, y, duration int) error
 	Swipe(x1, y1, x2, y2, duration int) error
@@ -261,6 +273,13 @@ type WebViewable interface {
 	WebViewContent(webviewID string) (string, error)
 	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
 	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
+}
+
+// KeyboardControllable is implemented by devices that can query and dismiss
+// the on-screen keyboard.
+type KeyboardControllable interface {
+	HideKeyboard() (bool, error)
+	IsKeyboardVisible() (bool, error)
 }
 
 // GetAllControllableDevices aggregates all known devices with options
