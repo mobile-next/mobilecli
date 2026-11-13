@@ -42,12 +42,12 @@ func (d *AndroidDevice) buildShellCommand(remotePath string, parts ...string) (s
 
 func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 	if !strings.HasPrefix(remotePath, "/data/user/") {
-		_, err := d.runAdbCommand("push", localPath, remotePath)
+		_, err := d.runAdbLongCommand("push", localPath, remotePath)
 		return err
 	}
 
 	tmpPath := fmt.Sprintf("/data/local/tmp/mobilecli-%s", uuid.NewString())
-	if _, err := d.runAdbCommand("push", localPath, tmpPath); err != nil {
+	if _, err := d.runAdbLongCommand("push", localPath, tmpPath); err != nil {
 		return fmt.Errorf("push to tmp failed: %w", err)
 	}
 
@@ -55,7 +55,7 @@ func (d *AndroidDevice) PushFile(localPath, remotePath string) error {
 	if err != nil {
 		return err
 	}
-	_, cpErr := d.runAdbCommand("shell", cpCmd)
+	_, cpErr := d.runAdbLongCommand("shell", cpCmd)
 
 	rmCmd := shellescape.QuoteCommand([]string{"rm", tmpPath})
 	_, rmErr := d.runAdbCommand("shell", rmCmd)
@@ -216,6 +216,6 @@ func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
 	if err != nil {
 		return err
 	}
-	_, err = d.runAdbCommand("shell", cmd)
+	_, err = d.runAdbLongCommand("shell", cmd)
 	return err
 }
