@@ -14,6 +14,10 @@ type GestureAction struct {
 	X        float64 `json:"x"`
 	Y        float64 `json:"y"`
 	Button   int     `json:"button"`
+	// Start delays this finger's press by that many seconds from the start of
+	// the gesture; without it every finger touches down at once. Only set on a
+	// press.
+	Start float64 `json:"start,omitempty"`
 }
 
 // ConvertActions converts W3C pointer actions (TapActions) to the agents' gesture actions.
@@ -23,11 +27,17 @@ type GestureAction struct {
 // The conversion is stateful per sequence, not per finger: a multi-finger
 // gesture must list each finger's actions contiguously (all of Button 0, then
 // all of Button 1), never interleaved.
+//
+// A pause before a finger's pointerDown delays that finger's touch-down (the
+// W3C meaning), which is how a gesture taps more than once: a double tap is a
+// second finger on the same spot that pauses until the first has lifted.
 func ConvertActions(actions []TapAction) []GestureAction {
 	var result []GestureAction
 	pressed := false
 	hasPendingPos := false
 	var pendingX, pendingY float64
+	var pendingStart float64
+	touched := map[int]bool{}
 
 	for i := range actions {
 		a := &actions[i]
@@ -49,6 +59,7 @@ func ConvertActions(actions []TapAction) []GestureAction {
 			}
 		case "pointerDown":
 			pressed = true
+			touched[a.Button] = true
 			x, y := float64(a.X), float64(a.Y)
 			if hasPendingPos {
 				x, y = pendingX, pendingY
@@ -60,7 +71,9 @@ func ConvertActions(actions []TapAction) []GestureAction {
 				X:        x,
 				Y:        y,
 				Button:   a.Button,
+				Start:    pendingStart,
 			})
+			pendingStart = 0
 		case "pointerUp":
 			pressed = false
 			x, y := float64(a.X), float64(a.Y)
@@ -76,8 +89,11 @@ func ConvertActions(actions []TapAction) []GestureAction {
 				Button:   a.Button,
 			})
 		case "pause":
-			// pause extends the duration of the previous action
-			if len(result) > 0 {
+			// before this finger's first touch, a pause delays it; otherwise it
+			// extends the duration of the previous action
+			if !pressed && !touched[a.Button] {
+				pendingStart += float64(a.Duration) / 1000.0
+			} else if len(result) > 0 {
 				result[len(result)-1].Duration += float64(a.Duration) / 1000.0
 			}
 		}

@@ -146,3 +146,20 @@ func TestPressingNoKeysDoesNothingRatherThanAskingTheServerToPressNothing(t *tes
 	assert.NoError(t, device.PressKeys(nil))
 	assert.NoError(t, device.PressKeys([]KeyCombo{}))
 }
+
+func TestAndroidRefusesADelayedFingerInsteadOfPressingItEarly(t *testing.T) {
+	// the device server presses every finger at time zero, so a double tap
+	// would land as a two-finger tap
+	err := (&AndroidDevice{}).Gesture([]devicekit.TapAction{
+		{Type: "pointerMove", X: 10, Y: 10, Button: 0},
+		{Type: "pointerDown", Button: 0},
+		{Type: "pointerUp", Button: 0},
+		{Type: "pause", Duration: 200, Button: 1},
+		{Type: "pointerMove", X: 10, Y: 10, Button: 1},
+		{Type: "pointerDown", Button: 1},
+		{Type: "pointerUp", Button: 1},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not supported on Android")
+}
