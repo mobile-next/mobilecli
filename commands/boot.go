@@ -2,11 +2,14 @@ package commands
 
 import (
 	"fmt"
+
+	"github.com/mobile-next/mobilecli/devices"
 )
 
 // BootRequest represents the parameters for a boot command
 type BootRequest struct {
 	DeviceID string `json:"deviceId"`
+	Headed   bool   `json:"headed,omitempty"`
 }
 
 // BootCommand boots the specified simulator or emulator
@@ -16,7 +19,7 @@ func BootCommand(req BootRequest) *CommandResponse {
 		return NewErrorResponse(fmt.Errorf("error finding device: %v", err))
 	}
 
-	err = targetDevice.Boot()
+	err = targetDevice.Boot(devices.BootOptions{Headed: req.Headed})
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to boot device %s: %v", targetDevice.ID(), err))
 	}

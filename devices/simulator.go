@@ -433,7 +433,7 @@ func (s *SimulatorDevice) getState() (string, error) {
 }
 
 // Boot boots the iOS simulator
-func (s *SimulatorDevice) Boot() error {
+func (s *SimulatorDevice) Boot(opts BootOptions) error {
 	state, err := s.getState()
 	if err != nil {
 		return fmt.Errorf("failed to get simulator state: %w", err)
@@ -445,30 +445,66 @@ func (s *SimulatorDevice) Boot() error {
 
 	if state == "Booting" {
 		utils.Verbose("Simulator is already booting, waiting for boot to complete...")
-		output, err := runSimctl("bootstatus", s.UDID)
+	} else {
+		utils.Verbose("Booting simulator %s...", s.UDID)
+		output, err := runSimctl("boot", s.UDID)
 		if err != nil {
-			return fmt.Errorf("failed to wait for boot status: %w\n%s", err, output)
+			return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
 		}
 
-		utils.Verbose("Simulator booted successfully")
-		s.Simulator.State = simStateBooted
-		return nil
+		utils.Verbose("Waiting for simulator to finish booting...")
 	}
 
-	utils.Verbose("Booting simulator %s...", s.UDID)
-	output, err := runSimctl("boot", s.UDID)
-	if err != nil {
-		return fmt.Errorf("failed to boot simulator %s: %w\n%s", s.UDID, err, output)
-	}
-
-	utils.Verbose("Waiting for simulator to finish booting...")
-	output, err = runSimctl("bootstatus", s.UDID)
+	output, err := runSimctl("bootstatus", s.UDID)
 	if err != nil {
 		return fmt.Errorf("failed to wait for boot status %s: %w\n%s", s.UDID, err, output)
 	}
 
 	utils.Verbose("Simulator booted successfully")
 	s.Simulator.State = simStateBooted
+
+	if opts.Headed {
+		return s.showWindow()
+	}
+
+	return nil
+}
+
+// simulatorWindowCommand returns the "open" arguments that show the simulator's
+// window, using the app that ships with the Xcode at developerDir. Xcode up to 26
+// ships Simulator.app; Xcode 27 replaced it with Device Hub.
+func simulatorWindowCommand(developerDir, udid string) ([]string, error) {
+	simulatorApp := filepath.Join(developerDir, "Applications", "Simulator.app")
+	if _, err := os.Stat(simulatorApp); err == nil {
+		return []string{simulatorApp, "--args", "-CurrentDeviceUDID", udid}, nil
+	}
+
+	// Device Hub opens on its last selected device, so ask it for this device's window
+	deviceHubApp := filepath.Join(filepath.Dir(developerDir), "Applications", "DeviceHub.app")
+	if _, err := os.Stat(deviceHubApp); err == nil {
+		return []string{"-a", deviceHubApp, "devices://device/open?id=" + udid}, nil
+	}
+
+	return nil, fmt.Errorf("neither Simulator.app nor DeviceHub.app found in the Xcode at %s", developerDir)
+}
+
+// showWindow opens the app that shows simulator windows: Simulator.app, or Device Hub
+func (s *SimulatorDevice) showWindow() error {
+	output, err := exec.CommandContext(context.Background(), "xcode-select", "-p").Output()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to locate Xcode to show its window: %w", s.UDID, err)
+	}
+
+	openArgs, err := simulatorWindowCommand(strings.TrimSpace(string(output)), s.UDID)
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w", s.UDID, err)
+	}
+
+	output, err = exec.CommandContext(context.Background(), "open", openArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("simulator %s booted, but failed to show its window: %w\n%s", s.UDID, err, output)
+	}
+
 	return nil
 }
 

@@ -224,7 +224,7 @@ func (d *IOSDevice) Reboot() error {
 	return nil
 }
 
-func (d *IOSDevice) Boot() error {
+func (d *IOSDevice) Boot(_ BootOptions) error {
 	return fmt.Errorf("boot is not supported for real iOS devices")
 }
 

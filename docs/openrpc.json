@@ -821,6 +821,14 @@
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "name": "headed",
+          "description": "Show the simulator or emulator window. Defaults to false, which boots the device without a window",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
         }
       ],
       "result": {

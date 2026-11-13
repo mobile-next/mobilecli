@@ -751,6 +751,7 @@ type DeviceSettingsApplyParams struct {
 
 type DeviceBootParams struct {
 	DeviceID string `json:"deviceId"`
+	Headed   bool   `json:"headed,omitempty"`
 }
 
 type DeviceShutdownParams struct {
@@ -1052,6 +1053,7 @@ func handleDeviceBoot(params json.RawMessage) (any, error) {
 
 	req := commands.BootRequest{
 		DeviceID: bootParams.DeviceID,
+		Headed:   bootParams.Headed,
 	}
 
 	response := commands.BootCommand(req)

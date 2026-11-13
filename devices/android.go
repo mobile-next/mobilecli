@@ -822,8 +822,18 @@ func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName
 	}
 }
 
+// emulatorBootArgs returns the emulator arguments for booting an avd. the window
+// is hidden unless a headed boot is requested.
+func emulatorBootArgs(avdName string, opts BootOptions) []string {
+	args := []string{"-netdelay", "none", "-netspeed", "full", "-avd", avdName}
+	if !opts.Headed {
+		args = append(args, "-qt-hide-window")
+	}
+	return args
+}
+
 // Boot launches an offline Android emulator and waits for it to be ready
-func (d *AndroidDevice) Boot() error {
+func (d *AndroidDevice) Boot(opts BootOptions) error {
 	if d.state != StateOffline {
 		return fmt.Errorf("emulator is already running")
 	}
@@ -834,7 +844,7 @@ func (d *AndroidDevice) Boot() error {
 	defer cancel()
 
 	// launch emulator in background without context (so it persists after function returns)
-	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), "-netdelay", "none", "-netspeed", "full", "-avd", d.id, "-qt-hide-window")
+	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), emulatorBootArgs(d.id, opts)...)
 	err := cmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start emulator: %w", err)
