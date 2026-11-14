@@ -22,9 +22,9 @@ var AndroidMobilecliDEX []byte
 //go:embed ios/agent-sim.dylib
 var IOSAgentSimDylib []byte
 
-// IOSAgentDevDylib is the real-device build of the compiled agent. It is mapped
-// into a foreground app over the debugserver by devices/ios/machomap, with no
-// code signing and no re-signing.
+// IOSAgentDevDylib is the real-device build of the compiled agent (server +
+// bridge + dispatcher + network). It is mapped into a foreground app over the
+// debugserver by devices/ios/machomap, with no code signing and no re-signing.
 //
 //go:embed ios/agent-dev.dylib
 var IOSAgentDevDylib []byte
