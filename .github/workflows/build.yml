@@ -193,7 +193,7 @@ jobs:
       env:
         CGO_ENABLED: 0
       run: |
-        for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64; do
+        for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 linux/riscv64 windows/amd64 windows/arm64; do
           os="${target%/*}"
           arch="${target#*/}"
           ext=""
@@ -221,6 +221,7 @@ jobs:
         path: |
           mobilecli-linux-arm64
           mobilecli-linux-amd64
+          mobilecli-linux-riscv64
         retention-days: 1
         overwrite: true
 
@@ -342,6 +343,11 @@ jobs:
         zip -9 "../mobilecli-$GITHUB_REF_NAME-linux-arm64.zip" mobilecli
         rm -f mobilecli
 
+        # linux-riscv64
+        cp ../mobilecli-linux/mobilecli-linux-riscv64 mobilecli
+        zip -9 "../mobilecli-$GITHUB_REF_NAME-linux-riscv64.zip" mobilecli
+        rm -f mobilecli
+
         # windows-amd64
         cp ../mobilecli-windows/mobilecli-windows-amd64.exe mobilecli.exe
         zip -9 "../mobilecli-$GITHUB_REF_NAME-windows-amd64.zip" mobilecli.exe
@@ -372,7 +378,7 @@ jobs:
     - name: Publish
       run: |
         # publish platform-specific packages
-        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 linux-riscv64 windows-amd64 windows-arm64; do
           os="${platform%-*}"
           binary="mobilecli-$platform"
           if [ "$os" = "windows" ]; then
@@ -390,7 +396,7 @@ jobs:
         cp README.md publish/npm
         cd publish/npm
         npm version "$GITHUB_REF_NAME" --no-git-tag-version
-        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-amd64 windows-arm64; do
+        for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 linux-riscv64 windows-amd64 windows-arm64; do
           npm pkg set "optionalDependencies.@mobilenext/mobilecli-$platform=$GITHUB_REF_NAME"
         done
         npm publish --access public --provenance
