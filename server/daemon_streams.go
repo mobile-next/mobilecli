@@ -78,6 +78,11 @@ func streamScreenCapture(ctx context.Context, params json.RawMessage, notify fun
 		return commands.NewErrorResponse(fmt.Errorf("error finding device: %v", err)), nil
 	}
 
+	// reject before starting the agent: a simulator would otherwise stream mjpeg for an avc request
+	if err := devices.ValidateScreenCaptureFormat(targetDevice.Platform(), targetDevice.DeviceType(), req.Format); err != nil {
+		return commands.NewErrorResponse(err), nil
+	}
+
 	onProgress := func(message string) { _ = notify(daemon.StreamProgress{Progress: message}) }
 	err = targetDevice.StartAgent(devices.StartAgentConfig{OnProgress: onProgress, Hook: commands.GetShutdownHook()})
 	if err != nil {
