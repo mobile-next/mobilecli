@@ -89,7 +89,8 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string, op
 	}
 	Verbose("Using signing identity: %s", identity)
 
-	entitlementsPath, err := writeEntitlementsPlist(profile)
+	// a wildcard profile never renames the app, so bundleID is still the one being signed
+	entitlementsPath, err := writeEntitlementsPlist(profile, bundleID)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract entitlements: %w", err)
 	}
@@ -101,7 +102,7 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string, op
 		return "", fmt.Errorf("failed to copy provisioning profile: %w", err)
 	}
 
-	if err = signAppBundle(appPath, identity, entitlementsPath); err != nil {
+	if err = signAppBundle(appPath, identity, profile, entitlementsPath); err != nil {
 		return "", err
 	}
 
@@ -109,11 +110,11 @@ func ResignIPA(ipaPath, deviceUDID, profileOverride, identityOverride string, op
 }
 
 // signAppBundle signs inside out: frameworks, then plugins, then the app itself.
-func signAppBundle(appPath, identity, entitlementsPath string) error {
+func signAppBundle(appPath, identity string, profile *provisioningProfile, entitlementsPath string) error {
 	if err := signFrameworks(appPath, identity); err != nil {
 		return err
 	}
-	if err := signPlugins(appPath, identity, entitlementsPath); err != nil {
+	if err := signPlugins(appPath, identity, profile, entitlementsPath); err != nil {
 		return err
 	}
 	if err := signLooseDylibs(appPath, identity); err != nil {
@@ -150,7 +151,7 @@ func signFrameworks(appPath, identity string) error {
 }
 
 // signPlugins re-signs app extensions and xctest bundles; an app without a PlugIns dir has none.
-func signPlugins(appPath, identity, entitlementsPath string) error {
+func signPlugins(appPath, identity string, profile *provisioningProfile, appEntitlementsPath string) error {
 	pluginsDir := filepath.Join(appPath, "PlugIns")
 	entries, err := os.ReadDir(pluginsDir)
 	if os.IsNotExist(err) {
@@ -167,12 +168,36 @@ func signPlugins(appPath, identity, entitlementsPath string) error {
 		if err := signLooseDylibs(pluginPath, identity); err != nil {
 			return err
 		}
+		entitlementsPath, removeEntitlements, err := pluginEntitlements(profile, pluginPath, appEntitlementsPath)
+		if err != nil {
+			return err
+		}
 		Verbose("Signing plugin: %s", entry.Name())
-		if err := codesign(pluginPath, identity, entitlementsPath); err != nil {
+		err = codesign(pluginPath, identity, entitlementsPath)
+		removeEntitlements()
+		if err != nil {
 			return fmt.Errorf("failed to sign plugin %s: %w", entry.Name(), err)
 		}
 	}
 	return nil
+}
+
+// pluginEntitlements returns the entitlements file to sign a plugin with, and a func
+// that removes it. Under a wildcard profile each plugin is named by its own bundle ID;
+// an exact profile keeps signing plugins with the app's entitlements.
+func pluginEntitlements(profile *provisioningProfile, pluginPath, appEntitlementsPath string) (string, func(), error) {
+	if !hasWildcardApplicationIdentifier(profile) {
+		return appEntitlementsPath, func() {}, nil
+	}
+	bundleID, err := readBundleID(pluginPath)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("failed to read bundle ID of plugin %s: %w", filepath.Base(pluginPath), err)
+	}
+	entitlementsPath, err := writeEntitlementsPlist(profile, bundleID)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("failed to write entitlements for plugin %s: %w", filepath.Base(pluginPath), err)
+	}
+	return entitlementsPath, func() { _ = os.Remove(entitlementsPath) }, nil
 }
 
 // repackageIPA zips the Payload dir under tempDir into a new temp IPA and returns its path.
@@ -458,9 +483,26 @@ func extractCertHash(identityLine string) string {
 	return ""
 }
 
-func writeEntitlementsPlist(profile *provisioningProfile) (string, error) {
+func hasWildcardApplicationIdentifier(profile *provisioningProfile) bool {
+	return strings.HasSuffix(profile.Entitlements.ApplicationIdentifier, ".*")
+}
+
+// applicationIdentifierFor resolves a wildcard profile identifier to the bundle being
+// signed. iOS installs the literal wildcard once, then rejects it as an upgrade over an
+// app that has its real identifier. The prefix comes from the profile because an older
+// account's App ID prefix is not always its team ID.
+func applicationIdentifierFor(profile *provisioningProfile, bundleID string) string {
+	appID := profile.Entitlements.ApplicationIdentifier
+	if !hasWildcardApplicationIdentifier(profile) {
+		return appID
+	}
+	prefix, _, _ := strings.Cut(appID, ".")
+	return prefix + "." + bundleID
+}
+
+func writeEntitlementsPlist(profile *provisioningProfile, bundleID string) (string, error) {
 	entitlementsMap := map[string]any{
-		"application-identifier": profile.Entitlements.ApplicationIdentifier,
+		"application-identifier": applicationIdentifierFor(profile, bundleID),
 		"get-task-allow":         profile.Entitlements.GetTaskAllow,
 	}
 
