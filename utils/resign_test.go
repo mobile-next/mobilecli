@@ -176,3 +176,103 @@ func TestRewriteBundleIDErrors(t *testing.T) {
 		t.Fatal("accepted malformed plist")
 	}
 }
+
+const agentTestPluginBundleID = "com.mobilenext.devicekit-iosUITests"
+
+func profileWithApplicationIdentifier(appID string) *provisioningProfile {
+	return &provisioningProfile{TeamIdentifier: []string{"TEAM"}, Entitlements: entitlements{ApplicationIdentifier: appID}}
+}
+
+func applicationIdentifierWrittenTo(t *testing.T, entitlementsPath string) string {
+	t.Helper()
+	data, err := os.ReadFile(entitlementsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written map[string]any
+	if _, err := plist.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	appID, _ := written["application-identifier"].(string)
+	return appID
+}
+
+func pluginWithBundleID(t *testing.T, bundleID string) string {
+	t.Helper()
+	pluginPath := filepath.Join(t.TempDir(), "Runner.xctest")
+	if err := os.MkdirAll(pluginPath, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	data, err := plist.Marshal(map[string]any{"CFBundleIdentifier": bundleID}, plist.XMLFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginPath, "Info.plist"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return pluginPath
+}
+
+// iOS rejects an upgrade signed with the literal wildcard identifier, so a wildcard
+// profile must be resolved to the bundle being signed. Exact profiles stay as they are.
+func TestEntitlementsNameTheBundleBeingSigned(t *testing.T) {
+	for _, tc := range []struct {
+		name, profileAppID, want string
+	}{
+		{"wildcard profile", "TEAM.*", "TEAM." + agentRunnerBundleID},
+		{"partial wildcard profile", "TEAM.com.mobilenext.*", "TEAM." + agentRunnerBundleID},
+		{"app ID prefix that is not the team ID", "PREFIX.*", "PREFIX." + agentRunnerBundleID},
+		{"exact profile", "TEAM.com.example.other", "TEAM.com.example.other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entitlementsPath, err := writeEntitlementsPlist(profileWithApplicationIdentifier(tc.profileAppID), agentRunnerBundleID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = os.Remove(entitlementsPath) }()
+
+			if got := applicationIdentifierWrittenTo(t, entitlementsPath); got != tc.want {
+				t.Fatalf("application-identifier = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWildcardProfileGivesAPluginItsOwnIdentifier(t *testing.T) {
+	pluginPath := pluginWithBundleID(t, agentTestPluginBundleID)
+
+	entitlementsPath, removeEntitlements, err := pluginEntitlements(profileWithApplicationIdentifier("TEAM.*"), pluginPath, "app-entitlements.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeEntitlements()
+
+	if got, want := applicationIdentifierWrittenTo(t, entitlementsPath), "TEAM."+agentTestPluginBundleID; got != want {
+		t.Fatalf("application-identifier = %q, want %q", got, want)
+	}
+}
+
+func TestExactProfileSignsAPluginWithTheAppEntitlements(t *testing.T) {
+	pluginPath := pluginWithBundleID(t, agentTestPluginBundleID)
+
+	entitlementsPath, removeEntitlements, err := pluginEntitlements(profileWithApplicationIdentifier("TEAM."+agentRunnerBundleID), pluginPath, "app-entitlements.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeEntitlements()
+
+	if entitlementsPath != "app-entitlements.plist" {
+		t.Fatalf("entitlements path = %q, want the app's", entitlementsPath)
+	}
+}
+
+func TestWildcardProfileRejectsAPluginWithoutABundleID(t *testing.T) {
+	pluginPath := filepath.Join(t.TempDir(), "Broken.appex")
+	if err := os.MkdirAll(pluginPath, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := pluginEntitlements(profileWithApplicationIdentifier("TEAM.*"), pluginPath, "app-entitlements.plist"); err == nil {
+		t.Fatal("expected an error for a plugin with no Info.plist")
+	}
+}
