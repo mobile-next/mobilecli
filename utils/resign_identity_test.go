@@ -278,3 +278,17 @@ func TestSecurityOutputIsReadAsIdentitiesWithTheirStatus(t *testing.T) {
 		}
 	}
 }
+
+// codesign prefers an identity with exactly the given name over one that only contains it.
+func TestARevokedIdentityWithExactlyTheGivenNameIsRefusedEvenIfALongerNameIsUsable(t *testing.T) {
+	revoked := developerCertificate(t, "Dev", nextYear)
+	valid := developerCertificate(t, "Dev Other", nextYear)
+	keychain := keychainListing(keychainLine(valid, "Dev Other", usable), keychainLine(revoked, "Dev", revokedBySecurity))
+
+	if err := checkSigningIdentityOverride("Dev", keychain); err == nil || !strings.Contains(err.Error(), hashOf(revoked)[:8]) {
+		t.Fatalf("got %v, want an error that names the revoked certificate", err)
+	}
+	if err := checkSigningIdentityOverride("Dev Other", keychain); err != nil {
+		t.Fatalf("unexpected error for the usable identity: %v", err)
+	}
+}

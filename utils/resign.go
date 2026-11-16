@@ -521,14 +521,11 @@ func findProfileSigningIdentity(identityOutput string, profile *provisioningProf
 
 // checkSigningIdentityOverride refuses a --signing-identity value that can only mean
 // identities security reports a problem for: codesign would sign with it and the device
-// would then reject the install. codesign accepts a hash or part of a name, so both are
-// matched. A value that matches a usable identity, or none, is left to codesign.
+// would then reject the install. A value that means a usable identity, or none that
+// security lists, is left to codesign.
 func checkSigningIdentityOverride(identityOverride, identityOutput string) error {
 	var unusable []string
-	for _, identity := range parseSigningIdentities(identityOutput) {
-		if !strings.EqualFold(identity.hash, identityOverride) && !strings.Contains(identity.name, identityOverride) {
-			continue
-		}
+	for _, identity := range identitiesNamedBy(identityOverride, parseSigningIdentities(identityOutput)) {
 		if identity.problem == "" {
 			return nil
 		}
@@ -540,6 +537,25 @@ func checkSigningIdentityOverride(identityOverride, identityOutput string) error
 	return fmt.Errorf(`signing identity %q cannot be used:
   - %s
 to fix this, pass an identity that "security find-identity -v -p codesigning" lists without a status, or leave out --signing-identity`, identityOverride, strings.Join(unusable, "\n  - "))
+}
+
+// identitiesNamedBy returns the identities codesign would consider for a -s value: the
+// ones with that hash or exactly that name, and only when there are none, the ones whose
+// name contains it.
+func identitiesNamedBy(value string, identities []signingIdentity) []signingIdentity {
+	var exact, partial []signingIdentity
+	for _, identity := range identities {
+		switch {
+		case strings.EqualFold(identity.hash, value) || identity.name == value:
+			exact = append(exact, identity)
+		case strings.Contains(identity.name, value):
+			partial = append(partial, identity)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	return partial
 }
 
 func certificateHash(certificate []byte) string {
