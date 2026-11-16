@@ -27,7 +27,8 @@ func writeElementLines(builder *strings.Builder, elements []ScreenElement, depth
 func formatElementLine(element ScreenElement) string {
 	parts := []string{fmt.Sprintf("%s [%s]", element.Ref, element.Type)}
 
-	if description := elementDescription(element); description != "" {
+	description := elementDescription(element)
+	if description != "" {
 		parts = append(parts, fmt.Sprintf("%q", description))
 	}
 
@@ -41,7 +42,15 @@ func formatElementLine(element ScreenElement) string {
 		parts = append(parts, states)
 	}
 
-	return strings.Join(parts, " ")
+	line := strings.Join(parts, " ")
+
+	// A labelled field hides its value behind the label, so the value goes
+	// after a colon, the way a Playwright aria snapshot shows it.
+	if element.Value != nil && *element.Value != "" && *element.Value != description {
+		line += fmt.Sprintf(": %q", *element.Value)
+	}
+
+	return line
 }
 
 // elementDescription is the first non-empty human-readable field, in the order

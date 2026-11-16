@@ -52,3 +52,19 @@ func TestFormatTextPrefersTextOverOtherLabels(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestFormatTextShowsValueAfterColonWhenItDiffersFromDescription(t *testing.T) {
+	elements := []ScreenElement{
+		{Type: "TextField", Label: stringPtr("Email"), Identifier: stringPtr("email"), Value: stringPtr("gil@example.com"), Focused: boolPtr(true)},
+		{Type: "TextField", Label: stringPtr("Phone"), Value: stringPtr("")},
+		{Type: "TextField", Value: stringPtr("only value")},
+	}
+	AttachRefs(elements)
+
+	want := "@e1 [TextField] \"Email\" #email (focused): \"gil@example.com\"\n" +
+		"@e2 [TextField] \"Phone\"\n" +
+		"@e3 [TextField] \"only value\"\n"
+	if got := FormatText(elements); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
