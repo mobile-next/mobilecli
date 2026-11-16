@@ -26,7 +26,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
 - **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
-- **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
+- **Screencapture video streaming**: Stream mjpeg/avc (H.264) video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
@@ -560,10 +560,10 @@ For the full list of available JSON-RPC methods and their parameters, see the [O
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket Support 🔌
@@ -576,9 +576,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -601,7 +601,7 @@ Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App 
 
 ### Building 🛠️
 
-Please refer to (docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
+Please refer to [docs/TESTING.md](docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
 
 ```bash
 make lint
