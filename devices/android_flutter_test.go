@@ -198,6 +198,128 @@ func expectGlobalRectToReResolveOffsetZero(t *testing.T, expired func(args []any
 	}
 }
 
+// The binding, its render view and Offset.zero all hang off statics, so finding
+// them must not take the full class list or a scan of the heap: on a large app
+// those two cost seconds on every dump, before the walk has even started.
+func TestWalkRootsAreResolvedThroughStatics(t *testing.T) {
+	var scans atomic.Int32
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		switch method {
+		case "getIsolate":
+			return fakeFlutterLibraries(), nil
+		case "getObject":
+			if lib := fakeFlutterLibrary(params["objectId"]); lib != nil {
+				return lib, nil
+			}
+		case "invoke":
+			if result := fakeFlutterStatics(params); result != nil {
+				return result, nil
+			}
+		case "getClassList", "getInstances":
+			scans.Add(1)
+		}
+		return nil, &vmRPCError{Code: -32000, Message: "unexpected call " + method}
+	})
+
+	roots, err := vm.resolveWalkRoots()
+	if err != nil {
+		t.Fatalf("resolveWalkRoots failed: %v", err)
+	}
+	want := walkRoots{
+		rootID:        "objects/root",
+		rootClass:     "_ReusableRenderView",
+		bindingID:     "objects/binding",
+		zeroID:        "objects/zero",
+		offsetClassID: "classes/offset",
+	}
+	if *roots != want {
+		t.Errorf("roots = %+v, want %+v", *roots, want)
+	}
+	if n := scans.Load(); n != 0 {
+		t.Errorf("the class list or the heap was scanned %d times, want 0", n)
+	}
+}
+
+// A VM that cannot be reached through statics still has to produce a dump, so
+// the class list and the heap remain the fallback.
+func TestWalkRootsFallBackToScanningTheHeap(t *testing.T) {
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		switch method {
+		case "getIsolate":
+			return fakeFlutterLibraries(), nil
+		case "getObject":
+			if lib := fakeFlutterLibrary(params["objectId"]); lib != nil {
+				return lib, nil
+			}
+			if params["objectId"] == "objects/zero-on-heap" {
+				return fakeOffset("0.0", "0.0"), nil
+			}
+		case "invoke":
+			// a static getter that throws comes back as an @Error result
+			return map[string]any{"type": "@Error", "kind": "UnhandledException", "id": "objects/error"}, nil
+		case "getClassList":
+			return map[string]any{"classes": []any{
+				fakeClass("classes/root", rootRenderClass),
+				fakeClass("classes/offset", offsetClass),
+				fakeClass("classes/binding", bindingClass),
+			}}, nil
+		case "getInstances":
+			instance := map[any]string{
+				"classes/root":    "objects/root-on-heap",
+				"classes/offset":  "objects/zero-on-heap",
+				"classes/binding": "objects/binding-on-heap",
+			}[params["objectId"]]
+			return map[string]any{"instances": []any{map[string]any{"id": instance}}}, nil
+		}
+		return nil, &vmRPCError{Code: -32000, Message: "unexpected call " + method}
+	})
+
+	roots, err := vm.resolveWalkRoots()
+	if err != nil {
+		t.Fatalf("resolveWalkRoots failed: %v", err)
+	}
+	want := walkRoots{
+		rootID:        "objects/root-on-heap",
+		rootClass:     rootRenderClass,
+		bindingID:     "objects/binding-on-heap",
+		zeroID:        "objects/zero-on-heap",
+		offsetClassID: "classes/offset",
+	}
+	if *roots != want {
+		t.Errorf("roots = %+v, want %+v", *roots, want)
+	}
+}
+
+// Re-resolving an expired Offset.zero happens in the middle of a walk, possibly
+// more than once, so it reads the static again instead of scanning the heap.
+func TestExpiredOffsetZeroIsReadFromTheStaticAgain(t *testing.T) {
+	var scans atomic.Int32
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		switch method {
+		case "invoke":
+			if params["targetId"] == "classes/offset" && params["selector"] == "get:zero" {
+				return fakeInstance("objects/zero-new", offsetClass), nil
+			}
+		case "getInstances":
+			scans.Add(1)
+		}
+		return nil, &vmRPCError{Code: -32000, Message: "unexpected call " + method}
+	})
+	vm.zeroOffsetID = "objects/zero-old"
+	vm.offsetClassID = "classes/offset"
+
+	id, err := vm.refreshZeroOffsetID("objects/zero-old")
+	if err != nil {
+		t.Fatalf("refreshZeroOffsetID failed: %v", err)
+	}
+	if id != "objects/zero-new" {
+		t.Errorf("id = %q, want objects/zero-new", id)
+	}
+	if n := scans.Load(); n != 0 {
+		t.Errorf("the heap was scanned %d times, want 0", n)
+	}
+}
+
 func TestIsExpiredArgumentErrorOnlyMatchesRejectedArgumentIds(t *testing.T) {
 	cases := map[error]bool{
 		&vmRPCError{Code: vmInvalidParams, Message: "Invalid params", Details: "invoke: invalid 'argumentIds' parameter: [objects/1/0]"}: true,
@@ -218,6 +340,52 @@ func fakeOffset(dx, dy string) map[string]any {
 		map[string]any{"name": "_dx", "value": map[string]any{"kind": "Double", "valueAsString": dx}},
 		map[string]any{"name": "_dy", "value": map[string]any{"kind": "Double", "valueAsString": dy}},
 	}}
+}
+
+func fakeClass(id, name string) map[string]any {
+	return map[string]any{"type": "@Class", "id": id, "name": name}
+}
+
+func fakeInstance(id, className string) map[string]any {
+	return map[string]any{"type": "@Instance", "kind": "PlainInstance", "id": id, "class": map[string]any{"name": className}}
+}
+
+// fakeFlutterLibraries is the getIsolate answer of an isolate that has loaded
+// the two libraries a dump is bootstrapped from, among others.
+func fakeFlutterLibraries() map[string]any {
+	return map[string]any{"libraries": []any{
+		map[string]any{"id": "libraries/core", "uri": "dart:core"},
+		map[string]any{"id": "libraries/ui", "uri": dartUILibrary},
+		map[string]any{"id": "libraries/widgets-binding", "uri": widgetsBindingLibrary},
+	}}
+}
+
+// fakeFlutterLibrary is the getObject answer for one of those libraries, or nil
+// for any other object id.
+func fakeFlutterLibrary(objectID any) map[string]any {
+	switch objectID {
+	case "libraries/ui":
+		return map[string]any{"classes": []any{fakeClass("classes/size", "Size"), fakeClass("classes/offset", offsetClass)}}
+	case "libraries/widgets-binding":
+		return map[string]any{"classes": []any{fakeClass("classes/widgets-binding", widgetsBindingMixin), fakeClass("classes/binding", bindingClass)}}
+	}
+	return nil
+}
+
+// fakeFlutterStatics answers the invokes that lead from the two classes to the
+// walk roots, or nil for any other invoke.
+func fakeFlutterStatics(params map[string]any) map[string]any {
+	switch fmt.Sprint(params["targetId"], " ", params["selector"]) {
+	case "classes/widgets-binding get:instance":
+		return fakeInstance("objects/binding", bindingClass)
+	case "objects/binding get:renderViews":
+		return fakeInstance("objects/views", "_CompactValuesIterable")
+	case "objects/views get:first":
+		return fakeInstance("objects/root", rootRenderClass)
+	case "classes/offset get:zero":
+		return fakeInstance("objects/zero", offsetClass)
+	}
+	return nil
 }
 
 // dialFakeVM connects a flutterVM to a fake VM service that answers each
