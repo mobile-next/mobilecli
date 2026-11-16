@@ -92,6 +92,31 @@ func TestChildrenOfReadsAValueThatIsNotAField(t *testing.T) {
 	}
 }
 
+// style is a field of every DiagnosticsNode, so a node that keeps its value
+// behind a getter can be marked offstage just the same. It is left out too, and
+// without being asked for the value.
+func TestChildrenOfLeavesOutAnOffstageChildWhoseValueIsNotAField(t *testing.T) {
+	var valueReads atomic.Int32
+	offstageProperty := map[string]any{"fields": []any{
+		map[string]any{"name": "style", "value": map[string]any{"type": "@Instance", "kind": "PlainInstance", "id": "styles/DiagnosticsTreeStyle.offstage"}},
+	}}
+	parent := fakeRenderParent(map[string]map[string]any{"objects/describes-property": offstageProperty})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if method == "invoke" && params["targetId"] == "objects/describes-property" && params["selector"] == "get:value" {
+			valueReads.Add(1)
+			return map[string]any{"type": "@Instance", "id": "objects/property-child", "class": map[string]any{"name": "RenderBox"}}, nil
+		}
+		return parent(method, params)
+	})
+
+	if kids := vm.childrenOf("objects/parent"); len(kids) != 0 {
+		t.Errorf("children = %v, want none", kids)
+	}
+	if n := valueReads.Load(); n != 0 {
+		t.Errorf("the offstage node's value was read %d times, want 0", n)
+	}
+}
+
 // Calls made after the read loop exits can never be answered, so they must fail
 // immediately instead of blocking for the full per-call timeout.
 func TestCallFailsFastAfterTheConnectionIsGone(t *testing.T) {

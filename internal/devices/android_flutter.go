@@ -963,27 +963,26 @@ func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
 // onstageChild returns the render object a child's DiagnosticsNode describes, or
 // nil when the parent marked it offstage. Reading the node's fields answers both
 // questions in the one call that reading its value alone used to take. `style`
-// is null unless the parent passed one, so only a child that carries a style
-// costs a second call to tell which style it is.
+// is a field of every DiagnosticsNode and is null unless the parent passed one,
+// so only a child that carries a style costs a second call to tell which style
+// it is.
 func (vm *flutterVM) onstageChild(diagnosticsNodeID string) *vmInstanceRef {
 	node, err := vm.getObject(diagnosticsNodeID)
 	if err != nil {
 		return nil
 	}
-	val := node.field("value")
-	if val == nil {
-		// Not a DiagnosticableNode: its value sits behind a getter, and nothing
-		// says whether it is offstage.
-		val, err = vm.invoke(diagnosticsNodeID, "get:value", nil)
-		if err != nil {
-			return nil
-		}
-		return val
-	}
 	if style := node.field("style"); style != nil && style.ID != "" && style.Kind != dartKindNull {
 		if strings.HasSuffix(vm.invokeString(style.ID, "toString"), offstageStyleSuffix) {
 			return nil
 		}
+	}
+	if val := node.field("value"); val != nil {
+		return val
+	}
+	// Not a DiagnosticableNode: its value sits behind a getter.
+	val, err := vm.invoke(diagnosticsNodeID, "get:value", nil)
+	if err != nil {
+		return nil
 	}
 	return val
 }
