@@ -94,7 +94,7 @@ INPUT/OUTPUT:
   # Pinch around a point (screen center if omitted): --direction out zooms in, --direction in zooms out
   mobilecli io pinch --device <device-id> 500,800 --direction out
 
-  # Press hardware button (HOME, VOLUME_UP, VOLUME_DOWN, POWER)
+  # Press hardware button (see 'mobilecli io button --help' for the names)
   mobilecli io button --device <device-id> HOME
 
   # Send text input

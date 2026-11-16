@@ -811,7 +811,7 @@ Presses a physical or virtual button on the device
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
-| `button` | `string` | ✓ | Button to press |
+| `button` | `string` | ✓ | Button to press, case-insensitive. All platforms: HOME, POWER (alias LOCK), VOLUME_UP, VOLUME_DOWN, ENTER. Android only: BACK, BACKSPACE, APP_SWITCH, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER |
 
 #### Response
 

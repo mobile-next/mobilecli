@@ -9,12 +9,14 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -921,26 +923,41 @@ func (d *AndroidDevice) checkBootComplete(deviceID string) (bool, error) {
 	return strings.TrimSpace(string(output)) == "1", nil
 }
 
-func (d *AndroidDevice) PressButton(key string) error {
-	keyMap := map[string]string{
-		"HOME":        "KEYCODE_HOME",
-		"BACK":        "KEYCODE_BACK",
-		"VOLUME_UP":   "KEYCODE_VOLUME_UP",
-		"VOLUME_DOWN": "KEYCODE_VOLUME_DOWN",
-		"ENTER":       "KEYCODE_ENTER",
-		"DPAD_CENTER": "KEYCODE_DPAD_CENTER",
-		"DPAD_UP":     "KEYCODE_DPAD_UP",
-		"DPAD_DOWN":   "KEYCODE_DPAD_DOWN",
-		"DPAD_LEFT":   "KEYCODE_DPAD_LEFT",
-		"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
-		"BACKSPACE":   "KEYCODE_DEL",
-		"APP_SWITCH":  "KEYCODE_APP_SWITCH",
-		"POWER":       "KEYCODE_POWER",
-	}
+// androidButtons maps the button names `io button` accepts to Android keycodes.
+var androidButtons = map[string]string{
+	"HOME":        "KEYCODE_HOME",
+	"BACK":        "KEYCODE_BACK",
+	"VOLUME_UP":   "KEYCODE_VOLUME_UP",
+	"VOLUME_DOWN": "KEYCODE_VOLUME_DOWN",
+	"ENTER":       "KEYCODE_ENTER",
+	"DPAD_CENTER": "KEYCODE_DPAD_CENTER",
+	"DPAD_UP":     "KEYCODE_DPAD_UP",
+	"DPAD_DOWN":   "KEYCODE_DPAD_DOWN",
+	"DPAD_LEFT":   "KEYCODE_DPAD_LEFT",
+	"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
+	"BACKSPACE":   "KEYCODE_DEL",
+	"APP_SWITCH":  "KEYCODE_APP_SWITCH",
+	"POWER":       "KEYCODE_POWER",
+	"LOCK":        "KEYCODE_POWER", // alias of POWER, the name iOS started with
+}
 
-	keycode, exists := keyMap[key]
+// AndroidButtonNames returns the button names an Android device accepts, sorted.
+func AndroidButtonNames() []string {
+	return slices.Sorted(maps.Keys(androidButtons))
+}
+
+func androidKeycode(key string) (string, error) {
+	keycode, exists := androidButtons[key]
 	if !exists {
-		return fmt.Errorf("AndroidDevice: unsupported button key: %s", key)
+		return "", fmt.Errorf("AndroidDevice: unsupported button key: %s (supported: %s)", key, strings.Join(AndroidButtonNames(), ", "))
+	}
+	return keycode, nil
+}
+
+func (d *AndroidDevice) PressButton(key string) error {
+	keycode, err := androidKeycode(key)
+	if err != nil {
+		return err
 	}
 
 	if _, err := d.serverRequest("device.io.button", buttonParams{Button: keycode}); err != nil {
