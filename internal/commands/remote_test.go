@@ -191,3 +191,33 @@ func TestFleetReleaseCommandFailsWhenDeviceIsNotInAnyActiveSession(t *testing.T)
 		t.Errorf("expected the error to name the device, got %q", response.Error)
 	}
 }
+
+// the fleet marks the models the caller's plan cannot allocate, and list-devices must pass that on
+func TestFleetListDevicesResponseKeepsAvailability(t *testing.T) {
+	wire := `{"devices":[
+		{"name":"Google Pixel 10","platform":"android","type":"real","version":"16","formFactor":"phone","availability":"available"},
+		{"name":"Google Pixel 11 Pro","platform":"android","type":"real","version":"17","formFactor":"phone","availability":"requires_upgrade"}
+	]}`
+
+	var result FleetListDevicesResponse
+	if err := json.Unmarshal([]byte(wire), &result); err != nil {
+		t.Fatalf("failed to decode the fleet.listDevices result: %v", err)
+	}
+	if len(result.Devices) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(result.Devices))
+	}
+	if result.Devices[0].Availability != "available" {
+		t.Errorf("expected the first device to be available, got %q", result.Devices[0].Availability)
+	}
+	if result.Devices[1].Availability != "requires_upgrade" {
+		t.Errorf("expected the second device to require an upgrade, got %q", result.Devices[1].Availability)
+	}
+
+	printed, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to encode the list-devices output: %v", err)
+	}
+	if !strings.Contains(string(printed), `"availability":"requires_upgrade"`) {
+		t.Errorf("expected the output to carry the availability, got %s", printed)
+	}
+}
