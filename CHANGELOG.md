@@ -1,4 +1,4 @@
-## [1.0.24](https://github.com/mobile-next/mobilecli/releases/tag/1.0.24) (2026-11-13)
+## [1.0.24](https://github.com/mobile-next/mobilecli/releases/tag/1.0.24) (2026-11-16)
 * Feat: pass arguments and environment variables to `apps launch` ([#531](https://github.com/mobile-next/mobilecli/pull/531))
 * Feat: add `--headed` to `device boot` ([#565](https://github.com/mobile-next/mobilecli/pull/565))
 * Fix: auto-scale the default pinch distance to the screen ([#481](https://github.com/mobile-next/mobilecli/pull/481))
