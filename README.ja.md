@@ -26,7 +26,7 @@
 - **エミュレーター / シミュレーター制御**: エミュレーターとシミュレーターの起動・終了をプログラムから実行
 - **スクリーンショット取得**: 接続された任意のデバイスからフォーマットを指定してスクリーンショットを取得
 - **複数の出力形式**: 品質を指定して PNG または JPEG でスクリーンショットを保存
-- **画面キャプチャの動画ストリーミング**: デバイスから mjpeg / h264 の動画を直接ストリーミング
+- **画面キャプチャの動画ストリーミング**: デバイスから mjpeg / avc (H.264) の動画を直接ストリーミング
 - **デバイス制御**: デバイスの再起動、画面座標のタップ、ハードウェアボタンの押下
 - **アプリ管理**: アプリの起動、終了、インストール、アンインストール、データ消去、一覧表示、フォアグラウンドアプリの取得
 - **ファイルシステム**: デバイス上またはアプリコンテナ内でのファイルの push、pull、一覧表示、mkdir、rm（Android、iOS シミュレーター）
@@ -472,10 +472,10 @@ CLI とデーモンは `~/.mobilecli/` 内の unix ドメインソケット経�
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket 対応 🔌
@@ -488,9 +488,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -505,7 +505,7 @@ wscat -c ws://localhost:12000/ws
 
 ### ビルド 🛠️
 
-*mobilecli* をローカルでテストする方法の詳細は (docs/TESTING.md) を参照してください。
+*mobilecli* をローカルでテストする方法の詳細は [docs/TESTING.md](docs/TESTING.md) を参照してください。
 
 ```bash
 make lint
