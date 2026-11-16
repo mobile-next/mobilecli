@@ -49,9 +49,9 @@ jobs:
       with:
         name: android-agents
         path: |
-          agents/android/mobilecli-arm64-v8a.so
-          agents/android/mobilecli-x86_64.so
-          agents/android/mobilecli.dex
+          internal/agentassets/data/android/mobilecli-arm64-v8a.so
+          internal/agentassets/data/android/mobilecli-x86_64.so
+          internal/agentassets/data/android/mobilecli.dex
         retention-days: 1
 
   build_ios_agents:
@@ -70,8 +70,8 @@ jobs:
       with:
         name: ios-agents
         path: |
-          agents/ios/agent-sim.dylib
-          agents/ios/agent-dev.dylib
+          internal/agentassets/data/ios/agent-sim.dylib
+          internal/agentassets/data/ios/agent-dev.dylib
         retention-days: 1
 
   test:
@@ -92,13 +92,13 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: android-agents
-        path: agents/android/
+        path: internal/agentassets/data/android/
 
     - name: Download iOS agent binaries
       uses: actions/download-artifact@v8
       with:
         name: ios-agents
-        path: agents/ios/
+        path: internal/agentassets/data/ios/
 
     - name: Run Unit Tests
       run: |
@@ -124,7 +124,9 @@ jobs:
         git diff --exit-code
 
     - name: Create placeholder agent binaries for typecheck
-      run: touch agents/android/mobilecli-arm64-v8a.so agents/android/mobilecli-x86_64.so agents/android/mobilecli.dex agents/ios/agent-sim.dylib agents/ios/agent-dev.dylib
+      run: |
+        mkdir -p internal/agentassets/data/android internal/agentassets/data/ios
+        touch internal/agentassets/data/android/mobilecli-arm64-v8a.so internal/agentassets/data/android/mobilecli-x86_64.so internal/agentassets/data/android/mobilecli.dex internal/agentassets/data/ios/agent-sim.dylib internal/agentassets/data/ios/agent-dev.dylib
 
     - name: Lint
       uses: golangci/golangci-lint-action@v9
@@ -172,13 +174,13 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         name: android-agents
-        path: agents/android/
+        path: internal/agentassets/data/android/
 
     - name: Download iOS agent binaries
       uses: actions/download-artifact@v8
       with:
         name: ios-agents
-        path: agents/ios/
+        path: internal/agentassets/data/ios/
 
     - name: Set version
       if: github.ref_type == 'tag'
@@ -187,7 +189,7 @@ jobs:
           echo "::error::Invalid release tag format: $GITHUB_REF_NAME"
           exit 1
         fi
-        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' utils/version.go
+        sed -i 's/Version = \"dev\"/Version = \"'"$GITHUB_REF_NAME"'\"/' internal/utils/version.go
 
     - name: Build
       env:
