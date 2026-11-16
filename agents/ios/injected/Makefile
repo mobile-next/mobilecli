@@ -1,7 +1,7 @@
 ARCH := arm64
 MIN  := 15.0
 SRCS := agent.m server.m bridge.m dispatcher.m
-OUTPUT_DIR := ../../internal/agentassets/data/ios
+OUTPUT_DIR := ../../../internal/agentassets/data/ios
 
 FLAGS = -arch $(ARCH) \
         -dynamiclib -fPIC -fobjc-arc \

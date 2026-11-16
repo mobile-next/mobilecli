@@ -17,7 +17,7 @@ import (
 // as the simulator and Android (same _ReusableRenderView root, same
 // invoke/localToGlobal), so this only handles the device-specific parts:
 //   - Getting the Dart VM service URI: the injected in-process agent
-//     (agents/ios) reads it from the running Flutter engine and
+//     (agents/ios/injected) reads it from the running Flutter engine and
 //     returns it over the existing agentCall channel — no logs, no mDNS.
 //   - Reaching it: the VM service listens on the device's loopback, so we
 //     forward a local port to it through the same go-ios tunnel the agent uses.
