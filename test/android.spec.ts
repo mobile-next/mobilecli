@@ -104,11 +104,16 @@ function getFirstAndroidDevice(deviceType: string): Device | null {
 test.describe('Android Tests', () => {
 	let device: Device | null;
 
-	test.beforeAll(({deviceType}) => {
+	test.beforeAll(async ({deviceType}) => {
 		device = getFirstAndroidDevice(deviceType);
 		if (!device) {
 			console.log(`No Android ${deviceType} device found. See test/README.md for setup instructions.`);
+			return;
 		}
+
+		const serial = adbSerialOf(device);
+		wakeDeviceAndDismissKeyguard(serial);
+		await eventually(() => isDeviceAwake(serial), 'the device never woke up').toBe(true);
 	});
 
 	test('should take screenshot', ({deviceType}) => {
@@ -885,6 +890,17 @@ function adbShell(serial: string, command: string): {ok: boolean; output: string
 	}
 }
 
+// a sleeping device has no display to record and no app in the foreground, so
+// screenrecord and the foreground tests fail on it. waking an awake device is a no-op
+function wakeDeviceAndDismissKeyguard(serial: string): void {
+	adb(['-s', serial], ['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+	adb(['-s', serial], ['shell', 'wm', 'dismiss-keyguard']);
+}
+
+function isDeviceAwake(serial: string): boolean {
+	return adbShell(serial, 'dumpsys power').output.includes('mWakefulness=Awake');
+}
+
 // a daemon of its own, started with env, launches the server the test wants. the
 // shared daemon's server must be gone first, or the new daemon adopts it instead,
 // and that one was started with the default idle timeout
@@ -905,8 +921,14 @@ function deviceServerPid(serial: string): number | undefined {
 	return result.ok ? Number(result.output.trim()) : undefined;
 }
 
+// read from /proc rather than `pgrep -a`: the toybox on android 14 and older has
+// no -a and prints nothing for it
 function deviceServerCommandLine(serial: string): string {
-	return adbShell(serial, `pgrep -af '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).output;
+	const pid = deviceServerPid(serial);
+	if (pid === undefined) {
+		return '';
+	}
+	return adbShell(serial, `tr '\\0' ' ' < /proc/${pid}/cmdline`).output;
 }
 
 // brackets around the first letter keep pgrep from matching its own command line
