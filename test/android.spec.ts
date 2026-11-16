@@ -433,7 +433,6 @@ test.describe('Android Tests', () => {
 		// installs an app we own rather than anything already on the image, so the
 		// uninstall half is safe to run for real. also leaves playground installed
 		// for the app-container fs group below.
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
 
 		let apkPath: string;
 
@@ -473,7 +472,6 @@ test.describe('Android Tests', () => {
 	test.describe('url with more than one query parameter', () => {
 		// playground owns this deep link and prints its `name` parameter on screen, so
 		// what the device received is readable without a browser or the network
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
 
 		test('should deliver every query parameter, not only the first', async () => {
 			test.skip(!device, 'No Android device found');
@@ -489,8 +487,7 @@ test.describe('Android Tests', () => {
 
 	test.describe.serial('webview', () => {
 		// the playground webview screen is the one embedded webview we control on
-		// both platforms. a real handset would be left on an arbitrary screen.
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+		// both platforms.
 
 		let webViewId: string;
 
@@ -621,8 +618,6 @@ test.describe('Android Tests', () => {
 	// mode. out of it, android behaves as if a hardware keyboard is in use: the next
 	// screen gives focus to a view, and a scroll view jumps to that view.
 	test.describe.serial('touch mode while typing', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		let serial: string;
 
 		test.beforeAll(async () => {
@@ -682,8 +677,6 @@ test.describe('Android Tests', () => {
 	// its own describe: it puts another screen on top of the webview screen, which would
 	// break the shared state the playground tests above set up once in their beforeAll
 	test.describe('webview behind another screen of the app', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		test.beforeAll(async () => {
 			if (!device) return;
 			// a relaunch resumes whatever screen the app was left on, so start it afresh
@@ -714,8 +707,6 @@ test.describe('Android Tests', () => {
 	// reads the foreground app, so this launches a different app and would break the
 	// shared state the playground tests set up once in their beforeAll
 	test.describe('webview on an app that cannot be inspected', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		test.beforeAll(async () => {
 			if (!device) return;
 			launchApp(device.id, SETTINGS_PACKAGE);
@@ -737,9 +728,8 @@ test.describe('Android Tests', () => {
 	});
 
 	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
-		// reading an app sandbox needs a debuggable build installed, which is
-		// guaranteed on an emulator image but not on someone's phone
-		test.skip(({deviceType}) => deviceType === 'real', 'requires a debuggable playground build');
+		// reading an app sandbox needs a debuggable build installed, which the
+		// install group above leaves behind
 
 		const packageName = PLAYGROUND_PACKAGE;
 		let containerPath: string;

@@ -63,7 +63,7 @@ jobs:
         persist-credentials: false
 
     - name: Build iOS agents
-      run: make -C agents/ios all
+      run: make -C agents/ios/injected all
 
     - name: Upload iOS agent binaries
       uses: actions/upload-artifact@v7

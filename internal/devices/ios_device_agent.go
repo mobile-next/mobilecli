@@ -19,7 +19,7 @@ import (
 //
 // A real device cannot have a dylib loaded with dlopen. Instead we ask the
 // DeviceKit agent for the foreground app (bundleID + pid), attach to it over the
-// CoreDevice debug proxy, and map the compiled agent (agents/ios) into it (see
+// CoreDevice debug proxy, and map the compiled agent (agents/ios/injected) into it (see
 // devices/ios/machomap). We then forward a local port to the agent's server.
 //
 // Feature code (webview today; view-tree, network capture, etc. later) talks to

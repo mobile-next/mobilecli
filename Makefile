@@ -4,7 +4,7 @@ all: build
 
 agents:
 	$(MAKE) -C agents/android all
-	$(MAKE) -C agents/ios all
+	$(MAKE) -C agents/ios/injected all
 
 build: agents
 	go mod tidy
@@ -59,6 +59,6 @@ fmt:
 
 clean:
 	$(MAKE) -C agents/android clean
-	$(MAKE) -C agents/ios clean
+	$(MAKE) -C agents/ios/injected clean
 	rm -f mobilecli coverage.out coverage.html
 
