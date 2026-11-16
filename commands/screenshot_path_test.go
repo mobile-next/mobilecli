@@ -52,3 +52,15 @@ func TestUniquePathAppendsCounterWhenFileExists(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "shot-2.png"), uniquePath(base))
 	assert.Equal(t, filepath.Join(dir, "fresh.png"), uniquePath(filepath.Join(dir, "fresh.png")))
 }
+
+func TestResolveScreenRecordPathNamesTheFileAfterTheDevice(t *testing.T) {
+	dir := t.TempDir()
+
+	got, err := ResolveScreenRecordPath(dir+string(filepath.Separator), "dev:1")
+	require.NoError(t, err)
+
+	assert.Equal(t, dir, filepath.Dir(got))
+	base := filepath.Base(got)
+	assert.True(t, strings.HasPrefix(base, "screenrecord-dev_1-"), base)
+	assert.True(t, strings.HasSuffix(base, ".mp4"), base)
+}

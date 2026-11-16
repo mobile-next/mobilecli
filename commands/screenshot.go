@@ -76,6 +76,18 @@ func resolveScreenSizeForClip(device devices.ControllableDevice, clip *types.Scr
 // A path ending in a separator (or an empty path, meaning the current
 // directory) gets a generated screenshot-<device>-<timestamp> filename.
 func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) {
+	extension := formatPNG
+	if format == formatJPEG {
+		extension = "jpg"
+	}
+	return resolveOutputPath(outputPath, "screenshot", deviceID, extension)
+}
+
+// resolveOutputPath turns the requested output into an absolute file path.
+// A path ending in a separator (or an empty path, meaning the current
+// directory) gets a generated <prefix>-<device>-<timestamp>.<extension>
+// filename.
+func resolveOutputPath(outputPath, prefix, deviceID, extension string) (string, error) {
 	isDir := outputPath == "" || os.IsPathSeparator(outputPath[len(outputPath)-1])
 	if !isDir {
 		abs, err := filepath.Abs(outputPath)
@@ -87,11 +99,7 @@ func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) 
 
 	timestamp := time.Now().Format("20060102150405")
 	safeDeviceID := strings.ReplaceAll(deviceID, ":", "_")
-	extension := formatPNG
-	if format == formatJPEG {
-		extension = "jpg"
-	}
-	fileName := fmt.Sprintf("screenshot-%s-%s.%s", safeDeviceID, timestamp, extension)
+	fileName := fmt.Sprintf("%s-%s-%s.%s", prefix, safeDeviceID, timestamp, extension)
 	abs, err := filepath.Abs(filepath.Join(outputPath, fileName))
 	if err != nil {
 		return "", fmt.Errorf("error creating default path: %v", err)
@@ -100,7 +108,7 @@ func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) 
 }
 
 // uniquePath appends -1, -2, ... before the extension until the name is free,
-// so two screenshots of one device within the same second do not overwrite
+// so two generated names for one device within the same second do not overwrite
 // each other.
 func uniquePath(path string) string {
 	if _, err := os.Stat(path); err != nil {

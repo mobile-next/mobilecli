@@ -18,23 +18,36 @@ var screenrecordCmd = &cobra.Command{
 	Short: "Record device screen to an MP4 file",
 	Long:  `Records the screen of a connected device (iOS, Android, or simulator) to an MP4 file.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if screenrecordOutput == "" {
-			return fmt.Errorf("--output is required")
+		// the daemon's cwd is not ours: send an absolute path, or our cwd as the
+		// directory for the generated default filename
+		outputPath := absLocalPath(screenrecordOutput)
+		if outputPath == "" {
+			outputPath = cwdWithSeparator()
 		}
 
-		return streamViaDaemon("cli.screenrecord", commands.ScreenRecordStreamRequest{
+		raw, err := streamResultViaDaemon("cli.screenrecord", commands.ScreenRecordStreamRequest{
 			DeviceID:   deviceId,
-			OutputPath: absLocalPath(screenrecordOutput),
+			OutputPath: outputPath,
 			TimeLimit:  screenrecordTimeLimit,
 			Silent:     screenrecordSilent,
 		})
+		if err != nil || raw == nil {
+			return err
+		}
+
+		out, err := indentedJSON(raw)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+		return nil
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(screenrecordCmd)
 
-	screenrecordCmd.Flags().StringVarP(&screenrecordOutput, "output", "o", "", "Output MP4 file path")
+	screenrecordCmd.Flags().StringVarP(&screenrecordOutput, "output", "o", "", "Output MP4 file path (default: screenrecord-<device>-<timestamp>.mp4 in the current directory)")
 	screenrecordCmd.Flags().IntVar(&screenrecordTimeLimit, "time-limit", 0, "Max recording duration in seconds (0 = no limit)")
 	screenrecordCmd.Flags().BoolVar(&screenrecordSilent, "silent", false, "Suppress progress output")
 }
