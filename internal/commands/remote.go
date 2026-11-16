@@ -40,6 +40,8 @@ type FleetDevice struct {
 	Type       string `json:"type"`
 	Version    string `json:"version"`
 	FormFactor string `json:"formFactor"`
+	// Availability is "available", or "requires_upgrade" when the caller's plan cannot allocate this model
+	Availability string `json:"availability,omitempty"`
 }
 
 // FleetListDevicesResponse is the result object of the fleet.listDevices rpc
