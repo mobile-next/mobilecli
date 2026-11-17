@@ -273,6 +273,7 @@ test.describe('rpc method validation', () => {
 		{method: 'device.apps.path', params: {bundleId: 'com.example.app'}},
 		{method: 'device.apps.uninstall', params: {bundleId: 'com.example.app'}},
 		{method: 'device.io.tap', params: {x: 10, y: 10}},
+		{method: 'device.io.doubletap', params: {x: 10, y: 10}},
 		{method: 'device.io.longpress', params: {x: 10, y: 10}},
 		{method: 'device.io.swipe', params: {x1: 1, y1: 2, x2: 3, y2: 4}},
 		{method: 'device.io.pinch', params: {x: 500, y: 500, direction: 'out'}},

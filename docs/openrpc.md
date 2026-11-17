@@ -28,6 +28,7 @@ JSON-RPC API for mobile device automation and control
 - [device.fs.rm](#devicefsrm)
 - [device.info](#deviceinfo)
 - [device.io.button](#deviceiobutton)
+- [device.io.doubletap](#deviceiodoubletap)
 - [device.io.fill](#deviceiofill)
 - [device.io.gesture](#deviceiogesture)
 - [device.io.keys](#deviceiokeys)
@@ -828,6 +829,42 @@ Operation result
   "params": {
     "deviceId": "string",
     "button": "string"
+  },
+  "id": 1
+}
+```
+
+
+### device.io.doubletap
+
+**Perform double tap gesture**
+
+Performs a double tap gesture at the specified coordinates on the device screen; iOS only for now
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `x` | `integer` | ✓ | X coordinate for the double tap |
+| `y` | `integer` | ✓ | Y coordinate for the double tap |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.doubletap",
+  "params": {
+    "deviceId": "string",
+    "x": 0,
+    "y": 0
   },
   "id": 1
 }

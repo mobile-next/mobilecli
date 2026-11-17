@@ -479,6 +479,26 @@ func handleIoTap(params json.RawMessage) (any, error) {
 	return okResult(response)
 }
 
+func handleIoDoubleTap(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
+	}
+
+	var ioDoubleTapParams IoTapParams
+	if err := json.Unmarshal(params, &ioDoubleTapParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, x, y", err)
+	}
+
+	req := commands.DoubleTapRequest{
+		DeviceID: ioDoubleTapParams.DeviceID,
+		X:        ioDoubleTapParams.X,
+		Y:        ioDoubleTapParams.Y,
+	}
+
+	response := commands.DoubleTapCommand(req)
+	return okResult(response)
+}
+
 func handleIoLongPress(params json.RawMessage) (any, error) {
 	if len(params) == 0 {
 		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")

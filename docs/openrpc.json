@@ -221,6 +221,44 @@
       }
     },
     {
+      "name": "device.io.doubletap",
+      "summary": "Perform double tap gesture",
+      "description": "Performs a double tap gesture at the specified coordinates on the device screen; iOS only for now",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate for the double tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate for the double tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.io.longpress",
       "summary": "Perform long press gesture",
       "description": "Performs a long press gesture at the specified coordinates on the device screen",
