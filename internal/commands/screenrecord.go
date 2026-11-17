@@ -62,6 +62,21 @@ func ValidateScreenRecordTimeLimit(timeLimit int) error {
 	return nil
 }
 
+// ResolveScreenRecordPath turns the requested output into an absolute file path.
+// A path ending in a separator (or an empty path, meaning the current
+// directory) gets a generated screenrecord-<device>-<timestamp>.mp4 filename.
+// A generated name stays reserved until the returned release is called, so a
+// second recording that starts before this one is written gets another name.
+func ResolveScreenRecordPath(outputPath, deviceID string) (string, func(), error) {
+	release := func() {}
+	path, err := resolveOutputPath(outputPath, "screenrecord", deviceID, "mp4", func(generated string) string {
+		var reserved string
+		reserved, release = reserveRecordingPath(generated)
+		return reserved
+	})
+	return path, release, err
+}
+
 // ScreenRecordCommand records the device screen to an MP4 file.
 func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	if err := ValidateScreenRecordTimeLimit(req.TimeLimit); err != nil {
@@ -328,7 +343,7 @@ func muxAvcRecording(avcPath string, req ScreenRecordRequest, progress *screenRe
 	}
 
 	if !progress.silent {
-		fmt.Fprintf(os.Stderr, "%d frames, %s\nSaved video file to %s\n",
+		_, _ = fmt.Fprintf(progress.out, "%d frames, %s\nSaved video file to %s\n",
 			result.FrameCount,
 			result.Duration.Round(time.Millisecond),
 			req.OutputPath,
@@ -378,7 +393,7 @@ func screenRecordNative(record func() error, req ScreenRecordRequest, progress *
 
 	if err != nil {
 		if !progress.silent {
-			fmt.Fprintf(os.Stderr, "\n")
+			_, _ = fmt.Fprintf(progress.out, "\n")
 		}
 		return NewErrorResponse(fmt.Errorf("error during screen recording: %w", err))
 	}
@@ -386,9 +401,9 @@ func screenRecordNative(record func() error, req ScreenRecordRequest, progress *
 	if !progress.silent {
 		if !progress.endedCalled {
 			// for non-remote paths, clear the ticker line
-			fmt.Fprintf(os.Stderr, "\n")
+			_, _ = fmt.Fprintf(progress.out, "\n")
 		}
-		fmt.Fprintf(os.Stderr, "Saved video file to %s\n", req.OutputPath)
+		_, _ = fmt.Fprintf(progress.out, "Saved video file to %s\n", req.OutputPath)
 	}
 
 	return NewSuccessResponse(ScreenRecordResponse{

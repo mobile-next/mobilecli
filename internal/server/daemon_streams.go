@@ -125,9 +125,21 @@ func streamScreenRecord(ctx context.Context, params json.RawMessage, notify func
 	if err := json.Unmarshal(params, &req); err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("invalid parameters: %w", err)), nil
 	}
+
+	// the default filename carries the device id, so pick the device here
+	targetDevice, err := commands.FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return commands.NewErrorResponse(fmt.Errorf("error finding device: %w", err)), nil
+	}
+	outputPath, releaseOutputPath, err := commands.ResolveScreenRecordPath(req.OutputPath, targetDevice.ID())
+	if err != nil {
+		return commands.NewErrorResponse(err), nil
+	}
+	defer releaseOutputPath()
+
 	return commands.ScreenRecordCommand(commands.ScreenRecordRequest{
-		DeviceID:   req.DeviceID,
-		OutputPath: req.OutputPath,
+		DeviceID:   targetDevice.ID(),
+		OutputPath: outputPath,
 		TimeLimit:  req.TimeLimit,
 		Silent:     req.Silent,
 		StopChan:   ctx.Done(), // client disconnect (Ctrl-C) stops and finalizes the recording

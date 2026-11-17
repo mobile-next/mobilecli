@@ -52,3 +52,69 @@ func TestUniquePathAppendsCounterWhenFileExists(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "shot-2.png"), uniquePath(base))
 	assert.Equal(t, filepath.Join(dir, "fresh.png"), uniquePath(filepath.Join(dir, "fresh.png")))
 }
+
+func TestResolveScreenRecordPathNamesTheFileAfterTheDevice(t *testing.T) {
+	dir := t.TempDir()
+
+	got, release, err := ResolveScreenRecordPath(dir+string(filepath.Separator), "dev:1")
+	require.NoError(t, err)
+	defer release()
+
+	assert.Equal(t, dir, filepath.Dir(got))
+	base := filepath.Base(got)
+	assert.True(t, strings.HasPrefix(base, "screenrecord-dev_1-"), base)
+	assert.True(t, strings.HasSuffix(base, ".mp4"), base)
+}
+
+func TestTwoRecordingsInProgressNeverShareAGeneratedName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rec.mp4")
+
+	first, releaseFirst := reserveRecordingPath(path)
+	defer releaseFirst()
+	second, releaseSecond := reserveRecordingPath(path)
+	defer releaseSecond()
+
+	assert.Equal(t, path, first)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "rec-1.mp4"), second)
+}
+
+func TestAGeneratedRecordingNameIsFreeAgainAfterRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rec.mp4")
+	_, release := reserveRecordingPath(path)
+	release()
+
+	again, releaseAgain := reserveRecordingPath(path)
+	defer releaseAgain()
+
+	assert.Equal(t, path, again)
+}
+
+func TestAnExplicitRecordingPathIsNotReserved(t *testing.T) {
+	explicit := filepath.Join(t.TempDir(), "mine.mp4")
+
+	first, releaseFirst, err := ResolveScreenRecordPath(explicit, "dev")
+	require.NoError(t, err)
+	defer releaseFirst()
+	second, releaseSecond, err := ResolveScreenRecordPath(explicit, "dev")
+	require.NoError(t, err)
+	defer releaseSecond()
+
+	assert.Equal(t, explicit, first)
+	assert.Equal(t, explicit, second)
+}
+
+func TestRecordingsThroughASymlinkAndItsTargetNeverShareAGeneratedName(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+
+	first, releaseFirst := reserveRecordingPath(filepath.Join(target, "rec.mp4"))
+	defer releaseFirst()
+	second, releaseSecond := reserveRecordingPath(filepath.Join(link, "rec.mp4"))
+	defer releaseSecond()
+
+	assert.Equal(t, filepath.Join(target, "rec.mp4"), first)
+	assert.Equal(t, filepath.Join(link, "rec-1.mp4"), second)
+}

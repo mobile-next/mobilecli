@@ -133,12 +133,34 @@ func absLocalPath(p string) string {
 	return p
 }
 
-// cwdWithSeparator is the caller's working directory as a directory path, used
-// when a command generates a default output filename.
-func cwdWithSeparator() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return ""
+// localOutputPath makes an --output argument absolute for the daemon, whose
+// cwd is not ours. A trailing separator survives, because it is what tells the
+// daemon to generate a filename inside that directory; unset means our cwd as
+// that directory. "-" (stdout) passes through.
+func localOutputPath(p string) (string, error) {
+	if p == "-" {
+		return p, nil
 	}
-	return cwd + string(filepath.Separator)
+	if p == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve the current directory: %w", err)
+		}
+		return withTrailingSeparator(cwd), nil
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("invalid output path %q: %w", p, err)
+	}
+	if os.IsPathSeparator(p[len(p)-1]) {
+		return withTrailingSeparator(abs), nil
+	}
+	return abs, nil
+}
+
+func withTrailingSeparator(dir string) string {
+	if os.IsPathSeparator(dir[len(dir)-1]) {
+		return dir
+	}
+	return dir + string(filepath.Separator)
 }
