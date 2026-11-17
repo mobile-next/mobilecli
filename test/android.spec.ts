@@ -520,8 +520,13 @@ test.describe('Android Tests', () => {
 
 			// the app restores whatever url the webview last showed, so start every
 			// run from the sample page instead of inheriting the previous run's state
+			// when the webview is already on the sample page, the page it is leaving
+			// still answers as loaded until the reload commits, and whatever a test
+			// set on it is lost; so mark that page and wait for one without the mark
+			markWebViewPageAsOld(deviceId, webViewId);
 			webViewGoto(deviceId, webViewId, WEBVIEW_SAMPLE_URL);
 			webViewWait(deviceId, webViewId, 'load');
+			await eventually(() => isWebViewPageOld(deviceId, webViewId), 'the webview never loaded a fresh page').toBe(false);
 
 			// the webview is listed as soon as it exists, before its page has a title,
 			// so settle it here rather than leaving every test to race the load
@@ -1251,6 +1256,14 @@ function recordTouchesInWebView(deviceId: string, webViewId: string): void {
 
 function fingersPerTouchInWebView(deviceId: string, webViewId: string): number[] {
 	return JSON.parse(webViewEval(deviceId, webViewId, 'JSON.stringify(window.__fingersPerTouch)') as string);
+}
+
+function markWebViewPageAsOld(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId, '(() => { window.__oldPage = true; return true; })()');
+}
+
+function isWebViewPageOld(deviceId: string, webViewId: string): boolean {
+	return webViewEval(deviceId, webViewId, 'String(window.__oldPage)') === 'true';
 }
 
 function webViewQuery(deviceId: string, webViewId: string, selector: string): WebViewQueryResult[] {
