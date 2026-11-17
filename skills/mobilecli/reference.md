@@ -116,8 +116,8 @@ All commands support the global `--device <id>` flag to specify the target devic
   ```
 * **Hardware Buttons**:
   ```bash
-  # All platforms: HOME, POWER, VOLUME_UP, VOLUME_DOWN
-  # Android only: BACK, ENTER, BACKSPACE, APP_SWITCH,
+  # All platforms: HOME, POWER (alias LOCK), VOLUME_UP, VOLUME_DOWN, ENTER
+  # Android only: BACK, BACKSPACE, APP_SWITCH,
   #               DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
   mobilecli io button --device <device-id> HOME
   ```

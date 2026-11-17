@@ -252,10 +252,15 @@ VoiceOver stays on after mobilecli exits, so turn it off when done. While it is 
 ### Supported Hardware Buttons
 
 - `HOME` - Home button
-- `BACK` - Back button (Android only)
-- `POWER` - Power button
+- `POWER` - Power (side) button. `LOCK` is an alias
 - `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
+- `ENTER` - Enter key
+- `BACK` - Back button (Android only)
+- `APP_SWITCH` - Recent apps (Android only)
+- `BACKSPACE` - Delete the character before the cursor (Android only)
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+
+Names are case-insensitive. `mobilecli io button --help` prints the list for each platform, and an unknown name fails with the supported names.
 
 ### App Management 📱
 

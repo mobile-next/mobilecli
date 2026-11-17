@@ -176,10 +176,15 @@ mobilecli device location clear --device <device-id>
 ### 対応ハードウェアボタン
 
 - `HOME` - ホームボタン
-- `BACK` - 戻るボタン（Android のみ）
-- `POWER` - 電源ボタン
+- `POWER` - 電源（サイド）ボタン。`LOCK` はエイリアス
 - `VOLUME_UP`, `VOLUME_DOWN` - 音量の上げ下げ
+- `ENTER` - Enter キー
+- `BACK` - 戻るボタン（Android のみ）
+- `APP_SWITCH` - 最近使ったアプリ（Android のみ）
+- `BACKSPACE` - カーソル前の 1 文字を削除（Android のみ）
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - 十字キー操作（Android のみ）
+
+名前は大文字・小文字を区別しません。`mobilecli io button --help` でプラットフォームごとの一覧を表示でき、未対応の名前を指定すると対応している名前の一覧とともにエラーになります。
 
 ### アプリ管理 📱
 

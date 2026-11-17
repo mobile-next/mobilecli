@@ -176,10 +176,15 @@ mobilecli device location clear --device <device-id>
 ### 支持的硬件按键
 
 - `HOME` - Home 键
-- `BACK` - 返回键（仅 Android）
-- `POWER` - 电源键
+- `POWER` - 电源（侧边）键，`LOCK` 是它的别名
 - `VOLUME_UP`, `VOLUME_DOWN` - 音量加 / 减
+- `ENTER` - 回车键
+- `BACK` - 返回键（仅 Android）
+- `APP_SWITCH` - 最近任务（仅 Android）
+- `BACKSPACE` - 删除光标前的一个字符（仅 Android）
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - 方向键控制（仅 Android）
+
+按键名称不区分大小写。`mobilecli io button --help` 会列出各平台支持的名称，传入不支持的名称时会报错并给出支持的名称列表。
 
 ### 应用管理 📱
 

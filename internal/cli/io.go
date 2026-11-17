@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/mobile-next/mobilecli/internal/commands"
+	"github.com/mobile-next/mobilecli/internal/devices"
+	"github.com/mobile-next/mobilecli/internal/devices/devicekit"
 	"github.com/spf13/cobra"
 )
 
@@ -102,8 +104,15 @@ var ioLongPressCmd = &cobra.Command{
 var ioButtonCmd = &cobra.Command{
 	Use:   "button [button_name]",
 	Short: "Press a hardware button on a device",
-	Long:  `Sends a hardware button press event to the specified device (e.g., "HOME", "VOLUME_UP", "VOLUME_DOWN", "POWER"). Button names are case-insensitive.`,
-	Args:  cobra.ExactArgs(1),
+	Long: fmt.Sprintf(`Sends a hardware button press event to the specified device. Button names are case-insensitive.
+
+Android: %s
+iOS:     %s
+
+POWER and LOCK are the same button.`,
+		strings.Join(devices.AndroidButtonNames(), ", "),
+		strings.Join(devicekit.ButtonNames(), ", ")),
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := commands.ButtonRequest{
 			DeviceID: deviceId,
