@@ -142,6 +142,12 @@ public class Gestures {
 				throw new RpcException(RpcException.INVALID_PARAMS,
 						"finger " + id + " has negative duration at index " + i);
 			}
+			// turned away here rather than by the total: a value this large would
+			// overflow the running time and slip under the limit as a negative
+			if (durationMs > MAX_GESTURE_MS) {
+				throw new RpcException(RpcException.INVALID_PARAMS,
+						"finger " + id + " has a duration over the " + MAX_GESTURE_MS + "ms limit at index " + i);
+			}
 			if (released) {
 				throw new RpcException(RpcException.INVALID_PARAMS,
 						"finger " + id + " has actions after 'release' at index " + i);
@@ -161,6 +167,10 @@ public class Gestures {
 					if (atMs < 0) {
 						throw new RpcException(RpcException.INVALID_PARAMS,
 								"finger " + id + " has a negative start");
+					}
+					if (atMs > MAX_GESTURE_MS) {
+						throw new RpcException(RpcException.INVALID_PARAMS,
+								"finger " + id + " starts after the " + MAX_GESTURE_MS + "ms limit");
 					}
 					finger.path.add(new Keyframe(atMs, x, y));
 					atMs += durationMs;
@@ -246,13 +256,16 @@ public class Gestures {
 				down.remove(i);
 			}
 
-			atMs = down.isEmpty() ? nextPressAtMs(waiting) : nextFrame(atMs, startTime, nextLiftAtMs(down));
+			atMs = down.isEmpty()
+					? nextPressAtMs(waiting)
+					: nextFrame(atMs, startTime, Math.min(nextLiftAtMs(down), nextPressAtMs(waiting)));
 		}
 	}
 
-	// A late frame stops at the next lift instead of skipping past it, so a
-	// finger that should have lifted is never still down when the next one
-	// presses: that would turn two taps into one two-finger tap.
+	// A frame stops at the next lift or press instead of skipping past it. A
+	// finger that should have lifted is then never still down when the next one
+	// presses, which would turn two taps into one two-finger tap, and a finger
+	// that joins and leaves between two frames still gets its hold.
 	private static long nextLiftAtMs(List<Finger> down) {
 		long next = Long.MAX_VALUE;
 		for (Finger finger : down) next = Math.min(next, finger.liftAtMs());

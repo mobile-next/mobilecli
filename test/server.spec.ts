@@ -312,6 +312,7 @@ test.describe('rpc method validation', () => {
 		{name: 'device.fs.push without content', method: 'device.fs.push', params: {remotePath: '/tmp/x'}, mentions: 'content'},
 		{name: 'device.fs.mkdir without remotePath', method: 'device.fs.mkdir', params: {}, mentions: 'remotePath'},
 		{name: 'device.fs.rm without remotePath', method: 'device.fs.rm', params: {}, mentions: 'remotePath'},
+		{name: 'device.io.doubletap without y', method: 'device.io.doubletap', params: {x: 100}, mentions: "'y'"},
 		{name: 'device.io.swipe without x2', method: 'device.io.swipe', params: {x1: 1, y1: 2, y2: 4}, mentions: 'x2'},
 		{name: 'device.io.pinch without direction', method: 'device.io.pinch', params: {x: 500, y: 500}, mentions: 'direction'},
 		{name: 'device.io.pinch with a direction that is not in or out', method: 'device.io.pinch', params: {x: 500, y: 500, direction: 'sideways'}, mentions: 'direction'},
