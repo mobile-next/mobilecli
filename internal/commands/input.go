@@ -75,13 +75,14 @@ type DragPoint struct {
 }
 
 // DragRequest represents the parameters for a drag command: press at From,
-// stay there for HoldMs, travel to To over DurationMs, then lift.
+// stay there for Hold, travel to To over Duration (both in milliseconds),
+// then lift.
 type DragRequest struct {
-	DeviceID   string    `json:"deviceId"`
-	From       DragPoint `json:"from"`
-	To         DragPoint `json:"to"`
-	HoldMs     int       `json:"holdMs"`
-	DurationMs int       `json:"durationMs"`
+	DeviceID string    `json:"deviceId"`
+	From     DragPoint `json:"from"`
+	To       DragPoint `json:"to"`
+	Hold     int       `json:"hold"`
+	Duration int       `json:"duration"`
 }
 
 // PinchRequest represents the parameters for a pinch command. X,Y is the
@@ -364,14 +365,14 @@ func DragCommand(req DragRequest) *CommandResponse {
 	if err := validateDragPoint("to", req.To); err != nil {
 		return NewErrorResponse(err)
 	}
-	if req.HoldMs < 0 {
-		return NewErrorResponse(fmt.Errorf("hold must not be negative, got %dms", req.HoldMs))
+	if req.Hold < 0 {
+		return NewErrorResponse(fmt.Errorf("hold must not be negative, got %dms", req.Hold))
 	}
-	if req.DurationMs < 0 {
-		return NewErrorResponse(fmt.Errorf("duration must not be negative, got %dms", req.DurationMs))
+	if req.Duration < 0 {
+		return NewErrorResponse(fmt.Errorf("duration must not be negative, got %dms", req.Duration))
 	}
 
-	durationMs := req.DurationMs
+	durationMs := req.Duration
 	if durationMs == 0 {
 		durationMs = DefaultDragDurationMs
 	}
@@ -386,7 +387,7 @@ func DragCommand(req DragRequest) *CommandResponse {
 		return NewErrorResponse(err)
 	}
 
-	err = targetDevice.Gesture(dragActions(x1, y1, x2, y2, req.HoldMs, durationMs))
+	err = targetDevice.Gesture(dragActions(x1, y1, x2, y2, req.Hold, durationMs))
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("failed to drag on device %s: %v", targetDevice.ID(), err))
 	}

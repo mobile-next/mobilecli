@@ -144,8 +144,8 @@ func TestDragCommandRejectsBadInputBeforeLookingForADevice(t *testing.T) {
 	}{
 		"negative start":    {DragRequest{From: DragPoint{X: -1, Y: 10}, To: to}, "from"},
 		"negative end":      {DragRequest{From: from, To: DragPoint{X: 50, Y: -5}}, "to"},
-		"negative hold":     {DragRequest{From: from, To: to, HoldMs: -1}, "hold"},
-		"negative duration": {DragRequest{From: from, To: to, DurationMs: -1}, "duration"},
+		"negative hold":     {DragRequest{From: from, To: to, Hold: -1}, "hold"},
+		"negative duration": {DragRequest{From: from, To: to, Duration: -1}, "duration"},
 	}
 
 	for name, c := range cases {

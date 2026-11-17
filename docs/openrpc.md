@@ -885,8 +885,8 @@ Presses one finger where the drag starts, optionally holds it still, moves it to
 | `deviceId` | `string` | ✓ | ID of the target device |
 | `from` | `object` | ✓ | Where the drag starts: an element ref, or x and y coordinates |
 | `to` | `object` | ✓ | Where the drag ends: an element ref, or x and y coordinates |
-| `holdMs` | `integer` |  | How long the finger stays down before it moves, in milliseconds |
-| `durationMs` | `integer` |  | How long the finger travels, in milliseconds |
+| `hold` | `integer` |  | How long the finger stays down before it moves, in milliseconds |
+| `duration` | `integer` |  | How long the finger travels, in milliseconds |
 
 #### Response
 
@@ -912,8 +912,8 @@ Operation result
       "x": 0,
       "y": 0
     },
-    "holdMs": 0,
-    "durationMs": 800
+    "hold": 0,
+    "duration": 800
   },
   "id": 1
 }

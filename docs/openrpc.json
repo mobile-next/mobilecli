@@ -672,7 +672,7 @@
           }
         },
         {
-          "name": "holdMs",
+          "name": "hold",
           "description": "How long the finger stays down before it moves, in milliseconds",
           "required": false,
           "schema": {
@@ -681,7 +681,7 @@
           }
         },
         {
-          "name": "durationMs",
+          "name": "duration",
           "description": "How long the finger travels, in milliseconds",
           "required": false,
           "schema": {

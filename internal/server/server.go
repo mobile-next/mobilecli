@@ -467,11 +467,11 @@ type IoDragPointParams struct {
 }
 
 type IoDragParams struct {
-	DeviceID   string             `json:"deviceId"`
-	From       *IoDragPointParams `json:"from"`
-	To         *IoDragPointParams `json:"to"`
-	HoldMs     int                `json:"holdMs"`
-	DurationMs int                `json:"durationMs"`
+	DeviceID string             `json:"deviceId"`
+	From     *IoDragPointParams `json:"from"`
+	To       *IoDragPointParams `json:"to"`
+	Hold     int                `json:"hold"`
+	Duration int                `json:"duration"`
 }
 
 type IoPinchParams struct {
@@ -618,7 +618,7 @@ func handleIoDrag(params json.RawMessage) (any, error) {
 
 	var ioDragParams IoDragParams
 	if err := json.Unmarshal(params, &ioDragParams); err != nil {
-		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, from, to, holdMs, durationMs", err)
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, from, to, hold, duration", err)
 	}
 
 	from, err := dragPoint("from", ioDragParams.From)
@@ -631,11 +631,11 @@ func handleIoDrag(params json.RawMessage) (any, error) {
 	}
 
 	req := commands.DragRequest{
-		DeviceID:   ioDragParams.DeviceID,
-		From:       from,
-		To:         to,
-		HoldMs:     ioDragParams.HoldMs,
-		DurationMs: ioDragParams.DurationMs,
+		DeviceID: ioDragParams.DeviceID,
+		From:     from,
+		To:       to,
+		Hold:     ioDragParams.Hold,
+		Duration: ioDragParams.Duration,
 	}
 
 	response := commands.DragCommand(req)

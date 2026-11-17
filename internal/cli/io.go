@@ -291,11 +291,11 @@ var ioDragCmd = &cobra.Command{
 		}
 
 		req := commands.DragRequest{
-			DeviceID:   deviceId,
-			From:       commands.DragPoint{X: from.X, Y: from.Y, Ref: from.Ref},
-			To:         commands.DragPoint{X: to.X, Y: to.Y, Ref: to.Ref},
-			HoldMs:     dragHold,
-			DurationMs: dragDuration,
+			DeviceID: deviceId,
+			From:     commands.DragPoint{X: from.X, Y: from.Y, Ref: from.Ref},
+			To:       commands.DragPoint{X: to.X, Y: to.Y, Ref: to.Ref},
+			Hold:     dragHold,
+			Duration: dragDuration,
 		}
 
 		return runViaDaemon("cli.io.drag", req)
