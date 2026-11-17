@@ -102,3 +102,19 @@ func TestAnExplicitRecordingPathIsNotReserved(t *testing.T) {
 	assert.Equal(t, explicit, first)
 	assert.Equal(t, explicit, second)
 }
+
+func TestRecordingsThroughASymlinkAndItsTargetNeverShareAGeneratedName(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+
+	first, releaseFirst := reserveRecordingPath(filepath.Join(target, "rec.mp4"))
+	defer releaseFirst()
+	second, releaseSecond := reserveRecordingPath(filepath.Join(link, "rec.mp4"))
+	defer releaseSecond()
+
+	assert.Equal(t, filepath.Join(target, "rec.mp4"), first)
+	assert.Equal(t, filepath.Join(link, "rec-1.mp4"), second)
+}

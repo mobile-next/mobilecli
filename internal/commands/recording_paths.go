@@ -1,6 +1,9 @@
 package commands
 
-import "sync"
+import (
+	"path/filepath"
+	"sync"
+)
 
 // recordingPaths holds the generated output names of recordings in progress.
 // Such a file is only written when its recording ends, so until then nothing
@@ -18,14 +21,25 @@ func reserveRecordingPath(path string) (string, func()) {
 	recordingPaths.mu.Lock()
 	defer recordingPaths.mu.Unlock()
 
+	// a directory reached through a symlink is the same directory: reserve
+	// under its resolved spelling, return the path as the caller spelled it
+	dir := filepath.Dir(path)
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	reservationKey := func(candidate string) string {
+		return filepath.Join(dir, filepath.Base(candidate))
+	}
+
 	free := firstFreePath(path, func(candidate string) bool {
-		return recordingPaths.reserved[candidate] || fileExists(candidate)
+		return recordingPaths.reserved[reservationKey(candidate)] || fileExists(candidate)
 	})
-	recordingPaths.reserved[free] = true
+	key := reservationKey(free)
+	recordingPaths.reserved[key] = true
 	release := func() {
 		recordingPaths.mu.Lock()
 		defer recordingPaths.mu.Unlock()
-		delete(recordingPaths.reserved, free)
+		delete(recordingPaths.reserved, key)
 	}
 	return free, release
 }
