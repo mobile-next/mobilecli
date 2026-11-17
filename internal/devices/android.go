@@ -1094,10 +1094,39 @@ func (d *AndroidDevice) SendKeys(text string) error {
 	return nil
 }
 
+// urlSchemePattern matches the scheme that starts a URL, as in "https:" or "tel:".
+var urlSchemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
+
+func urlHasScheme(url string) bool {
+	return urlSchemePattern.MatchString(url)
+}
+
+// amStartError returns the reason `am start` gave for not starting an activity,
+// or "" when it started one. am exits 0 either way, so its output is the only
+// signal. A "Warning:" line is a success: the intent went to an activity that
+// was already running.
+func amStartError(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if reason, found := strings.CutPrefix(strings.TrimSpace(line), "Error:"); found {
+			return strings.TrimSpace(reason)
+		}
+	}
+	return ""
+}
+
 func (d *AndroidDevice) OpenURL(url string) error {
+	// am turns a url without a scheme into an empty one, which no app can open
+	if !urlHasScheme(url) {
+		return fmt.Errorf("failed to open URL %s: the URL needs a scheme, such as https://", url)
+	}
+
 	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
 	if err != nil {
 		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
+	}
+
+	if reason := amStartError(string(output)); reason != "" {
+		return fmt.Errorf("failed to open URL %s: %s", url, reason)
 	}
 
 	return nil

@@ -43,6 +43,9 @@ const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 // settings is present on every android image, unlike chrome or play store
 const SETTINGS_PACKAGE = 'com.android.settings';
 
+// no app registers this scheme, so the VIEW intent cannot resolve
+const UNHANDLED_URL = 'notascheme://foo';
+
 // the settings search ui is a separate package that joins the settings task via
 // taskAffinity=com.android.settings.root. force-stopping settings alone leaves its
 // activity on top of that task, so `am start` resumes a task settings no longer owns
@@ -157,6 +160,22 @@ test.describe('Android Tests', () => {
 		test.skip(!device, 'No Android device found');
 
 		mobilecli(['url', 'https://example.com', '--device', device!.id]);
+	});
+
+	test('should report that no app can open a URL with an unknown scheme', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = openUrlError(device!.id, UNHANDLED_URL);
+
+		expect(error).toContain('unable to resolve Intent');
+	});
+
+	test('should report that a URL without a scheme needs one', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = openUrlError(device!.id, 'example.com');
+
+		expect(error).toContain('needs a scheme');
 	});
 
 	test('should get device info', () => {
@@ -1021,10 +1040,10 @@ function terminateApp(deviceId: string, packageName: string): void {
 	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
 }
 
-// runs an `apps` subcommand that is expected to fail and returns its error message
-function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+// runs a command that is expected to fail and returns its error message
+function failingCommandError(args: string[]): string {
 	try {
-		mobilecliJson(['apps', subcommand, packageName, '--device', deviceId]);
+		mobilecliJson(args);
 	} catch (error: unknown) {
 		// a timeout or a missing binary fails without printing an envelope, and
 		// parsing that as json would bury the real cause
@@ -1035,7 +1054,15 @@ function appsCommandError(deviceId: string, subcommand: string, packageName: str
 		return expectErrorEnvelope(JSON.parse(stdout));
 	}
 
-	throw new Error(`apps ${subcommand} ${packageName} unexpectedly succeeded`);
+	throw new Error(`${args.join(' ')} unexpectedly succeeded`);
+}
+
+function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+	return failingCommandError(['apps', subcommand, packageName, '--device', deviceId]);
+}
+
+function openUrlError(deviceId: string, url: string): string {
+	return failingCommandError(['url', url, '--device', deviceId]);
 }
 
 // force-stops every package that can hold an activity in the settings task, so the
@@ -1177,21 +1204,8 @@ async function expectWebViewToAppear(deviceId: string): Promise<void> {
 		.toBeGreaterThan(0);
 }
 
-// runs a webview command that is expected to fail and returns the error message
 function webViewCommandError(deviceId: string, args: string[]): string {
-	try {
-		mobilecliJson(['webview', ...args, '--device', deviceId]);
-	} catch (error: unknown) {
-		// a timeout or a missing binary fails without printing an envelope, and
-		// parsing that as json would bury the real cause
-		const stdout = (error as {stdout?: string}).stdout ?? '';
-		if (stdout.trim() === '') {
-			throw error;
-		}
-		return expectErrorEnvelope(JSON.parse(stdout));
-	}
-
-	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+	return failingCommandError(['webview', ...args, '--device', deviceId]);
 }
 
 // the deep link opens its screen on top of whatever the app is showing, and the
