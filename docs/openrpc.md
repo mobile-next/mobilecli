@@ -839,7 +839,7 @@ Operation result
 
 **Perform double tap gesture**
 
-Performs a double tap gesture at the specified coordinates on the device screen; iOS only for now
+Performs a double tap gesture at the specified coordinates on the device screen
 
 #### Parameters
 
@@ -916,7 +916,7 @@ Performs a custom gesture with multiple actions on the device
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `deviceId` | `string` | ✓ | ID of the target device |
-| `actions` | Array<`object`> | ✓ | List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap); iOS only for now |
+| `actions` | Array<`object`> | ✓ | List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap) |
 
 #### Response
 

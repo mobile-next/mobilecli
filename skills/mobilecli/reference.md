@@ -92,7 +92,7 @@ All commands support the global `--device <id>` flag to specify the target devic
   mobilecli io tap --device <device-id> @e5
   mobilecli io tap --device <device-id> 150,300
   ```
-* **Double Tap** (ref from the latest `dump ui`, or coordinates; iOS only for now):
+* **Double Tap** (ref from the latest `dump ui`, or coordinates):
   ```bash
   mobilecli io doubletap --device <device-id> @e5
   mobilecli io doubletap --device <device-id> 150,300
@@ -269,7 +269,7 @@ Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.
 - `pointerMove`: Moves coordinates to target `x`, `y` over `duration` (in milliseconds).
 - `pointerUp`: Lifts pointer off screen.
-- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead (iOS only for now).
+- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead.
 
 Multi-finger gestures: give each action a `button` (finger index, default 0) and list every finger's actions contiguously, one complete `pointerMove` → `pointerDown` → ... → `pointerUp` sequence per finger; the fingers then move at the same time on both iOS and Android.
 

@@ -175,7 +175,7 @@ mobilecli device reboot --device <device-id>
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
 
-# Double tap at coordinates (x,y), iOS only for now
+# Double tap at coordinates (x,y)
 mobilecli io doubletap --device <device-id> 100,200
 
 # Long press at coordinates (x,y) with optional duration in milliseconds

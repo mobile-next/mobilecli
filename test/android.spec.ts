@@ -577,6 +577,20 @@ test.describe('Android Tests', () => {
 			webViewWait(device!.id, webViewId, 'load');
 		});
 
+		test('should double tap as two separate one-finger taps', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a double tap is two fingers in the gesture contract; pressed together
+			// they would reach the page as one two-finger tap instead
+			recordTouchesInWebView(device!.id, webViewId);
+			const screen = screenSizeOf(device!.id);
+
+			doubleTap(device!.id, Math.floor(screen.width / 2), Math.floor(screen.height / 2));
+
+			await eventually(() => fingersPerTouchInWebView(device!.id, webViewId), 'the double tap never reached the page')
+				.toEqual([1, 1]);
+		});
+
 		test('should navigate the webview to another url', async () => {
 			test.skip(!device, 'No Android device found');
 
@@ -1087,6 +1101,10 @@ function tap(deviceId: string, x: number, y: number): void {
 	mobilecli(['io', 'tap', `${x},${y}`, '--device', deviceId]);
 }
 
+function doubleTap(deviceId: string, x: number, y: number): void {
+	mobilecli(['io', 'doubletap', `${x},${y}`, '--device', deviceId]);
+}
+
 function pressButton(deviceId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', deviceId]);
 }
@@ -1223,6 +1241,16 @@ function webViewContent(deviceId: string, webViewId: string): string {
 
 function webViewEval(deviceId: string, webViewId: string, expression: string): unknown {
 	return mobilecliJson(['webview', 'eval', webViewId, expression, '--device', deviceId]).data;
+}
+
+// keeps, for every touch that starts on the page, how many fingers were down
+function recordTouchesInWebView(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId,
+		'(() => { window.__fingersPerTouch = []; document.addEventListener("touchstart", e => window.__fingersPerTouch.push(e.touches.length)); return true; })()');
+}
+
+function fingersPerTouchInWebView(deviceId: string, webViewId: string): number[] {
+	return JSON.parse(webViewEval(deviceId, webViewId, 'JSON.stringify(window.__fingersPerTouch)') as string);
 }
 
 function webViewQuery(deviceId: string, webViewId: string, selector: string): WebViewQueryResult[] {

@@ -84,7 +84,7 @@ var ioTapCmd = &cobra.Command{
 var ioDoubleTapCmd = &cobra.Command{
 	Use:   "doubletap [x,y | @ref]",
 	Short: "Double tap on a device screen at the given coordinates or element ref",
-	Long:  `Sends a double tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5"). iOS only for now.`,
+	Long:  `Sends a double tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		target, err := screenPointArg(args[0])

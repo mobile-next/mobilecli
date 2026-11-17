@@ -85,7 +85,7 @@ INPUT/OUTPUT:
   # Tap at coordinates
   mobilecli io tap --device <device-id> 100,200
 
-  # Double tap at coordinates (iOS only for now)
+  # Double tap at coordinates
   mobilecli io doubletap --device <device-id> 100,200
 
   # Long press at coordinates

@@ -223,7 +223,7 @@
     {
       "name": "device.io.doubletap",
       "summary": "Perform double tap gesture",
-      "description": "Performs a double tap gesture at the specified coordinates on the device screen; iOS only for now",
+      "description": "Performs a double tap gesture at the specified coordinates on the device screen",
       "params": [
         {
           "name": "deviceId",
@@ -501,7 +501,7 @@
         },
         {
           "name": "actions",
-          "description": "List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap); iOS only for now",
+          "description": "List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap)",
           "required": true,
           "schema": {
             "type": "array",
