@@ -458,6 +458,22 @@ type IoSwipeParams struct {
 	Duration int    `json:"duration"`
 }
 
+// IoDragPointParams is one end of a drag: a ref, or both x and y. The
+// coordinates are pointers so a missing one is named instead of read as 0.
+type IoDragPointParams struct {
+	X   *int   `json:"x"`
+	Y   *int   `json:"y"`
+	Ref string `json:"ref"`
+}
+
+type IoDragParams struct {
+	DeviceID   string             `json:"deviceId"`
+	From       *IoDragPointParams `json:"from"`
+	To         *IoDragPointParams `json:"to"`
+	HoldMs     int                `json:"holdMs"`
+	DurationMs int                `json:"durationMs"`
+}
+
 type IoPinchParams struct {
 	DeviceID  string `json:"deviceId"`
 	X         int    `json:"x"`
@@ -578,6 +594,51 @@ func handleIoSwipe(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.SwipeCommand(req)
+	return okResult(response)
+}
+
+// dragPoint checks that one end of a drag names a place on the screen.
+func dragPoint(name string, point *IoDragPointParams) (commands.DragPoint, error) {
+	if point == nil {
+		return commands.DragPoint{}, fmt.Errorf("'%s' is required, with either ref or x and y", name)
+	}
+	if point.Ref != "" {
+		return commands.DragPoint{Ref: point.Ref}, nil
+	}
+	if point.X == nil || point.Y == nil {
+		return commands.DragPoint{}, fmt.Errorf("'%s' needs either ref or both x and y", name)
+	}
+	return commands.DragPoint{X: *point.X, Y: *point.Y}, nil
+}
+
+func handleIoDrag(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, from, to")
+	}
+
+	var ioDragParams IoDragParams
+	if err := json.Unmarshal(params, &ioDragParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, from, to, holdMs, durationMs", err)
+	}
+
+	from, err := dragPoint("from", ioDragParams.From)
+	if err != nil {
+		return nil, err
+	}
+	to, err := dragPoint("to", ioDragParams.To)
+	if err != nil {
+		return nil, err
+	}
+
+	req := commands.DragRequest{
+		DeviceID:   ioDragParams.DeviceID,
+		From:       from,
+		To:         to,
+		HoldMs:     ioDragParams.HoldMs,
+		DurationMs: ioDragParams.DurationMs,
+	}
+
+	response := commands.DragCommand(req)
 	return okResult(response)
 }
 

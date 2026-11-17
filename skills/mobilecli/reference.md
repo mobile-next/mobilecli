@@ -107,6 +107,14 @@ All commands support the global `--device <id>` flag to specify the target devic
   # Swipe from x1,y1 to x2,y2
   mobilecli io swipe --device <device-id> 100,600,100,200
   ```
+* **Drag** (each end is a ref from the latest `dump ui`, or coordinates):
+  ```bash
+  # Drag one element onto another; --hold keeps the finger still first, which is what picks up a list item
+  mobilecli io drag --device <device-id> @e23,@e24 --hold 500 --duration 1000
+  # Coordinates, or a mix of the two
+  mobilecli io drag --device <device-id> 68,729,322,729
+  mobilecli io drag --device <device-id> @e23,322,729
+  ```
 * **Pinch** (two fingers, zoom):
   ```bash
   # Zoom in around 500,800 (fingers spread apart); omit the coordinates to pinch at the screen center
@@ -263,7 +271,7 @@ For scripts and long-running automation, make HTTP POST requests to the server's
   ```
 
 ### Custom Gestures (JSON-RPC only)
-For complex multi-action interactions (e.g. dragging, rotating, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events. For a plain zoom, prefer `device.io.pinch` / `mobilecli io pinch`.
+For complex multi-action interactions (e.g. rotating, multi-stop drags, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events. For a plain zoom, prefer `device.io.pinch` / `mobilecli io pinch`.
 
 Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.

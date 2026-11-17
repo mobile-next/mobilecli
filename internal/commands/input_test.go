@@ -114,3 +114,51 @@ func TestDoubleTapCommandRejectsNegativeCoordinates(t *testing.T) {
 		t.Errorf("expected the error to name the coordinates, got %q", response.Error)
 	}
 }
+
+func TestDragActionsPressHoldTravelAndLiftWithOneFinger(t *testing.T) {
+	converted := devicekit.ConvertActions(dragActions(68, 729, 322, 729, 500, 800))
+
+	want := []devicekit.GestureAction{
+		{Type: "press", X: 68, Y: 729, Duration: 0.5},
+		{Type: "move", X: 322, Y: 729, Duration: 0.8},
+		{Type: "release", X: 322, Y: 729},
+	}
+	if !reflect.DeepEqual(converted, want) {
+		t.Errorf("drag converted to %+v, want %+v", converted, want)
+	}
+}
+
+func TestDragActionsWithoutAHoldStartMovingRightAway(t *testing.T) {
+	converted := devicekit.ConvertActions(dragActions(10, 10, 50, 50, 0, 800))
+
+	if converted[0].Duration != 0 {
+		t.Errorf("expected the press not to hold, got %vs", converted[0].Duration)
+	}
+}
+
+func TestDragCommandRejectsBadInputBeforeLookingForADevice(t *testing.T) {
+	from, to := DragPoint{X: 10, Y: 10}, DragPoint{X: 50, Y: 50}
+	cases := map[string]struct {
+		request DragRequest
+		mention string
+	}{
+		"negative start":    {DragRequest{From: DragPoint{X: -1, Y: 10}, To: to}, "from"},
+		"negative end":      {DragRequest{From: from, To: DragPoint{X: 50, Y: -5}}, "to"},
+		"negative hold":     {DragRequest{From: from, To: to, HoldMs: -1}, "hold"},
+		"negative duration": {DragRequest{From: from, To: to, DurationMs: -1}, "duration"},
+	}
+
+	for name, c := range cases {
+		request := c.request
+		request.DeviceID = "no-such-device"
+
+		response := DragCommand(request)
+
+		if response.Status != "error" {
+			t.Fatalf("%s: expected an error response, got status %q", name, response.Status)
+		}
+		if !strings.Contains(response.Error, c.mention) || strings.Contains(response.Error, "no-such-device") {
+			t.Errorf("%s: expected the error to name %q, got %q", name, c.mention, response.Error)
+		}
+	}
+}

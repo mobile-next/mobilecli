@@ -94,6 +94,10 @@ INPUT/OUTPUT:
   # Swipe from one point to another
   mobilecli io swipe --device <device-id> 100,200,300,400
 
+  # Drag from one point or element ref to another, optionally holding before moving
+  mobilecli io drag --device <device-id> 100,200,300,400
+  mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
+
   # Pinch around a point (screen center if omitted): --direction out zooms in, --direction in zooms out
   mobilecli io pinch --device <device-id> 500,800 --direction out
 

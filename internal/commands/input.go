@@ -66,6 +66,24 @@ type SwipeRequest struct {
 	Duration int    `json:"duration"`
 }
 
+// DragPoint is one end of a drag: either X,Y or Ref ("@e5", from the latest
+// dump); Ref wins when both are set.
+type DragPoint struct {
+	X   int    `json:"x"`
+	Y   int    `json:"y"`
+	Ref string `json:"ref,omitempty"`
+}
+
+// DragRequest represents the parameters for a drag command: press at From,
+// stay there for HoldMs, travel to To over DurationMs, then lift.
+type DragRequest struct {
+	DeviceID   string    `json:"deviceId"`
+	From       DragPoint `json:"from"`
+	To         DragPoint `json:"to"`
+	HoldMs     int       `json:"holdMs"`
+	DurationMs int       `json:"durationMs"`
+}
+
 // PinchRequest represents the parameters for a pinch command. X,Y is the
 // center of the pinch; both zero means the center of the screen.
 type PinchRequest struct {
@@ -85,6 +103,9 @@ const (
 	// taps: long enough to read as two taps, well inside the double-tap window.
 	doubleTapGapMs = 150
 )
+
+// DefaultDragDurationMs is how long a drag travels when no duration is given.
+const DefaultDragDurationMs = 800
 
 const (
 	PinchDirectionIn  = "in"
@@ -203,12 +224,25 @@ func TapCommand(req TapRequest) *CommandResponse {
 // does, and returns the center of the element matching ref ("@e5").
 // Refs are positional against a fresh dump; there is no staleness tracking.
 func resolveRefTapPoint(device devices.ControllableDevice, ref string) (int, int, error) {
+	elements, err := dumpElementsWithRefs(device, ref)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return centerOfRef(elements, ref)
+}
+
+func dumpElementsWithRefs(device devices.ControllableDevice, ref string) ([]types.ScreenElement, error) {
 	elements, err := device.DumpSource(devices.DumpOptions{})
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to dump UI to resolve ref %s: %w", ref, err)
+		return nil, fmt.Errorf("failed to dump UI to resolve ref %s: %w", ref, err)
 	}
 
 	types.AttachRefs(elements)
+	return elements, nil
+}
+
+func centerOfRef(elements []types.ScreenElement, ref string) (int, int, error) {
 	element := findElementByRef(elements, ref)
 	if element == nil {
 		return 0, 0, fmt.Errorf("ref %s not found on current screen; refs come from the latest 'dump ui'", ref)
@@ -272,6 +306,93 @@ func DoubleTapCommand(req DoubleTapRequest) *CommandResponse {
 
 	return NewSuccessResponse(MessageResult{
 		Message: fmt.Sprintf("Double tapped on device %s at (%d,%d)", targetDevice.ID(), x, y),
+	})
+}
+
+// dragActions presses one finger at (x1, y1), keeps it still for holdMs, moves
+// it to (x2, y2) over durationMs and lifts it there.
+func dragActions(x1, y1, x2, y2, holdMs, durationMs int) []devicekit.TapAction {
+	return []devicekit.TapAction{
+		{Type: "pointerMove", X: x1, Y: y1},
+		{Type: "pointerDown"},
+		{Type: "pause", Duration: holdMs},
+		{Type: "pointerMove", X: x2, Y: y2, Duration: durationMs},
+		{Type: "pointerUp"},
+	}
+}
+
+func validateDragPoint(name string, point DragPoint) error {
+	if point.Ref == "" && (point.X < 0 || point.Y < 0) {
+		return fmt.Errorf("'%s' coordinates must be non-negative, got x=%d, y=%d", name, point.X, point.Y)
+	}
+	return nil
+}
+
+// resolveDragPoints turns both ends of a drag into coordinates. Both refs are
+// read from one dump, so they are numbered against the same screen.
+func resolveDragPoints(device devices.ControllableDevice, from, to DragPoint) (x1, y1, x2, y2 int, err error) {
+	x1, y1, x2, y2 = from.X, from.Y, to.X, to.Y
+	if from.Ref == "" && to.Ref == "" {
+		return x1, y1, x2, y2, nil
+	}
+
+	elements, err := dumpElementsWithRefs(device, strings.TrimSpace(from.Ref+" "+to.Ref))
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	if from.Ref != "" {
+		x1, y1, err = centerOfRef(elements, from.Ref)
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+	if to.Ref != "" {
+		x2, y2, err = centerOfRef(elements, to.Ref)
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+	return x1, y1, x2, y2, nil
+}
+
+// DragCommand performs a one-finger drag on the specified device
+func DragCommand(req DragRequest) *CommandResponse {
+	if err := validateDragPoint("from", req.From); err != nil {
+		return NewErrorResponse(err)
+	}
+	if err := validateDragPoint("to", req.To); err != nil {
+		return NewErrorResponse(err)
+	}
+	if req.HoldMs < 0 {
+		return NewErrorResponse(fmt.Errorf("hold must not be negative, got %dms", req.HoldMs))
+	}
+	if req.DurationMs < 0 {
+		return NewErrorResponse(fmt.Errorf("duration must not be negative, got %dms", req.DurationMs))
+	}
+
+	durationMs := req.DurationMs
+	if durationMs == 0 {
+		durationMs = DefaultDragDurationMs
+	}
+
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+
+	x1, y1, x2, y2, err := resolveDragPoints(targetDevice, req.From, req.To)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+
+	err = targetDevice.Gesture(dragActions(x1, y1, x2, y2, req.HoldMs, durationMs))
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to drag on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(MessageResult{
+		Message: fmt.Sprintf("Dragged on device %s from (%d,%d) to (%d,%d)", targetDevice.ID(), x1, y1, x2, y2),
 	})
 }
 
