@@ -815,20 +815,13 @@ test.describe('Android Tests', () => {
 // centrally means a change to the output format fails these tests instead of
 // silently passing because only the exit code was checked
 function mobilecli(args: string[]): any {
-	try {
-		const output = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		return expectOkEnvelope(JSON.parse(output));
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	return expectOkEnvelope(JSON.parse(output));
 }
 
 // for the few tests that need a daemon of their own, or a setting that only an
@@ -957,22 +950,15 @@ function removeUiautomatorDumpFile(serial: string): void {
 }
 
 function mobilecliJson(args: string[]): any {
-	try {
-		const result = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 60000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		const parsed = JSON.parse(result);
-		expectOkEnvelope(parsed);
-		return parsed;
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const result = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 60000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	const parsed = JSON.parse(result);
+	expectOkEnvelope(parsed);
+	return parsed;
 }
 
 // screenrecord streams progress to stderr and prints no json envelope, so it
@@ -1071,20 +1057,13 @@ function openUrlError(deviceId: string, url: string): string {
 // they cannot go through mobilecli(), which asserts an ok envelope
 function runAgentCommand(deviceId: string, subcommand: string): any {
 	const args = ['agent', subcommand, '--device', deviceId];
-	try {
-		const output = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		return JSON.parse(output);
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	return JSON.parse(output);
 }
 
 function clearSettingsTask(deviceId: string): void {

@@ -267,6 +267,8 @@ jobs:
     - name: run tests
       env:
         MOBILECLI_HOME: ${{ runner.temp }}/mobilecli-home
+        # node:sqlite still warns on the runner's node, in the middle of the test report
+        NODE_OPTIONS: --disable-warning=ExperimentalWarning
       run: |
         mkdir -p "$MOBILECLI_HOME"
         ./mobilecli --version
