@@ -39,21 +39,25 @@ else
 endif
 
 JAVA_SRCS := $(wildcard java/*.java)
+OUTPUT_DIR := ../../internal/agentassets/data/android
 
 .PHONY: all clean lint
 
-all: mobilecli-arm64-v8a.so mobilecli-x86_64.so mobilecli.dex
+all: $(OUTPUT_DIR)/mobilecli-arm64-v8a.so $(OUTPUT_DIR)/mobilecli-x86_64.so $(OUTPUT_DIR)/mobilecli.dex
 
-mobilecli-%.so: jvmti_agent.c
+$(OUTPUT_DIR):
+	mkdir -p $@
+
+$(OUTPUT_DIR)/mobilecli-%.so: jvmti_agent.c | $(OUTPUT_DIR)
 	$(CC_$*) -shared -fPIC -O2 \
 		-I$(SYSROOT) -I$(JDK_INC) -I$(JDK_INC)/$(JDK_PLATFORM) \
 		-o $@ $< -llog
 
-mobilecli.dex: $(JAVA_SRCS)
+$(OUTPUT_DIR)/mobilecli.dex: $(JAVA_SRCS) | $(OUTPUT_DIR)
 	mkdir -p .dex_build
 	$(JAVAC) --release 8 -Xlint:all,-options -Werror -cp $(ANDROID_JAR) -d .dex_build $(JAVA_SRCS)
 	$(D8) --min-api 26 --output .dex_build $$(find .dex_build -name "*.class")
-	mv .dex_build/classes.dex mobilecli.dex
+	mv .dex_build/classes.dex $@
 	rm -rf .dex_build
 
 # compile-only pass with -Xlint -Werror; no dex, no NDK needed
@@ -61,5 +65,5 @@ lint:
 	$(JAVAC) --release 8 -Xlint:all,-options -Werror -cp $(ANDROID_JAR) -d $(shell mktemp -d) $(JAVA_SRCS)
 
 clean:
-	rm -f mobilecli-*.so mobilecli.dex
+	rm -f $(OUTPUT_DIR)/mobilecli-*.so $(OUTPUT_DIR)/mobilecli.dex
 	rm -rf .dex_build

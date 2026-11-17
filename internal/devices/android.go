@@ -1,0 +1,2444 @@
+package devices
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"al.essio.dev/pkg/shellescape"
+	"github.com/mobile-next/mobilecli/internal/agentassets"
+	"github.com/mobile-next/mobilecli/internal/devices/devicekit"
+	"github.com/mobile-next/mobilecli/internal/types"
+	"github.com/mobile-next/mobilecli/internal/utils"
+)
+
+const androidDiscoveryGetpropTimeout = 5 * time.Second
+
+// androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
+// on the device, shared by every feature that runs a class out of it
+const goosWindows = "windows"
+
+const androidDexPath = "/data/local/tmp/mobilecli.dex"
+
+// defaultDisplayID is the display every launch is pinned to. Without it Android
+// picks the top focused display, or the one the app was last on, so on a device
+// with a second display an app can open where dump, screenshot and input (which
+// all work on the default display) never see it.
+const defaultDisplayID = "0"
+
+// AndroidDevice implements the ControllableDevice interface for Android devices
+// Parameter shapes for the DeviceServer methods this file calls; the JSON keys
+// are the ones agents/android/java/DeviceServer.java reads.
+type screenshotParams struct {
+	Format      string                   `json:"format"`
+	Quality     int                      `json:"quality"`
+	Scale       float64                  `json:"scale"`
+	MaxSize     int                      `json:"maxSize"`
+	Clip        *types.ScreenElementRect `json:"clip,omitempty"`
+	ScreenWidth int                      `json:"screenWidth,omitempty"`
+}
+
+type clipboardSetParams struct {
+	Text string `json:"text"`
+}
+
+type gestureParams struct {
+	Actions []devicekit.GestureAction `json:"actions"`
+}
+
+type tapParams struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type longPressParams struct {
+	X        int `json:"x"`
+	Y        int `json:"y"`
+	Duration int `json:"duration"`
+}
+
+type swipeParams struct {
+	X1       int `json:"x1"`
+	Y1       int `json:"y1"`
+	X2       int `json:"x2"`
+	Y2       int `json:"y2"`
+	Duration int `json:"duration"`
+}
+
+type buttonParams struct {
+	Button string `json:"button"`
+}
+
+// keyParams is one entry of device.io.keys: a KEYCODE_* name with the
+// KEYCODE_* names of the modifiers held while it's pressed.
+type keyParams struct {
+	Keycode   string   `json:"keycode"`
+	Modifiers []string `json:"modifiers,omitempty"`
+}
+
+type keysParams struct {
+	Keys []keyParams `json:"keys"`
+}
+
+type textParams struct {
+	Text string `json:"text"`
+}
+
+type AndroidDevice struct {
+	id          string
+	name        string
+	version     string
+	state       string // "online" or "offline"
+	transportID string // adb transport ID (e.g., "emulator-5554"), only set for online devices
+	model       string
+
+	// host port of the DeviceServer once it's known to be up and current
+	serverMu   sync.Mutex
+	serverPort int
+}
+
+func (d *AndroidDevice) ID() string {
+	return d.id
+}
+
+func (d *AndroidDevice) Name() string {
+	return d.name
+}
+
+func (d *AndroidDevice) Version() string {
+	return d.version
+}
+
+func (d *AndroidDevice) Platform() string {
+	return PlatformAndroid
+}
+
+func (d *AndroidDevice) DeviceType() string {
+	// check transportID for online devices, or state for offline
+	if strings.HasPrefix(d.transportID, "emulator-") || d.state == StateOffline {
+		return DeviceTypeEmulator
+	} else {
+		return DeviceTypeReal
+	}
+}
+
+func (d *AndroidDevice) State() string {
+	return d.state
+}
+
+func getAndroidSdkPath() string {
+	sdkPath := os.Getenv("ANDROID_HOME")
+	if sdkPath != "" {
+		if _, err := os.Stat(sdkPath); err == nil {
+			return sdkPath
+		}
+	}
+
+	// try default Android SDK location on macOS
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" {
+		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk")
+		if _, err := os.Stat(defaultPath); err == nil {
+			return defaultPath
+		}
+	}
+
+	// try default Android SDK location on Windows
+	if runtime.GOOS == goosWindows {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData != "" {
+			defaultPath := filepath.Join(localAppData, "Android", "Sdk")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
+		}
+
+		// fallback to USERPROFILE on Windows
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk")
+			if _, err := os.Stat(defaultPath); err == nil {
+				return defaultPath
+			}
+		}
+	}
+
+	return ""
+}
+
+func getAdbPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		adbPath := filepath.Join(sdkPath, "platform-tools", "adb")
+		if runtime.GOOS == goosWindows {
+			adbPath += ".exe"
+		}
+
+		return adbPath
+	}
+
+	// best effort, look in path
+	return "adb"
+}
+
+func getEmulatorPath() string {
+	sdkPath := getAndroidSdkPath()
+	if sdkPath != "" {
+		emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
+		if runtime.GOOS == goosWindows {
+			emulatorPath += ".exe"
+		}
+		if _, err := os.Stat(emulatorPath); err == nil {
+			return emulatorPath
+		}
+	}
+
+	// best effort, look in path
+	return DeviceTypeEmulator
+}
+
+// getAdbIdentifier returns the correct device identifier for adb commands
+// uses transportID for online devices (e.g., "emulator-5554"), or id for offline
+func (d *AndroidDevice) getAdbIdentifier() string {
+	if d.transportID != "" {
+		return d.transportID
+	}
+	return d.id
+}
+
+func (d *AndroidDevice) runAdbCommand(args ...string) ([]byte, error) {
+	deviceID := d.getAdbIdentifier()
+	cmdArgs := append([]string{"-s", deviceID}, args...)
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
+	return cmd.CombinedOutput()
+}
+
+// runAdbCommandContext is runAdbCommand for callers on a deadline: adb is
+// killed when ctx ends instead of being waited for.
+func (d *AndroidDevice) runAdbCommandContext(ctx context.Context, args ...string) ([]byte, error) {
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+	return cmd.CombinedOutput()
+}
+
+// adbShellArgs returns the `adb` arguments that run argv as one command on the
+// device. adb joins everything after `shell` with spaces and hands the result to
+// the device's sh, so each argument is quoted here: a package name or any other
+// caller-supplied value stays a single word instead of being read as shell syntax.
+func adbShellArgs(argv ...string) []string {
+	return []string{"shell", shellescape.QuoteCommand(argv)}
+}
+
+// runAdbShell runs argv on the device, for commands that carry caller-supplied values.
+func (d *AndroidDevice) runAdbShell(argv ...string) ([]byte, error) {
+	return d.runAdbCommand(adbShellArgs(argv...)...)
+}
+
+// getDisplayCount counts the number of displays on the device
+func (d *AndroidDevice) getDisplayCount() int {
+	output, err := d.runAdbCommand("shell", "dumpsys", "SurfaceFlinger", "--display-id")
+	if err != nil {
+		return 1 // assume single display on error
+	}
+
+	count := 0
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Display ") {
+			count++
+		}
+	}
+
+	return count
+}
+
+// parseDisplayIdFromCmdDisplay extracts display ID from "cmd display get-displays" output (Android 11+)
+func parseDisplayIdFromCmdDisplay(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		// look for lines like "Display id X, ... state ON, ... uniqueId "..."
+		if strings.HasPrefix(line, "Display id ") &&
+			strings.Contains(line, ", state ON,") &&
+			strings.Contains(line, ", uniqueId ") {
+			re := regexp.MustCompile(`uniqueId "([^"]+)"`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) == 2 {
+				return strings.TrimPrefix(matches[1], "local:")
+			}
+		}
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysViewport extracts display ID from dumpsys DisplayViewport entries
+func parseDisplayIdFromDumpsysViewport(dumpsys string) string {
+	re := regexp.MustCompile(`DisplayViewport\{type=INTERNAL[^}]*isActive=true[^}]*uniqueId='([^']+)'`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return strings.TrimPrefix(matches[1], "local:")
+	}
+	return ""
+}
+
+// parseDisplayIdFromDumpsysState extracts display ID from dumpsys display state entries
+func parseDisplayIdFromDumpsysState(dumpsys string) string {
+	re := regexp.MustCompile(`Display Id=(\d+)[\s\S]*?Display State=ON`)
+	matches := re.FindStringSubmatch(dumpsys)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// getFirstDisplayId finds the first active display's unique ID
+func (d *AndroidDevice) getFirstDisplayId() string {
+	// try using cmd display get-displays (Android 11+)
+	output, err := d.runAdbCommand("shell", "cmd", "display", "get-displays")
+	if err == nil {
+		if id := parseDisplayIdFromCmdDisplay(string(output)); id != "" {
+			return id
+		}
+	}
+
+	// fallback: parse dumpsys display for display info (compatible with older Android versions)
+	output, err = d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return ""
+	}
+
+	dumpsys := string(output)
+
+	// try DisplayViewport entries with isActive=true and type=INTERNAL
+	if id := parseDisplayIdFromDumpsysViewport(dumpsys); id != "" {
+		return id
+	}
+
+	// final fallback: look for active display with state ON
+	return parseDisplayIdFromDumpsysState(dumpsys)
+}
+
+// captureScreenshot captures screenshot with optional display ID
+func (d *AndroidDevice) captureScreenshot(displayID string) ([]byte, error) {
+	args := []string{"exec-out", "screencap", "-p"}
+	if displayID != "" {
+		args = append(args, "-d", displayID)
+	}
+	byteData, err := d.runAdbCommand(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to take screenshot: %w", err)
+	}
+	return byteData, nil
+}
+
+func (d *AndroidDevice) TakeScreenshot(opts ScreenshotOptions) ([]byte, error) {
+	// prefer on-device capture+encode via the embedded dex: a cropped and/or
+	// downscaled image crosses adb instead of screencap's full-size png
+	data, err := d.takeScreenshotWithDex(opts)
+	if err == nil {
+		return data, nil
+	}
+	utils.Verbose("dex screenshot failed (%v), falling back to screencap", err)
+
+	data, err = d.takeScreenshotWithScreencap()
+	if err != nil {
+		return nil, err
+	}
+	return utils.ProcessScreenshot(data, opts.Format, opts.Quality, opts.Scale, opts.MaxSize, opts.Clip, opts.ScreenWidthPoints, opts.ScreenHeightPoints)
+}
+
+// takeScreenshotWithDex captures, scales, and encodes on-device via the
+// DeviceServer (Screenshot.java), which returns the image base64-encoded.
+// Output is validated by magic bytes.
+func (d *AndroidDevice) takeScreenshotWithDex(opts ScreenshotOptions) ([]byte, error) {
+	format := opts.Format
+	if format == "" {
+		format = "png"
+	}
+	if format != "png" && format != "jpeg" {
+		return nil, fmt.Errorf("invalid format: %q", format)
+	}
+
+	utils.Verbose("taking screenshot on-device via mobilecli.dex")
+
+	params := screenshotParams{
+		Format:  format,
+		Quality: opts.Quality,
+		Scale:   opts.Scale,
+		MaxSize: opts.MaxSize,
+	}
+	if opts.Clip != nil {
+		params.Clip = opts.Clip
+		params.ScreenWidth = opts.ScreenWidthPoints
+	}
+
+	raw, err := d.serverRequest("device.screenshot", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse screenshot response: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(result.Data)
+	if err != nil {
+		return nil, fmt.Errorf("decode screenshot: %w", err)
+	}
+
+	if !utils.IsPNG(data) && !utils.IsJPEG(data) {
+		return nil, fmt.Errorf("unexpected output (%d bytes)", len(data))
+	}
+	return data, nil
+}
+
+func (d *AndroidDevice) takeScreenshotWithScreencap() ([]byte, error) {
+	displayCount := d.getDisplayCount()
+
+	if displayCount <= 1 {
+		// backward compatibility for android 10 and below, and for single display devices
+		return d.captureScreenshot("")
+	}
+
+	// find the first display that is turned on, and capture that one
+	displayID := d.getFirstDisplayId()
+	if displayID == "" {
+		// no idea why, but we have displayCount >= 2, yet we failed to parse
+		// let's go with screencap's defaults and hope for the best
+		return d.captureScreenshot("")
+	}
+
+	return d.captureScreenshot(displayID)
+}
+
+// validLocaleTag checks that a locale tag only contains safe BCP 47 characters
+var validLocaleTag = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
+
+// resolvedActivityPattern matches a "package/activity" component name.
+var resolvedActivityPattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]*/[a-zA-Z0-9_.$]+$`)
+
+// validActivity matches an Android activity reference: an optional "package/"
+// prefix followed by a class name. Class names may be relative (".Foo"),
+// fully-qualified ("com.x.Foo"), or contain inner classes ("Foo$Bar").
+var validActivity = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9_.]*/)?[a-zA-Z0-9_.$]+$`)
+
+// buildLaunchComponent builds the "package/activity" component for `am start -n`.
+// If activity already contains a "/", it is treated as a full component and
+// used as-is; otherwise it is prefixed with bundleID.
+func buildLaunchComponent(bundleID, activity string) (string, error) {
+	if !validActivity.MatchString(activity) {
+		return "", fmt.Errorf("invalid activity name: %q", activity)
+	}
+	if strings.Contains(activity, "/") {
+		return activity, nil
+	}
+	return bundleID + "/" + activity, nil
+}
+
+// parseResolveActivityOutput extracts the "pkg/activity" component from the
+// output of `cmd package resolve-activity --brief <pkg>`. Returns "" if no
+// launcher activity is present (e.g. unknown package, or output is "{}").
+func parseResolveActivityOutput(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if resolvedActivityPattern.MatchString(line) {
+			return line
+		}
+	}
+	return ""
+}
+
+func (d *AndroidDevice) resolveLauncherActivity(bundleID string) (string, error) {
+	output, err := d.runAdbShell("cmd", "package", "resolve-activity", "--brief", bundleID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve launcher activity for %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	component := parseResolveActivityOutput(string(output))
+	if component == "" {
+		return "", fmt.Errorf("no launcher activity found for %s (is it installed?)", bundleID)
+	}
+	return component, nil
+}
+
+func (d *AndroidDevice) LaunchApp(bundleID string, opts LaunchOptions) error {
+	extras, err := launchExtras(opts.Arguments)
+	if err != nil {
+		return err
+	}
+	if len(opts.Env) > 0 {
+		return fmt.Errorf("--env is not supported on Android")
+	}
+
+	if len(opts.Locales) > 0 {
+		for _, l := range opts.Locales {
+			if !validLocaleTag.MatchString(l) {
+				return fmt.Errorf("invalid locale tag: %q", l)
+			}
+		}
+		localeArg := strings.Join(opts.Locales, ",")
+		output, err := d.runAdbShell("cmd", "locale", "set-app-locales", bundleID, "--locales", localeArg)
+		if err != nil {
+			return fmt.Errorf("failed to set app locales for %s: %w\nOutput: %s", bundleID, err, string(output))
+		}
+	}
+
+	var component string
+	if opts.Activity != "" {
+		component, err = buildLaunchComponent(bundleID, opts.Activity)
+	} else {
+		component, err = d.resolveLauncherActivity(bundleID)
+	}
+	if err != nil {
+		return err
+	}
+
+	output, err := d.runAdbShell(launchArgs(component, d.isAppRunning(bundleID), extras)...)
+	if err != nil {
+		return fmt.Errorf("failed to launch app %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+
+	return nil
+}
+
+// launchArgs builds the `am start` command line. force-stop kills an app's process but
+// keeps its task, and an activity the app started in that task, like the runtime
+// permission prompt, stays on top: a plain start just resumes it. When the app isn't
+// running, clear the task so the launch shows the app. When it is running, keep the
+// task so launching brings the app to the front as it was.
+func launchArgs(component string, isRunning bool, extras []string) []string {
+	args := []string{"am", "start", "--display", defaultDisplayID}
+	if !isRunning {
+		args = append(args, "--activity-clear-task")
+	}
+	args = append(args, extras...)
+	return append(args, "-n", component)
+}
+
+// launchExtras turns key=value launch arguments into `am start --es key value`
+// string extras, which the app reads from its launch intent. The value may
+// contain '=' and may be empty.
+func launchExtras(arguments []string) ([]string, error) {
+	extras := make([]string, 0, len(arguments)*3)
+	for _, argument := range arguments {
+		key, value, found := strings.Cut(argument, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("invalid --arg %q, on Android each argument must be key=value", argument)
+		}
+		extras = append(extras, "--es", key, value)
+	}
+	return extras, nil
+}
+
+// isAppRunning reports whether the package has a live process. pidof exits non-zero
+// when there is none.
+func (d *AndroidDevice) isAppRunning(bundleID string) bool {
+	output, err := d.runAdbShell("pidof", bundleID)
+	return err == nil && strings.TrimSpace(string(output)) != ""
+}
+
+// TerminateApp stops an app. `am force-stop` succeeds for any package name, so a
+// package that is not installed is reported the way IOSDevice and SimulatorDevice
+// report it. An installed app that is not running is still stopped without error.
+func (d *AndroidDevice) TerminateApp(bundleID string) error {
+	installed, err := d.isPackageInstalled(bundleID)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return fmt.Errorf("%s not installed", bundleID)
+	}
+
+	output, err := d.runAdbShell("am", "force-stop", bundleID)
+	if err != nil {
+		return fmt.Errorf("failed to terminate app %s: %v\nOutput: %s", bundleID, err, string(output))
+	}
+
+	return nil
+}
+
+// Reboot reboots the Android device/emulator using `adb reboot`.
+func (d *AndroidDevice) Reboot() error {
+	_, err := d.runAdbCommand("reboot")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Shutdown shuts down the Android emulator
+func (d *AndroidDevice) Shutdown() error {
+	if d.DeviceType() != DeviceTypeEmulator {
+		return fmt.Errorf("shutdown is only supported for emulators")
+	}
+
+	if d.state == StateOffline {
+		return fmt.Errorf("emulator is already offline")
+	}
+
+	// use emu kill command for graceful shutdown
+	_, err := d.runAdbCommand("emu", "kill")
+	if err != nil {
+		return fmt.Errorf("failed to shutdown emulator: %w", err)
+	}
+
+	d.state = StateOffline
+	d.transportID = ""
+	return nil
+}
+
+// Tap, LongPress and Swipe go through the on-device server (Input.java),
+// which injects them via UiAutomation. `adb shell input` forks a JVM on the
+// device for every call, which is where most of its ~200ms went.
+func (d *AndroidDevice) Tap(x, y int) error {
+	_, err := d.serverRequest("device.io.tap", tapParams{X: x, Y: y})
+	return err
+}
+
+// LongPress simulates a long press at (x, y) on the Android device.
+func (d *AndroidDevice) LongPress(x, y, duration int) error {
+	_, err := d.serverRequest("device.io.longpress", longPressParams{X: x, Y: y, Duration: duration})
+	return err
+}
+
+const defaultSwipeDurationMs = 1000
+
+// Swipe simulates a swipe gesture from (x1, y1) to (x2, y2) on the Android device.
+// duration is in milliseconds; zero or less keeps the 1000ms this has always used.
+func (d *AndroidDevice) Swipe(x1, y1, x2, y2, duration int) error {
+	if duration <= 0 {
+		duration = defaultSwipeDurationMs
+	}
+
+	_, err := d.serverRequest("device.io.swipe", swipeParams{X1: x1, Y1: y1, X2: x2, Y2: y2, Duration: duration})
+	return err
+}
+
+func (d *AndroidDevice) GetClipboard() (string, error) {
+	raw, err := d.serverRequest("device.clipboard.get", nil)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", fmt.Errorf("parse clipboard response: %w", err)
+	}
+	return result.Text, nil
+}
+
+func (d *AndroidDevice) SetClipboard(text string) error {
+	if text == "" {
+		_, err := d.serverRequest("device.clipboard.clear", nil)
+		return err
+	}
+	_, err := d.serverRequest("device.clipboard.set", clipboardSetParams{Text: text})
+	return err
+}
+
+// Gesture performs a multi-finger touch sequence through the on-device server,
+// which replays it as timed MotionEvents via UiAutomation. Actions are grouped
+// by Button (finger index) and converted exactly as for devicekit-ios, so both
+// platforms take one gesture contract; fingers move at the same time, which is
+// what makes a pinch possible here.
+func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
+	converted := devicekit.ConvertActions(actions)
+	// the device server presses every finger at time zero; refuse a delayed
+	// finger rather than silently turning a double tap into a two-finger tap
+	for _, action := range converted {
+		if action.Start > 0 {
+			return fmt.Errorf("a pause before pointerDown (delaying a finger) is not supported on Android yet")
+		}
+	}
+	_, err := d.serverRequest("device.io.gesture", gestureParams{Actions: converted})
+	return err
+}
+
+// splitAdbDevicesLine splits one row of 'adb devices' into the device's serial and its state.
+// adb separates the two with a tab, and a serial can contain spaces: a device on wireless
+// debugging is listed under its mDNS service name, which the device changes to
+// "adb-<serial>-<id> (2)._adb-tls-connect._tcp" after a name conflict.
+func splitAdbDevicesLine(line string) (serial string, state string, ok bool) {
+	serial, state, ok = strings.Cut(strings.TrimSpace(line), "\t")
+	return serial, state, ok && serial != "" && state != ""
+}
+
+func parseAdbDevicesOutput(output string) []ControllableDevice {
+	var devices []ControllableDevice
+
+	lines := strings.Split(output, "\n")
+	for i := 1; i < len(lines); i++ {
+		transportID, status, ok := splitAdbDevicesLine(lines[i])
+		if ok {
+			if status == "device" {
+				deviceID := transportID
+				avdName := ""
+
+				// for emulators, use AVD name as the consistent ID
+				if strings.HasPrefix(transportID, "emulator-") {
+					var err error
+					avdName, err = getAVDName(transportID)
+					if err != nil {
+						continue
+					}
+					if avdName != "" {
+						deviceID = avdName
+					}
+				}
+
+				model, err := getAndroidDeviceModel(transportID)
+				if err != nil {
+					continue
+				}
+
+				version, err := getAndroidDeviceVersion(transportID)
+				if err != nil {
+					continue
+				}
+
+				devices = append(devices, &AndroidDevice{
+					id:          deviceID,
+					transportID: transportID,
+					name:        getAndroidDeviceName(transportID, avdName, model),
+					version:     version,
+					state:       StateOnline,
+					model:       model,
+				})
+			}
+		}
+	}
+
+	return devices
+}
+
+func getAndroidProperty(deviceID, property string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), androidDiscoveryGetpropTimeout)
+	defer cancel()
+
+	propertyCmd := exec.CommandContext(ctx, getAdbPath(), "-s", deviceID, "shell", "getprop", property)
+	propertyOutput, err := propertyCmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("getprop timed out after 5 seconds for Android device %s while reading %s; you probably want to run 'adb kill-server'", deviceID, property)
+		} else {
+			utils.Verbose("getprop failed for Android device %s while reading %s: %v; you probably want to run 'adb kill-server'", deviceID, property, err)
+		}
+		return "", err
+	}
+
+	return strings.TrimSpace(string(propertyOutput)), nil
+}
+
+// getAVDName returns the AVD name for an emulator, or empty string if not an emulator
+func getAVDName(transportID string) (string, error) {
+	return getAndroidProperty(transportID, "ro.boot.qemu.avd_name")
+}
+
+func getAndroidDeviceName(deviceID, avdName, model string) string {
+	// for emulators, prioritize AVD name
+	if strings.HasPrefix(deviceID, "emulator-") && avdName != "" {
+		return strings.ReplaceAll(avdName, "_", " ")
+	}
+
+	// for real devices, try getting device name from settings
+	nameCmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
+	nameOutput, err := nameCmd.CombinedOutput()
+	if err == nil && len(nameOutput) > 0 {
+		name := strings.TrimSpace(string(nameOutput))
+		// settings returns "null" if the value is not set
+		if name != "" && name != "null" {
+			return name
+		}
+	}
+
+	// fall back to the previously queried product model
+	if model != "" {
+		return model
+	}
+
+	return deviceID
+}
+
+func getAndroidDeviceModel(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.product.model")
+}
+
+func getAndroidDeviceVersion(deviceID string) (string, error) {
+	return getAndroidProperty(deviceID, "ro.build.version.release")
+}
+
+// GetAndroidDevices retrieves a list of connected Android devices
+func GetAndroidDevices() ([]ControllableDevice, error) {
+	command := exec.CommandContext(context.Background(), getAdbPath(), "devices")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		status := command.ProcessState.ExitCode()
+		if status < 0 {
+			utils.Verbose("Failed running 'adb devices', is ANDROID_HOME set correctly?")
+			return []ControllableDevice{}, nil
+		}
+
+		return nil, fmt.Errorf("failed to run 'adb devices': %v", err)
+	}
+
+	androidDevices := parseAdbDevicesOutput(string(output))
+	return androidDevices, nil
+}
+
+func (d *AndroidDevice) StartAgent(config StartAgentConfig) error {
+	// if device is offline, return error - user should use 'device boot' command
+	if d.state == StateOffline {
+		return fmt.Errorf("device is offline, use 'mobilecli device boot --device %s' to start the emulator", d.id)
+	}
+
+	// android doesn't need an agent to be started for online devices
+	return nil
+}
+
+// matchesAVDName checks if a device name matches an AVD name (pure function)
+func matchesAVDName(avdName, deviceName string) bool {
+	normalizedAVD := strings.ReplaceAll(avdName, "_", " ")
+	return normalizedAVD == deviceName || avdName == deviceName
+}
+
+// waitForEmulatorBootComplete waits for an emulator to appear and be fully booted
+func (d *AndroidDevice) waitForEmulatorBootComplete(ctx context.Context, avdName string) (string, error) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("emulator boot cancelled: %w", ctx.Err())
+		case <-ticker.C:
+			// check if emulator is in device list
+			devices, err := GetAndroidDevices()
+			if err != nil {
+				continue // keep trying
+			}
+
+			for _, device := range devices {
+				// check if this is our emulator by matching the AVD name
+				if device.Platform() == PlatformAndroid && device.DeviceType() == DeviceTypeEmulator {
+					// device.ID() now returns the AVD name for emulators
+					if device.ID() == avdName || matchesAVDName(avdName, device.Name()) {
+						// found our emulator, check if it's fully booted
+						// need to get the transport ID for the boot check
+						if androidDev, ok := device.(*AndroidDevice); ok {
+							transportID := androidDev.transportID
+							if transportID == "" {
+								transportID = androidDev.id
+							}
+							bootComplete, _ := d.checkBootComplete(transportID)
+							if bootComplete {
+								return androidDev.transportID, nil
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// emulatorBootArgs returns the emulator arguments for booting an avd. the window
+// is hidden unless a headed boot is requested.
+func emulatorBootArgs(avdName string, opts BootOptions) []string {
+	args := []string{"-netdelay", "none", "-netspeed", "full", "-avd", avdName}
+	if !opts.Headed {
+		args = append(args, "-qt-hide-window")
+	}
+	return args
+}
+
+// Boot launches an offline Android emulator and waits for it to be ready
+func (d *AndroidDevice) Boot(opts BootOptions) error {
+	if d.state != StateOffline {
+		return fmt.Errorf("emulator is already running")
+	}
+	utils.Verbose("Starting Android emulator: %s", d.id)
+
+	// create context with timeout for the boot wait process
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// launch emulator in background without context (so it persists after function returns)
+	cmd := exec.CommandContext(context.Background(), getEmulatorPath(), emulatorBootArgs(d.id, opts)...)
+	err := cmd.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start emulator: %w", err)
+	}
+
+	// monitor context cancellation to clean up the process only on timeout
+	go func() {
+		<-ctx.Done()
+		if cmd.Process != nil && ctx.Err() == context.DeadlineExceeded {
+			utils.Verbose("Boot timeout exceeded, killing emulator process")
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	utils.Verbose("Waiting for emulator to boot...")
+
+	// wait for emulator to boot and get its actual device ID
+	deviceID, err := d.waitForEmulatorBootComplete(ctx, d.id)
+	if err != nil {
+		// if boot failed, kill the emulator process
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return err
+	}
+
+	utils.Verbose("Emulator booted successfully with transport ID: %s", deviceID)
+	// update our transport ID to the actual emulator-XXXX ID
+	// the device ID (d.id) is already set to the AVD name and should not change
+	d.transportID = deviceID
+	d.state = StateOnline
+	return nil
+}
+
+// checkBootComplete checks if an emulator has finished booting
+func (d *AndroidDevice) checkBootComplete(deviceID string) (bool, error) {
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "shell", "getprop", "sys.boot_completed")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(string(output)) == "1", nil
+}
+
+// androidButtons maps the button names `io button` accepts to Android keycodes.
+var androidButtons = map[string]string{
+	"HOME":        "KEYCODE_HOME",
+	"BACK":        "KEYCODE_BACK",
+	"VOLUME_UP":   "KEYCODE_VOLUME_UP",
+	"VOLUME_DOWN": "KEYCODE_VOLUME_DOWN",
+	"ENTER":       "KEYCODE_ENTER",
+	"DPAD_CENTER": "KEYCODE_DPAD_CENTER",
+	"DPAD_UP":     "KEYCODE_DPAD_UP",
+	"DPAD_DOWN":   "KEYCODE_DPAD_DOWN",
+	"DPAD_LEFT":   "KEYCODE_DPAD_LEFT",
+	"DPAD_RIGHT":  "KEYCODE_DPAD_RIGHT",
+	"BACKSPACE":   "KEYCODE_DEL",
+	"APP_SWITCH":  "KEYCODE_APP_SWITCH",
+	"POWER":       "KEYCODE_POWER",
+	"LOCK":        "KEYCODE_POWER", // alias of POWER, the name iOS started with
+}
+
+// AndroidButtonNames returns the button names an Android device accepts, sorted.
+func AndroidButtonNames() []string {
+	return slices.Sorted(maps.Keys(androidButtons))
+}
+
+func androidKeycode(key string) (string, error) {
+	keycode, exists := androidButtons[key]
+	if !exists {
+		return "", fmt.Errorf("AndroidDevice: unsupported button key: %s (supported: %s)", key, strings.Join(AndroidButtonNames(), ", "))
+	}
+	return keycode, nil
+}
+
+func (d *AndroidDevice) PressButton(key string) error {
+	keycode, err := androidKeycode(key)
+	if err != nil {
+		return err
+	}
+
+	if _, err := d.serverRequest("device.io.button", buttonParams{Button: keycode}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to press %s button: %w", key, err)
+	}
+	return nil
+}
+
+// androidModifierKeycodes maps canonical modifier names to Android keycodes
+var androidModifierKeycodes = map[string]string{
+	"command": "KEYCODE_META_LEFT",
+	"control": "KEYCODE_CTRL_LEFT",
+	"option":  "KEYCODE_ALT_LEFT",
+	"shift":   "KEYCODE_SHIFT_LEFT",
+	"fn":      "KEYCODE_FUNCTION",
+}
+
+// androidNamedKeycodes maps named keys to Android keycodes
+var androidNamedKeycodes = map[string]string{
+	"enter":         "KEYCODE_ENTER",
+	"return":        "KEYCODE_ENTER",
+	"backspace":     "KEYCODE_DEL",
+	"delete":        "KEYCODE_DEL",
+	"forwarddelete": "KEYCODE_FORWARD_DEL",
+	"tab":           "KEYCODE_TAB",
+	"space":         "KEYCODE_SPACE",
+	"escape":        "KEYCODE_ESCAPE",
+	"up":            "KEYCODE_DPAD_UP",
+	"down":          "KEYCODE_DPAD_DOWN",
+	"left":          "KEYCODE_DPAD_LEFT",
+	"right":         "KEYCODE_DPAD_RIGHT",
+	"home":          "KEYCODE_MOVE_HOME",
+	"end":           "KEYCODE_MOVE_END",
+	"pageup":        "KEYCODE_PAGE_UP",
+	"pagedown":      "KEYCODE_PAGE_DOWN",
+	"f1":            "KEYCODE_F1",
+	"f2":            "KEYCODE_F2",
+	"f3":            "KEYCODE_F3",
+	"f4":            "KEYCODE_F4",
+	"f5":            "KEYCODE_F5",
+	"f6":            "KEYCODE_F6",
+	"f7":            "KEYCODE_F7",
+	"f8":            "KEYCODE_F8",
+	"f9":            "KEYCODE_F9",
+	"f10":           "KEYCODE_F10",
+	"f11":           "KEYCODE_F11",
+	"f12":           "KEYCODE_F12",
+}
+
+func androidKeycodeForKey(key string) (string, error) {
+	if keycode, ok := androidNamedKeycodes[key]; ok {
+		return keycode, nil
+	}
+
+	if len(key) == 1 {
+		c := key[0]
+		switch {
+		case c >= 'a' && c <= 'z':
+			return "KEYCODE_" + strings.ToUpper(key), nil
+		case c >= '0' && c <= '9':
+			return "KEYCODE_" + key, nil
+		}
+	}
+
+	return "", fmt.Errorf("AndroidDevice: unsupported key: %s", key)
+}
+
+func (d *AndroidDevice) PressKeys(combos []KeyCombo) error {
+	if len(combos) == 0 {
+		return nil
+	}
+
+	// resolve every combo upfront, so an invalid one fails before any key is pressed
+	keys := make([]keyParams, len(combos))
+	for i, combo := range combos {
+		keycode, err := androidKeycodeForKey(combo.Key)
+		if err != nil {
+			return err
+		}
+
+		var modifiers []string
+		for _, modifier := range combo.Modifiers {
+			modifierKeycode, ok := androidModifierKeycodes[modifier]
+			if !ok {
+				return fmt.Errorf("AndroidDevice: unsupported modifier: %s", modifier)
+			}
+			modifiers = append(modifiers, modifierKeycode)
+		}
+		keys[i] = keyParams{Keycode: keycode, Modifiers: modifiers}
+	}
+
+	if _, err := d.serverRequest("device.io.keys", keysParams{Keys: keys}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to press keys: %w", err)
+	}
+	return nil
+}
+
+// Fill sets the focused field's text through accessibility, not keys: a Compose
+// TextField moves its cursor to the tap a moment after focusing, which collapses
+// a ctrl+a selection.
+func (d *AndroidDevice) Fill(text string) error {
+	if _, err := d.serverRequest("device.io.fill", textParams{Text: text}); err != nil {
+		return fmt.Errorf("AndroidDevice: failed to fill text: %w", err)
+	}
+	return nil
+}
+
+// isAscii checks if text contains only ASCII characters
+func isAscii(text string) bool {
+	for _, char := range text {
+		if char > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+func (d *AndroidDevice) SendKeys(text string) error {
+	if text == "" {
+		// bailing early, so we don't run adb shell with empty string.
+		// this happens when you prompt with a simple "submit".
+		return nil
+	}
+
+	// a line break is typed like any other character, not pressed as the enter
+	// button: typed keys keep the device in touch mode, a pressed button does not
+	if text == "\b" {
+		return d.PressButton("BACKSPACE")
+	}
+
+	if isAscii(text) {
+		// the virtual keyboard's character map only covers what a physical
+		// keyboard can type, which is ascii
+		_, err := d.serverRequest("device.io.text", textParams{Text: text})
+		return err
+	}
+
+	// anything else can't be typed key by key; put it on the clipboard and paste
+	if err := d.SetClipboard(text); err != nil {
+		return fmt.Errorf("failed to set clipboard: %w", err)
+	}
+	defer func() {
+		if err := d.SetClipboard(""); err != nil {
+			utils.Verbose("failed to clear clipboard after paste: %v", err)
+		}
+	}()
+
+	if _, err := d.serverRequest("device.io.button", buttonParams{Button: "KEYCODE_PASTE"}); err != nil {
+		return fmt.Errorf("failed to paste: %w", err)
+	}
+	return nil
+}
+
+// urlSchemePattern matches the scheme that starts a URL, as in "https:" or "tel:".
+var urlSchemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
+
+func urlHasScheme(url string) bool {
+	return urlSchemePattern.MatchString(url)
+}
+
+// amStartError returns the reason `am start` gave for not starting an activity,
+// or "" when it started one. am exits 0 either way, so its output is the only
+// signal. A "Warning:" line is a success: the intent went to an activity that
+// was already running.
+func amStartError(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if reason, found := strings.CutPrefix(strings.TrimSpace(line), "Error:"); found {
+			return strings.TrimSpace(reason)
+		}
+	}
+	return ""
+}
+
+func (d *AndroidDevice) OpenURL(url string) error {
+	// am turns a url without a scheme into an empty one, which no app can open
+	if !urlHasScheme(url) {
+		return fmt.Errorf("failed to open URL %s: the URL needs a scheme, such as https://", url)
+	}
+
+	output, err := d.runAdbShell("am", "start", "--display", defaultDisplayID, "-a", "android.intent.action.VIEW", "-d", url)
+	if err != nil {
+		return fmt.Errorf("failed to open URL %s: %v\nOutput: %s", url, err, string(output))
+	}
+
+	if reason := amStartError(string(output)); reason != "" {
+		return fmt.Errorf("failed to open URL %s: %s", url, reason)
+	}
+
+	return nil
+}
+
+func (d *AndroidDevice) ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error) {
+	if onlyLaunchable {
+		return d.listLaunchableApps()
+	}
+	return d.listAllPackages()
+}
+
+func (d *AndroidDevice) listLaunchableApps() ([]InstalledAppInfo, error) {
+	output, err := d.runAdbCommand("shell", "cmd", "package", "query-activities", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query launcher activities: %v", err)
+	}
+
+	launchable := make(map[string]bool)
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "packageName=") {
+			launchable[strings.TrimPrefix(line, "packageName=")] = true
+		}
+	}
+
+	all, err := d.listAllPackages()
+	if err != nil {
+		return nil, err
+	}
+
+	var apps []InstalledAppInfo
+	for _, app := range all {
+		if launchable[app.PackageName] {
+			apps = append(apps, app)
+		}
+	}
+	return apps, nil
+}
+
+// listAllPackages asks the DeviceServer (PackageLister.java) for name and
+// versions of every package in one call instead of one dumpsys per package.
+func (d *AndroidDevice) listAllPackages() ([]InstalledAppInfo, error) {
+	raw, err := d.serverRequest("device.apps.list", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	return parsePackageListerOutput(raw)
+}
+
+// parsePackageListerOutput decodes the JSON array printed by PackageLister.
+func parsePackageListerOutput(output []byte) ([]InstalledAppInfo, error) {
+	var listed []struct {
+		PackageName string `json:"packageName"`
+		AppName     string `json:"appName"`
+		Version     string `json:"version"`
+		VersionCode int64  `json:"versionCode"`
+	}
+	if err := json.Unmarshal(output, &listed); err != nil {
+		return nil, fmt.Errorf("failed to parse package list: %w: %s", err, string(output[:min(len(output), 200)]))
+	}
+
+	apps := make([]InstalledAppInfo, 0, len(listed))
+	for _, app := range listed {
+		apps = append(apps, InstalledAppInfo{
+			PackageName: app.PackageName,
+			AppName:     app.AppName,
+			Version:     app.Version,
+			VersionCode: strconv.FormatInt(app.VersionCode, 10),
+		})
+	}
+	return apps, nil
+}
+
+// getForegroundComponent returns the package name and activity of the focused
+// window, or of the focused app when a system window holds focus.
+func (d *AndroidDevice) getForegroundComponent() (string, string, error) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "window", "displays")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get window displays: %w", err)
+	}
+
+	return parseForegroundComponent(string(output))
+}
+
+// parseForegroundComponent extracts the focused package and activity from
+// `dumpsys window displays` lines of the form:
+//
+//	mCurrentFocus=Window{... u0 com.package.name/com.package.name.MainActivity}
+//
+// A multi-display device prints one such line per display and the unfocused ones read
+// "mCurrentFocus=null", so a line that does not parse means "not this display" rather
+// than "no foreground app".
+//
+// mCurrentFocus also reports app-owned dialogs, which is what we want, but when a
+// system window holds focus (notification shade, IME, ANR dialog, power menu) it names
+// that window instead, e.g. "Window{... u0 NotificationShade}". Only then do we fall
+// back to the app behind it, which the same display reports right after as:
+//
+//	mFocusedApp=ActivityRecord{... u0 com.package.name/.MainActivity t42}
+//
+// A null focus is left as an error, so callers keep retrying through window transitions.
+func parseForegroundComponent(output string) (string, string, error) {
+	systemWindowFocused := false
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "mFocusedApp=") {
+			if !systemWindowFocused {
+				continue
+			}
+			if packageName, activity, found := parseActivityRecord(line); found {
+				return packageName, activity, nil
+			}
+			continue
+		}
+
+		if !strings.Contains(line, "mCurrentFocus") {
+			continue
+		}
+		systemWindowFocused = false
+		parts := strings.Fields(line)
+		if len(parts) < 3 {
+			continue
+		}
+		focusPart := strings.TrimSuffix(parts[2], "}")
+		// split into package name (before the '/') and activity (after)
+		if idx := strings.Index(focusPart, "/"); idx != -1 {
+			return focusPart[:idx], focusPart[idx+1:], nil
+		}
+		systemWindowFocused = true
+	}
+
+	return "", "", fmt.Errorf("could not determine foreground app")
+}
+
+// parseActivityRecord extracts the component from an
+// "ActivityRecord{hash u0 com.package.name/.MainActivity t42}" token, expanding an
+// activity name that is relative to the package.
+func parseActivityRecord(line string) (string, string, bool) {
+	idx := strings.Index(line, "ActivityRecord{")
+	if idx == -1 {
+		return "", "", false
+	}
+
+	for _, field := range strings.Fields(line[idx:]) {
+		field = strings.TrimRight(field, "}")
+		slash := strings.Index(field, "/")
+		if slash <= 0 || slash == len(field)-1 {
+			continue
+		}
+		packageName, activity := field[:slash], field[slash+1:]
+		if strings.HasPrefix(activity, ".") {
+			activity = packageName + activity
+		}
+		return packageName, activity, true
+	}
+
+	return "", "", false
+}
+
+func (d *AndroidDevice) GetAppVersion(packageName string) (string, error) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "package", packageName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get package info: %w", err)
+	}
+
+	// parse version name
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "versionName=") {
+			parts := strings.Split(line, "versionName=")
+			if len(parts) >= 2 {
+				return strings.TrimSpace(parts[1]), nil
+			}
+			break
+		}
+	}
+
+	return "", nil
+}
+
+// resolveAppName returns the launcher label for a package. The label lives in
+// the package's resources, so it needs the on-device agent; without it, callers
+// still get the package name rather than an error.
+func (d *AndroidDevice) resolveAppName(packageName string) string {
+	apps, err := d.listAllPackages()
+	if err != nil {
+		return packageName
+	}
+
+	return appNameFor(apps, packageName)
+}
+
+// appNameFor picks a package's label out of a listing, falling back to the
+// package name when the package is missing or carries no label.
+func appNameFor(apps []InstalledAppInfo, packageName string) string {
+	for _, app := range apps {
+		if app.PackageName == packageName && app.AppName != "" {
+			return app.AppName
+		}
+	}
+
+	return packageName
+}
+
+func (d *AndroidDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
+	// dumpsys returns a null focus while animations are running, so retry for
+	// up to 5 seconds (every 250ms) before giving up.
+	var packageName, activity string
+	var err error
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		packageName, activity, err = d.getForegroundComponent()
+		if err == nil {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	version, err := d.GetAppVersion(packageName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ForegroundAppInfo{
+		PackageName: packageName,
+		AppName:     d.resolveAppName(packageName),
+		Version:     version,
+		Activity:    activity,
+	}, nil
+}
+
+func (d *AndroidDevice) Info() (*FullDeviceInfo, error) {
+	width, height, _, err := d.currentScreenSize()
+	if err != nil {
+		return nil, err
+	}
+
+	return &FullDeviceInfo{
+		DeviceInfo: DeviceInfo{
+			ID:       d.ID(),
+			Name:     d.Name(),
+			Platform: d.Platform(),
+			Type:     d.DeviceType(),
+			Version:  d.Version(),
+			State:    d.State(),
+			Model:    d.model,
+		},
+		ScreenSize: &ScreenSize{
+			Width:  width,
+			Height: height,
+			Scale:  1,
+		},
+	}, nil
+}
+
+// currentScreenSize returns the screen size in the orientation the display is
+// in right now, which taps, the ui tree and screenshots all use. `wm size`
+// reports the natural orientation, so a quarter turn swaps its sides. known is
+// false when the current rotation could not be read and the size is the
+// natural one.
+func (d *AndroidDevice) currentScreenSize() (width, height int, known bool, err error) {
+	// one round trip for wm size and the rotation on Android 13+
+	output, err := d.runAdbCommand("shell", "wm size && { cmd display get-displays 2>/dev/null; true; }")
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("failed to get screen size: %v", err)
+	}
+
+	width, height, err = parseWmSize(string(output))
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	rotation, known := parseRotationFromCmdDisplay(string(output))
+	if !known {
+		rotation, known = d.getRotationFromDumpsysDisplay()
+	}
+	if known && rotation%2 == 1 {
+		width, height = height, width
+	}
+	return width, height, known, nil
+}
+
+// parseWmSize reads the size the display is drawn at from `wm size` output,
+// which adds an "Override size" line when one is set
+func parseWmSize(output string) (int, int, error) {
+	var size string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if value, ok := strings.CutPrefix(line, "Override size: "); ok {
+			size = value
+		} else if value, ok := strings.CutPrefix(line, "Physical size: "); ok && size == "" {
+			size = value
+		}
+	}
+
+	parts := strings.SplitN(size, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("failed to get screen size from %q", strings.TrimSpace(output))
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get screen size: %v", err)
+	}
+	return width, height, nil
+}
+
+// getRotationFromDumpsysDisplay covers devices before Android 13, which have no
+// "cmd display get-displays"
+func (d *AndroidDevice) getRotationFromDumpsysDisplay() (int, bool) {
+	output, err := d.runAdbCommand("shell", "dumpsys", "display")
+	if err != nil {
+		return 0, false
+	}
+	return parseRotationFromDumpsysDisplay(string(output))
+}
+
+var displayInfoRotationRe = regexp.MustCompile(`, rotation ([0-3]),`)
+
+// parseRotationFromCmdDisplay reads the current rotation, in quarter turns
+// from the natural orientation, from "cmd display get-displays" output.
+// Android 13 indents each display line. user_rotation is only the rotation
+// setting: apps that lock their orientation and auto-rotate both draw in
+// another one. It reads the default display, the one `wm size` measures and
+// screenshots, dump and input work on, even when another display is the one on
+func parseRotationFromCmdDisplay(output string) (int, bool) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Display id "+defaultDisplayID+":") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+var logicalDisplayHeaderRe = regexp.MustCompile(`^Display (\d+):$`)
+
+// parseRotationFromDumpsysDisplay reads the rotation of the default logical
+// display from "dumpsys display" output. mBaseDisplayInfo stays in the natural
+// orientation, mOverrideDisplayInfo follows the display
+func parseRotationFromDumpsysDisplay(output string) (int, bool) {
+	inDefaultDisplay := false
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if header := logicalDisplayHeaderRe.FindStringSubmatch(line); header != nil {
+			inDefaultDisplay = header[1] == defaultDisplayID
+			continue
+		}
+		if inDefaultDisplay && strings.HasPrefix(line, "mOverrideDisplayInfo=DisplayInfo{") {
+			return parseDisplayInfoRotation(line)
+		}
+	}
+	return 0, false
+}
+
+func parseDisplayInfoRotation(displayInfo string) (int, bool) {
+	matches := displayInfoRotationRe.FindStringSubmatch(displayInfo)
+	if len(matches) != 2 {
+		return 0, false
+	}
+	rotation, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, false
+	}
+	return rotation, true
+}
+
+// isPackageInstalled reports whether packageName is installed on the device.
+func (d *AndroidDevice) isPackageInstalled(packageName string) (bool, error) {
+	output, err := d.runAdbShell("pm", "path", packageName)
+	return pmPathReportsInstalled(output, err)
+}
+
+// pmPathReportsInstalled reads the result of `pm path <package>`, which prints
+// "package:<apk path>" for an installed package and exits 1 with no output for
+// one that is not installed. Any other failure, such as an offline device or
+// an adb that could not be started, is returned as an error rather than read
+// as "not installed".
+func pmPathReportsInstalled(output []byte, err error) (bool, error) {
+	text := strings.TrimSpace(string(output))
+	if strings.HasPrefix(text, "package:") {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	exitedWithoutAMatch := errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && text == ""
+	if err != nil && !exitedWithoutAMatch {
+		return false, fmt.Errorf("failed to check whether the package is installed: %w\nOutput: %s", err, text)
+	}
+	return false, nil
+}
+
+func (d *AndroidDevice) GetAppPath(packageName string) (string, error) {
+	output, err := d.runAdbShell("pm", "path", packageName)
+	if err != nil {
+		// best effort (pm path will return error code 1)
+		return "", nil
+	}
+
+	// take only the first line (split APKs produce multiple package: lines)
+	firstLine := strings.SplitN(string(output), "\n", 2)[0]
+	appPath := strings.TrimPrefix(firstLine, "package:")
+	appPath = strings.TrimSpace(appPath)
+	return appPath, nil
+}
+
+func (d *AndroidDevice) GetAppContainerPath(packageName string) (string, error) {
+	output, err := d.runAdbShell("pm", "dump", packageName)
+	if err != nil {
+		return "", fmt.Errorf("pm dump failed: %w", err)
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "dataDir=") {
+			return strings.TrimPrefix(line, "dataDir="), nil
+		}
+	}
+
+	return "", fmt.Errorf("dataDir not found for package %s", packageName)
+}
+
+func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
+	if config.Format != FormatMJPEG && config.Format != FormatAVC {
+		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
+	}
+
+	if err := d.pushTempFile(agentassets.AndroidMobilecliDEX, androidDexPath); err != nil {
+		return fmt.Errorf("push .dex: %w", err)
+	}
+
+	serverClass := "com.mobilenext.mobilecli.MjpegServer"
+	if config.Format == FormatAVC {
+		serverClass = "com.mobilenext.mobilecli.AvcServer"
+	}
+
+	if config.OnProgress != nil {
+		config.OnProgress("Starting Agent")
+	}
+
+	utils.Verbose("Starting %s via mobilecli.dex", serverClass)
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", "CLASSPATH="+androidDexPath, "app_process", "/", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
+
+	// bitrate only applies to AvcServer
+	if config.Format == FormatAVC && config.Bitrate > 0 {
+		cmdArgs = append(cmdArgs, "--bitrate", fmt.Sprintf("%d", config.Bitrate))
+	}
+	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start %s: %v", serverClass, err)
+	}
+
+	// Read bytes from the command output and send to callback
+	buffer := make([]byte, 65536)
+	for {
+		n, err := stdout.Read(buffer)
+		if err != nil {
+			break
+		}
+
+		if n > 0 {
+			// Send bytes to callback, break if it returns false
+			if !config.OnData(buffer[:n]) {
+				break
+			}
+		}
+	}
+
+	_ = cmd.Process.Kill()
+	return nil
+}
+
+// screenRecordCleanupTimeout bounds each adb command that cleans up after a
+// recording (killing a stuck screenrecord, deleting its file), so an
+// unresponsive adb cannot keep the device's recorder claimed.
+const screenRecordCleanupTimeout = 2 * time.Second
+
+// screenRecordStopRetry is how often a stop retries signaling the on-device
+// screenrecord when it was not found yet: the stop can land before adb has
+// started it.
+const screenRecordStopRetry = 2 * time.Second
+
+// ScreenRecord records the device screen to a local MP4 file using adb screenrecord.
+// blocks until Ctrl+C is pressed, stopChan is closed, or the time limit is reached.
+// when stopChan is nil, behavior is unchanged (CLI usage).
+func (d *AndroidDevice) ScreenRecord(localOutput string, timeLimit int, stopChan <-chan struct{}) error {
+	if stopChan == nil {
+		stopChan = make(chan struct{})
+	}
+
+	remotePath := fmt.Sprintf("/sdcard/mobilecli-rec-%d.mp4", time.Now().UnixNano())
+
+	args := []string{"-s", d.getAdbIdentifier(), "shell", "screenrecord"}
+	if timeLimit > 0 {
+		args = append(args, "--time-limit", fmt.Sprintf("%d", timeLimit))
+	}
+	args = append(args, remotePath)
+
+	utils.Verbose("Running: %s %s", getAdbPath(), strings.Join(args, " "))
+	cmd := exec.CommandContext(context.Background(), getAdbPath(), args...)
+	// screenrecord reports why it refused to record (e.g. a time limit out of
+	// the device's range) on its output
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	// handle Ctrl+C / stop: signal the on-device screenrecord process so it
+	// finalizes the MP4. signaling the local adb client does not propagate to
+	// the remote process, which would leave the pulled file without a moov atom.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	if err := cmd.Start(); err != nil {
+		signal.Stop(sigChan)
+		return fmt.Errorf("failed to start screenrecord: %w", err)
+	}
+
+	// whatever happens from here on, don't leave the recording on the device
+	defer d.removeRemoteFile(remotePath)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	var err error
+	select {
+	case <-sigChan:
+		err = d.stopRemoteScreenRecord(remotePath, cmd, done)
+	case <-stopChan:
+		err = d.stopRemoteScreenRecord(remotePath, cmd, done)
+	case err = <-done:
+	}
+
+	signal.Stop(sigChan)
+	close(sigChan)
+
+	if err != nil {
+		return fmt.Errorf("screenrecord failed: %w\n%s", err, strings.TrimSpace(output.String()))
+	}
+
+	// pull the recording from device
+	utils.Verbose("Pulling recording from device...")
+	pullOutput, err := d.runAdbCommand("pull", remotePath, localOutput)
+	if err != nil {
+		return fmt.Errorf("failed to pull recording: %w\n%s", err, string(pullOutput))
+	}
+
+	return nil
+}
+
+// stopRemoteScreenRecord asks the on-device screenrecord recording remotePath
+// to finalize and waits for adb (cmd, whose Wait result arrives on done) to
+// exit. It retries until the signal reaches the process, and kills the
+// recording if it still runs after recordingStopTimeout. The adb commands it
+// runs are bound by that same deadline, so an unresponsive adb cannot hold
+// the stop up.
+func (d *AndroidDevice) stopRemoteScreenRecord(remotePath string, cmd *exec.Cmd, done <-chan error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), recordingStopTimeout)
+	defer cancel()
+
+	signaled := d.signalRemoteScreenRecord(ctx, remotePath, "-INT")
+
+	retry := time.NewTicker(screenRecordStopRetry)
+	defer retry.Stop()
+
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-retry.C:
+			// signal only once: screenrecord restores the default SIGINT
+			// action after the first one, so a second would cut finalizing short
+			if !signaled {
+				signaled = d.signalRemoteScreenRecord(ctx, remotePath, "-INT")
+			}
+		case <-ctx.Done():
+			utils.Info("screenrecord did not stop within %s, killing it", recordingStopTimeout)
+			d.killRemoteScreenRecord(remotePath)
+			_ = cmd.Process.Kill()
+			<-done
+			return fmt.Errorf("recording did not stop within %s and was killed", recordingStopTimeout)
+		}
+	}
+}
+
+// killRemoteScreenRecord SIGKILLs the on-device screenrecord recording
+// remotePath, for one that did not stop when asked to.
+func (d *AndroidDevice) killRemoteScreenRecord(remotePath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), screenRecordCleanupTimeout)
+	defer cancel()
+	d.signalRemoteScreenRecord(ctx, remotePath, "-KILL")
+}
+
+// signalRemoteScreenRecord sends sig (a kill(1) flag such as -INT) to the
+// on-device screenrecord process recording remotePath. SIGINT makes it
+// finalize the MP4 (write the moov atom) before exiting; signaling the local
+// adb client does not propagate to the remote process, which would leave the
+// pulled file corrupt. Reports whether the process was found and signaled;
+// adb is given up on when ctx ends.
+func (d *AndroidDevice) signalRemoteScreenRecord(ctx context.Context, remotePath string, sig string) bool {
+	out, err := d.runAdbCommandContext(ctx, adbShellArgs("pgrep", "-f", screenRecordProcessPattern(remotePath))...)
+	if err != nil {
+		utils.Verbose("failed to find remote screenrecord process: %v", err)
+		return false
+	}
+
+	pids := strings.Fields(string(out))
+	if len(pids) == 0 {
+		utils.Verbose("no remote screenrecord process found for %s", remotePath)
+		return false
+	}
+
+	if _, err := d.runAdbCommandContext(ctx, adbShellArgs(append([]string{"kill", sig}, pids...)...)...); err != nil {
+		utils.Verbose("failed to signal remote screenrecord: %v", err)
+		return false
+	}
+	return true
+}
+
+// screenRecordProcessPattern is the pgrep -f pattern for the screenrecord
+// process writing remotePath. The bracket keeps it from matching the command
+// line of the shell running pgrep, which contains the pattern itself.
+func screenRecordProcessPattern(remotePath string) string {
+	return "[s]creenrecord .*" + regexp.QuoteMeta(remotePath)
+}
+
+// removeRemoteFile deletes a recording's temporary file from the device.
+func (d *AndroidDevice) removeRemoteFile(remotePath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), screenRecordCleanupTimeout)
+	defer cancel()
+	if out, err := d.runAdbCommandContext(ctx, adbShellArgs("rm", "-f", remotePath)...); err != nil {
+		utils.Verbose("failed to remove remote file %s: %v\n%s", remotePath, err, string(out))
+	}
+}
+
+// attrTrue is the string value uiautomator uses for boolean node attributes.
+const attrTrue = "true"
+
+type uiAutomatorXmlNode struct {
+	XMLName     xml.Name             `xml:"node"`
+	Class       string               `xml:"class,attr"`
+	Text        string               `xml:"text,attr"`
+	Bounds      string               `xml:"bounds,attr"`
+	Hint        string               `xml:"hint,attr"`
+	Focused     string               `xml:"focused,attr"`
+	ContentDesc string               `xml:"content-desc,attr"`
+	ResourceID  string               `xml:"resource-id,attr"`
+	Clickable   string               `xml:"clickable,attr"`
+	Checkable   string               `xml:"checkable,attr"`
+	Checked     string               `xml:"checked,attr"`
+	Enabled     string               `xml:"enabled,attr"`
+	Selected    string               `xml:"selected,attr"`
+	Nodes       []uiAutomatorXmlNode `xml:"node"`
+}
+
+type uiAutomatorXml struct {
+	XMLName  xml.Name           `xml:"hierarchy"`
+	RootNode uiAutomatorXmlNode `xml:"node"`
+}
+
+type uiRect struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type uiNode struct {
+	Class       string   `json:"class"`
+	Text        string   `json:"text"`
+	Hint        string   `json:"hint"`
+	ContentDesc string   `json:"content-desc"`
+	ResourceID  string   `json:"resource-id"`
+	Focused     bool     `json:"focused"`
+	Enabled     bool     `json:"enabled"`
+	Checked     bool     `json:"checked"`
+	Checkable   bool     `json:"checkable"`
+	Clickable   bool     `json:"clickable"`
+	Selected    bool     `json:"selected"`
+	Visible     bool     `json:"visible"`
+	Rect        uiRect   `json:"rect"`
+	Children    []uiNode `json:"children"`
+	// a slider, progress bar or rating bar's RangeInfo
+	Range *types.ScreenElementRange `json:"range"`
+	// text can be typed into the node (EditText and the like)
+	Editable bool `json:"editable"`
+	// names a window-like region, e.g. "Dialog" on a Material3 AlertDialog
+	PaneTitle string `json:"pane-title"`
+}
+
+type uiHierarchy struct {
+	Hierarchy []uiNode `json:"hierarchy"`
+}
+
+func (d *AndroidDevice) getScreenElementRect(bounds string) types.ScreenElementRect {
+	re := regexp.MustCompile(`^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$`)
+	matches := re.FindStringSubmatch(bounds)
+
+	if len(matches) != 5 {
+		return types.ScreenElementRect{}
+	}
+
+	left, _ := strconv.Atoi(matches[1])
+	top, _ := strconv.Atoi(matches[2])
+	right, _ := strconv.Atoi(matches[3])
+	bottom, _ := strconv.Atoi(matches[4])
+
+	return types.ScreenElementRect{
+		X:      left,
+		Y:      top,
+		Width:  right - left,
+		Height: bottom - top,
+	}
+}
+
+// setPlaceholderFromHint sets the element placeholder from a hint, leaving the
+// text reported by the source untouched.
+func setPlaceholderFromHint(element *types.ScreenElement, hint string) {
+	if hint != "" {
+		element.Placeholder = &hint
+	}
+}
+
+// androidNodeAttrs is what both node sources (uiautomator XML and the
+// DeviceServer dump) report about a node, in one shape.
+type androidNodeAttrs struct {
+	class       string
+	text        string
+	contentDesc string
+	hint        string
+	resourceID  string
+	clickable   bool
+	checkable   bool
+	focused     bool
+	disabled    bool
+	checked     bool
+	selected    bool
+	paneTitle   string
+	rect        types.ScreenElementRect
+	// value is a slider's position or a text field's content, "" when it has none
+	value       string
+	sliderRange *types.ScreenElementRange
+}
+
+// isScreenElement reports whether the node is worth listing: it has text, a pane title,
+// content-desc, hint, resource-id, or is interactable (clickable or checkable,
+// e.g. Flutter icon-only buttons), and has a positive width and height.
+func (a androidNodeAttrs) isScreenElement() bool {
+	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != "" || a.value != "" || a.paneTitle != ""
+	isInteractable := a.clickable || a.checkable
+	return (isLabeled || isInteractable) && a.rect.Width > 0 && a.rect.Height > 0
+}
+
+func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.ScreenElement {
+	element := types.ScreenElement{
+		Type:     a.class,
+		Text:     &a.text,
+		Rect:     a.rect,
+		Children: children,
+	}
+
+	// set placeholder from hint; text is left as the source reported it
+	setPlaceholderFromHint(&element, a.hint)
+
+	if a.contentDesc != "" {
+		element.Label = &a.contentDesc
+	}
+	if a.resourceID != "" {
+		element.Identifier = &a.resourceID
+	}
+	if a.paneTitle != "" {
+		element.PaneTitle = &a.paneTitle
+	}
+	if a.value != "" {
+		element.Value = &a.value
+	}
+	element.Range = a.sliderRange
+
+	// states are only reported when they differ from the default
+	isTrue, isFalse := true, false
+	if a.focused {
+		element.Focused = &isTrue
+	}
+	if a.disabled {
+		element.Enabled = &isFalse
+	}
+	if a.checked {
+		element.Checked = &isTrue
+	}
+	if a.selected {
+		element.Selected = &isTrue
+	}
+	if a.clickable {
+		element.Clickable = &isTrue
+	}
+
+	// default type if class is empty
+	if element.Type == "" {
+		element.Type = "text"
+	}
+
+	return element
+}
+
+// collectElements converts a uiautomator node tree into ScreenElements,
+// preserving hierarchy: collected descendants of an accepted element become
+// its Children, while descendants of rejected elements are hoisted to the
+// nearest accepted ancestor.
+func (d *AndroidDevice) collectElements(node uiAutomatorXmlNode) []types.ScreenElement {
+	var childElements []types.ScreenElement
+	for _, childNode := range node.Nodes {
+		childElements = append(childElements, d.collectElements(childNode)...)
+	}
+
+	attrs := androidNodeAttrs{
+		class:       node.Class,
+		text:        node.Text,
+		contentDesc: node.ContentDesc,
+		hint:        node.Hint,
+		resourceID:  node.ResourceID,
+		clickable:   node.Clickable == attrTrue,
+		checkable:   node.Checkable == attrTrue,
+		focused:     node.Focused == attrTrue,
+		// uiautomator omits the attribute for some nodes, so treat "false"
+		// explicitly rather than "not true"
+		disabled: node.Enabled == "false",
+		checked:  node.Checked == attrTrue,
+		selected: node.Selected == attrTrue,
+		rect:     d.getScreenElementRect(node.Bounds),
+	}
+	if !attrs.isScreenElement() {
+		return childElements
+	}
+
+	return []types.ScreenElement{attrs.toScreenElement(childElements)}
+}
+
+// nodeValue is what ios reports as a node's value: a slider's position, or
+// the content of a text field. For a text field it is copied, not moved, so
+// anything reading text keeps working.
+func nodeValue(node uiNode) string {
+	if node.Range != nil {
+		return rangeValue(node.Range.Current)
+	}
+	if node.Editable {
+		return node.Text
+	}
+	return ""
+}
+
+// rangeValue formats a RangeInfo position the way it reads on screen:
+// 50 rather than 50.0, and 0.75 kept as is.
+func rangeValue(current float64) string {
+	return strconv.FormatFloat(current, 'f', -1, 64)
+}
+
+// collectUiNodeElements converts a DeviceServer node tree into ScreenElements,
+// preserving hierarchy the same way collectElements does.
+func collectUiNodeElements(nodes []uiNode) []types.ScreenElement {
+	var elements []types.ScreenElement
+
+	for _, node := range nodes {
+		childElements := collectUiNodeElements(node.Children)
+
+		attrs := androidNodeAttrs{
+			class:       node.Class,
+			text:        node.Text,
+			contentDesc: node.ContentDesc,
+			hint:        node.Hint,
+			resourceID:  node.ResourceID,
+			clickable:   node.Clickable,
+			checkable:   node.Checkable,
+			focused:     node.Focused,
+			disabled:    !node.Enabled,
+			checked:     node.Checked,
+			selected:    node.Selected,
+			paneTitle:   node.PaneTitle,
+			value:       nodeValue(node),
+			sliderRange: node.Range,
+			rect: types.ScreenElementRect{
+				X:      node.Rect.X,
+				Y:      node.Rect.Y,
+				Width:  node.Rect.Width,
+				Height: node.Rect.Height,
+			},
+		}
+		if !attrs.isScreenElement() {
+			elements = append(elements, childElements...)
+			continue
+		}
+
+		elements = append(elements, attrs.toScreenElement(childElements))
+	}
+
+	return elements
+}
+
+func (d *AndroidDevice) getDeviceServerDump(opts DumpOptions) (string, error) {
+	nodes, err := d.dumpUiNodes(opts)
+	if err != nil {
+		return "", err
+	}
+
+	jsonBytes, err := json.Marshal(uiHierarchy{Hierarchy: nodes})
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize devicekit hierarchy: %w", err)
+	}
+
+	return string(jsonBytes), nil
+}
+
+func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
+	for tries := 0; tries < 10; tries++ {
+		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
+		if err != nil {
+			return "", fmt.Errorf("failed to run uiautomator dump: %w", err)
+		}
+
+		dump := string(output)
+
+		// check for known error condition
+		if strings.Contains(dump, "null root node returned by UiTestAutomationBridge") {
+			continue
+		}
+
+		// find the start of XML content
+		xmlStart := strings.Index(dump, "<?xml")
+		if xmlStart == -1 {
+			return "", fmt.Errorf("no XML content found in uiautomator dump")
+		}
+
+		return dump[xmlStart:], nil
+	}
+
+	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
+}
+
+func (d *AndroidDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
+	if jsonStr, err := d.getDeviceServerDump(opts); err == nil {
+		return jsonStr, nil
+	} else {
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
+	}
+
+	xmlContent, err := d.getUiAutomatorDump()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+	}
+
+	return xmlContent, nil
+}
+
+func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
+	// Flutter apps render into an opaque native view, so the accessibility-based
+	// dumps below miss typed/unlabeled/non-semantic widgets. When the foreground
+	// app is a debuggable Flutter app, read its live render tree from the Dart VM
+	// service instead. Any failure falls through to the accessibility dump.
+	if elements, ok := d.tryDumpFlutterSource(); ok {
+		return elements, nil
+	}
+
+	if nodes, err := d.dumpUiNodes(opts); err == nil {
+		return collectUiNodeElements(nodes), nil
+	} else {
+		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
+	}
+
+	xmlContent, err := d.getUiAutomatorDump()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+	}
+
+	var uiXml uiAutomatorXml
+	if err := xml.Unmarshal([]byte(xmlContent), &uiXml); err != nil {
+		return nil, fmt.Errorf("failed to parse uiautomator XML: %w", err)
+	}
+
+	return d.collectElements(uiXml.RootNode), nil
+}
+
+func (d *AndroidDevice) InstallApp(path string) error {
+	output, err := d.runAdbCommand("install", "-r", path)
+	if err != nil {
+		return fmt.Errorf("failed to install app: %v\nOutput: %s", err, string(output))
+	}
+
+	if strings.Contains(string(output), "Success") {
+		return nil
+	}
+
+	return fmt.Errorf("installation failed: %s", string(output))
+}
+
+func (d *AndroidDevice) ClearApp(bundleID string) error {
+	output, err := d.runAdbShell("pm", "clear", bundleID)
+	if err != nil {
+		return fmt.Errorf("failed to clear app %s: %w\nOutput: %s", bundleID, err, string(output))
+	}
+	if !strings.Contains(string(output), "Success") {
+		return fmt.Errorf("failed to clear app %s: %s", bundleID, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (d *AndroidDevice) UninstallApp(packageName string) (*InstalledAppInfo, error) {
+	appInfo := &InstalledAppInfo{
+		PackageName: packageName,
+	}
+
+	output, err := d.runAdbCommand("uninstall", packageName)
+	if err != nil || !strings.Contains(string(output), "Success") {
+		// the package manager answers a package that is not installed with
+		// DELETE_FAILED_INTERNAL_ERROR, which says nothing about the cause
+		if installed, checkErr := d.isPackageInstalled(packageName); checkErr == nil && !installed {
+			return nil, fmt.Errorf("%s not installed", packageName)
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to uninstall app: %v\nOutput: %s", err, string(output))
+	}
+
+	if !strings.Contains(string(output), "Success") {
+		return nil, fmt.Errorf("uninstallation failed: %s", string(output))
+	}
+
+	return appInfo, nil
+}
+
+// GetOrientation gets the orientation the screen is drawn in right now
+func (d *AndroidDevice) GetOrientation() (string, error) {
+	// natural-landscape tablets are in landscape at rotation 0, so go by the sides
+	width, height, known, err := d.currentScreenSize()
+	if err == nil && known {
+		if width > height {
+			return devicekit.OrientationLandscape, nil
+		}
+		return devicekit.OrientationPortrait, nil
+	}
+
+	output, err := d.runAdbCommand("shell", "settings", "get", "system", "user_rotation")
+	if err != nil {
+		return "", fmt.Errorf("failed to get orientation: %v", err)
+	}
+
+	rotationStr := strings.TrimSpace(string(output))
+	rotation, err := strconv.Atoi(rotationStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse orientation value '%s': %v", rotationStr, err)
+	}
+
+	// convert Android rotation values to string
+	switch rotation {
+	case 0, 2:
+		return devicekit.OrientationPortrait, nil
+	case 1, 3:
+		return devicekit.OrientationLandscape, nil
+	default:
+		return devicekit.OrientationPortrait, nil // default to portrait
+	}
+}
+
+// SetOrientation sets the device orientation
+func (d *AndroidDevice) SetOrientation(orientation string) error {
+	if orientation != devicekit.OrientationPortrait && orientation != devicekit.OrientationLandscape {
+		return fmt.Errorf("invalid orientation value '%s', must be 'portrait' or 'landscape'", orientation)
+	}
+
+	var androidRotation int
+	switch orientation {
+	case devicekit.OrientationPortrait:
+		androidRotation = 0
+	case devicekit.OrientationLandscape:
+		androidRotation = 1 // landscape left
+	}
+
+	// disable auto-rotation first
+	_, err := d.runAdbCommand("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+	if err != nil {
+		return fmt.Errorf("failed to disable auto-rotation: %v", err)
+	}
+
+	// set the orientation
+	_, err = d.runAdbCommand("shell", "content", "insert", "--uri", "content://settings/system", "--bind", "name:s:user_rotation", "--bind", fmt.Sprintf("value:i:%d", androidRotation))
+	if err != nil {
+		return fmt.Errorf("failed to set orientation: %v", err)
+	}
+
+	return nil
+}
+
+// SetHingeAngle folds or unfolds a foldable emulator by setting its hinge sensor:
+// 0 is folded, 180 is fully open. Real devices have no emulator console and fail here.
+func (d *AndroidDevice) SetHingeAngle(angle float64) error {
+	output, err := d.runAdbCommand("emu", "sensor", "set", "hinge-angle0", strconv.FormatFloat(angle, 'f', -1, 64))
+	if err != nil {
+		return fmt.Errorf("failed to set hinge angle (only foldable emulators are supported): %v", err)
+	}
+
+	// the emulator console reports failures as "KO: <reason>" with a zero exit code
+	if strings.Contains(string(output), "KO:") {
+		return fmt.Errorf("failed to set hinge angle (is this a foldable emulator?): %s", strings.TrimSpace(string(output)))
+	}
+
+	return nil
+}
+
+// SetAnimationsEnabled toggles the three global animation scales. Setting them
+// to 0 disables animations for stable screenshots; 1 restores the defaults.
+func (d *AndroidDevice) SetAnimationsEnabled(enabled bool) error {
+	scale := "0"
+	if enabled {
+		scale = "1"
+	}
+
+	scaleSettings := []string{
+		"window_animation_scale",
+		"transition_animation_scale",
+		"animator_duration_scale",
+	}
+
+	for _, setting := range scaleSettings {
+		_, err := d.runAdbCommand("shell", "settings", "put", "global", setting, scale)
+		if err != nil {
+			return fmt.Errorf("failed to set %s: %v", setting, err)
+		}
+	}
+
+	return nil
+}
+
+// SetAppearance switches the system-wide night mode (Android 10+).
+func (d *AndroidDevice) SetAppearance(appearance string) error {
+	night := "no"
+	if appearance == "dark" {
+		night = "yes"
+	}
+
+	_, err := d.runAdbCommand("shell", "cmd", "uimode", "night", night)
+	if err != nil {
+		return fmt.Errorf("failed to set appearance: %v", err)
+	}
+
+	return nil
+}
+
+func (d *AndroidDevice) getCrashLog() (string, error) {
+	output, err := d.runAdbCommand("logcat", "-b", "crash", "-d", "-v", "year")
+	if err != nil {
+		return "", fmt.Errorf("failed to read crash log: %w", err)
+	}
+	return string(output), nil
+}
+
+func (d *AndroidDevice) ListCrashReports() ([]CrashReport, error) {
+	log, err := d.getCrashLog()
+	if err != nil {
+		return nil, err
+	}
+	return ParseAndroidCrashLog(log), nil
+}
+
+func (d *AndroidDevice) GetCrashReport(id string) ([]byte, error) {
+	log, err := d.getCrashLog()
+	if err != nil {
+		return nil, err
+	}
+	content, err := ExtractAndroidCrash(log, id)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(content), nil
+}
+
+type androidPidCache struct {
+	mu    sync.Mutex
+	names map[int]string
+}
+
+func (c *androidPidCache) resolveProcessNameByPid(d *AndroidDevice, pid int) string {
+	c.mu.Lock()
+	name, ok := c.names[pid]
+	c.mu.Unlock()
+	if ok {
+		return name
+	}
+
+	utils.Verbose("resolving process name for pid %d", pid)
+	out, err := d.runAdbCommand("shell", "cat", fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil || len(out) == 0 {
+		// cache the miss too: a pid that already exited appears on many lines,
+		// and re-running adb for each one stalls the scanner and drops logs
+		c.mu.Lock()
+		c.names[pid] = ""
+		c.mu.Unlock()
+		return ""
+	}
+	// cmdline is null-delimited; first entry is the executable path
+	first, _, _ := bytes.Cut(out, []byte{0})
+	name = processNameFromPath(string(first))
+
+	c.mu.Lock()
+	c.names[pid] = name
+	c.mu.Unlock()
+	return name
+}
+
+var logcatLevelMap = map[string]string{
+	"V": "Verbose",
+	"D": "Debug",
+	"I": "Info",
+	"W": "Warning",
+	"E": "Error",
+	"F": "Fatal",
+	"A": "Assert",
+}
+
+func (d *AndroidDevice) StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error {
+	pidCache := &androidPidCache{names: make(map[int]string)}
+
+	args := []string{"logcat", "-v", "threadtime,year", "-T", "1"}
+	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, args...)
+	cmd := exec.CommandContext(ctx, getAdbPath(), cmdArgs...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start logcat: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+	stoppedByCaller := false
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		parsed := parseLogcatLine(line)
+		if parsed == nil {
+			continue
+		}
+
+		pid, _ := strconv.Atoi(parsed.PID)
+		level := logcatLevelMap[parsed.Level]
+		if level == "" {
+			level = parsed.Level
+		}
+
+		entry := LogEntry{
+			Timestamp: parsed.Date + " " + parsed.Time,
+			PID:       pid,
+			Level:     level,
+			Tag:       parsed.Tag,
+			Message:   parsed.Message,
+			Process:   pidCache.resolveProcessNameByPid(d, pid),
+		}
+
+		if !onLog(entry) {
+			_ = cmd.Process.Kill()
+			stoppedByCaller = true
+			break
+		}
+	}
+
+	waitErr := cmd.Wait()
+	if stoppedByCaller || ctx.Err() != nil {
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("logcat read error: %w", err)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("logcat ended with error: %w", waitErr)
+	}
+	return nil
+}
