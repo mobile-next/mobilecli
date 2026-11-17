@@ -59,6 +59,40 @@ func screenPointArg(arg string) (screenPoint, error) {
 	return target, nil
 }
 
+// parseDragPoints reads the single argument drag takes: where the drag starts
+// and where it ends, each either "x,y" or an element ref, joined by a comma
+// ("10,10,50,50", "@e1,@e2", "@e1,300,400").
+func parseDragPoints(arg string) (from screenPoint, to screenPoint, err error) {
+	invalid := fmt.Errorf("invalid drag format. Expected a start and an end, each 'x,y' or an element ref, like 'x1,y1,x2,y2', '@e1,@e2' or '@e1,300,400', got '%s'", arg)
+
+	var points []screenPoint
+	parts := strings.Split(arg, ",")
+	for i := 0; i < len(parts); i++ {
+		part := strings.TrimSpace(parts[i])
+		if strings.HasPrefix(part, "@") {
+			points = append(points, screenPoint{Ref: part})
+			continue
+		}
+
+		// coordinates take two parts: this one and the next
+		if i+1 >= len(parts) {
+			return screenPoint{}, screenPoint{}, invalid
+		}
+		x, errX := strconv.Atoi(part)
+		y, errY := strconv.Atoi(strings.TrimSpace(parts[i+1]))
+		if errX != nil || errY != nil {
+			return screenPoint{}, screenPoint{}, invalid
+		}
+		points = append(points, screenPoint{X: x, Y: y})
+		i++
+	}
+
+	if len(points) != 2 {
+		return screenPoint{}, screenPoint{}, invalid
+	}
+	return points[0], points[1], nil
+}
+
 var ioTapCmd = &cobra.Command{
 	Use:   "tap [x,y | @ref]",
 	Short: "Tap on a device screen at the given coordinates or element ref",
@@ -105,6 +139,8 @@ var ioDoubleTapCmd = &cobra.Command{
 
 var longPressDuration int
 var swipeDuration int
+var dragDuration int
+var dragHold int
 var pinchDirection string
 var pinchDistance int
 var pinchDuration int
@@ -239,6 +275,33 @@ var ioSwipeCmd = &cobra.Command{
 	},
 }
 
+var ioDragCmd = &cobra.Command{
+	Use:   "drag [from,to]",
+	Short: "Drag on a device screen from one point or element ref to another",
+	Long: `Presses one finger where the drag starts, moves it to where the drag ends and lifts it there. The start and the end are each x,y coordinates or an element ref from the latest "dump ui", given as a single string: "x1,y1,x2,y2", "@e1,@e2", or a mix like "@e1,300,400".
+
+"--hold" keeps the finger still before it starts moving, which is how apps tell a drag from a scroll (e.g. to pick up a list item). "--duration" is how long the finger travels.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		from, to, err := parseDragPoints(args[0])
+		if err != nil {
+			response := commands.NewErrorResponse(err)
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		req := commands.DragRequest{
+			DeviceID: deviceId,
+			From:     commands.DragPoint{X: from.X, Y: from.Y, Ref: from.Ref},
+			To:       commands.DragPoint{X: to.X, Y: to.Y, Ref: to.Ref},
+			Hold:     dragHold,
+			Duration: dragDuration,
+		}
+
+		return runViaDaemon("cli.io.drag", req)
+	},
+}
+
 var ioPinchCmd = &cobra.Command{
 	Use:   "pinch [x,y]",
 	Short: "Pinch on a device screen with two fingers to zoom in or out",
@@ -314,6 +377,7 @@ func init() {
 	ioCmd.AddCommand(ioKeysCmd)
 	ioCmd.AddCommand(ioFillCmd)
 	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioDragCmd)
 	ioCmd.AddCommand(ioPinchCmd)
 	ioCmd.AddCommand(ioKeyboardCmd)
 
@@ -334,6 +398,9 @@ func init() {
 	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
 	ioKeyboardStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check keyboard status on")
 	ioKeyboardHideCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to hide keyboard on")
+	ioDragCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to drag on")
+	ioDragCmd.Flags().IntVar(&dragDuration, "duration", commands.DefaultDragDurationMs, "how long the finger travels, in milliseconds")
+	ioDragCmd.Flags().IntVar(&dragHold, "hold", 0, "how long the finger stays down before it moves, in milliseconds")
 	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
 	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
 	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 0, "pixels each finger travels (0 = auto, scaled to the screen)")

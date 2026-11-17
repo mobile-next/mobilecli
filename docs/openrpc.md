@@ -29,6 +29,7 @@ JSON-RPC API for mobile device automation and control
 - [device.info](#deviceinfo)
 - [device.io.button](#deviceiobutton)
 - [device.io.doubletap](#deviceiodoubletap)
+- [device.io.drag](#deviceiodrag)
 - [device.io.fill](#deviceiofill)
 - [device.io.gesture](#deviceiogesture)
 - [device.io.keys](#deviceiokeys)
@@ -865,6 +866,54 @@ Operation result
     "deviceId": "string",
     "x": 0,
     "y": 0
+  },
+  "id": 1
+}
+```
+
+
+### device.io.drag
+
+**Perform drag gesture**
+
+Presses one finger where the drag starts, optionally holds it still, moves it to where the drag ends and lifts it there
+
+#### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `deviceId` | `string` | ✓ | ID of the target device |
+| `from` | `object` | ✓ | Where the drag starts: an element ref, or x and y coordinates |
+| `to` | `object` | ✓ | Where the drag ends: an element ref, or x and y coordinates |
+| `hold` | `integer` |  | How long the finger stays down before it moves, in milliseconds |
+| `duration` | `integer` |  | How long the finger travels, in milliseconds |
+
+#### Response
+
+**Type:** [`SuccessResult`](#successresult)
+
+Operation result
+
+#### Example Request
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "device.io.drag",
+  "params": {
+    "deviceId": "string",
+    "from": {
+      "ref": "string",
+      "x": 0,
+      "y": 0
+    },
+    "to": {
+      "ref": "string",
+      "x": 0,
+      "y": 0
+    },
+    "hold": 0,
+    "duration": 800
   },
   "id": 1
 }

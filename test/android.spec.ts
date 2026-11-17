@@ -84,6 +84,21 @@ type Device = {
 	state: string;
 };
 
+type DragTiming = {
+	holdMs: number;
+	durationMs: number;
+};
+
+type DragSeenByPage = {
+	touches: number;
+	moves: number;
+	ended: boolean;
+	startX: number;
+	startY: number;
+	endX: number;
+	endY: number;
+};
+
 type Dimensions = {
 	width: number;
 	height: number;
@@ -594,6 +609,25 @@ test.describe('Android Tests', () => {
 
 			await eventually(() => fingersPerTouchInWebView(device!.id, webViewId), 'the double tap never reached the page')
 				.toEqual([1, 1]);
+		});
+
+		test('should drag one finger across the webview', async () => {
+			test.skip(!device, 'No Android device found');
+
+			recordDragInWebView(device!.id, webViewId);
+			const screen = screenSizeOf(device!.id);
+			const y = Math.floor(screen.height / 2);
+			const fromX = Math.floor(screen.width / 4);
+			const toX = Math.floor(screen.width * 3 / 4);
+
+			drag(device!.id, `${fromX},${y},${toX},${y}`, {holdMs: 100, durationMs: 400});
+
+			await eventually(() => dragSeenByWebView(device!.id, webViewId).ended, 'the drag never reached the page').toBe(true);
+			const seen = dragSeenByWebView(device!.id, webViewId);
+			expect(seen.touches, 'a drag is one touch, not several').toBe(1);
+			expect(seen.moves, 'the finger travels through points on the way').toBeGreaterThan(2);
+			expect(seen.endX - seen.startX, 'the finger ends to the right of where it started').toBeGreaterThan(0);
+			expect(seen.endY, 'a horizontal drag stays on its row').toBeCloseTo(seen.startY, 0);
 		});
 
 		test('should navigate the webview to another url', async () => {
@@ -1110,6 +1144,10 @@ function doubleTap(deviceId: string, x: number, y: number): void {
 	mobilecli(['io', 'doubletap', `${x},${y}`, '--device', deviceId]);
 }
 
+function drag(deviceId: string, fromTo: string, timing: DragTiming): void {
+	mobilecli(['io', 'drag', fromTo, '--hold', String(timing.holdMs), '--duration', String(timing.durationMs), '--device', deviceId]);
+}
+
 function pressButton(deviceId: string, button: string): void {
 	mobilecli(['io', 'button', button, '--device', deviceId]);
 }
@@ -1264,6 +1302,23 @@ function markWebViewPageAsOld(deviceId: string, webViewId: string): void {
 
 function isWebViewPageOld(deviceId: string, webViewId: string): boolean {
 	return webViewEval(deviceId, webViewId, 'String(window.__oldPage)') === 'true';
+}
+
+// follows one drag through the page: where it starts, how often it moves and
+// where it lifts. touchmove is cancelled so the page does not scroll instead,
+// which would end the touch early.
+function recordDragInWebView(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId, `(() => {
+		const seen = window.__drag = {touches: 0, moves: 0, ended: false, startX: 0, startY: 0, endX: 0, endY: 0};
+		document.addEventListener('touchstart', e => { seen.touches++; seen.startX = e.touches[0].clientX; seen.startY = e.touches[0].clientY; });
+		document.addEventListener('touchmove', e => { seen.moves++; e.preventDefault(); }, {passive: false});
+		document.addEventListener('touchend', e => { seen.ended = true; seen.endX = e.changedTouches[0].clientX; seen.endY = e.changedTouches[0].clientY; });
+		return true;
+	})()`);
+}
+
+function dragSeenByWebView(deviceId: string, webViewId: string): DragSeenByPage {
+	return JSON.parse(webViewEval(deviceId, webViewId, 'JSON.stringify(window.__drag)') as string);
 }
 
 function webViewQuery(deviceId: string, webViewId: string, selector: string): WebViewQueryResult[] {
