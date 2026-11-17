@@ -672,16 +672,22 @@ func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
 	return err
 }
 
+// splitAdbDevicesLine splits one row of 'adb devices' into the device's serial and its state.
+// adb separates the two with a tab, and a serial can contain spaces: a device on wireless
+// debugging is listed under its mDNS service name, which the device changes to
+// "adb-<serial>-<id> (2)._adb-tls-connect._tcp" after a name conflict.
+func splitAdbDevicesLine(line string) (serial string, state string, ok bool) {
+	serial, state, ok = strings.Cut(strings.TrimSpace(line), "\t")
+	return serial, state, ok && serial != "" && state != ""
+}
+
 func parseAdbDevicesOutput(output string) []ControllableDevice {
 	var devices []ControllableDevice
 
 	lines := strings.Split(output, "\n")
 	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		parts := strings.Fields(line)
-		if len(parts) == 2 {
-			transportID := parts[0]
-			status := parts[1]
+		transportID, status, ok := splitAdbDevicesLine(lines[i])
+		if ok {
 			if status == "device" {
 				deviceID := transportID
 				avdName := ""
