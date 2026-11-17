@@ -19,6 +19,7 @@ func GetMethodRegistry() map[string]HandlerFunc {
 		"device.screencapture.setConfiguration": handleScreenCaptureSetConfiguration,
 		"device.screencapture.requestKeyFrame":  handleScreenCaptureRequestKeyFrame,
 		"device.io.tap":                         handleIoTap,
+		"device.io.doubletap":                   handleIoDoubleTap,
 		"device.io.longpress":                   handleIoLongPress,
 		"device.io.text":                        handleIoText,
 		"device.io.keys":                        handleIoKeys,

@@ -434,6 +434,14 @@ type IoTapParams struct {
 	Y        int    `json:"y"`
 }
 
+// IoDoubleTapParams keeps x and y as pointers so a missing coordinate is
+// named instead of being read as 0.
+type IoDoubleTapParams struct {
+	DeviceID string `json:"deviceId"`
+	X        *int   `json:"x"`
+	Y        *int   `json:"y"`
+}
+
 type IoLongPressParams struct {
 	DeviceID string `json:"deviceId"`
 	X        int    `json:"x"`
@@ -476,6 +484,33 @@ func handleIoTap(params json.RawMessage) (any, error) {
 	}
 
 	response := commands.TapCommand(req)
+	return okResult(response)
+}
+
+func handleIoDoubleTap(params json.RawMessage) (any, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("'params' is required with fields: deviceId, x, y")
+	}
+
+	var ioDoubleTapParams IoDoubleTapParams
+	if err := json.Unmarshal(params, &ioDoubleTapParams); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w. Expected fields: deviceId, x, y", err)
+	}
+
+	if ioDoubleTapParams.X == nil {
+		return nil, fmt.Errorf("'x' is required")
+	}
+	if ioDoubleTapParams.Y == nil {
+		return nil, fmt.Errorf("'y' is required")
+	}
+
+	req := commands.DoubleTapRequest{
+		DeviceID: ioDoubleTapParams.DeviceID,
+		X:        *ioDoubleTapParams.X,
+		Y:        *ioDoubleTapParams.Y,
+	}
+
+	response := commands.DoubleTapCommand(req)
 	return okResult(response)
 }
 

@@ -662,15 +662,7 @@ func (d *AndroidDevice) SetClipboard(text string) error {
 // platforms take one gesture contract; fingers move at the same time, which is
 // what makes a pinch possible here.
 func (d *AndroidDevice) Gesture(actions []devicekit.TapAction) error {
-	converted := devicekit.ConvertActions(actions)
-	// the device server presses every finger at time zero; refuse a delayed
-	// finger rather than silently turning a double tap into a two-finger tap
-	for _, action := range converted {
-		if action.Start > 0 {
-			return fmt.Errorf("a pause before pointerDown (delaying a finger) is not supported on Android yet")
-		}
-	}
-	_, err := d.serverRequest("device.io.gesture", gestureParams{Actions: converted})
+	_, err := d.serverRequest("device.io.gesture", gestureParams{Actions: devicekit.ConvertActions(actions)})
 	return err
 }
 

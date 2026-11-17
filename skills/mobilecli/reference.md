@@ -92,6 +92,11 @@ All commands support the global `--device <id>` flag to specify the target devic
   mobilecli io tap --device <device-id> @e5
   mobilecli io tap --device <device-id> 150,300
   ```
+* **Double Tap** (ref from the latest `dump ui`, or coordinates):
+  ```bash
+  mobilecli io doubletap --device <device-id> @e5
+  mobilecli io doubletap --device <device-id> 150,300
+  ```
 * **Long Press** (ref from the latest `dump ui`, or coordinates):
   ```bash
   mobilecli io longpress --device <device-id> @e5 --duration 2000
@@ -264,11 +269,11 @@ Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.
 - `pointerMove`: Moves coordinates to target `x`, `y` over `duration` (in milliseconds).
 - `pointerUp`: Lifts pointer off screen.
-- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead (iOS only for now).
+- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead.
 
 Multi-finger gestures: give each action a `button` (finger index, default 0) and list every finger's actions contiguously, one complete `pointerMove` → `pointerDown` → ... → `pointerUp` sequence per finger; the fingers then move at the same time on both iOS and Android.
 
-To tap more than once in one gesture (a double tap, or VoiceOver's double tap to activate), use a second finger that pauses until the first has lifted. A finger touches down only once per gesture.
+A plain double tap is `mobilecli io doubletap` (or `device.io.doubletap`). To tap more than once inside a larger gesture, use a second finger that pauses until the first has lifted. A finger touches down only once per gesture.
 ```json
 [
   { "type": "pointerMove", "x": 200, "y": 400, "button": 0 },

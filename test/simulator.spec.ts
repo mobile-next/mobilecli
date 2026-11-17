@@ -336,6 +336,15 @@ test.describe('iOS Simulator Tests', () => {
 				}
 			});
 
+			test('should double tap at coordinates', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				const response = mobilecli(['io', 'doubletap', '200,400', '--device', simulatorId]);
+
+				expect(response.status).toBe('ok');
+				expect(response.data.message).toContain('Double tapped');
+			});
+
 			test('should pinch at the screen center with the default distance', async () => {
 				test.skip(!simulatorId, 'simulator not found');
 

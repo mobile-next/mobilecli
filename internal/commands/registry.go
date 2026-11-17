@@ -62,6 +62,7 @@ func CLIRegistry() map[string]CLIHandler {
 		"cli.apps.foreground":        adapt(ForegroundAppCommand),
 		"cli.apps.path":              adapt(AppPathCommand),
 		"cli.io.tap":                 adapt(TapCommand),
+		"cli.io.doubletap":           adapt(DoubleTapCommand),
 		"cli.io.longpress":           adapt(LongPressCommand),
 		"cli.io.keyboard.status":     adapt(KeyboardStatusCommand),
 		"cli.io.keyboard.hide":       adapt(KeyboardHideCommand),

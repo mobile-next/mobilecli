@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/mobile-next/mobilecli/internal/devices/devicekit"
 	"github.com/mobile-next/mobilecli/internal/types"
 )
 
@@ -84,5 +86,31 @@ func TestPinchActionsAutoDistanceSucceedsAtNarrowCenter(t *testing.T) {
 		if _, err := pinchActions(201, 437, dir, 0, 0); err != nil {
 			t.Errorf("pinchActions at a narrow center (%s) returned error: %v", dir, err)
 		}
+	}
+}
+
+func TestDoubleTapActionsTapTwiceWithASecondFingerThatWaitsForTheFirstToLift(t *testing.T) {
+	converted := devicekit.ConvertActions(doubleTapActions(100, 200))
+
+	want := []devicekit.GestureAction{
+		{Type: "press", X: 100, Y: 200, Duration: 0.05, Button: 0},
+		{Type: "release", X: 100, Y: 200, Button: 0},
+		{Type: "press", X: 100, Y: 200, Duration: 0.05, Button: 1, Start: 0.2},
+		{Type: "release", X: 100, Y: 200, Button: 1},
+	}
+	if !reflect.DeepEqual(converted, want) {
+		t.Errorf("double tap converted to %+v, want %+v", converted, want)
+	}
+}
+
+func TestDoubleTapCommandRejectsNegativeCoordinates(t *testing.T) {
+	// no such device: bad coordinates are turned away before any device is involved
+	response := DoubleTapCommand(DoubleTapRequest{DeviceID: "no-such-device", X: -1, Y: 10})
+
+	if response.Status != "error" {
+		t.Fatalf("expected an error response, got status %q", response.Status)
+	}
+	if !strings.Contains(response.Error, "must be non-negative") {
+		t.Errorf("expected the error to name the coordinates, got %q", response.Error)
 	}
 }

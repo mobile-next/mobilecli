@@ -19,6 +19,15 @@ type TapRequest struct {
 	Ref      string `json:"ref,omitempty"`
 }
 
+// DoubleTapRequest represents the parameters for a double tap command. Either
+// X,Y or Ref ("@e5", from the latest dump) must be set; Ref wins when both are.
+type DoubleTapRequest struct {
+	DeviceID string `json:"deviceId"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Ref      string `json:"ref,omitempty"`
+}
+
 // LongPressRequest represents the parameters for a long press command. Either
 // X,Y or Ref ("@e5", from the latest dump) must be set; Ref wins when both are.
 type LongPressRequest struct {
@@ -67,6 +76,15 @@ type PinchRequest struct {
 	Distance  int    `json:"distance"`
 	Duration  int    `json:"duration"`
 }
+
+const (
+	// doubleTapHoldMs is how long each of the two taps stays down.
+	doubleTapHoldMs = 50
+
+	// doubleTapGapMs is how long the screen is left untouched between the two
+	// taps: long enough to read as two taps, well inside the double-tap window.
+	doubleTapGapMs = 150
+)
 
 const (
 	PinchDirectionIn  = "in"
@@ -209,6 +227,52 @@ func findElementByRef(elements []types.ScreenElement, ref string) *types.ScreenE
 		}
 	}
 	return nil
+}
+
+// doubleTapActions taps (x, y) twice. A finger touches down only once per
+// gesture, so the second tap is a second finger on the same spot that pauses
+// until the first has lifted.
+func doubleTapActions(x, y int) []devicekit.TapAction {
+	return []devicekit.TapAction{
+		{Type: "pointerMove", X: x, Y: y, Button: 0},
+		{Type: "pointerDown", Button: 0},
+		{Type: "pause", Duration: doubleTapHoldMs, Button: 0},
+		{Type: "pointerUp", Button: 0},
+		{Type: "pause", Duration: doubleTapHoldMs + doubleTapGapMs, Button: 1},
+		{Type: "pointerMove", X: x, Y: y, Button: 1},
+		{Type: "pointerDown", Button: 1},
+		{Type: "pause", Duration: doubleTapHoldMs, Button: 1},
+		{Type: "pointerUp", Button: 1},
+	}
+}
+
+// DoubleTapCommand performs a double tap operation on the specified device
+func DoubleTapCommand(req DoubleTapRequest) *CommandResponse {
+	if req.Ref == "" && (req.X < 0 || req.Y < 0) {
+		return NewErrorResponse(fmt.Errorf("x and y coordinates must be non-negative, got x=%d, y=%d", req.X, req.Y))
+	}
+
+	targetDevice, err := FindDeviceWithAgent(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+
+	x, y := req.X, req.Y
+	if req.Ref != "" {
+		x, y, err = resolveRefTapPoint(targetDevice, req.Ref)
+		if err != nil {
+			return NewErrorResponse(err)
+		}
+	}
+
+	err = targetDevice.Gesture(doubleTapActions(x, y))
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to double tap on device %s: %v", targetDevice.ID(), err))
+	}
+
+	return NewSuccessResponse(MessageResult{
+		Message: fmt.Sprintf("Double tapped on device %s at (%d,%d)", targetDevice.ID(), x, y),
+	})
 }
 
 // LongPressCommand performs a long press operation on the specified device

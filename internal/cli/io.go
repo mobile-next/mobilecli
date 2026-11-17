@@ -25,7 +25,7 @@ type screenPoint struct {
 	Ref string
 }
 
-// parseScreenPoint reads the single argument tap and longpress take: "x,y" or
+// parseScreenPoint reads the single argument tap, doubletap and longpress take: "x,y" or
 // an element ref from the latest "dump ui".
 func parseScreenPoint(arg string) (screenPoint, error) {
 	if strings.HasPrefix(arg, "@") {
@@ -46,17 +46,28 @@ func parseScreenPoint(arg string) (screenPoint, error) {
 	return screenPoint{X: x, Y: y}, nil
 }
 
+// screenPointArg parses a touch command's target and, like every other
+// command failure, prints the error as a json response before returning it.
+func screenPointArg(arg string) (screenPoint, error) {
+	target, err := parseScreenPoint(arg)
+	if err != nil {
+		response := commands.NewErrorResponse(err)
+		printJson(response)
+		return screenPoint{}, fmt.Errorf("%s", response.Error)
+	}
+
+	return target, nil
+}
+
 var ioTapCmd = &cobra.Command{
 	Use:   "tap [x,y | @ref]",
 	Short: "Tap on a device screen at the given coordinates or element ref",
 	Long:  `Sends a tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, err := parseScreenPoint(args[0])
+		target, err := screenPointArg(args[0])
 		if err != nil {
-			response := commands.NewErrorResponse(err)
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
+			return err
 		}
 
 		req := commands.TapRequest{
@@ -67,6 +78,28 @@ var ioTapCmd = &cobra.Command{
 		}
 
 		return runViaDaemon("cli.io.tap", req)
+	},
+}
+
+var ioDoubleTapCmd = &cobra.Command{
+	Use:   "doubletap [x,y | @ref]",
+	Short: "Double tap on a device screen at the given coordinates or element ref",
+	Long:  `Sends a double tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		target, err := screenPointArg(args[0])
+		if err != nil {
+			return err
+		}
+
+		req := commands.DoubleTapRequest{
+			DeviceID: deviceId,
+			X:        target.X,
+			Y:        target.Y,
+			Ref:      target.Ref,
+		}
+
+		return runViaDaemon("cli.io.doubletap", req)
 	},
 }
 
@@ -82,11 +115,9 @@ var ioLongPressCmd = &cobra.Command{
 	Long:  `Sends a long press event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target, err := parseScreenPoint(args[0])
+		target, err := screenPointArg(args[0])
 		if err != nil {
-			response := commands.NewErrorResponse(err)
-			printJson(response)
-			return fmt.Errorf("%s", response.Error)
+			return err
 		}
 
 		req := commands.LongPressRequest{
@@ -276,6 +307,7 @@ func init() {
 
 	// add io subcommands
 	ioCmd.AddCommand(ioTapCmd)
+	ioCmd.AddCommand(ioDoubleTapCmd)
 	ioCmd.AddCommand(ioLongPressCmd)
 	ioCmd.AddCommand(ioButtonCmd)
 	ioCmd.AddCommand(ioTextCmd)
@@ -291,6 +323,7 @@ func init() {
 
 	// io command flags
 	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
+	ioDoubleTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to double tap on")
 	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
 	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
 	ioSwipeCmd.Flags().IntVar(&swipeDuration, "duration", 0, "duration of the swipe in milliseconds (0 uses the platform default)")
