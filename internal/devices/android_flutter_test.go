@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +23,145 @@ func TestVisitFailsOnceTheConnectionIsGone(t *testing.T) {
 
 	if _, err := vm.visit("someRenderObject", "RenderParagraph", nil, ""); err == nil {
 		t.Error("expected visit to fail after the connection died, got nil error")
+	}
+}
+
+// A parent keeps some children in the render tree without laying them out or
+// painting them: the routes under an opaque one, the hidden children of an
+// IndexedStack, the child of an Offstage. It marks them offstage in
+// debugDescribeChildren, and they must be left out along with everything below
+// them: they are not on screen, and a deep navigation stack is mostly them.
+func TestChildrenOfLeavesOutOffstageChildren(t *testing.T) {
+	vm := dialFakeVM(t, fakeRenderParent(map[string]map[string]any{
+		"objects/describes-onstage":  fakeDescribedChild("objects/onstage", "RenderPadding", ""),
+		"objects/describes-offstage": fakeDescribedChild("objects/offstage", "RenderSemanticsAnnotations", "DiagnosticsTreeStyle.offstage"),
+		"objects/describes-sparse":   fakeDescribedChild("objects/sparse", "RenderParagraph", "DiagnosticsTreeStyle.sparse"),
+	}))
+
+	kids, _ := vm.childrenOf("objects/parent")
+
+	want := []renderChild{
+		{id: "objects/onstage", class: "RenderPadding"},
+		{id: "objects/sparse", class: "RenderParagraph"},
+	}
+	if fmt.Sprint(kids) != fmt.Sprint(want) {
+		t.Errorf("children = %v, want %v", kids, want)
+	}
+}
+
+// Nothing below an offstage child may be asked for either: skipping the subtree
+// is what makes a dump of a deep screen cheaper.
+func TestVisitDoesNotWalkAnOffstageSubtree(t *testing.T) {
+	var offstageCalls atomic.Int32
+	parent := fakeRenderParent(map[string]map[string]any{
+		"objects/describes-offstage": fakeDescribedChild("objects/offstage", "RenderSemanticsAnnotations", "DiagnosticsTreeStyle.offstage"),
+	})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if params["targetId"] == "objects/offstage" || params["objectId"] == "objects/offstage" {
+			offstageCalls.Add(1)
+		}
+		return parent(method, params)
+	})
+
+	if _, err := vm.visit("objects/parent", "RenderIndexedStack", nil, ""); err != nil {
+		t.Fatalf("visit failed: %v", err)
+	}
+	if n := offstageCalls.Load(); n != 0 {
+		t.Errorf("the offstage child was asked %d times, want 0", n)
+	}
+}
+
+// A parent whose children are all offstage paints nothing, so it is not a leaf
+// to report: an Offstage sized by tight constraints, or an IndexedStack with no
+// index, still has a size and a position, and would come out as an element
+// nobody can see.
+func TestVisitReportsNothingForAParentWhoseChildrenAreAllOffstage(t *testing.T) {
+	parent := fakeRenderParent(map[string]map[string]any{
+		"objects/describes-offstage": fakeDescribedChild("objects/offstage", "RenderParagraph", "DiagnosticsTreeStyle.offstage"),
+	})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if answer, ok := fakeRectOfParent(method, params); ok {
+			return answer, nil
+		}
+		return parent(method, params)
+	})
+	vm.dpr = 1
+
+	els, err := vm.visit("objects/parent", "RenderOffstage", nil, "")
+
+	if err != nil {
+		t.Fatalf("visit failed: %v", err)
+	}
+	if len(els) != 0 {
+		t.Errorf("elements = %+v, want none", els)
+	}
+}
+
+// A render object that describes no children at all is still a leaf, and is
+// reported with its rect.
+func TestVisitReportsALeafThatHasNoChildren(t *testing.T) {
+	parent := fakeRenderParent(map[string]map[string]any{})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if answer, ok := fakeRectOfParent(method, params); ok {
+			return answer, nil
+		}
+		return parent(method, params)
+	})
+	vm.dpr = 1
+
+	els, err := vm.visit("objects/parent", "RenderDecoratedBox", nil, "")
+
+	if err != nil {
+		t.Fatalf("visit failed: %v", err)
+	}
+	if len(els) != 1 || els[0].Rect.Width != 120 || els[0].Rect.Height != 40 {
+		t.Errorf("elements = %+v, want one 120x40 element", els)
+	}
+}
+
+// A diagnostics node that keeps its value behind a getter instead of in a field
+// (anything that is not a DiagnosticableNode) is still asked through the getter.
+func TestChildrenOfReadsAValueThatIsNotAField(t *testing.T) {
+	parent := fakeRenderParent(map[string]map[string]any{
+		"objects/describes-property": {"fields": []any{}},
+	})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if method == "invoke" && params["targetId"] == "objects/describes-property" && params["selector"] == "get:value" {
+			return map[string]any{"type": "@Instance", "id": "objects/property-child", "class": map[string]any{"name": "RenderBox"}}, nil
+		}
+		return parent(method, params)
+	})
+
+	kids, _ := vm.childrenOf("objects/parent")
+
+	want := []renderChild{{id: "objects/property-child", class: "RenderBox"}}
+	if fmt.Sprint(kids) != fmt.Sprint(want) {
+		t.Errorf("children = %v, want %v", kids, want)
+	}
+}
+
+// style is a field of every DiagnosticsNode, so a node that keeps its value
+// behind a getter can be marked offstage just the same. It is left out too, and
+// without being asked for the value.
+func TestChildrenOfLeavesOutAnOffstageChildWhoseValueIsNotAField(t *testing.T) {
+	var valueReads atomic.Int32
+	offstageProperty := map[string]any{"fields": []any{
+		map[string]any{"name": "style", "value": map[string]any{"type": "@Instance", "kind": "PlainInstance", "id": "styles/DiagnosticsTreeStyle.offstage"}},
+	}}
+	parent := fakeRenderParent(map[string]map[string]any{"objects/describes-property": offstageProperty})
+	vm := dialFakeVM(t, func(method string, params map[string]any) (any, *vmRPCError) {
+		if method == "invoke" && params["targetId"] == "objects/describes-property" && params["selector"] == "get:value" {
+			valueReads.Add(1)
+			return map[string]any{"type": "@Instance", "id": "objects/property-child", "class": map[string]any{"name": "RenderBox"}}, nil
+		}
+		return parent(method, params)
+	})
+
+	if kids, _ := vm.childrenOf("objects/parent"); len(kids) != 0 {
+		t.Errorf("children = %v, want none", kids)
+	}
+	if n := valueReads.Load(); n != 0 {
+		t.Errorf("the offstage node's value was read %d times, want 0", n)
 	}
 }
 
@@ -260,4 +400,89 @@ func dialFakeVM(t *testing.T, handle func(method string, params map[string]any) 
 	}
 	t.Cleanup(vm.close)
 	return vm
+}
+
+// fakeDescribedChild is the getObject answer for a DiagnosticableTreeNode that
+// describes a child render object. style is the toString of the style the
+// parent passed, or "" for a node created without one.
+func fakeDescribedChild(childID, childClass, style string) map[string]any {
+	styleRef := map[string]any{"type": "@Instance", "kind": "Null", "id": "objects/null"}
+	if style != "" {
+		styleRef = map[string]any{"type": "@Instance", "kind": "PlainInstance", "id": "styles/" + style}
+	}
+	return map[string]any{"fields": []any{
+		map[string]any{"name": "name", "value": map[string]any{"kind": "String", "valueAsString": "child"}},
+		map[string]any{"name": "style", "value": styleRef},
+		map[string]any{"name": "value", "value": map[string]any{"type": "@Instance", "id": childID, "class": map[string]any{"name": childClass}}},
+	}}
+}
+
+// fakeFieldValue returns the value of a field in a fake getObject answer, or nil.
+func fakeFieldValue(object map[string]any, name string) any {
+	fields, _ := object["fields"].([]any)
+	for _, f := range fields {
+		if field, ok := f.(map[string]any); ok && field["name"] == name {
+			return field["value"]
+		}
+	}
+	return nil
+}
+
+// fakeRenderParent is a fake VM whose objects/parent describes the given
+// diagnostics nodes as its children, in id order, and answers both ways of
+// reading the child out of one: its `value` field and its `value` getter. Every
+// other render object has no children, no semantics, no creator and no size.
+func fakeRenderParent(describes map[string]map[string]any) func(method string, params map[string]any) (any, *vmRPCError) {
+	ids := make([]string, 0, len(describes))
+	for id := range describes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	elements := make([]any, 0, len(ids))
+	for _, id := range ids {
+		elements = append(elements, map[string]any{"type": "@Instance", "id": id})
+	}
+
+	return func(method string, params map[string]any) (any, *vmRPCError) {
+		switch method {
+		case "invoke":
+			target, _ := params["targetId"].(string)
+			switch {
+			case params["selector"] == "debugDescribeChildren" && target == "objects/parent":
+				return map[string]any{"type": "@Instance", "id": "objects/children"}, nil
+			case params["selector"] == "toString" && strings.HasPrefix(target, "styles/"):
+				return map[string]any{"type": "@Instance", "kind": "String", "valueAsString": strings.TrimPrefix(target, "styles/")}, nil
+			case params["selector"] == "get:value":
+				if value := fakeFieldValue(describes[target], "value"); value != nil {
+					return value, nil
+				}
+			}
+			return map[string]any{"type": "@Instance", "kind": "Null", "id": "objects/null"}, nil
+		case "getObject":
+			id, _ := params["objectId"].(string)
+			if id == "objects/children" {
+				return map[string]any{"elements": elements}, nil
+			}
+			if node, ok := describes[id]; ok {
+				return node, nil
+			}
+		}
+		return nil, &vmRPCError{Code: -32000, Message: "unexpected call " + method}
+	}
+}
+
+// fakeRectOfParent answers the calls that read the global rect of objects/parent:
+// a 120x40 box at 10,20.
+func fakeRectOfParent(method string, params map[string]any) (any, bool) {
+	switch {
+	case method == "invoke" && params["targetId"] == "objects/parent" && params["selector"] == "localToGlobal":
+		return map[string]any{"type": "@Instance", "id": "objects/parent-offset"}, true
+	case method == "invoke" && params["targetId"] == "objects/parent" && params["selector"] == "get:size":
+		return map[string]any{"type": "@Instance", "id": "objects/parent-size"}, true
+	case method == "getObject" && params["objectId"] == "objects/parent-offset":
+		return fakeOffset("10.0", "20.0"), true
+	case method == "getObject" && params["objectId"] == "objects/parent-size":
+		return fakeOffset("120.0", "40.0"), true
+	}
+	return nil, false
 }

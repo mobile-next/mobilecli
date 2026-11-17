@@ -46,6 +46,10 @@ where semantics exist, `label`, `value`, `identifier` (from `Semantics(identifie
 so `getByRole` works. A control such as a `CheckboxListTile` is one element, not
 its inner label and box.
 
+Only what is on screen is reported. A subtree its parent keeps offstage is left
+out: the routes under the top one, the inactive children of an `IndexedStack`,
+the child of an `Offstage`, a list row kept alive after it scrolled away.
+
 ## Is it working?
 
 Run with `-v`:

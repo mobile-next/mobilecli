@@ -701,7 +701,14 @@ func (vm *flutterVM) visit(nodeID, className string, sem *flutterSemantics, key 
 		}
 	}
 
-	kids := vm.childrenOf(nodeID)
+	kids, onlyOffstage := vm.childrenOf(nodeID)
+
+	// Every child it has is offstage, so it paints nothing. It still has a size
+	// and a position (an Offstage under tight constraints, an IndexedStack with
+	// no index), and would otherwise be reported below as a leaf.
+	if onlyOffstage {
+		return nil, nil
+	}
 
 	// Wrapper node (has render children): visit children concurrently and hoist
 	// their results to our level, preserving order.
@@ -916,26 +923,46 @@ func (vm *flutterVM) triState(ref *vmInstanceRef) *bool {
 	return nil
 }
 
-// childrenOf returns a render object's render children type-agnostically via
-// RenderObject.debugDescribeChildren() — every RenderObject implements it,
-// regardless of how it stores children (single-child, container, or sliver).
-// Each returned DiagnosticsNode's `value` is the child render object.
-func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
+// offstageStyleSuffix ends the toString of DiagnosticsTreeStyle.offstage.
+const offstageStyleSuffix = ".offstage"
+
+// childrenOf returns a render object's on-screen render children
+// type-agnostically via RenderObject.debugDescribeChildren() — every
+// RenderObject implements it, regardless of how it stores children
+// (single-child, container, or sliver). Each returned DiagnosticsNode's `value`
+// is the child render object.
+//
+// A parent can keep a child in the tree without laying it out or painting it:
+// the routes under an opaque one, the hidden children of an IndexedStack, the
+// child of an Offstage, a list row kept alive after it scrolled away. It marks
+// such a child with DiagnosticsTreeStyle.offstage, and that child is left out
+// here, with everything below it — the same rule the framework's widget
+// inspector applies when it hit-tests over debugDescribeChildren. They are not
+// on screen, yet they still have a size and a position, so walking them reports
+// them as if they were, and on a deep navigation stack they are most of the tree.
+//
+// onlyOffstage is true when children were left out that way and none remain, so
+// the caller can tell such a parent from a leaf that has no children at all.
+func (vm *flutterVM) childrenOf(nodeID string) (kids []renderChild, onlyOffstage bool) {
 	list, err := vm.invoke(nodeID, "debugDescribeChildren", nil)
 	if err != nil || list.ID == "" {
-		return nil
+		return nil, false
 	}
 	obj, err := vm.getObject(list.ID)
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	var kids []renderChild
+	hasOffstage := false
 	for _, node := range obj.Elements {
 		if node.ID == "" {
 			continue
 		}
-		val, err := vm.invoke(node.ID, "get:value", nil)
-		if err != nil || val.ID == "" || val.Kind == dartKindNull {
+		val, offstage := vm.onstageChild(node.ID)
+		if offstage {
+			hasOffstage = true
+			continue
+		}
+		if val == nil || val.ID == "" || val.Kind == dartKindNull {
 			continue
 		}
 		// debugDescribeChildren only lists children, but guard anyway.
@@ -944,7 +971,34 @@ func (vm *flutterVM) childrenOf(nodeID string) []renderChild {
 		}
 		kids = append(kids, renderChild{id: val.ID, class: val.className()})
 	}
-	return kids
+	return kids, hasOffstage && len(kids) == 0
+}
+
+// onstageChild returns the render object a child's DiagnosticsNode describes, or
+// offstage when the parent marked it offstage. Reading the node's fields answers both
+// questions in the one call that reading its value alone used to take. `style`
+// is a field of every DiagnosticsNode and is null unless the parent passed one,
+// so only a child that carries a style costs a second call to tell which style
+// it is.
+func (vm *flutterVM) onstageChild(diagnosticsNodeID string) (child *vmInstanceRef, offstage bool) {
+	node, err := vm.getObject(diagnosticsNodeID)
+	if err != nil {
+		return nil, false
+	}
+	if style := node.field("style"); style != nil && style.ID != "" && style.Kind != dartKindNull {
+		if strings.HasSuffix(vm.invokeString(style.ID, "toString"), offstageStyleSuffix) {
+			return nil, true
+		}
+	}
+	if val := node.field("value"); val != nil {
+		return val, false
+	}
+	// Not a DiagnosticableNode: its value sits behind a getter.
+	val, err := vm.invoke(diagnosticsNodeID, "get:value", nil)
+	if err != nil {
+		return nil, false
+	}
+	return val, false
 }
 
 // globalRect returns a render object's global bounds in physical pixels via
