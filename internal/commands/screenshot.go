@@ -80,14 +80,14 @@ func resolveScreenshotPath(outputPath, deviceID, format string) (string, error) 
 	if format == formatJPEG {
 		extension = "jpg"
 	}
-	return resolveOutputPath(outputPath, "screenshot", deviceID, extension)
+	return resolveOutputPath(outputPath, "screenshot", deviceID, extension, uniquePath)
 }
 
 // resolveOutputPath turns the requested output into an absolute file path.
 // A path ending in a separator (or an empty path, meaning the current
 // directory) gets a generated <prefix>-<device>-<timestamp>.<extension>
-// filename.
-func resolveOutputPath(outputPath, prefix, deviceID, extension string) (string, error) {
+// filename, which pickFree makes distinct from the names already taken.
+func resolveOutputPath(outputPath, prefix, deviceID, extension string, pickFree func(string) string) (string, error) {
 	isDir := outputPath == "" || os.IsPathSeparator(outputPath[len(outputPath)-1])
 	if !isDir {
 		abs, err := filepath.Abs(outputPath)
@@ -104,21 +104,32 @@ func resolveOutputPath(outputPath, prefix, deviceID, extension string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("error creating default path: %v", err)
 	}
-	return uniquePath(abs), nil
+	return pickFree(abs), nil
 }
 
 // uniquePath appends -1, -2, ... before the extension until the name is free,
 // so two generated names for one device within the same second do not overwrite
 // each other.
 func uniquePath(path string) string {
-	if _, err := os.Stat(path); err != nil {
+	return firstFreePath(path, fileExists)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// firstFreePath is path, or path with the first -1, -2, ... counter before
+// its extension that isTaken does not claim.
+func firstFreePath(path string, isTaken func(string) bool) string {
+	if !isTaken(path) {
 		return path
 	}
 	ext := filepath.Ext(path)
 	stem := strings.TrimSuffix(path, ext)
 	for i := 1; ; i++ {
 		candidate := fmt.Sprintf("%s-%d%s", stem, i, ext)
-		if _, err := os.Stat(candidate); err != nil {
+		if !isTaken(candidate) {
 			return candidate
 		}
 	}

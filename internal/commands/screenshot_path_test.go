@@ -56,11 +56,49 @@ func TestUniquePathAppendsCounterWhenFileExists(t *testing.T) {
 func TestResolveScreenRecordPathNamesTheFileAfterTheDevice(t *testing.T) {
 	dir := t.TempDir()
 
-	got, err := ResolveScreenRecordPath(dir+string(filepath.Separator), "dev:1")
+	got, release, err := ResolveScreenRecordPath(dir+string(filepath.Separator), "dev:1")
 	require.NoError(t, err)
+	defer release()
 
 	assert.Equal(t, dir, filepath.Dir(got))
 	base := filepath.Base(got)
 	assert.True(t, strings.HasPrefix(base, "screenrecord-dev_1-"), base)
 	assert.True(t, strings.HasSuffix(base, ".mp4"), base)
+}
+
+func TestTwoRecordingsInProgressNeverShareAGeneratedName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rec.mp4")
+
+	first, releaseFirst := reserveRecordingPath(path)
+	defer releaseFirst()
+	second, releaseSecond := reserveRecordingPath(path)
+	defer releaseSecond()
+
+	assert.Equal(t, path, first)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "rec-1.mp4"), second)
+}
+
+func TestAGeneratedRecordingNameIsFreeAgainAfterRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rec.mp4")
+	_, release := reserveRecordingPath(path)
+	release()
+
+	again, releaseAgain := reserveRecordingPath(path)
+	defer releaseAgain()
+
+	assert.Equal(t, path, again)
+}
+
+func TestAnExplicitRecordingPathIsNotReserved(t *testing.T) {
+	explicit := filepath.Join(t.TempDir(), "mine.mp4")
+
+	first, releaseFirst, err := ResolveScreenRecordPath(explicit, "dev")
+	require.NoError(t, err)
+	defer releaseFirst()
+	second, releaseSecond, err := ResolveScreenRecordPath(explicit, "dev")
+	require.NoError(t, err)
+	defer releaseSecond()
+
+	assert.Equal(t, explicit, first)
+	assert.Equal(t, explicit, second)
 }

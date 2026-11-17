@@ -131,10 +131,11 @@ func streamScreenRecord(ctx context.Context, params json.RawMessage, notify func
 	if err != nil {
 		return commands.NewErrorResponse(fmt.Errorf("error finding device: %w", err)), nil
 	}
-	outputPath, err := commands.ResolveScreenRecordPath(req.OutputPath, targetDevice.ID())
+	outputPath, releaseOutputPath, err := commands.ResolveScreenRecordPath(req.OutputPath, targetDevice.ID())
 	if err != nil {
 		return commands.NewErrorResponse(err), nil
 	}
+	defer releaseOutputPath()
 
 	return commands.ScreenRecordCommand(commands.ScreenRecordRequest{
 		DeviceID:   targetDevice.ID(),

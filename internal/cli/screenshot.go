@@ -63,9 +63,9 @@ var screenshotCmd = &cobra.Command{
 
 		// the daemon's cwd is not ours: send an absolute path, or our cwd as the
 		// directory for the generated default filename
-		outputPath := absLocalPath(screenshotOutputPath)
-		if outputPath == "" {
-			outputPath = cwdWithSeparator()
+		outputPath, err := localOutputPath(screenshotOutputPath)
+		if err != nil {
+			return err
 		}
 
 		req := commands.ScreenshotRequest{

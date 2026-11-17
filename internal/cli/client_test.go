@@ -66,3 +66,40 @@ func TestAbsLocalPathResolvesRelativeAgainstCwd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(cwd, "shot.png"), absLocalPath("shot.png"))
 }
+
+func TestLocalOutputPathKeepsTheTrailingSeparatorOfADirectory(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	got, err := localOutputPath("captures" + string(filepath.Separator))
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(cwd, "captures")+string(filepath.Separator), got)
+}
+
+func TestLocalOutputPathResolvesAFileAgainstCwd(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	got, err := localOutputPath("rec.mp4")
+
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(cwd, "rec.mp4"), got)
+}
+
+func TestLocalOutputPathUnsetMeansCwdAsADirectory(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	got, err := localOutputPath("")
+
+	require.NoError(t, err)
+	assert.Equal(t, cwd+string(filepath.Separator), got)
+}
+
+func TestLocalOutputPathKeepsStdoutDash(t *testing.T) {
+	got, err := localOutputPath("-")
+
+	require.NoError(t, err)
+	assert.Equal(t, "-", got)
+}

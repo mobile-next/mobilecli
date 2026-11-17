@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"github.com/mobile-next/mobilecli/internal/commands"
 
@@ -20,9 +21,9 @@ var screenrecordCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// the daemon's cwd is not ours: send an absolute path, or our cwd as the
 		// directory for the generated default filename
-		outputPath := absLocalPath(screenrecordOutput)
-		if outputPath == "" {
-			outputPath = cwdWithSeparator()
+		outputPath, err := localOutputPath(screenrecordOutput)
+		if err != nil {
+			return err
 		}
 
 		raw, err := streamResultViaDaemon("cli.screenrecord", commands.ScreenRecordStreamRequest{
@@ -31,7 +32,14 @@ var screenrecordCmd = &cobra.Command{
 			TimeLimit:  screenrecordTimeLimit,
 			Silent:     screenrecordSilent,
 		})
-		if err != nil || raw == nil {
+		if err != nil {
+			return err
+		}
+		if raw == nil {
+			// cancelled, and the daemon never answered: say so instead of
+			// exiting as if the recording had been saved
+			err := errors.New("screen recording was stopped, but the daemon sent no result; the video may be missing or incomplete")
+			printJson(errorEnvelope(err))
 			return err
 		}
 

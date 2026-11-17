@@ -65,8 +65,16 @@ func ValidateScreenRecordTimeLimit(timeLimit int) error {
 // ResolveScreenRecordPath turns the requested output into an absolute file path.
 // A path ending in a separator (or an empty path, meaning the current
 // directory) gets a generated screenrecord-<device>-<timestamp>.mp4 filename.
-func ResolveScreenRecordPath(outputPath, deviceID string) (string, error) {
-	return resolveOutputPath(outputPath, "screenrecord", deviceID, "mp4")
+// A generated name stays reserved until the returned release is called, so a
+// second recording that starts before this one is written gets another name.
+func ResolveScreenRecordPath(outputPath, deviceID string) (string, func(), error) {
+	release := func() {}
+	path, err := resolveOutputPath(outputPath, "screenrecord", deviceID, "mp4", func(generated string) string {
+		var reserved string
+		reserved, release = reserveRecordingPath(generated)
+		return reserved
+	})
+	return path, release, err
 }
 
 // ScreenRecordCommand records the device screen to an MP4 file.
