@@ -1,0 +1,205 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/mobile-next/mobilecli/internal/commands"
+	"github.com/spf13/cobra"
+)
+
+var appsCmd = &cobra.Command{
+	Use:   "apps",
+	Short: "Manage applications on devices",
+	Long:  `Launch, terminate, and manage applications on connected devices.`,
+}
+
+var appsLaunchCmd = &cobra.Command{
+	Use:   "launch [bundle_id]",
+	Short: "Launch an app on a device",
+	Long:  `Launches an app on the specified device using its bundle ID (e.g., "com.example.app").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var locales []string
+		if locale != "" {
+			for _, l := range strings.Split(locale, ",") {
+				l = strings.TrimSpace(l)
+				if l != "" {
+					locales = append(locales, l)
+				}
+			}
+		}
+
+		env, err := parseLaunchEnv(launchEnv)
+		if err != nil {
+			return err
+		}
+
+		req := commands.AppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+			Locales:  locales,
+			Activity: activity,
+			Args:     launchArgs,
+			Env:      env,
+		}
+
+		return runViaDaemon("cli.apps.launch", req)
+	},
+}
+
+// parseLaunchEnv turns repeated --env KEY=VALUE flags into a map. The value may
+// contain '=' and may be empty.
+func parseLaunchEnv(pairs []string) (map[string]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+
+	env := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		key, value, found := strings.Cut(pair, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("invalid --env %q, expected KEY=VALUE", pair)
+		}
+		env[key] = value
+	}
+	return env, nil
+}
+
+var appsTerminateCmd = &cobra.Command{
+	Use:   "terminate [bundle_id]",
+	Short: "Terminate an app on a device",
+	Long:  `Terminates an app on the specified device using its bundle ID (e.g., "com.example.app").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.AppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+		}
+
+		return runViaDaemon("cli.apps.terminate", req)
+	},
+}
+
+var appsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List installed apps on a device",
+	Long:  `Lists all applications installed on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ListAppsRequest{
+			DeviceID: deviceId,
+		}
+
+		return runViaDaemon("cli.apps.list", req)
+	},
+}
+
+var (
+	forceResign         bool
+	provisioningProfile string
+	signingIdentity     string
+)
+
+var appsInstallCmd = &cobra.Command{
+	Use:   "install [path]",
+	Short: "Install an app on a device",
+	Long:  `Installs an app on the specified device from the given path (.apk for Android, .zip for iOS Simulator, and .ipa for iOS).`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.InstallAppRequest{
+			DeviceID:            deviceId,
+			Path:                absLocalPath(args[0]),
+			ForceResign:         forceResign,
+			ProvisioningProfile: absLocalPath(provisioningProfile),
+			SigningIdentity:     signingIdentity,
+		}
+
+		return runViaDaemon("cli.apps.install", req)
+	},
+}
+
+var appsUninstallCmd = &cobra.Command{
+	Use:   "uninstall [bundle_id]",
+	Short: "Uninstall an app from a device",
+	Long:  `Uninstalls an app from the specified device using its bundle ID.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.UninstallAppRequest{
+			DeviceID:    deviceId,
+			PackageName: args[0],
+		}
+
+		return runViaDaemon("cli.apps.uninstall", req)
+	},
+}
+
+var appsClearCmd = &cobra.Command{
+	Use:   "clear [bundle_id]",
+	Short: "Clear app data on a device",
+	Long:  `Clears all data (cache, preferences, databases) for an app without uninstalling it. Supported on Android and iOS Simulator.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ClearAppRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+		}
+
+		return runViaDaemon("cli.apps.clear", req)
+	},
+}
+
+var appsPathCmd = &cobra.Command{
+	Use:   "path [bundle_id]",
+	Short: "Get the container path of an app on a device",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.AppPathRequest{
+			DeviceID: deviceId,
+			BundleID: args[0],
+		}
+
+		return runViaDaemon("cli.apps.path", req)
+	},
+}
+
+var appsForegroundCmd = &cobra.Command{
+	Use:   "foreground",
+	Short: "Get the currently foreground app on a device",
+	Long:  `Returns information about the app currently in the foreground on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ForegroundAppRequest{
+			DeviceID: deviceId,
+		}
+
+		return runViaDaemon("cli.apps.foreground", req)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(appsCmd)
+
+	appsCmd.AddCommand(appsLaunchCmd)
+	appsCmd.AddCommand(appsTerminateCmd)
+	appsCmd.AddCommand(appsListCmd)
+	appsCmd.AddCommand(appsInstallCmd)
+	appsCmd.AddCommand(appsUninstallCmd)
+	appsCmd.AddCommand(appsClearCmd)
+	appsCmd.AddCommand(appsForegroundCmd)
+	appsCmd.AddCommand(appsPathCmd)
+
+	appsLaunchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to launch app on")
+	appsLaunchCmd.Flags().StringVar(&locale, "locale", "", "Comma-separated BCP 47 locale tags (e.g., fr-FR,en-GB)")
+	appsLaunchCmd.Flags().StringVar(&activity, "activity", "", "Android activity to launch (e.g. .DebugActivity or com.example/.DebugActivity)")
+	appsLaunchCmd.Flags().StringArrayVar(&launchArgs, "arg", nil, "Argument to pass to the app, repeat for more. On Android it must be key=value and is passed as a string intent extra")
+	appsLaunchCmd.Flags().StringArrayVar(&launchEnv, "env", nil, "Environment variable KEY=VALUE to set for the app, repeat for more (iOS only)")
+	appsTerminateCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to terminate app on")
+	appsListCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to list apps from")
+	appsInstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to install app on")
+	appsInstallCmd.Flags().BoolVar(&forceResign, "force-resign", false, "Re-sign the IPA with a local provisioning profile before installing")
+	appsInstallCmd.Flags().StringVar(&provisioningProfile, "provisioning-profile", "", "Path to a .mobileprovision file to use for re-signing")
+	appsInstallCmd.Flags().StringVar(&signingIdentity, "signing-identity", "", "Signing identity name to use for re-signing")
+	appsUninstallCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to uninstall app from")
+	appsClearCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to clear app data on")
+	appsForegroundCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to get foreground app from")
+	appsPathCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device")
+}

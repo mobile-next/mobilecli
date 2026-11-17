@@ -599,6 +599,14 @@ Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App 
 
 ## Development 👩‍💻
 
+### Repository layout
+
+- `main.go` is the executable entry point; `go.mod` stays at the repository root.
+- `internal/` contains the Go implementation and its unit tests, including the private `avc2mp4` package.
+- `agents/android/` and `agents/ios/injected/` contain native agent sources and their Makefiles.
+- `internal/agentassets/` embeds the generated binaries from its ignored `data/` directory. Run `make agents` before building or testing a fresh checkout; it requires the Android SDK/NDK, a JDK, and Xcode for the iOS agents.
+- `test/` contains the end-to-end tests, and `publish/` contains npm packaging.
+
 ### Building 🛠️
 
 Please refer to [docs/TESTING.md](docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.

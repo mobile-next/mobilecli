@@ -1,0 +1,321 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/mobile-next/mobilecli/internal/devices"
+	"github.com/mobile-next/mobilecli/internal/utils"
+)
+
+// AgentInstallRequest are the params for cli.agent.install.
+type AgentInstallRequest struct {
+	DeviceID            string `json:"deviceId"`
+	Force               bool   `json:"force,omitempty"`
+	ProvisioningProfile string `json:"provisioningProfile,omitempty"`
+}
+
+const (
+	agentVersionIOS   = "0.0.38"
+	iosRunnerBundleID = "com.mobilenext.devicekit-iosUITests.xctrunner"
+	noAgentForAndroid = "no agent needed for android devices"
+)
+
+// pinned SHA-256 checksums for agent artifacts, keyed by download filename
+var agentChecksums = map[string]string{
+	"devicekit-ios-Sim-arm64.zip":  "2eb7d66af4023f209e53a9305273198aa343249f35bbc601e8a927a290b4b076",
+	"devicekit-ios-Sim-x86_64.zip": "063a2c7457638d12a493e79546a8825ec1914d6415398fbf941454ad814a8eb3",
+	"devicekit-ios-runner.ipa":     "33af1d6b64c2ce8f8775e88b1cf339162aba9d67b6650d8b4058bf1050ee61e2",
+}
+
+// AgentMessageResponse is the data of agent status/uninstall responses.
+type AgentMessageResponse struct {
+	Message string `json:"message"`
+}
+
+// AgentInfo describes the installed on-device agent.
+type AgentInfo struct {
+	Version  string `json:"version"`
+	BundleID string `json:"bundleId"`
+}
+
+// AgentStatusResponse is the data of agent install/status responses.
+type AgentStatusResponse struct {
+	Message string    `json:"message"`
+	Agent   AgentInfo `json:"agent"`
+}
+
+func agentNotInstalledResponse() *CommandResponse {
+	return &CommandResponse{
+		Status: "fail",
+		Data:   AgentMessageResponse{Message: "Agent is not installed on the device"},
+	}
+}
+
+// noAgentNeededResponse is the reply for platforms whose helpers ship embedded
+// in mobilecli (Android), where there is nothing to install or check.
+func noAgentNeededResponse() *CommandResponse {
+	return NewSuccessResponse(AgentMessageResponse{Message: noAgentForAndroid})
+}
+
+func agentStatusResponse(message string, agent *devices.InstalledAppInfo) *CommandResponse {
+	return NewSuccessResponse(AgentStatusResponse{
+		Message: message,
+		Agent:   AgentInfo{Version: agent.Version, BundleID: agent.PackageName},
+	})
+}
+
+// AgentStatusCommand reports whether the on-device agent is installed.
+func AgentStatusCommand(req DeviceIDRequest) *CommandResponse {
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if device.Platform() == devices.PlatformAndroid {
+		return noAgentNeededResponse()
+	}
+	agent := findInstalledAgent(device)
+	if agent == nil {
+		return agentNotInstalledResponse()
+	}
+	return agentStatusResponse(fmt.Sprintf("Agent version %s is installed on device", agent.Version), agent)
+}
+
+// AgentInstallCommand downloads, verifies and installs the on-device agent.
+func AgentInstallCommand(req AgentInstallRequest) *CommandResponse {
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if device.Platform() == devices.PlatformAndroid {
+		return noAgentNeededResponse()
+	}
+
+	utils.Verbose("device: %s (%s)", device.Name(), device.ID())
+	utils.Verbose("platform: %s", device.Platform())
+	utils.Verbose("type: %s", device.DeviceType())
+
+	if !req.Force {
+		if agent := findInstalledAgent(device); agent != nil {
+			expectedVersion := agentVersionForPlatform(device.Platform())
+			if agent.Version == expectedVersion {
+				utils.Verbose("agent already installed with version %s", agent.Version)
+				return agentStatusResponse("Agent is already installed", agent)
+			}
+
+			if err := requireProvisioningProfile(device, req.ProvisioningProfile); err != nil {
+				return NewErrorResponse(err)
+			}
+
+			utils.Verbose("installed agent version %s differs from expected %s, uninstalling before reinstall", agent.Version, expectedVersion)
+			if _, err := device.UninstallApp(agent.PackageName); err != nil {
+				return NewErrorResponse(fmt.Errorf("failed to uninstall existing agent: %w", err))
+			}
+		}
+	}
+
+	if err := installAgent(device, req.ProvisioningProfile); err != nil {
+		return NewErrorResponse(err)
+	}
+
+	agent := findInstalledAgent(device)
+	if agent == nil {
+		return NewErrorResponse(fmt.Errorf("agent was installed but could not be found"))
+	}
+	return agentStatusResponse("Agent installed successfully", agent)
+}
+
+func installAgent(device devices.ControllableDevice, provisioningProfile string) error {
+	switch device.Platform() {
+	case devices.PlatformIOS:
+		switch device.DeviceType() {
+		case devices.DeviceTypeSimulator:
+			return installAgentOnSimulator(device)
+		case devices.DeviceTypeReal:
+			if err := requireProvisioningProfile(device, provisioningProfile); err != nil {
+				return err
+			}
+			return installAgentOnRealIOS(device, provisioningProfile)
+		default:
+			return fmt.Errorf("unsupported device type: %s", device.DeviceType())
+		}
+	default:
+		return fmt.Errorf("unsupported platform: %s", device.Platform())
+	}
+}
+
+// requireProvisioningProfile runs before an old agent is removed, so a missing
+// profile cannot leave a real device with no agent.
+func requireProvisioningProfile(device devices.ControllableDevice, provisioningProfile string) error {
+	if device.DeviceType() == devices.DeviceTypeReal && provisioningProfile == "" {
+		return fmt.Errorf("--provisioning-profile is required for real iOS devices")
+	}
+	return nil
+}
+
+// AgentUninstallCommand removes the on-device agent.
+func AgentUninstallCommand(req DeviceIDRequest) *CommandResponse {
+	device, err := FindDeviceOrAutoSelect(req.DeviceID)
+	if err != nil {
+		return NewErrorResponse(err)
+	}
+	if device.Platform() == devices.PlatformAndroid {
+		return noAgentNeededResponse()
+	}
+
+	agent := findInstalledAgent(device)
+	if agent == nil {
+		return agentNotInstalledResponse()
+	}
+
+	utils.Verbose("uninstalling agent %s from device %s", agent.PackageName, device.ID())
+	if _, err := device.UninstallApp(agent.PackageName); err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to uninstall agent: %w", err))
+	}
+	return NewSuccessResponse(AgentMessageResponse{Message: "Agent uninstalled successfully"})
+}
+
+func agentPackageForPlatform(platform string) string {
+	if platform == devices.PlatformIOS {
+		return iosRunnerBundleID
+	}
+	return ""
+}
+
+func agentVersionForPlatform(platform string) string {
+	if platform == devices.PlatformIOS {
+		return agentVersionIOS
+	}
+	return ""
+}
+
+func downloadAndInstallAgent(device devices.ControllableDevice, agentURL, tmpPath string, transform func(string) (string, error)) error {
+	utils.Verbose("downloading agent from %s", agentURL)
+	if err := utils.DownloadFile(agentURL, tmpPath); err != nil {
+		return fmt.Errorf("failed to download agent: %w", err)
+	}
+	utils.Verbose("downloaded agent to %s", tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	filename := filepath.Base(tmpPath)
+	expectedHash, ok := agentChecksums[filename]
+	if !ok {
+		return fmt.Errorf("no pinned checksum for %s", filename)
+	}
+	actualHash, err := utils.SHA256File(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+	if actualHash != expectedHash {
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", filename, expectedHash, actualHash)
+	}
+	utils.Verbose("checksum verified for %s", filename)
+
+	installPath := tmpPath
+	if transform != nil {
+		var err error
+		installPath, err = transform(tmpPath)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.Remove(installPath) }()
+	}
+
+	utils.Verbose("installing agent on device %s", device.ID())
+	if err := device.InstallApp(installPath); err != nil {
+		return fmt.Errorf("failed to install agent: %w", err)
+	}
+
+	return waitForAgentInstalled(device)
+}
+
+func installAgentOnSimulator(device devices.ControllableDevice) error {
+	var arch string
+	if runtime.GOARCH == "amd64" {
+		arch = "x86_64"
+	} else {
+		arch = "arm64"
+	}
+
+	filename := fmt.Sprintf("devicekit-ios-Sim-%s.zip", arch)
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
+
+	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), nil)
+}
+
+// installAgentOnRealIOS downloads the runner, re-signs it using the supplied
+// provisioning profile and its bundle identifier, and installs it on the device.
+func installAgentOnRealIOS(device devices.ControllableDevice, provisioningProfile string) error {
+	filename := "devicekit-ios-runner.ipa"
+	agentURL := fmt.Sprintf("https://github.com/mobile-next/devicekit-ios/releases/download/%s/%s", agentVersionIOS, filename)
+
+	tmpDir, err := os.MkdirTemp("", "mobilecli-agent-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	return downloadAndInstallAgent(device, agentURL, filepath.Join(tmpDir, filename), func(downloaded string) (string, error) {
+		utils.Verbose("re-signing agent with provisioning profile %s", provisioningProfile)
+		resignedPath, err := utils.ResignIPA(downloaded, device.ID(), provisioningProfile, "", utils.ResignOptions{RequiredBundleIDSuffix: iosRunnerBundleID})
+		if err != nil {
+			return "", fmt.Errorf("failed to re-sign agent: %w", err)
+		}
+		return resignedPath, nil
+	})
+}
+
+func findInstalledAgent(device devices.ControllableDevice) *devices.InstalledAppInfo {
+	agentPackage := agentPackageForPlatform(device.Platform())
+
+	apps, err := device.ListApps(false)
+	if err != nil {
+		return nil
+	}
+	for _, app := range apps {
+		if agentMatchesApp(device.Platform(), app.PackageName, agentPackage) {
+			return &app
+		}
+	}
+	return nil
+}
+
+// agentMatchesApp reports whether an installed app's bundle id identifies the agent.
+// On iOS the runner bundle id can carry a signing/team prefix when re-signed, so a
+// suffix match is used; other platforms require an exact match.
+func agentMatchesApp(platform, installedPackage, agentPackage string) bool {
+	if platform == devices.PlatformIOS {
+		return strings.HasSuffix(installedPackage, agentPackage)
+	}
+	return installedPackage == agentPackage
+}
+
+func isAgentInstalled(device devices.ControllableDevice) bool {
+	return findInstalledAgent(device) != nil
+}
+
+func waitForAgentInstalled(device devices.ControllableDevice) error {
+	startTime := time.Now()
+	for {
+		if isAgentInstalled(device) {
+			return nil
+		}
+
+		if time.Since(startTime) > 30*time.Second {
+			return fmt.Errorf("agent not found after 30 seconds")
+		}
+
+		utils.Verbose("waiting for agent to appear in installed apps...")
+		time.Sleep(1 * time.Second)
+	}
+}

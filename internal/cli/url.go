@@ -1,0 +1,29 @@
+package cli
+
+import (
+	"github.com/mobile-next/mobilecli/internal/commands"
+	"github.com/spf13/cobra"
+)
+
+var urlCmd = &cobra.Command{
+	Use:   "url [url]",
+	Short: "Open a URL on a device",
+	Long: `Opens a URL on the specified device, in the app that handles it.
+Supports http(s) links, custom schemes and deep links, for example tel:123 or myapp://path.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.URLRequest{
+			DeviceID: deviceId,
+			URL:      args[0],
+		}
+
+		return runViaDaemon("cli.url", req)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(urlCmd)
+
+	// url command flags
+	urlCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to open URL on")
+}
