@@ -13,7 +13,7 @@ This is a living document of planned and in-progress features. Items are roughly
 | ✅ Boot & shutdown | `mobilecli device boot`, `mobilecli device shutdown`, `mobilecli device reboot` |
 | ✅ Screenshots | `mobilecli screenshot --device <id>` (PNG/JPEG, quality control) |
 | ✅ Screen streaming | `mobilecli screencapture --device <id>` (MJPEG / H.264) |
-| ✅ Input | `mobilecli io tap`, `io doubletap`, `io longpress`, `io button`, `io text`, `io pinch` |
+| ✅ Input | `mobilecli io tap`, `io doubletap`, `io longpress`, `io button`, `io text`, `io drag`, `io pinch` |
 | ✅ App lifecycle | `mobilecli apps list`, `launch`, `terminate`, `install`, `uninstall`, `clear`, `foreground`, `path` |
 | ✅ Filesystem | `mobilecli fs ls`, `push`, `pull`, `mkdir`, `rm` (Android, iOS Simulator, app containers) |
 | ✅ Crash reports | `mobilecli device crashes` (iOS + Android) |

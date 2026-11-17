@@ -178,6 +178,10 @@ mobilecli io tap --device <device-id> 100,200
 # Double tap at coordinates (x,y)
 mobilecli io doubletap --device <device-id> 100,200
 
+# Drag from one point or element ref to another; --hold keeps the finger still before it moves
+mobilecli io drag --device <device-id> 100,200,300,400
+mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
+
 # Long press at coordinates (x,y) with optional duration in milliseconds
 mobilecli io longpress --device <device-id> 100,200
 mobilecli io longpress --device <device-id> 100,200 --duration 2000
