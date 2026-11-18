@@ -37,3 +37,35 @@ func TestSplitAdbDevicesLine(t *testing.T) {
 		})
 	}
 }
+
+const getpropDump = "[ro.boot.serialno]: [R5CT1234ABC]\n" +
+	"[ro.build.version.release]: [16]\n" +
+	"[ro.build.version.release_or_codename]: [16]\n" +
+	"[ro.build.version.sdk]: [36]\n"
+
+func TestFindGetpropValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		dump     string
+		property string
+		value    string
+		found    bool
+	}{
+		{"property present", getpropDump, "ro.build.version.release", "16", true},
+		{"a longer name with the same prefix is not a match", "[ro.build.version.release_or_codename]: [16]\n", "ro.build.version.release", "", false},
+		{"property missing", getpropDump, "ro.product.model", "", false},
+		{"empty value", "[ro.boot.qemu.avd_name]: []\n", "ro.boot.qemu.avd_name", "", true},
+		{"windows line endings", "[ro.build.version.release]: [16]\r\n", "ro.build.version.release", "16", true},
+		{"value without closing bracket", "[ro.build.version.release]: [16\n", "ro.build.version.release", "", false},
+		{"empty dump", "", "ro.build.version.release", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, found := findGetpropValue(tt.dump, tt.property)
+			if found != tt.found || value != tt.value {
+				t.Fatalf("got (%q, %v), want (%q, %v)", value, found, tt.value, tt.found)
+			}
+		})
+	}
+}
