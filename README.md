@@ -524,7 +524,7 @@ mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wai
 # Allocate a remote Android device (exact OS version)
 mobilecli remote allocate --platform android --version 14 --wait
 
-# List available remote devices
+# List remote device models
 mobilecli remote list-devices
 
 # Release an allocated remote device

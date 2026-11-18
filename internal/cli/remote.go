@@ -134,8 +134,8 @@ func waitForAllocation(token string, response *commands.CommandResponse, timeout
 
 var remoteListDevicesCmd = &cobra.Command{
 	Use:   "list-devices",
-	Short: "List available remote devices",
-	Long:  `Lists available devices in the remote fleet.`,
+	Short: "List remote device models",
+	Long:  `Lists the device models in the remote fleet, and whether your plan can allocate each one.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := getRemoteToken()
 		if err != nil {

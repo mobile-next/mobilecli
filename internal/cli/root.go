@@ -166,7 +166,7 @@ REMOTE DEVICES:
   # Allocate a remote iOS device
   mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wait
 
-  # List available remote devices
+  # List remote device models
   mobilecli remote list-devices
 
   # Release an allocated remote device
