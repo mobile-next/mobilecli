@@ -32,6 +32,9 @@ import (
 
 const androidDiscoveryGetpropTimeout = 5 * time.Second
 
+// androidVersionUnknown is reported for a device whose Android version cannot be read.
+const androidVersionUnknown = "unknown"
+
 // androidDexPath is where the embedded mobilecli.dex (agents/android) is pushed
 // on the device, shared by every feature that runs a class out of it
 const goosWindows = "windows"
@@ -703,10 +706,7 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 					continue
 				}
 
-				version, err := getAndroidDeviceVersion(transportID)
-				if err != nil {
-					continue
-				}
+				version := getAndroidDeviceVersion(transportID)
 
 				devices = append(devices, &AndroidDevice{
 					id:          deviceID,
@@ -724,21 +724,54 @@ func parseAdbDevicesOutput(output string) []ControllableDevice {
 }
 
 func getAndroidProperty(deviceID, property string) (string, error) {
+	return runAndroidGetprop(deviceID, property)
+}
+
+// getAllAndroidProperties returns the output of 'getprop' with no arguments: every
+// property, one "[name]: [value]" per line.
+func getAllAndroidProperties(deviceID string) (string, error) {
+	return runAndroidGetprop(deviceID)
+}
+
+// runAndroidGetprop runs 'getprop' on the device with the given arguments. When it
+// times out, the error wraps context.DeadlineExceeded.
+func runAndroidGetprop(deviceID string, args ...string) (string, error) {
+	what := strings.Join(args, " ")
+	if what == "" {
+		what = "all properties"
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), androidDiscoveryGetpropTimeout)
 	defer cancel()
 
-	propertyCmd := exec.CommandContext(ctx, getAdbPath(), "-s", deviceID, "shell", "getprop", property)
+	adbArgs := append([]string{"-s", deviceID, "shell", "getprop"}, args...)
+	propertyCmd := exec.CommandContext(ctx, getAdbPath(), adbArgs...)
 	propertyOutput, err := propertyCmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			utils.Verbose("getprop timed out after 5 seconds for Android device %s while reading %s; you probably want to run 'adb kill-server'", deviceID, property)
-		} else {
-			utils.Verbose("getprop failed for Android device %s while reading %s: %v; you probably want to run 'adb kill-server'", deviceID, property, err)
+			utils.Verbose("getprop timed out after 5 seconds for Android device %s while reading %s; you probably want to run 'adb kill-server'", deviceID, what)
+			return "", fmt.Errorf("getprop %s: %w", what, context.DeadlineExceeded)
 		}
+		utils.Verbose("getprop failed for Android device %s while reading %s: %v; you probably want to run 'adb kill-server'", deviceID, what, err)
 		return "", err
 	}
 
 	return strings.TrimSpace(string(propertyOutput)), nil
+}
+
+// findGetpropValue returns the value of property in the output of 'getprop' with no
+// arguments, where each line reads "[name]: [value]".
+func findGetpropValue(dump, property string) (string, bool) {
+	prefix := "[" + property + "]: ["
+	for line := range strings.Lines(dump) {
+		line = strings.TrimSpace(line)
+		if value, found := strings.CutPrefix(line, prefix); found {
+			if value, found = strings.CutSuffix(value, "]"); found {
+				return value, true
+			}
+		}
+	}
+	return "", false
 }
 
 // getAVDName returns the AVD name for an emulator, or empty string if not an emulator
@@ -753,7 +786,10 @@ func getAndroidDeviceName(deviceID, avdName, model string) string {
 	}
 
 	// for real devices, try getting device name from settings
-	nameCmd := exec.CommandContext(context.Background(), getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
+	ctx, cancel := context.WithTimeout(context.Background(), androidDiscoveryGetpropTimeout)
+	defer cancel()
+
+	nameCmd := exec.CommandContext(ctx, getAdbPath(), "-s", deviceID, "shell", "settings", "get", "global", "device_name")
 	nameOutput, err := nameCmd.CombinedOutput()
 	if err == nil && len(nameOutput) > 0 {
 		name := strings.TrimSpace(string(nameOutput))
@@ -775,8 +811,36 @@ func getAndroidDeviceModel(deviceID string) (string, error) {
 	return getAndroidProperty(deviceID, "ro.product.model")
 }
 
-func getAndroidDeviceVersion(deviceID string) (string, error) {
-	return getAndroidProperty(deviceID, "ro.build.version.release")
+// getAndroidDeviceVersion returns the device's Android version, or androidVersionUnknown
+// when it cannot be read. A device is still listed without its version.
+//
+// Xiaomi HyperOS breaks any 'adb shell' command whose text contains
+// "ro.build.version.release": it exits with 255 and no output. Reading every property
+// does not name it, so it is the fallback. On those ROMs the value it gives may be
+// rewritten to an old version. See https://github.com/mobile-next/mobilecli/issues/591
+func getAndroidDeviceVersion(deviceID string) string {
+	const property = "ro.build.version.release"
+
+	version, err := getAndroidProperty(deviceID, property)
+	if err == nil && version != "" {
+		return version
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return androidVersionUnknown
+	}
+
+	dump, err := getAllAndroidProperties(deviceID)
+	if err != nil {
+		return androidVersionUnknown
+	}
+
+	version, found := findGetpropValue(dump, property)
+	if !found || version == "" {
+		utils.Verbose("%s is missing from getprop output for Android device %s", property, deviceID)
+		return androidVersionUnknown
+	}
+
+	return version
 }
 
 // GetAndroidDevices retrieves a list of connected Android devices
