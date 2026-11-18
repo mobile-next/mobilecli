@@ -128,8 +128,10 @@ Here is a quick reference table mapping standard user actions to `mobilecli` com
 | User Action | CLI Command | Description |
 | :--- | :--- | :--- |
 | **Tap** | `mobilecli io tap @e5` or `mobilecli io tap <x,y>` | Single touch on a ref from `snapshot` or `dump ui`, or at coordinates |
+| **Double Tap** | `mobilecli io doubletap <x,y \| @ref>` | Two quick taps on the same spot |
 | **Long Press** | `mobilecli io longpress <x,y \| @ref> --duration <ms>` | Press and hold for a duration |
 | **Swipe** | `mobilecli io swipe <x1,y1,x2,y2>` | Drag from start to end coordinates |
+| **Drag** | `mobilecli io drag <x1,y1,x2,y2 \| @from,@to> --hold <ms> --duration <ms>` | Press, optionally hold, move to the end point and lift; each end is coordinates or a ref |
 | **Pinch** | `mobilecli io pinch [x,y] --direction in\|out` | Two-finger zoom out (`in`) or in (`out`), around x,y or the screen center |
 | **Type Text** | `mobilecli io text "<text>"` | Send raw text to the focused field |
 | **Key Press** | `mobilecli io button <BUTTON_NAME>` | Press hardware buttons (e.g. HOME, POWER) |

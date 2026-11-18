@@ -26,7 +26,7 @@
 - **エミュレーター / シミュレーター制御**: エミュレーターとシミュレーターの起動・終了をプログラムから実行
 - **スクリーンショット取得**: 接続された任意のデバイスからフォーマットを指定してスクリーンショットを取得
 - **複数の出力形式**: 品質を指定して PNG または JPEG でスクリーンショットを保存
-- **画面キャプチャの動画ストリーミング**: デバイスから mjpeg / h264 の動画を直接ストリーミング
+- **画面キャプチャの動画ストリーミング**: デバイスから mjpeg / avc (H.264) の動画を直接ストリーミング
 - **デバイス制御**: デバイスの再起動、画面座標のタップ、ハードウェアボタンの押下
 - **アプリ管理**: アプリの起動、終了、インストール、アンインストール、データ消去、一覧表示、フォアグラウンドアプリの取得
 - **ファイルシステム**: デバイス上またはアプリコンテナ内でのファイルの push、pull、一覧表示、mkdir、rm（Android、iOS シミュレーター）
@@ -129,6 +129,13 @@ mobilecli device reboot --device <device-id>
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
 
+# Double tap at coordinates (x,y)
+mobilecli io doubletap --device <device-id> 100,200
+
+# Drag from one point or element ref to another; --hold keeps the finger still before it moves
+mobilecli io drag --device <device-id> 100,200,300,400
+mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
+
 # Long press at coordinates (x,y) with optional duration in milliseconds
 mobilecli io longpress --device <device-id> 100,200
 mobilecli io longpress --device <device-id> 100,200 --duration 2000
@@ -176,10 +183,15 @@ mobilecli device location clear --device <device-id>
 ### 対応ハードウェアボタン
 
 - `HOME` - ホームボタン
-- `BACK` - 戻るボタン（Android のみ）
-- `POWER` - 電源ボタン
+- `POWER` - 電源（サイド）ボタン。`LOCK` はエイリアス
 - `VOLUME_UP`, `VOLUME_DOWN` - 音量の上げ下げ
+- `ENTER` - Enter キー
+- `BACK` - 戻るボタン（Android のみ）
+- `APP_SWITCH` - 最近使ったアプリ（Android のみ）
+- `BACKSPACE` - カーソル前の 1 文字を削除（Android のみ）
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - 十字キー操作（Android のみ）
+
+名前は大文字・小文字を区別しません。`mobilecli io button --help` でプラットフォームごとの一覧を表示でき、未対応の名前を指定すると対応している名前の一覧とともにエラーになります。
 
 ### アプリ管理 📱
 
@@ -426,7 +438,7 @@ mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wai
 # Allocate a remote Android device (exact OS version)
 mobilecli remote allocate --platform android --version 14 --wait
 
-# List available remote devices
+# List remote device models
 mobilecli remote list-devices
 
 # Release an allocated remote device
@@ -472,10 +484,10 @@ CLI とデーモンは `~/.mobilecli/` 内の unix ドメインソケット経�
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket 対応 🔌
@@ -488,9 +500,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -505,7 +517,7 @@ wscat -c ws://localhost:12000/ws
 
 ### ビルド 🛠️
 
-*mobilecli* をローカルでテストする方法の詳細は (docs/TESTING.md) を参照してください。
+*mobilecli* をローカルでテストする方法の詳細は [docs/TESTING.md](docs/TESTING.md) を参照してください。
 
 ```bash
 make lint

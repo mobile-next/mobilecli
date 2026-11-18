@@ -92,6 +92,11 @@ All commands support the global `--device <id>` flag to specify the target devic
   mobilecli io tap --device <device-id> @e5
   mobilecli io tap --device <device-id> 150,300
   ```
+* **Double Tap** (ref from the latest `dump ui`, or coordinates):
+  ```bash
+  mobilecli io doubletap --device <device-id> @e5
+  mobilecli io doubletap --device <device-id> 150,300
+  ```
 * **Long Press** (ref from the latest `dump ui`, or coordinates):
   ```bash
   mobilecli io longpress --device <device-id> @e5 --duration 2000
@@ -101,6 +106,14 @@ All commands support the global `--device <id>` flag to specify the target devic
   ```bash
   # Swipe from x1,y1 to x2,y2
   mobilecli io swipe --device <device-id> 100,600,100,200
+  ```
+* **Drag** (each end is a ref from the latest `dump ui`, or coordinates):
+  ```bash
+  # Drag one element onto another; --hold keeps the finger still first, which is what picks up a list item
+  mobilecli io drag --device <device-id> @e23,@e24 --hold 500 --duration 1000
+  # Coordinates, or a mix of the two
+  mobilecli io drag --device <device-id> 68,729,322,729
+  mobilecli io drag --device <device-id> @e23,322,729
   ```
 * **Pinch** (two fingers, zoom):
   ```bash
@@ -116,8 +129,8 @@ All commands support the global `--device <id>` flag to specify the target devic
   ```
 * **Hardware Buttons**:
   ```bash
-  # All platforms: HOME, POWER, VOLUME_UP, VOLUME_DOWN
-  # Android only: BACK, ENTER, BACKSPACE, APP_SWITCH,
+  # All platforms: HOME, POWER (alias LOCK), VOLUME_UP, VOLUME_DOWN, ENTER
+  # Android only: BACK, BACKSPACE, APP_SWITCH,
   #               DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
   mobilecli io button --device <device-id> HOME
   ```
@@ -258,17 +271,17 @@ For scripts and long-running automation, make HTTP POST requests to the server's
   ```
 
 ### Custom Gestures (JSON-RPC only)
-For complex multi-action interactions (e.g. dragging, rotating, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events. For a plain zoom, prefer `device.io.pinch` / `mobilecli io pinch`.
+For complex multi-action interactions (e.g. rotating, multi-stop drags, or specific curves) which are not accessible via standard CLI gestures, use the `device.io.gesture` method. This allows you to chain raw pointer motion events. For a plain zoom, prefer `device.io.pinch` / `mobilecli io pinch`.
 
 Supported actions:
 - `pointerDown`: Touches screen at the current x,y coordinate.
 - `pointerMove`: Moves coordinates to target `x`, `y` over `duration` (in milliseconds).
 - `pointerUp`: Lifts pointer off screen.
-- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead (iOS only for now).
+- `pause`: Sleeps for `duration` (in milliseconds). Before a finger's `pointerDown`, it delays that finger's touch-down instead.
 
 Multi-finger gestures: give each action a `button` (finger index, default 0) and list every finger's actions contiguously, one complete `pointerMove` → `pointerDown` → ... → `pointerUp` sequence per finger; the fingers then move at the same time on both iOS and Android.
 
-To tap more than once in one gesture (a double tap, or VoiceOver's double tap to activate), use a second finger that pauses until the first has lifted. A finger touches down only once per gesture.
+A plain double tap is `mobilecli io doubletap` (or `device.io.doubletap`). To tap more than once inside a larger gesture, use a second finger that pauses until the first has lifted. A finger touches down only once per gesture.
 ```json
 [
   { "type": "pointerMove", "x": 200, "y": 400, "button": 0 },

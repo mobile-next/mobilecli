@@ -336,6 +336,30 @@ test.describe('iOS Simulator Tests', () => {
 				}
 			});
 
+			test('should double tap at coordinates', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				const response = mobilecli(['io', 'doubletap', '200,400', '--device', simulatorId]);
+
+				expect(response.status).toBe('ok');
+				expect(response.data.message).toContain('Double tapped');
+			});
+
+			test('should drag between two points', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				const response = mobilecli(['io', 'drag', '100,400,300,400', '--hold', '100', '--duration', '300', '--device', simulatorId]);
+
+				expect(response.status).toBe('ok');
+				expect(response.data.message).toContain('from (100,400) to (300,400)');
+			});
+
+			test('should reject a drag that does not name two points', async () => {
+				test.skip(!simulatorId, 'simulator not found');
+
+				expect(() => mobilecli(['io', 'drag', '100,400,300', '--device', simulatorId])).toThrow(/invalid drag format/);
+			});
+
 			test('should pinch at the screen center with the default distance', async () => {
 				test.skip(!simulatorId, 'simulator not found');
 

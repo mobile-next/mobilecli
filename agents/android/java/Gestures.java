@@ -26,6 +26,10 @@ import java.util.TreeMap;
  * move travels to (x, y) over its duration, release waits its duration at the
  * last point and then lifts. The whole gesture is replayed in real time, one
  * MotionEvent per frame carrying every finger that is currently down.
+ *
+ * A press can carry "start" (seconds) to touch down later than time zero.
+ * That is how a gesture taps more than once: a double tap is a second finger
+ * on the same spot that starts after the first has lifted.
  */
 public class Gestures {
 
@@ -52,13 +56,17 @@ public class Gestures {
 		}
 	}
 
-	/** A finger's whole path; it is down from time zero until the last keyframe. */
+	/** A finger's whole path; it is down from its first keyframe until its last. */
 	private static class Finger {
 		final int id;
 		final List<Keyframe> path = new ArrayList<>();
 
 		Finger(int id) {
 			this.id = id;
+		}
+
+		long pressAtMs() {
+			return path.get(0).atMs;
 		}
 
 		long liftAtMs() {
@@ -134,9 +142,19 @@ public class Gestures {
 				throw new RpcException(RpcException.INVALID_PARAMS,
 						"finger " + id + " has negative duration at index " + i);
 			}
+			// turned away here rather than by the total: a value this large would
+			// overflow the running time and slip under the limit as a negative
+			if (durationMs > MAX_GESTURE_MS) {
+				throw new RpcException(RpcException.INVALID_PARAMS,
+						"finger " + id + " has a duration over the " + MAX_GESTURE_MS + "ms limit at index " + i);
+			}
 			if (released) {
 				throw new RpcException(RpcException.INVALID_PARAMS,
 						"finger " + id + " has actions after 'release' at index " + i);
+			}
+			if (action.has("start") && !(i == 0 && TYPE_PRESS.equals(type))) {
+				throw new RpcException(RpcException.INVALID_PARAMS,
+						"finger " + id + " has 'start' at index " + i + ", only its press can have one");
 			}
 
 			switch (type) {
@@ -145,7 +163,16 @@ public class Gestures {
 						throw new RpcException(RpcException.INVALID_PARAMS,
 								"finger " + id + " has 'press' after its first action at index " + i);
 					}
-					finger.path.add(new Keyframe(0, x, y));
+					atMs = Math.round(action.optDouble("start", 0) * 1000);
+					if (atMs < 0) {
+						throw new RpcException(RpcException.INVALID_PARAMS,
+								"finger " + id + " has a negative start");
+					}
+					if (atMs > MAX_GESTURE_MS) {
+						throw new RpcException(RpcException.INVALID_PARAMS,
+								"finger " + id + " starts after the " + MAX_GESTURE_MS + "ms limit");
+					}
+					finger.path.add(new Keyframe(atMs, x, y));
 					atMs += durationMs;
 					finger.path.add(new Keyframe(atMs, x, y));
 					break;
@@ -179,28 +206,42 @@ public class Gestures {
 		return finger;
 	}
 
-	// Presses every finger at time zero, then walks the timeline a frame at a
-	// time: one ACTION_MOVE for all fingers still down, then a lift for each
-	// finger whose path has ended, until the last one is up.
+	// Walks the timeline a frame at a time: a press for each finger whose start
+	// has come, one ACTION_MOVE for the fingers that were already down, then a
+	// lift for each finger whose path has ended, until the last one is up.
+	//
+	// A finger that touches an empty screen begins a new touch (ACTION_DOWN with
+	// its own down time), so a finger starting after the previous one lifted is a
+	// second tap rather than a second pointer of the first.
 	private static void replay(UiAutomation automation, List<Finger> fingers) throws RpcException {
-		long endMs = 0;
-		for (Finger finger : fingers) endMs = Math.max(endMs, finger.liftAtMs());
-
-		long downTime = SystemClock.uptimeMillis();
+		List<Finger> waiting = new ArrayList<>(fingers);
 		List<Finger> down = new ArrayList<>();
-		for (Finger finger : fingers) {
-			down.add(finger);
-			int action = down.size() == 1
-					? MotionEvent.ACTION_DOWN
-					: MotionEvent.ACTION_POINTER_DOWN | ((down.size() - 1) << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-			inject(automation, downTime, downTime, action, down, 0, false);
-		}
+		long startTime = SystemClock.uptimeMillis();
+		long downTime = startTime;
+		long atMs = 0;
 
-		for (long atMs = Math.min(FRAME_MS, endMs); !down.isEmpty(); atMs = nextFrame(atMs, downTime, endMs)) {
-			sleepUntil(downTime + atMs);
+		while (!waiting.isEmpty() || !down.isEmpty()) {
+			sleepUntil(startTime + atMs);
 			long eventTime = SystemClock.uptimeMillis();
 
-			inject(automation, downTime, eventTime, MotionEvent.ACTION_MOVE, down, atMs, false);
+			if (!down.isEmpty()) {
+				inject(automation, downTime, eventTime, MotionEvent.ACTION_MOVE, down, atMs, false);
+			}
+
+			for (int i = 0; i < waiting.size(); ) {
+				Finger finger = waiting.get(i);
+				if (finger.pressAtMs() > atMs) {
+					i++;
+					continue;
+				}
+				waiting.remove(i);
+				if (down.isEmpty()) downTime = eventTime;
+				down.add(finger);
+				int action = down.size() == 1
+						? MotionEvent.ACTION_DOWN
+						: MotionEvent.ACTION_POINTER_DOWN | ((down.size() - 1) << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
+				inject(automation, downTime, eventTime, action, down, atMs, false);
+			}
 
 			for (int i = 0; i < down.size(); ) {
 				Finger finger = down.get(i);
@@ -211,10 +252,32 @@ public class Gestures {
 				int action = down.size() == 1
 						? MotionEvent.ACTION_UP
 						: MotionEvent.ACTION_POINTER_UP | (i << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-				inject(automation, downTime, eventTime, action, down, atMs, down.size() == 1);
+				inject(automation, downTime, eventTime, action, down, atMs, down.size() == 1 && waiting.isEmpty());
 				down.remove(i);
 			}
+
+			atMs = down.isEmpty()
+					? nextPressAtMs(waiting)
+					: nextFrame(atMs, startTime, Math.min(nextLiftAtMs(down), nextPressAtMs(waiting)));
 		}
+	}
+
+	// A frame stops at the next lift or press instead of skipping past it. A
+	// finger that should have lifted is then never still down when the next one
+	// presses, which would turn two taps into one two-finger tap, and a finger
+	// that joins and leaves between two frames still gets its hold.
+	private static long nextLiftAtMs(List<Finger> down) {
+		long next = Long.MAX_VALUE;
+		for (Finger finger : down) next = Math.min(next, finger.liftAtMs());
+		return next;
+	}
+
+	// With no finger on the screen there is nothing to move, so the timeline
+	// skips straight to the next touch-down.
+	private static long nextPressAtMs(List<Finger> waiting) {
+		long next = Long.MAX_VALUE;
+		for (Finger finger : waiting) next = Math.min(next, finger.pressAtMs());
+		return next;
 	}
 
 	// Only the event that lifts the last finger is injected synchronously: waiting
@@ -255,9 +318,9 @@ public class Gestures {
 	// a slow device or emulator, and replaying every frame it fell behind on would
 	// stretch a 1s swipe into several seconds. Skipping them keeps the gesture the
 	// length it was asked for, with fewer intermediate points.
-	private static long nextFrame(long atMs, long downTime, long endMs) {
-		long elapsed = SystemClock.uptimeMillis() - downTime;
-		return Math.min(Math.max(atMs + FRAME_MS, elapsed), endMs);
+	private static long nextFrame(long atMs, long startTime, long limitMs) {
+		long elapsed = SystemClock.uptimeMillis() - startTime;
+		return Math.min(Math.max(atMs + FRAME_MS, elapsed), limitMs);
 	}
 
 	private static void sleepUntil(long uptimeMs) {

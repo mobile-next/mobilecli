@@ -26,7 +26,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
 - **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
-- **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
+- **Screencapture video streaming**: Stream mjpeg/avc (H.264) video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
@@ -175,6 +175,13 @@ mobilecli device reboot --device <device-id>
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
 
+# Double tap at coordinates (x,y)
+mobilecli io doubletap --device <device-id> 100,200
+
+# Drag from one point or element ref to another; --hold keeps the finger still before it moves
+mobilecli io drag --device <device-id> 100,200,300,400
+mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
+
 # Long press at coordinates (x,y) with optional duration in milliseconds
 mobilecli io longpress --device <device-id> 100,200
 mobilecli io longpress --device <device-id> 100,200 --duration 2000
@@ -252,10 +259,15 @@ VoiceOver stays on after mobilecli exits, so turn it off when done. While it is 
 ### Supported Hardware Buttons
 
 - `HOME` - Home button
-- `BACK` - Back button (Android only)
-- `POWER` - Power button
+- `POWER` - Power (side) button. `LOCK` is an alias
 - `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
+- `ENTER` - Enter key
+- `BACK` - Back button (Android only)
+- `APP_SWITCH` - Recent apps (Android only)
+- `BACKSPACE` - Delete the character before the cursor (Android only)
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+
+Names are case-insensitive. `mobilecli io button --help` prints the list for each platform, and an unknown name fails with the supported names.
 
 ### App Management 📱
 
@@ -512,7 +524,7 @@ mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wai
 # Allocate a remote Android device (exact OS version)
 mobilecli remote allocate --platform android --version 14 --wait
 
-# List available remote devices
+# List remote device models
 mobilecli remote list-devices
 
 # Release an allocated remote device
@@ -560,10 +572,10 @@ For the full list of available JSON-RPC methods and their parameters, see the [O
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket Support 🔌
@@ -576,9 +588,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -599,9 +611,17 @@ Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App 
 
 ## Development 👩‍💻
 
+### Repository layout
+
+- `main.go` is the executable entry point; `go.mod` stays at the repository root.
+- `internal/` contains the Go implementation and its unit tests, including the private `avc2mp4` package.
+- `agents/android/` and `agents/ios/injected/` contain native agent sources and their Makefiles.
+- `internal/agentassets/` embeds the generated binaries from its ignored `data/` directory. Run `make agents` before building or testing a fresh checkout; it requires the Android SDK/NDK, a JDK, and Xcode for the iOS agents.
+- `test/` contains the end-to-end tests, and `publish/` contains npm packaging.
+
 ### Building 🛠️
 
-Please refer to (docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
+Please refer to [docs/TESTING.md](docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
 
 ```bash
 make lint
