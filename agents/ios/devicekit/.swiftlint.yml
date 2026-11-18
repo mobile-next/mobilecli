@@ -1,0 +1,63 @@
+# SwiftLint configuration for devicekit-ios
+
+# Paths to include/exclude
+included:
+  - DeviceKit
+  - DeviceKitTests
+
+excluded:
+  - Pods
+  - build
+  - .build
+  - DerivedData
+
+# Rules
+disabled_rules:
+  - trailing_whitespace
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - explicit_init
+  - fatal_error_message
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - multiline_parameters
+  - overridden_super_call
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - unneeded_parentheses_in_closure_argument
+
+# Rule configurations
+line_length:
+  warning: 120
+  error: 150
+  ignores_comments: true
+  ignores_urls: true
+
+function_body_length:
+  warning: 50
+  error: 100
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 1000
+
+identifier_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 40
+    error: 50
+  excluded:
+    - id
+    - i
+    - j
+    - x
+    - y
+
+reporter: "xcode"
