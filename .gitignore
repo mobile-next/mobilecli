@@ -8,3 +8,4 @@ test/coverage
 test/test-results
 test/playwright-report
 /internal/agentassets/data/
+build/
