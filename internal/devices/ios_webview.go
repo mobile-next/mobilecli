@@ -126,7 +126,12 @@ func writeIOSAgentDylib() (string, error) {
 	return f.Name(), nil
 }
 
-var portFromLLDB = regexp.MustCompile(`\$\d+\s*=\s*(\d+)`)
+// portFromLLDB matches the result of mobilecli_get_port(), as in: (int) $2 = 27042
+var portFromLLDB = regexp.MustCompile(`\(int\) \$\d+ = (\d+)`)
+
+// dlerrorFromLLDB matches the string lldb prints for a non-NULL dlerror(), as in:
+// (char *) $1 = 0x0000600000c04000 "dlopen(...): mach-o file, but is an incompatible architecture"
+var dlerrorFromLLDB = regexp.MustCompile(`\(char \*\) \$\d+ = 0x[0-9a-fA-F]+ "(.*)"`)
 
 // psLineRegex matches a ps aux line and captures PID (group 1) and the full
 // command string including spaces (group 2).
@@ -144,6 +149,7 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 	cmd := exec.CommandContext(ctx, "lldb",
 		"-p", strconv.Itoa(pid),
 		"-o", fmt.Sprintf("expr (void*)dlopen(%q, 2)", dylibPath),
+		"-o", "expr (char*)dlerror()",
 		"-o", "expr (int)mobilecli_get_port()",
 		"-o", "detach",
 		"-o", "quit",
@@ -156,20 +162,20 @@ func injectIOSAgent(pid int, dylibPath string) (int, error) {
 		return 0, fmt.Errorf("lldb: %w\noutput:\n%s", err, out)
 	}
 
-	// find the port in a line like: (int) $1 = 27042
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, "mobilecli_get_port") {
-			continue
+	return portFromInjectOutput(string(out))
+}
+
+// portFromInjectOutput reads the agent port out of the lldb session that loaded
+// the agent. When dlopen failed, the error is what dlerror() reported, such as
+// an app that runs as an architecture the agent was not built for.
+func portFromInjectOutput(out string) (int, error) {
+	if m := portFromLLDB.FindStringSubmatch(out); m != nil {
+		if port, err := strconv.Atoi(m[1]); err == nil && port != 0 {
+			return port, nil
 		}
-		m := portFromLLDB.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		port, err := strconv.Atoi(m[1])
-		if err != nil || port == 0 {
-			continue
-		}
-		return port, nil
+	}
+	if m := dlerrorFromLLDB.FindStringSubmatch(out); m != nil {
+		return 0, fmt.Errorf("could not load the agent into the app: %s", m[1])
 	}
 	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
 }
