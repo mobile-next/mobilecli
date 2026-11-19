@@ -15,12 +15,12 @@ all: $(OUTPUT_DIR)/agent-sim.dylib $(OUTPUT_DIR)/agent-dev.dylib
 $(OUTPUT_DIR):
 	mkdir -p $@
 
-$(OUTPUT_DIR)/agent-sim.dylib: $(SRCS) server.h bridge.h dispatcher.h | $(OUTPUT_DIR)
+$(OUTPUT_DIR)/agent-sim.dylib: $(SRCS) server.h bridge.h dispatcher.h Makefile | $(OUTPUT_DIR)
 	xcrun -sdk iphonesimulator clang $(SIM_ARCHS) $(FLAGS) \
 		-mios-simulator-version-min=$(MIN) \
 		-o $@ $(SRCS)
 
-$(OUTPUT_DIR)/agent-dev.dylib: $(SRCS) server.h bridge.h dispatcher.h | $(OUTPUT_DIR)
+$(OUTPUT_DIR)/agent-dev.dylib: $(SRCS) server.h bridge.h dispatcher.h Makefile | $(OUTPUT_DIR)
 	xcrun -sdk iphoneos clang $(DEV_ARCHS) $(FLAGS) \
 		-miphoneos-version-min=$(MIN) \
 		-o $@ $(SRCS)

@@ -36,7 +36,7 @@ func TestReportsDlerrorWhenAgentCannotLoad(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "incompatible architecture") {
+	if !strings.Contains(err.Error(), "could not load the agent into the app:") || !strings.Contains(err.Error(), "incompatible architecture") {
 		t.Fatalf("error does not name the cause: %v", err)
 	}
 }
