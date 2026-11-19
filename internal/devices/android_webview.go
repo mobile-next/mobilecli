@@ -30,6 +30,10 @@ const agentSubDir = "mobilecli"
 
 var errAppNotDebuggable = errors.New("webview injection requires a debug build")
 
+// errAgentUnavailable means the in-app agent cannot run in the current process,
+// so retrying before the app is relaunched only repeats the wait.
+var errAgentUnavailable = errors.New("in-app agent unavailable")
+
 // pushTempFile writes data to a host temp file then pushes it to the device
 // at remotePath using adb push.
 func (d *AndroidDevice) pushTempFile(data []byte, remotePath string) (err error) {
@@ -220,7 +224,7 @@ func primaryCPUABI(dumpsys string) string {
 func agentSOForABI(abi string) ([]byte, error) {
 	so, ok := agentassets.AndroidMobilecliSO[abi]
 	if !ok {
-		return nil, fmt.Errorf("no in-app agent for ABI %q (only arm64-v8a and x86_64)", abi)
+		return nil, fmt.Errorf("%w: no in-app agent for ABI %q (only arm64-v8a and x86_64)", errAgentUnavailable, abi)
 	}
 	return so, nil
 }
@@ -324,7 +328,7 @@ func (d *AndroidDevice) attachAgentAndWait(pkg string, port int, agentDir string
 	deadline := time.Now().Add(5 * time.Second)
 	for !isAgentReady(port) {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("agent did not start within 5s on port %d", port)
+			return fmt.Errorf("%w: agent did not start within 5s on port %d", errAgentUnavailable, port)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}

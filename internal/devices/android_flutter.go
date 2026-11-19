@@ -39,10 +39,26 @@ var vmServiceURIPattern = regexp.MustCompile(`^http://127\.0\.0\.1:(\d+)/([^/]*)
 // Flutter app's Dart VM service URI. An empty string (no error) or an error
 // both mean "treat as not-Flutter and fall back to the accessibility dump".
 func (d *AndroidDevice) flutterVMServiceURI(pkg string) string {
-	port, err := d.ensureAgentReady(pkg)
-	if err != nil {
-		utils.Verbose("flutter: agent not ready for %s: %v", pkg, err)
-		return ""
+	// The fast path, and how a late-starting agent is still picked up.
+	port := d.findForward(webViewSocketTarget(pkg))
+	if port == 0 || !isAgentReady(port) {
+		pid, _ := d.getProcessPID(pkg)
+		if d.flutterAgentFailures.failed(pkg, pid) {
+			utils.Verbose("flutter: skipping probe for %s (pid %s), the agent cannot run in this process", pkg, pid)
+			return ""
+		}
+		var err error
+		port, err = d.ensureAgentReady(pkg)
+		if err != nil {
+			utils.Verbose("flutter: agent not ready for %s: %v", pkg, err)
+			if errors.Is(err, errAgentUnavailable) {
+				// the app may have relaunched since pid was read; the agent was
+				// tried in the process running now
+				pid, _ = d.getProcessPID(pkg)
+				d.flutterAgentFailures.record(pkg, pid)
+			}
+			return ""
+		}
 	}
 	raw, err := agentRequest(port, "device.flutter.vmServiceUri", nil)
 	if err != nil {
@@ -58,6 +74,31 @@ func (d *AndroidDevice) flutterVMServiceURI(pkg string) string {
 		return ""
 	}
 	return r.URI
+}
+
+// agentFailures remembers, per package, the process in which the in-app agent
+// cannot run. A relaunch gets a new pid and so a fresh attempt.
+type agentFailures struct {
+	mu   sync.Mutex
+	pids map[string]string
+}
+
+func (f *agentFailures) failed(pkg, pid string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return pid != "" && f.pids[pkg] == pid
+}
+
+func (f *agentFailures) record(pkg, pid string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if pid == "" {
+		return
+	}
+	if f.pids == nil {
+		f.pids = map[string]string{}
+	}
+	f.pids[pkg] = pid
 }
 
 // tryDumpFlutterSource returns the Flutter render tree for the foreground app,

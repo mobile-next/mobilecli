@@ -116,6 +116,8 @@ type AndroidDevice struct {
 	// host port of the DeviceServer once it's known to be up and current
 	serverMu   sync.Mutex
 	serverPort int
+
+	flutterAgentFailures agentFailures
 }
 
 func (d *AndroidDevice) ID() string {

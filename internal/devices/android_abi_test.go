@@ -1,6 +1,9 @@
 package devices
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestPrimaryCPUABIReadsThePackageABI(t *testing.T) {
 	cases := map[string]string{
@@ -25,8 +28,8 @@ func TestAgentSOForABIPicksTheMatchingBuild(t *testing.T) {
 		}
 	}
 	for _, abi := range []string{"armeabi-v7a", "x86", ""} {
-		if _, err := agentSOForABI(abi); err == nil {
-			t.Errorf("agentSOForABI(%q) = nil error, want an error", abi)
+		if _, err := agentSOForABI(abi); !errors.Is(err, errAgentUnavailable) {
+			t.Errorf("agentSOForABI(%q) = %v, want errAgentUnavailable", abi, err)
 		}
 	}
 }
