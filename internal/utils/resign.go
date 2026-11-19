@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"crypto/sha1" // #nosec G505 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -284,10 +285,17 @@ func resolveProvisioningProfile(profileOverride, deviceUDID, bundleID string) (s
 }
 
 func resolveSigningIdentity(identityOverride string, profile *provisioningProfile) (string, error) {
-	if identityOverride != "" {
-		return identityOverride, nil
+	if identityOverride == "" {
+		return findSigningIdentity(profile)
 	}
-	return findSigningIdentity(profile)
+	identityOutput, err := listSigningIdentities()
+	if err != nil {
+		return "", err
+	}
+	if err := checkSigningIdentityOverride(identityOverride, identityOutput); err != nil {
+		return "", err
+	}
+	return identityOverride, nil
 }
 
 func readBundleID(appPath string) (string, error) {
@@ -329,6 +337,7 @@ func decodeProvisioningProfile(profilePath string) (*provisioningProfile, error)
 
 type profileMatch int
 
+// the values are ordered: chooseProfile ranks a higher match above a lower one.
 const (
 	profileMatchNone profileMatch = iota
 	profileMatchWildcard
@@ -369,65 +378,90 @@ func matchProfile(profile *provisioningProfile, deviceUDID, bundleID string) pro
 	return profileMatchNone
 }
 
+// profileCandidate is a decoded provisioning profile and the file it was read from.
+type profileCandidate struct {
+	path    string
+	profile *provisioningProfile
+}
+
+// usableProfileBonus ranks any profile the keychain can sign with above any it cannot.
+const usableProfileBonus = int(profileMatchExact)
+
 func findMatchingProfile(deviceUDID, bundleID string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	profilesDir := filepath.Join(homeDir, "Library", "MobileDevice", "Provisioning Profiles")
-	xcodeProfilesDir := filepath.Join(homeDir, "Library", "Developer", "Xcode", "UserData", "Provisioning Profiles")
-
-	var searchDirs []string
-	for _, dir := range []string{profilesDir, xcodeProfilesDir} {
-		if _, err := os.Stat(dir); err == nil {
-			searchDirs = append(searchDirs, dir)
-		}
-	}
-
-	if len(searchDirs) == 0 {
+	candidates := readProfiles([]string{
+		filepath.Join(homeDir, "Library", "MobileDevice", "Provisioning Profiles"),
+		filepath.Join(homeDir, "Library", "Developer", "Xcode", "UserData", "Provisioning Profiles"),
+	})
+	if len(candidates) == 0 {
 		return "", noMatchingProfileError(deviceUDID, bundleID)
 	}
 
-	// prefer exact bundle ID match over wildcard
-	var wildcardMatch string
+	identityOutput, err := listSigningIdentities()
+	if err != nil {
+		return "", err
+	}
 
-	for _, dir := range searchDirs {
+	if path := chooseProfile(candidates, identityOutput, deviceUDID, bundleID); path != "" {
+		return path, nil
+	}
+	return "", noMatchingProfileError(deviceUDID, bundleID)
+}
+
+// readProfiles decodes every provisioning profile in dirs; a missing dir has none.
+func readProfiles(dirs []string) []profileCandidate {
+	var candidates []profileCandidate
+	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-
 		for _, entry := range entries {
 			if !strings.HasSuffix(entry.Name(), ".mobileprovision") {
 				continue
 			}
-
 			fullPath := filepath.Join(dir, entry.Name())
 			profile, err := decodeProvisioningProfile(fullPath)
 			if err != nil {
 				Verbose("Skipping profile %s: %v", entry.Name(), err)
 				continue
 			}
-
-			switch matchProfile(profile, deviceUDID, bundleID) {
-			case profileMatchExact:
-				Verbose("Found exact-match profile: %s (%s)", profile.Name, fullPath)
-				return fullPath, nil
-			case profileMatchWildcard:
-				if wildcardMatch == "" {
-					Verbose("Found wildcard profile: %s (%s)", profile.Name, fullPath)
-					wildcardMatch = fullPath
-				}
-			}
+			candidates = append(candidates, profileCandidate{path: fullPath, profile: profile})
 		}
 	}
+	return candidates
+}
 
-	if wildcardMatch != "" {
-		return wildcardMatch, nil
+// chooseProfile returns the path of the best profile for the device and bundle ID, or ""
+// when none matches. A profile the keychain can sign with wins over one it cannot, then
+// an exact bundle ID wins over a wildcard. Old profiles stay on disk after a certificate
+// is revoked, so the first match is not always one that works. When no match is usable
+// the best one is still returned, so that signing reports what is wrong with it.
+func chooseProfile(candidates []profileCandidate, identityOutput, deviceUDID, bundleID string) string {
+	best, bestScore := "", 0
+	for _, candidate := range candidates {
+		match := matchProfile(candidate.profile, deviceUDID, bundleID)
+		if match == profileMatchNone {
+			continue
+		}
+		score := int(match)
+		if _, err := findProfileSigningIdentity(identityOutput, candidate.profile); err == nil {
+			score += usableProfileBonus
+		} else {
+			Verbose("Profile %s has no usable signing certificate", candidate.profile.Name)
+		}
+		if score > bestScore {
+			best, bestScore = candidate.path, score
+		}
 	}
-
-	return "", noMatchingProfileError(deviceUDID, bundleID)
+	if best != "" {
+		Verbose("Found matching profile: %s", best)
+	}
+	return best
 }
 
 func noMatchingProfileError(deviceUDID, bundleID string) error {
@@ -441,46 +475,159 @@ c) use --provisioning-profile to specify a profile manually
 note: provisioning profiles require a paid Apple Developer Program membership ($99/year)`, bundleID, deviceUDID)
 }
 
-func findSigningIdentity(profile *provisioningProfile) (string, error) {
+func listSigningIdentities() (string, error) {
 	cmd := exec.CommandContext(context.Background(), "/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list signing identities: %w", err)
 	}
-
-	identity := findProfileSigningIdentity(string(output), profile.DeveloperCertificates)
-	if identity != "" {
-		Verbose("Found signing identity included in provisioning profile: %s", identity)
-		return identity, nil
-	}
-
-	return "", fmt.Errorf("none of the signing certificates included in provisioning profile %q have a corresponding private key in the keychain", profile.Name)
+	return string(output), nil
 }
 
-func findProfileSigningIdentity(identityOutput string, developerCertificates [][]byte) string {
-	profileHashes := make(map[string]struct{}, len(developerCertificates))
-	for _, certificate := range developerCertificates {
-		// #nosec G401 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
-		sum := sha1.Sum(certificate)
-		profileHashes[strings.ToUpper(hex.EncodeToString(sum[:]))] = struct{}{}
+func findSigningIdentity(profile *provisioningProfile) (string, error) {
+	identityOutput, err := listSigningIdentities()
+	if err != nil {
+		return "", err
 	}
 
-	for _, line := range strings.Split(identityOutput, "\n") {
-		hash := strings.ToUpper(extractCertHash(line))
-		if _, matchesProfile := profileHashes[hash]; matchesProfile {
-			return hash
+	identity, err := findProfileSigningIdentity(identityOutput, profile)
+	if err != nil {
+		return "", err
+	}
+	Verbose("Found signing identity included in provisioning profile: %s", identity)
+	return identity, nil
+}
+
+// findProfileSigningIdentity returns the first certificate of the profile that the
+// keychain can sign with. When there is none, the error gives the reason for each one.
+func findProfileSigningIdentity(identityOutput string, profile *provisioningProfile) (string, error) {
+	keychainProblems := make(map[string]string)
+	for _, identity := range parseSigningIdentities(identityOutput) {
+		keychainProblems[identity.hash] = identity.problem
+	}
+
+	var unusable []string
+	for _, certificate := range profile.DeveloperCertificates {
+		hash := certificateHash(certificate)
+		problem, inKeychain := keychainProblems[hash]
+		if inKeychain && problem == "" {
+			return hash, nil
+		}
+		unusable = append(unusable, describeUnusableCertificate(certificate, hash, problem))
+	}
+
+	return "", noUsableCertificateError(profile.Name, unusable)
+}
+
+// checkSigningIdentityOverride refuses a --signing-identity value that can only mean
+// identities security reports a problem for: codesign would sign with it and the device
+// would then reject the install. A value that means a usable identity, or none that
+// security lists, is left to codesign.
+func checkSigningIdentityOverride(identityOverride, identityOutput string) error {
+	var unusable []string
+	for _, identity := range identitiesNamedBy(identityOverride, parseSigningIdentities(identityOutput)) {
+		if identity.problem == "" {
+			return nil
+		}
+		unusable = append(unusable, fmt.Sprintf("%s (%s): %s", identity.name, identity.hash[:8], describeKeychainProblem(identity.problem)))
+	}
+	if len(unusable) == 0 {
+		return nil
+	}
+	return fmt.Errorf(`signing identity %q cannot be used:
+  - %s
+to fix this, pass an identity that "security find-identity -v -p codesigning" lists without a status, or leave out --signing-identity`, identityOverride, strings.Join(unusable, "\n  - "))
+}
+
+// identitiesNamedBy returns the identities codesign would consider for a -s value: the
+// ones with that hash or exactly that name, and only when there are none, the ones whose
+// name contains it.
+func identitiesNamedBy(value string, identities []signingIdentity) []signingIdentity {
+	var exact, partial []signingIdentity
+	for _, identity := range identities {
+		switch {
+		case strings.EqualFold(identity.hash, value) || identity.name == value:
+			exact = append(exact, identity)
+		case strings.Contains(identity.name, value):
+			partial = append(partial, identity)
 		}
 	}
-
-	return ""
+	if len(exact) > 0 {
+		return exact
+	}
+	return partial
 }
 
-func extractCertHash(identityLine string) string {
-	parts := strings.Fields(identityLine)
-	if len(parts) >= 2 {
-		return parts[1]
+func certificateHash(certificate []byte) string {
+	// #nosec G401 -- Apple identifies signing identities by the certificate's SHA-1 fingerprint.
+	sum := sha1.Sum(certificate)
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+// signingIdentity is one identity listed by `security find-identity -v`. problem is the
+// status security prints after the name and is empty for an identity that can sign.
+type signingIdentity struct {
+	hash, name, problem string
+}
+
+// parseSigningIdentities reads `security find-identity -v` output. security counts a
+// revoked identity as valid and only marks it with a trailing status, as in
+// `2) <hash> "<name>" (CSSMERR_TP_CERT_REVOKED)`.
+func parseSigningIdentities(identityOutput string) []signingIdentity {
+	var identities []signingIdentity
+	for _, line := range strings.Split(identityOutput, "\n") {
+		fields := strings.Fields(line)
+		nameStart, nameEnd := strings.Index(line, `"`), strings.LastIndex(line, `"`)
+		if len(fields) < 2 || len(fields[1]) != sha1.Size*2 || nameStart == nameEnd {
+			continue
+		}
+		identities = append(identities, signingIdentity{
+			hash:    strings.ToUpper(fields[1]),
+			name:    line[nameStart+1 : nameEnd],
+			problem: strings.Trim(strings.TrimSpace(line[nameEnd+1:]), "()"),
+		})
 	}
-	return ""
+	return identities
+}
+
+func describeKeychainProblem(problem string) string {
+	if problem == "CSSMERR_TP_CERT_REVOKED" {
+		return "revoked"
+	}
+	return problem
+}
+
+// describeUnusableCertificate says why a profile certificate cannot sign. keychainProblem
+// is the status security gave it, empty when security did not list it. security leaves
+// out an expired identity, so expiry is read from the certificate itself.
+func describeUnusableCertificate(certificate []byte, hash, keychainProblem string) string {
+	name := "certificate"
+	reason := "not in the keychain, or its private key is missing"
+
+	if parsed, err := x509.ParseCertificate(certificate); err == nil {
+		name = parsed.Subject.CommonName
+		if parsed.NotAfter.Before(time.Now()) {
+			reason = "expired on " + parsed.NotAfter.UTC().Format(time.DateOnly)
+		}
+	}
+	if keychainProblem != "" {
+		reason = describeKeychainProblem(keychainProblem)
+	}
+
+	return fmt.Sprintf("%s (%s): %s", name, hash[:8], reason)
+}
+
+func noUsableCertificateError(profileName string, unusable []string) error {
+	certificates := "  the profile lists no certificates"
+	if len(unusable) > 0 {
+		certificates = "  - " + strings.Join(unusable, "\n  - ")
+	}
+	return fmt.Errorf(`provisioning profile %q has no signing certificate that can be used:
+%s
+to fix this, either:
+a) build this app for your device in Xcode (refreshes the profile and its certificate)
+b) download a profile that includes a valid certificate from developer.apple.com/account and pass it with --provisioning-profile
+c) if a certificate is valid but not in the keychain, import it together with its private key`, profileName, certificates)
 }
 
 func hasWildcardApplicationIdentifier(profile *provisioningProfile) bool {
