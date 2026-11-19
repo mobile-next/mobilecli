@@ -23,14 +23,11 @@ struct RunningApp {
 
         NSLog("Detected running apps: \(runningAppIds)")
 
-        if runningAppIds.count == 1, let bundleId = runningAppIds.first {
-            return XCUIApplication(bundleIdentifier: bundleId)
-        } else {
-            return
-                runningAppIds
-                .map { XCUIApplication(bundleIdentifier: $0) }
-                .first { $0.state == .runningForeground }
-        }
+        // the only listed app is not always in front (Safari in the background
+        // while an app under Rosetta is in front), so check its state too
+        return runningAppIds
+            .map { XCUIApplication(bundleIdentifier: $0) }
+            .first { $0.state == .runningForeground }
     }
 
 }

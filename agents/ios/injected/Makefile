@@ -1,10 +1,11 @@
-ARCH := arm64
+# simulator apps can run as x86_64 under Rosetta (e.g. apps linking MLKit)
+SIM_ARCHS := -arch arm64 -arch x86_64
+DEV_ARCHS := -arch arm64
 MIN  := 15.0
 SRCS := agent.m server.m bridge.m dispatcher.m
 OUTPUT_DIR := ../../../internal/agentassets/data/ios
 
-FLAGS = -arch $(ARCH) \
-        -dynamiclib -fPIC -fobjc-arc \
+FLAGS = -dynamiclib -fPIC -fobjc-arc \
         -framework Foundation -framework UIKit -framework WebKit
 
 .PHONY: all clean
@@ -15,12 +16,12 @@ $(OUTPUT_DIR):
 	mkdir -p $@
 
 $(OUTPUT_DIR)/agent-sim.dylib: $(SRCS) server.h bridge.h dispatcher.h | $(OUTPUT_DIR)
-	xcrun -sdk iphonesimulator clang $(FLAGS) \
+	xcrun -sdk iphonesimulator clang $(SIM_ARCHS) $(FLAGS) \
 		-mios-simulator-version-min=$(MIN) \
 		-o $@ $(SRCS)
 
 $(OUTPUT_DIR)/agent-dev.dylib: $(SRCS) server.h bridge.h dispatcher.h | $(OUTPUT_DIR)
-	xcrun -sdk iphoneos clang $(FLAGS) \
+	xcrun -sdk iphoneos clang $(DEV_ARCHS) $(FLAGS) \
 		-miphoneos-version-min=$(MIN) \
 		-o $@ $(SRCS)
 	codesign -s - --force $@
