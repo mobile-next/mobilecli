@@ -2131,30 +2131,49 @@ func (d *AndroidDevice) getDeviceServerDump(opts DumpOptions) (string, error) {
 	return string(jsonBytes), nil
 }
 
+const uiAutomatorDumpTries = 10
+
 func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
-	for tries := 0; tries < 10; tries++ {
-		output, err := d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
+	return readUiAutomatorDump(func() ([]byte, error) {
+		return d.runAdbCommand("exec-out", "uiautomator", "dump", "/dev/tty")
+	})
+}
+
+// readUiAutomatorDump runs dump until it prints a hierarchy. uiautomator prints
+// no XML while a window is still drawing (a null root node, or an error line),
+// and a later dump of the same screen succeeds, so both cases try again.
+func readUiAutomatorDump(dump func() ([]byte, error)) (string, error) {
+	nullRoot := false
+	for tries := 0; tries < uiAutomatorDumpTries; tries++ {
+		output, err := dump()
 		if err != nil {
 			return "", fmt.Errorf("failed to run uiautomator dump: %w", err)
 		}
 
-		dump := string(output)
-
-		// check for known error condition
-		if strings.Contains(dump, "null root node returned by UiTestAutomationBridge") {
-			continue
+		xmlContent, found := uiAutomatorDumpXML(string(output))
+		if found {
+			return xmlContent, nil
 		}
-
-		// find the start of XML content
-		xmlStart := strings.Index(dump, "<?xml")
-		if xmlStart == -1 {
-			return "", fmt.Errorf("no XML content found in uiautomator dump")
-		}
-
-		return dump[xmlStart:], nil
+		nullRoot = strings.Contains(string(output), "null root node returned by UiTestAutomationBridge")
 	}
 
-	return "", fmt.Errorf("failed to get UIAutomator XML after 10 tries")
+	if nullRoot {
+		return "", fmt.Errorf("failed to get UIAutomator XML after %d tries", uiAutomatorDumpTries)
+	}
+	return "", fmt.Errorf("no XML content found in uiautomator dump after %d tries", uiAutomatorDumpTries)
+}
+
+// uiAutomatorDumpXML returns the hierarchy in one dump's output, which may be
+// preceded by status lines, and whether the output held one.
+func uiAutomatorDumpXML(dump string) (string, bool) {
+	if strings.Contains(dump, "null root node returned by UiTestAutomationBridge") {
+		return "", false
+	}
+	xmlStart := strings.Index(dump, "<?xml")
+	if xmlStart == -1 {
+		return "", false
+	}
+	return dump[xmlStart:], true
 }
 
 func (d *AndroidDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
