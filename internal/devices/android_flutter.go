@@ -415,6 +415,20 @@ func (vm *flutterVM) invoke(target, selector string, args []string) (*vmInstance
 	return &r, nil
 }
 
+// invokeInstance invokes a no-arg selector that is expected to return an object.
+// A getter that throws does not fail the call: the VM answers with an @Error
+// result, which — like null — is reported here as an error.
+func (vm *flutterVM) invokeInstance(target, selector string) (*vmInstanceRef, error) {
+	r, err := vm.invoke(target, selector, nil)
+	if err != nil {
+		return nil, err
+	}
+	if r.Type != "@Instance" || r.ID == "" || r.Kind == dartKindNull {
+		return nil, fmt.Errorf("%s returned no object (%s %s)", selector, r.Type, r.Kind)
+	}
+	return r, nil
+}
+
 func (vm *flutterVM) resolveIsolate() error {
 	raw, err := vm.call("getVM", nil)
 	if err != nil {
@@ -468,24 +482,176 @@ const (
 	rootRenderClass = "_ReusableRenderView"
 	offsetClass     = "Offset"
 	bindingClass    = "WidgetsFlutterBinding"
+
+	// The libraries declaring the two classes a dump is bootstrapped from, and
+	// the mixin whose static `instance` getter returns the running binding.
+	widgetsBindingLibrary = "package:flutter/src/widgets/binding.dart"
+	widgetsBindingMixin   = "WidgetsBinding"
+	dartUILibrary         = "dart:ui"
 )
+
+// walkRoots are the live objects a dump starts from.
+type walkRoots struct {
+	rootID        string // the root render view
+	rootClass     string
+	bindingID     string // the binding; "" leaves semantics as they are
+	zeroID        string // Offset.zero, the localToGlobal argument
+	offsetClassID string // to read Offset.zero again when its id expires
+}
+
+// resolveWalkRoots finds the root render view, the binding and Offset.zero.
+//
+// All three hang off statics: the binding is WidgetsBinding.instance, the render
+// view is the first of its renderViews, and Offset.zero is a static const. So
+// once the two classes are known the roots are a handful of reflective calls
+// away, and the classes are looked up in the libraries that declare them.
+//
+// The other way to get there — ask the VM for every class, then scan the heap
+// for an instance of each — costs seconds per dump on a large app, before the
+// walk has started: the class list of an app with 27,000 classes is 22 MB of
+// JSON, and each getInstances walks the whole heap. It stays as the fallback for
+// a VM whose statics cannot be reached.
+func (vm *flutterVM) resolveWalkRoots() (*walkRoots, error) {
+	roots, err := vm.walkRootsFromStatics()
+	if err == nil {
+		return roots, nil
+	}
+	utils.Verbose("flutter: walk roots not reachable through statics (%v), scanning the heap", err)
+	return vm.walkRootsFromHeap()
+}
+
+func (vm *flutterVM) walkRootsFromStatics() (*walkRoots, error) {
+	libraries, err := vm.libraryIDs()
+	if err != nil {
+		return nil, err
+	}
+	bindingMixinID, err := vm.classIDInLibrary(libraries, widgetsBindingLibrary, widgetsBindingMixin)
+	if err != nil {
+		return nil, err
+	}
+	offsetClassID, err := vm.classIDInLibrary(libraries, dartUILibrary, offsetClass)
+	if err != nil {
+		return nil, err
+	}
+
+	binding, err := vm.invokeInstance(bindingMixinID, "get:instance")
+	if err != nil {
+		return nil, fmt.Errorf("read WidgetsBinding.instance: %w", err)
+	}
+	views, err := vm.invokeInstance(binding.ID, "get:renderViews")
+	if err != nil {
+		return nil, fmt.Errorf("read the binding's renderViews: %w", err)
+	}
+	root, err := vm.invokeInstance(views.ID, "get:first")
+	if err != nil {
+		return nil, fmt.Errorf("read the first render view: %w", err)
+	}
+	zeroID, err := vm.offsetZero(offsetClassID)
+	if err != nil {
+		return nil, fmt.Errorf("could not obtain Offset.zero: %w", err)
+	}
+	return &walkRoots{
+		rootID:        root.ID,
+		rootClass:     root.className(),
+		bindingID:     binding.ID,
+		zeroID:        zeroID,
+		offsetClassID: offsetClassID,
+	}, nil
+}
+
+func (vm *flutterVM) walkRootsFromHeap() (*walkRoots, error) {
+	classes := map[string]string{rootRenderClass: "", offsetClass: "", bindingClass: ""}
+	if err := vm.findClassIDs(classes); err != nil {
+		return nil, err
+	}
+	if classes[rootRenderClass] == "" {
+		return nil, fmt.Errorf("could not locate the Flutter root render object (%s)", rootRenderClass)
+	}
+	rootID, err := vm.firstInstance(classes[rootRenderClass])
+	if err != nil {
+		return nil, fmt.Errorf("no root render object instance: %w", err)
+	}
+	zeroID, err := vm.offsetZero(classes[offsetClass])
+	if err != nil {
+		return nil, fmt.Errorf("could not obtain Offset.zero: %w", err)
+	}
+	roots := &walkRoots{
+		rootID:        rootID,
+		rootClass:     rootRenderClass,
+		zeroID:        zeroID,
+		offsetClassID: classes[offsetClass],
+	}
+	// The binding only matters for semantics; a dump without it is still a dump.
+	if classes[bindingClass] != "" {
+		if bindingID, err := vm.firstInstance(classes[bindingClass]); err == nil {
+			roots.bindingID = bindingID
+		}
+	}
+	return roots, nil
+}
+
+// libraryIDs maps the uri of every library loaded in the isolate to its id.
+func (vm *flutterVM) libraryIDs() (map[string]string, error) {
+	raw, err := vm.call("getIsolate", map[string]any{"isolateId": vm.isolateID})
+	if err != nil {
+		return nil, err
+	}
+	var isolate struct {
+		Libraries []struct {
+			ID  string `json:"id"`
+			URI string `json:"uri"`
+		} `json:"libraries"`
+	}
+	if err := json.Unmarshal(raw, &isolate); err != nil {
+		return nil, err
+	}
+	ids := make(map[string]string, len(isolate.Libraries))
+	for _, library := range isolate.Libraries {
+		ids[library.URI] = library.ID
+	}
+	return ids, nil
+}
+
+// classIDInLibrary resolves a class by name within one library. A library lists
+// only its own classes, a few hundred at most.
+func (vm *flutterVM) classIDInLibrary(libraries map[string]string, libraryURI, className string) (string, error) {
+	libraryID := libraries[libraryURI]
+	if libraryID == "" {
+		return "", fmt.Errorf("library %s is not loaded", libraryURI)
+	}
+	raw, err := vm.call("getObject", map[string]any{"isolateId": vm.isolateID, "objectId": libraryID})
+	if err != nil {
+		return "", err
+	}
+	var library struct {
+		Classes []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"classes"`
+	}
+	if err := json.Unmarshal(raw, &library); err != nil {
+		return "", err
+	}
+	for _, class := range library.Classes {
+		if class.Name == className {
+			return class.ID, nil
+		}
+	}
+	return "", fmt.Errorf("library %s has no class %s", libraryURI, className)
+}
 
 // enableSemantics turns on Flutter's semantics generation when it is off, so the
 // render walk can read labels/roles. Returns a SemanticsHandle objectId to
 // dispose afterwards, or "" if semantics were already on or the binding wasn't
 // found. When it enables semantics it waits briefly for the tree to build.
-func (vm *flutterVM) enableSemantics(bindingClassID string) string {
-	if bindingClassID == "" {
+func (vm *flutterVM) enableSemantics(bindingID string) string {
+	if bindingID == "" {
 		return ""
 	}
-	binding, err := vm.firstInstance(bindingClassID)
-	if err != nil {
-		return ""
-	}
-	if vm.invokeString(binding, "get:semanticsEnabled") == attrTrue {
+	if vm.invokeString(bindingID, "get:semanticsEnabled") == attrTrue {
 		return "" // already on (e.g. iOS with an active a11y client)
 	}
-	handle, err := vm.invoke(binding, "ensureSemantics", nil)
+	handle, err := vm.invoke(bindingID, "ensureSemantics", nil)
 	if err != nil || handle == nil || handle.ID == "" {
 		return ""
 	}
@@ -503,35 +669,23 @@ func (vm *flutterVM) disposeSemantics(handleID string) {
 func (vm *flutterVM) dumpRenderTree(dpr float64) ([]types.ScreenElement, error) {
 	vm.dpr = dpr
 	t0 := time.Now()
-	classes := map[string]string{rootRenderClass: "", offsetClass: "", bindingClass: ""}
-	if err := vm.findClassIDs(classes); err != nil {
+	roots, err := vm.resolveWalkRoots()
+	if err != nil {
 		return nil, err
 	}
-	if classes[rootRenderClass] == "" {
-		return nil, fmt.Errorf("could not locate the Flutter root render object (%s)", rootRenderClass)
-	}
+	vm.zeroOffsetID = roots.zeroID
+	vm.offsetClassID = roots.offsetClassID
+	utils.Verbose("flutter: bootstrap (root+binding+offset.zero) took %s", time.Since(t0))
 
 	// Ensure Flutter is generating its semantics tree. With no accessibility client
 	// active (the default on Android) debugSemantics is null, so labels/roles would
 	// be missing; ensureSemantics turns it on for the duration of this dump.
-	if handle := vm.enableSemantics(classes[bindingClass]); handle != "" {
+	if handle := vm.enableSemantics(roots.bindingID); handle != "" {
 		defer vm.disposeSemantics(handle)
 	}
 
-	rootID, err := vm.firstInstance(classes[rootRenderClass])
-	if err != nil {
-		return nil, fmt.Errorf("no root render object instance: %w", err)
-	}
-	zeroID, err := vm.offsetZeroID(classes[offsetClass])
-	if err != nil {
-		return nil, fmt.Errorf("could not obtain Offset.zero: %w", err)
-	}
-	vm.zeroOffsetID = zeroID
-	vm.offsetClassID = classes[offsetClass]
-	utils.Verbose("flutter: bootstrap (classes+root+offset.zero) took %s", time.Since(t0))
-
 	t1 := time.Now()
-	els, err := vm.visit(rootID, rootRenderClass, nil, "")
+	els, err := vm.visit(roots.rootID, roots.rootClass, nil, "")
 	utils.Verbose("flutter: tree walk took %s", time.Since(t1))
 	if err != nil {
 		return nil, err
@@ -614,9 +768,19 @@ func (vm *flutterVM) firstInstance(classID string) (string, error) {
 	return r.Instances[0].ID, nil
 }
 
-// offsetZeroID finds the const Offset.zero on the heap (fields _dx/_dy == 0.0),
-// used as the point argument to RenderBox.localToGlobal.
-func (vm *flutterVM) offsetZeroID(offsetClassID string) (string, error) {
+// offsetZero returns the id of Offset.zero, the point argument to
+// RenderBox.localToGlobal: the static const itself, read through its getter,
+// or — where the VM will not run that — an equal instance found on the heap.
+func (vm *flutterVM) offsetZero(offsetClassID string) (string, error) {
+	if zero, err := vm.invokeInstance(offsetClassID, "get:zero"); err == nil {
+		return zero.ID, nil
+	}
+	return vm.offsetZeroFromHeap(offsetClassID)
+}
+
+// offsetZeroFromHeap finds an Offset equal to Offset.zero on the heap (fields
+// _dx/_dy == 0.0). It walks the heap and then inspects up to 500 instances.
+func (vm *flutterVM) offsetZeroFromHeap(offsetClassID string) (string, error) {
 	raw, err := vm.call("getInstances", map[string]any{"isolateId": vm.isolateID, "objectId": offsetClassID, "limit": 500})
 	if err != nil {
 		return "", err
@@ -1058,7 +1222,7 @@ func (vm *flutterVM) refreshZeroOffsetID(stale string) (string, error) {
 	if vm.zeroOffsetID != stale {
 		return vm.zeroOffsetID, nil // already re-resolved by another goroutine
 	}
-	id, err := vm.offsetZeroID(vm.offsetClassID)
+	id, err := vm.offsetZero(vm.offsetClassID)
 	if err != nil {
 		return "", fmt.Errorf("re-resolve expired Offset.zero: %w", err)
 	}
