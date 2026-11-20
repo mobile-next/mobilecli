@@ -486,3 +486,27 @@ func fakeRectOfParent(method string, params map[string]any) (any, bool) {
 	}
 	return nil, false
 }
+
+// A dump must not wait for an agent that already failed to start in the same
+// process, but a relaunched app (new pid) gets another attempt.
+func TestAgentFailuresAreRememberedPerProcess(t *testing.T) {
+	var f agentFailures
+
+	if f.failed("com.example.app", "100") {
+		t.Fatal("nothing recorded yet")
+	}
+	f.record("com.example.app", "100")
+	if !f.failed("com.example.app", "100") {
+		t.Fatal("failure in pid 100 not remembered")
+	}
+	if f.failed("com.example.app", "200") {
+		t.Fatal("relaunched process must be retried")
+	}
+	if f.failed("com.example.other", "100") {
+		t.Fatal("failure leaked to another package")
+	}
+	f.record("com.example.unknown", "")
+	if f.failed("com.example.unknown", "") {
+		t.Fatal("unknown pid must not be treated as failed")
+	}
+}
