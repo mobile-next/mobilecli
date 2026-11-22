@@ -1,6 +1,9 @@
 package devices
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAndroidContainerPathBuildsDataUserPath(t *testing.T) {
 	cases := []struct {
@@ -10,11 +13,33 @@ func TestAndroidContainerPathBuildsDataUserPath(t *testing.T) {
 		{"com.example.app", "files", "/data/user/0/com.example.app/files"},
 		{"com.example.app", "", "/data/user/0/com.example.app"},
 		{"com.example.app", "/databases/x.db", "/data/user/0/com.example.app/databases/x.db"},
+		{"com.example.app", "/files/", "/data/user/0/com.example.app/files"},
 	}
 	for _, c := range cases {
 		if got := androidContainerPath(c.bundle, c.rel); got != c.want {
 			t.Errorf("androidContainerPath(%q,%q) = %q, want %q", c.bundle, c.rel, got, c.want)
 		}
+	}
+}
+
+func TestAndroidContainerPathCannotLeaveTheContainer(t *testing.T) {
+	cases := []struct {
+		rel, want string
+	}{
+		{"/../../../../sdcard", "/data/user/0/com.example.app/sdcard"},
+		{"files/../../other.app/x", "/data/user/0/com.example.app/other.app/x"},
+		{"..", "/data/user/0/com.example.app"},
+	}
+	for _, c := range cases {
+		if got := androidContainerPath("com.example.app", c.rel); got != c.want {
+			t.Errorf("androidContainerPath(%q) = %q, want %q", c.rel, got, c.want)
+		}
+	}
+}
+
+func TestResolveAndroidPathKeepsAbsolutePathWithoutBundle(t *testing.T) {
+	if got := resolveAndroidPath("", "/sdcard/Download"); got != "/sdcard/Download" {
+		t.Errorf("resolveAndroidPath without bundle = %q, want /sdcard/Download", got)
 	}
 }
 
@@ -34,7 +59,7 @@ func TestAndroidContainerPathIsRunAsWrapped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cmd[:7]; got != "run-as " {
-		t.Errorf("command for a container path = %q…, want it to start with 'run-as '", got)
+	if !strings.HasPrefix(cmd, "run-as ") {
+		t.Errorf("command for a container path = %q, want it to start with 'run-as '", cmd)
 	}
 }

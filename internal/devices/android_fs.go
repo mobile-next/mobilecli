@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,14 +21,24 @@ import (
 // yields the container root. Living under /data/user/ is what makes
 // buildShellCommand wrap the operation in `run-as <pkg>`, which is how a
 // debuggable app's own files are reached; a bare "/files" would otherwise be
-// read as an absolute device path and fail.
+// read as an absolute device path and fail. ".." is cleaned away, so the
+// result cannot leave the container.
 func androidContainerPath(bundleID, remotePath string) string {
 	base := "/data/user/0/" + bundleID
-	rel := strings.TrimPrefix(remotePath, "/")
-	if rel == "" {
+	rel := path.Clean("/" + remotePath)
+	if rel == "/" {
 		return base
 	}
-	return base + "/" + rel
+	return base + rel
+}
+
+// resolveAndroidPath makes remotePath relative to the app's data container
+// when a bundle id is given, and leaves it as-is otherwise.
+func resolveAndroidPath(bundleID, remotePath string) string {
+	if bundleID == "" {
+		return remotePath
+	}
+	return androidContainerPath(bundleID, remotePath)
 }
 
 // androidPackageName extracts the package name from a /data/user/<uid>/<package>/... path.
@@ -108,9 +119,8 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
-	if bundleID != "" {
-		remotePath = androidContainerPath(bundleID, remotePath)
-	} else if remotePath == "" {
+	remotePath = resolveAndroidPath(bundleID, remotePath)
+	if remotePath == "" {
 		remotePath = "/"
 	}
 
@@ -210,9 +220,7 @@ func androidParseLsLine(line, dirPath string) *FileEntry {
 }
 
 func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
-	if bundleID != "" {
-		remotePath = androidContainerPath(bundleID, remotePath)
-	}
+	remotePath = resolveAndroidPath(bundleID, remotePath)
 	parts := []string{"mkdir"}
 	if parents {
 		parts = append(parts, "-p")
@@ -227,9 +235,7 @@ func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 }
 
 func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
-	if bundleID != "" {
-		remotePath = androidContainerPath(bundleID, remotePath)
-	}
+	remotePath = resolveAndroidPath(bundleID, remotePath)
 	parts := []string{"rm"}
 	if recursive {
 		parts = append(parts, "-rf")

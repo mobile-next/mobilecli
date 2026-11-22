@@ -100,6 +100,12 @@ func (s *SimulatorDevice) GetAppContainerPath(bundleID string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// simulatorContainerPath joins a path relative to an app's data container onto
+// that container. ".." is cleaned away, so the result cannot leave it.
+func simulatorContainerPath(container, remotePath string) string {
+	return filepath.Join(container, filepath.Clean("/"+remotePath))
+}
+
 // resolveContainerRelativePath turns a (bundleID, remotePath) pair into an
 // absolute path inside the simulator's device directory. When a bundle id is
 // given, remotePath is taken as relative to that app's data container (so
@@ -113,7 +119,7 @@ func (s *SimulatorDevice) resolveContainerRelativePath(bundleID, remotePath stri
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(container, filepath.Clean("/"+remotePath)), nil
+		return simulatorContainerPath(container, remotePath), nil
 	}
 	if remotePath == "" {
 		root, err := s.simulatorDeviceRoot()

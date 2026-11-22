@@ -107,3 +107,21 @@ func TestValidatePathWithinRootAllowsSymlinkThatStaysInside(t *testing.T) {
 		t.Errorf("expected a symlink that stays inside the root to be allowed, got error: %v", err)
 	}
 }
+
+func TestSimulatorContainerPathCannotLeaveTheContainer(t *testing.T) {
+	container := "/sim/data/Containers/Data/Application/ABC"
+	cases := []struct {
+		rel, want string
+	}{
+		{"/Documents", container + "/Documents"},
+		{"Documents", container + "/Documents"},
+		{"", container},
+		{"/../../../../../../etc", container + "/etc"},
+		{"Library/../../Other/x", container + "/Other/x"},
+	}
+	for _, c := range cases {
+		if got := simulatorContainerPath(container, c.rel); got != c.want {
+			t.Errorf("simulatorContainerPath(%q) = %q, want %q", c.rel, got, c.want)
+		}
+	}
+}
