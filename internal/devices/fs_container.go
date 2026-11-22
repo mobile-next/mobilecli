@@ -12,7 +12,7 @@ import (
 // rather than clamped, so `fs rm -r <bundle> /../..` fails instead of quietly
 // meaning the whole container.
 func cleanContainerRelativePath(remotePath string) (string, error) {
-	rel := path.Clean(strings.TrimPrefix(remotePath, "/"))
+	rel := path.Clean(strings.TrimLeft(remotePath, "/"))
 	if rel == ".." || strings.HasPrefix(rel, "../") {
 		return "", fmt.Errorf("path '%s' leaves the app container", remotePath)
 	}

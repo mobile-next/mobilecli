@@ -15,6 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// androidPackageNamePattern matches an Android package name: dot-separated
+// segments of letters, digits and underscores. It keeps a bundle id from
+// carrying a "/" or ".." into the container path.
+var androidPackageNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$`)
+
 // androidContainerPath turns a bundle id and a path relative to that app's data
 // container into an absolute /data/user/0/<pkg>/... path. An empty relative path
 // yields the container root. Living under /data/user/ is what makes
@@ -23,6 +28,9 @@ import (
 // read as an absolute device path and fail. A path that would climb above the
 // container is rejected.
 func androidContainerPath(bundleID, remotePath string) (string, error) {
+	if !androidPackageNamePattern.MatchString(bundleID) {
+		return "", fmt.Errorf("invalid package name '%s'", bundleID)
+	}
 	rel, err := cleanContainerRelativePath(remotePath)
 	if err != nil {
 		return "", err

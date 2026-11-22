@@ -24,9 +24,17 @@ func TestAndroidContainerPathBuildsDataUserPath(t *testing.T) {
 }
 
 func TestAndroidContainerPathRejectsPathsThatLeaveTheContainer(t *testing.T) {
-	for _, rel := range []string{"..", "/../../../../sdcard", "files/../../other.app/x", "/../.."} {
+	for _, rel := range []string{"..", "/../../../../sdcard", "files/../../other.app/x", "/../..", "//../.."} {
 		if got, err := androidContainerPath("com.example.app", rel); err == nil {
 			t.Errorf("androidContainerPath(%q) = %q, want an error", rel, got)
+		}
+	}
+}
+
+func TestAndroidContainerPathRejectsBundleIDWithPathCharacters(t *testing.T) {
+	for _, bundle := range []string{"com.example.app/../../../../system", "..", "com..app", "com.app/", "x';id;'"} {
+		if got, err := androidContainerPath(bundle, "/"); err == nil {
+			t.Errorf("androidContainerPath(bundle %q) = %q, want an error", bundle, got)
 		}
 	}
 }

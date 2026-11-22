@@ -128,7 +128,7 @@ func TestSimulatorContainerPathJoinsRelativePaths(t *testing.T) {
 
 func TestSimulatorContainerPathRejectsDotDotThatLeavesTheContainer(t *testing.T) {
 	container := t.TempDir()
-	for _, rel := range []string{"..", "/../../", "/../../../../../../etc", "Library/../../Other/x"} {
+	for _, rel := range []string{"..", "/../../", "//../..", "/../../../../../../etc", "Library/../../Other/x"} {
 		if got, err := simulatorContainerPath(container, rel); err == nil {
 			t.Errorf("simulatorContainerPath(%q) = %q, want an error", rel, got)
 		}
