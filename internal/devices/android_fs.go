@@ -15,6 +15,42 @@ import (
 	"github.com/google/uuid"
 )
 
+// androidPackageNamePattern matches an Android package name: dot-separated
+// segments of letters, digits and underscores. It keeps a bundle id from
+// carrying a "/" or ".." into the container path.
+var androidPackageNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$`)
+
+// androidContainerPath turns a bundle id and a path relative to that app's data
+// container into an absolute /data/user/0/<pkg>/... path. An empty relative path
+// yields the container root. Living under /data/user/ is what makes
+// buildShellCommand wrap the operation in `run-as <pkg>`, which is how a
+// debuggable app's own files are reached; a bare "/files" would otherwise be
+// read as an absolute device path and fail. A path that would climb above the
+// container is rejected.
+func androidContainerPath(bundleID, remotePath string) (string, error) {
+	if !androidPackageNamePattern.MatchString(bundleID) {
+		return "", fmt.Errorf("invalid package name '%s'", bundleID)
+	}
+	rel, err := cleanContainerRelativePath(remotePath)
+	if err != nil {
+		return "", err
+	}
+	base := "/data/user/0/" + bundleID
+	if rel == "/" {
+		return base, nil
+	}
+	return base + rel, nil
+}
+
+// resolveAndroidPath makes remotePath relative to the app's data container
+// when a bundle id is given, and leaves it as-is otherwise.
+func resolveAndroidPath(bundleID, remotePath string) (string, error) {
+	if bundleID == "" {
+		return remotePath, nil
+	}
+	return androidContainerPath(bundleID, remotePath)
+}
+
 // androidPackageName extracts the package name from a /data/user/<uid>/<package>/... path.
 func androidPackageName(remotePath string) (string, error) {
 	parts := strings.SplitN(remotePath, "/", 6)
@@ -93,6 +129,10 @@ func (d *AndroidDevice) PullFile(remotePath, localPath string) error {
 }
 
 func (d *AndroidDevice) ListFiles(bundleID, remotePath string) ([]FileEntry, error) {
+	remotePath, err := resolveAndroidPath(bundleID, remotePath)
+	if err != nil {
+		return nil, err
+	}
 	if remotePath == "" {
 		remotePath = "/"
 	}
@@ -193,6 +233,10 @@ func androidParseLsLine(line, dirPath string) *FileEntry {
 }
 
 func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
+	remotePath, err := resolveAndroidPath(bundleID, remotePath)
+	if err != nil {
+		return err
+	}
 	parts := []string{"mkdir"}
 	if parents {
 		parts = append(parts, "-p")
@@ -207,6 +251,10 @@ func (d *AndroidDevice) Mkdir(bundleID, remotePath string, parents bool) error {
 }
 
 func (d *AndroidDevice) Rm(bundleID, remotePath string, recursive bool) error {
+	remotePath, err := resolveAndroidPath(bundleID, remotePath)
+	if err != nil {
+		return err
+	}
 	parts := []string{"rm"}
 	if recursive {
 		parts = append(parts, "-rf")
