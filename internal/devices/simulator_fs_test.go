@@ -108,20 +108,50 @@ func TestValidatePathWithinRootAllowsSymlinkThatStaysInside(t *testing.T) {
 	}
 }
 
-func TestSimulatorContainerPathCannotLeaveTheContainer(t *testing.T) {
-	container := "/sim/data/Containers/Data/Application/ABC"
+func TestSimulatorContainerPathJoinsRelativePaths(t *testing.T) {
+	container := t.TempDir()
 	cases := []struct {
 		rel, want string
 	}{
-		{"/Documents", container + "/Documents"},
-		{"Documents", container + "/Documents"},
+		{"/Documents", filepath.Join(container, "Documents")},
+		{"Documents", filepath.Join(container, "Documents")},
 		{"", container},
-		{"/../../../../../../etc", container + "/etc"},
-		{"Library/../../Other/x", container + "/Other/x"},
+		{"Library/../Documents/x", filepath.Join(container, "Documents", "x")},
 	}
 	for _, c := range cases {
-		if got := simulatorContainerPath(container, c.rel); got != c.want {
-			t.Errorf("simulatorContainerPath(%q) = %q, want %q", c.rel, got, c.want)
+		got, err := simulatorContainerPath(container, c.rel)
+		if err != nil || got != c.want {
+			t.Errorf("simulatorContainerPath(%q) = %q, %v; want %q", c.rel, got, err, c.want)
 		}
+	}
+}
+
+func TestSimulatorContainerPathRejectsDotDotThatLeavesTheContainer(t *testing.T) {
+	container := t.TempDir()
+	for _, rel := range []string{"..", "/../../", "/../../../../../../etc", "Library/../../Other/x"} {
+		if got, err := simulatorContainerPath(container, rel); err == nil {
+			t.Errorf("simulatorContainerPath(%q) = %q, want an error", rel, got)
+		}
+	}
+}
+
+func TestSimulatorContainerPathRejectsSymlinkToAnotherApp(t *testing.T) {
+	apps := t.TempDir()
+	appA := filepath.Join(apps, "A")
+	appB := filepath.Join(apps, "B")
+	mustMkdir(t, filepath.Join(appA, "Documents"))
+	mustMkdir(t, appB)
+	if err := os.Symlink(appB, filepath.Join(appA, "Documents", "link")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := simulatorContainerPath(appA, "/Documents/link/victim"); err == nil {
+		t.Errorf("simulatorContainerPath through a symlink to app B = %q, want an error", got)
+	}
+}
+
+func mustMkdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }

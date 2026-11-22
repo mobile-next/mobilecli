@@ -101,9 +101,18 @@ func (s *SimulatorDevice) GetAppContainerPath(bundleID string) (string, error) {
 }
 
 // simulatorContainerPath joins a path relative to an app's data container onto
-// that container. ".." is cleaned away, so the result cannot leave it.
-func simulatorContainerPath(container, remotePath string) string {
-	return filepath.Join(container, filepath.Clean("/"+remotePath))
+// that container. A path that would leave the container, by ".." or through a
+// symlink inside it, is rejected.
+func simulatorContainerPath(container, remotePath string) (string, error) {
+	rel, err := cleanContainerRelativePath(remotePath)
+	if err != nil {
+		return "", err
+	}
+	joined := filepath.Join(container, rel)
+	if err := validatePathWithinRoot(container, joined); err != nil {
+		return "", fmt.Errorf("path '%s' is outside the app container", remotePath)
+	}
+	return joined, nil
 }
 
 // resolveContainerRelativePath turns a (bundleID, remotePath) pair into an
@@ -119,7 +128,7 @@ func (s *SimulatorDevice) resolveContainerRelativePath(bundleID, remotePath stri
 		if err != nil {
 			return "", err
 		}
-		return simulatorContainerPath(container, remotePath), nil
+		return simulatorContainerPath(container, remotePath)
 	}
 	if remotePath == "" {
 		root, err := s.simulatorDeviceRoot()

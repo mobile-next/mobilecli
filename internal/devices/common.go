@@ -247,7 +247,7 @@ type ControllableDevice interface {
 	PushFile(localPath, remotePath string) error
 	PullFile(remotePath, localPath string) error
 	// ListFiles, Mkdir and Rm take remotePath as relative to the app's data
-	// container when bundleID is set; ".." cannot leave the container.
+	// container when bundleID is set; a path that would leave it is rejected.
 	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
 	Mkdir(bundleID, remotePath string, parents bool) error
 	Rm(bundleID, remotePath string, recursive bool) error
