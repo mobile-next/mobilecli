@@ -834,3 +834,46 @@ func TestCollectUiNodeElementsLeavesPaneTitleUnset(t *testing.T) {
 		t.Errorf("expected PaneTitle to be nil, got %+v", *output[0].PaneTitle)
 	}
 }
+
+// Chromium's accessibility provider can report the WebView with no resource-id
+// or label, nested in a second WebView node with the same bounds.
+func TestCollectUiNodeElementsKeepsUnlabeledWebViewOnce(t *testing.T) {
+	webviewRect := uiRect{X: 0, Y: 289, Width: 1080, Height: 2135}
+	nodes := []uiNode{
+		{
+			Class: "android.widget.FrameLayout",
+			Rect:  uiRect{X: 0, Y: 0, Width: 1080, Height: 2424},
+			Children: []uiNode{
+				{
+					Class: "android.webkit.WebView",
+					Rect:  webviewRect,
+					Children: []uiNode{
+						{
+							Class: "android.webkit.WebView",
+							Rect:  webviewRect,
+							Children: []uiNode{
+								{
+									Class: "android.widget.Button",
+									Text:  "tap me",
+									Rect:  uiRect{X: 532, Y: 365, Width: 153, Height: 60},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 || output[0].Type != "android.webkit.WebView" {
+		t.Fatalf("expected the WebView as the single top-level element, got %+v", output)
+	}
+	if output[0].Rect.Y != 289 || output[0].Rect.Height != 2135 {
+		t.Errorf("expected the WebView's bounds, got %+v", output[0].Rect)
+	}
+	if len(output[0].Children) != 1 || screenElementText(output[0].Children[0]) != "tap me" {
+		t.Errorf("expected the page content directly under the WebView, got %+v", output[0].Children)
+	}
+}
