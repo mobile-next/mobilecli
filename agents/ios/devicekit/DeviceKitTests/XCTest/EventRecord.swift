@@ -30,14 +30,12 @@ final class EventRecord: NSObject {
             return
         }
 
-        eventRecord =
-            (recordClass.alloc() as AnyObject)
-            .perform(
-                NSSelectorFromString("initWithName:interfaceOrientation:"),
-                with: style.rawValue,
-                with: orientation
-            )
-            .takeUnretainedValue() as! NSObject
+        // orientation is an NSInteger: perform(_:with:with:) would box it into an object, so call through a typed pointer
+        let selector = NSSelectorFromString("initWithName:interfaceOrientation:")
+        let instance = recordClass.alloc() as! NSObject
+        typealias Method = @convention(c) (NSObject, Selector, NSString, Int) -> NSObject
+        let method = unsafeBitCast(instance.method(for: selector), to: Method.self)
+        eventRecord = method(instance, selector, style.rawValue as NSString, orientation.rawValue)
     }
 
     func addPointerTouchEvent(at point: CGPoint, touchUpAfter: TimeInterval?)
