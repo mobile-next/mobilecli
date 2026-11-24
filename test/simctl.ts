@@ -6,7 +6,8 @@ import {DatabaseSync} from 'node:sqlite';
 export function printAllLogsFromSimulator(simulatorId: string): void {
 	try {
 		execSync(`xcrun simctl spawn "${simulatorId}" log show -last 5m >/tmp/${simulatorId}.txt`, {
-			stdio: 'inherit'
+			// log show chatters on stderr; keep it out of the test report unless the command fails
+			stdio: ['ignore', 'ignore', 'pipe'],
 		});
 	} catch (error) {
 		console.warn(`Warning: Failed to print logs from simulator ${simulatorId}: ${error}`);

@@ -26,7 +26,7 @@ A universal command-line tool for managing iOS and Android devices, simulators, 
 - **Emulator/Simulator Control**: Boot and shutdown emulators and simulators programmatically
 - **Screenshot Capture**: Take screenshots from any connected device with format options
 - **Multiple Output Formats**: Save screenshots as PNG or JPEG with quality control
-- **Screencapture video streaming**: Stream mjpeg/h264 video directly from device
+- **Screencapture video streaming**: Stream mjpeg/avc (H.264) video directly from device
 - **Device Control**: Reboot devices, tap screen coordinates, press hardware buttons
 - **App Management**: Launch, terminate, install, uninstall, clear data, list, and get foreground apps
 - **Filesystem**: Push, pull, list, mkdir, and rm files on-device or in app containers (Android, iOS Simulator)
@@ -163,6 +163,9 @@ Note that screencapture is one way. You will have to use `io tap` commands to ta
 # Boot an offline emulator or simulator
 mobilecli device boot --device <device-id>
 
+# Boot it with a visible window
+mobilecli device boot --device <device-id> --headed
+
 # Shutdown a running emulator or simulator
 mobilecli device shutdown --device <device-id>
 
@@ -171,6 +174,13 @@ mobilecli device reboot --device <device-id>
 
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
+
+# Double tap at coordinates (x,y)
+mobilecli io doubletap --device <device-id> 100,200
+
+# Drag from one point or element ref to another; --hold keeps the finger still before it moves
+mobilecli io drag --device <device-id> 100,200,300,400
+mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
 
 # Long press at coordinates (x,y) with optional duration in milliseconds
 mobilecli io longpress --device <device-id> 100,200
@@ -225,13 +235,39 @@ Caveats per platform:
 | Android Emulator | Uses the emulator console. It has no way to undo a fix, so `clear` sets the location back to the coordinates an emulator boots with (the Googleplex), not to a real one |
 | Android Real Device | Runs an on-device agent as a mock location provider, granting the `mock_location` appop to `com.android.shell`. Some OEM ROMs ignore mock providers, and apps checking `Location.isFromMockProvider()` or Play Integrity can tell |
 
+### VoiceOver ♿
+
+Drive VoiceOver and read what it speaks, to check an app's accessibility labels and focus order. Needs iOS 27 or later, on a simulator or a real device.
+
+```bash
+# Turn VoiceOver on or off, or read its state
+mobilecli device voiceover set --device <device-id> on
+mobilecli device voiceover get --device <device-id>
+
+# What VoiceOver speaks for the focused element, e.g. "Add Favorites, button"
+mobilecli device voiceover speech --device <device-id>
+
+# Move to the next or previous element and print what VoiceOver speaks there
+mobilecli device voiceover move --device <device-id> next
+mobilecli device voiceover move --device <device-id> previous
+
+mobilecli device voiceover set --device <device-id> off
+```
+
+VoiceOver stays on after mobilecli exits, so turn it off when done. While it is on, `io tap` focuses an element instead of activating it. `move in` and `move out` need VoiceOver's Navigation Style set to Groups.
+
 ### Supported Hardware Buttons
 
 - `HOME` - Home button
-- `BACK` - Back button (Android only)
-- `POWER` - Power button
+- `POWER` - Power (side) button. `LOCK` is an alias
 - `VOLUME_UP`, `VOLUME_DOWN` - Volume up and down
+- `ENTER` - Enter key
+- `BACK` - Back button (Android only)
+- `APP_SWITCH` - Recent apps (Android only)
+- `BACKSPACE` - Delete the character before the cursor (Android only)
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - D-pad controls (Android only)
+
+Names are case-insensitive. `mobilecli io button --help` prints the list for each platform, and an unknown name fails with the supported names.
 
 ### App Management 📱
 
@@ -244,6 +280,12 @@ mobilecli apps foreground --device <device-id>
 
 # Launch an app
 mobilecli apps launch <bundle-id> --device <device-id>
+
+# Launch an app with arguments and environment variables (iOS)
+mobilecli apps launch <bundle-id> --device <device-id> --arg -FeatureX --arg YES --env API_URL=https://staging.example.com
+
+# Launch an app with string intent extras (Android, each --arg is key=value and becomes --es key value)
+mobilecli apps launch <package-name> --device <device-id> --arg featureX=true --arg apiUrl=https://staging.example.com
 
 # Terminate an app
 mobilecli apps terminate <bundle-id> --device <device-id>
@@ -482,7 +524,7 @@ mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wai
 # Allocate a remote Android device (exact OS version)
 mobilecli remote allocate --platform android --version 14 --wait
 
-# List available remote devices
+# List remote device models
 mobilecli remote list-devices
 
 # Release an allocated remote device
@@ -530,10 +572,10 @@ For the full list of available JSON-RPC methods and their parameters, see the [O
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket Support 🔌
@@ -546,9 +588,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -569,9 +611,17 @@ Wildcard profiles (`TEAMID.*`) keep the agent's default bundle ID. Explicit App 
 
 ## Development 👩‍💻
 
+### Repository layout
+
+- `main.go` is the executable entry point; `go.mod` stays at the repository root.
+- `internal/` contains the Go implementation and its unit tests, including the private `avc2mp4` package.
+- `agents/android/` and `agents/ios/injected/` contain native agent sources and their Makefiles.
+- `internal/agentassets/` embeds the generated binaries from its ignored `data/` directory. Run `make agents` before building or testing a fresh checkout; it requires the Android SDK/NDK, a JDK, and Xcode for the iOS agents.
+- `test/` contains the end-to-end tests, and `publish/` contains npm packaging.
+
 ### Building 🛠️
 
-Please refer to (docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
+Please refer to [docs/TESTING.md](docs/TESTING.md) for further instructions regarding testing *mobilecli* locally.
 
 ```bash
 make lint

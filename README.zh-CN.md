@@ -26,7 +26,7 @@
 - **仿真器 / 模拟器控制**：通过编程方式启动和关闭仿真器与模拟器
 - **截图**：从任意已连接设备截图，并可选择输出格式
 - **多种输出格式**：以 PNG 或 JPEG 保存截图，并可控制画质
-- **屏幕录制视频流**：直接从设备推送 mjpeg / h264 视频流
+- **屏幕录制视频流**：直接从设备推送 mjpeg / avc (H.264) 视频流
 - **设备控制**：重启设备、点击屏幕坐标、按下硬件按键
 - **应用管理**：启动、终止、安装、卸载、清除数据、列出应用以及获取前台应用
 - **文件系统**：在设备上或应用容器内 push、pull、列出文件、mkdir 和 rm（Android、iOS 模拟器）
@@ -117,6 +117,9 @@ mobilecli screencapture --device <device-id> --format mjpeg | ffplay -
 # Boot an offline emulator or simulator
 mobilecli device boot --device <device-id>
 
+# Boot it with a visible window
+mobilecli device boot --device <device-id> --headed
+
 # Shutdown a running emulator or simulator
 mobilecli device shutdown --device <device-id>
 
@@ -125,6 +128,13 @@ mobilecli device reboot --device <device-id>
 
 # Tap at coordinates (x,y)
 mobilecli io tap --device <device-id> 100,200
+
+# Double tap at coordinates (x,y)
+mobilecli io doubletap --device <device-id> 100,200
+
+# Drag from one point or element ref to another; --hold keeps the finger still before it moves
+mobilecli io drag --device <device-id> 100,200,300,400
+mobilecli io drag --device <device-id> @e1,@e2 --hold 500 --duration 1000
 
 # Long press at coordinates (x,y) with optional duration in milliseconds
 mobilecli io longpress --device <device-id> 100,200
@@ -173,10 +183,15 @@ mobilecli device location clear --device <device-id>
 ### 支持的硬件按键
 
 - `HOME` - Home 键
-- `BACK` - 返回键（仅 Android）
-- `POWER` - 电源键
+- `POWER` - 电源（侧边）键，`LOCK` 是它的别名
 - `VOLUME_UP`, `VOLUME_DOWN` - 音量加 / 减
+- `ENTER` - 回车键
+- `BACK` - 返回键（仅 Android）
+- `APP_SWITCH` - 最近任务（仅 Android）
+- `BACKSPACE` - 删除光标前的一个字符（仅 Android）
 - `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER` - 方向键控制（仅 Android）
+
+按键名称不区分大小写。`mobilecli io button --help` 会列出各平台支持的名称，传入不支持的名称时会报错并给出支持的名称列表。
 
 ### 应用管理 📱
 
@@ -423,7 +438,7 @@ mobilecli remote allocate --platform ios --version ">=18" --name "iPhone*" --wai
 # Allocate a remote Android device (exact OS version)
 mobilecli remote allocate --platform android --version 14 --wait
 
-# List available remote devices
+# List remote device models
 mobilecli remote list-devices
 
 # Release an allocated remote device
@@ -469,10 +484,10 @@ CLI 与守护进程通过 `~/.mobilecli/` 下的 unix 域套接字进行 JSON-RP
 
 ```bash
 # Start the server (default port 12000)
-mobile server start
+mobilecli server start
 
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices", "params": {}}'
-curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "screenshot", "params": {"deviceId": "your-device-id"}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "devices.list", "params": {}}'
+curl http://localhost:12000/rpc -XPOST -d '{"jsonrpc":"2.0", "id": 1, "method": "device.screenshot", "params": {"deviceId": "your-device-id"}}'
 ```
 
 ## WebSocket 支持 🔌
@@ -485,9 +500,9 @@ mobilecli server start
 
 # Connect and send requests using wscat
 wscat -c ws://localhost:12000/ws
-> {"jsonrpc":"2.0","id":1,"method":"devices","params":{}}
+> {"jsonrpc":"2.0","id":1,"method":"devices.list","params":{}}
 < {"jsonrpc":"2.0","id":1,"result":[...]}
-> {"jsonrpc":"2.0","id":2,"method":"screenshot","params":{"deviceId":"your-device-id"}}
+> {"jsonrpc":"2.0","id":2,"method":"device.screenshot","params":{"deviceId":"your-device-id"}}
 < {"jsonrpc":"2.0","id":2,"result":{...}}
 ```
 
@@ -502,7 +517,7 @@ wscat -c ws://localhost:12000/ws
 
 ### 构建 🛠️
 
-关于在本地测试 *mobilecli* 的更多说明，请参阅 (docs/TESTING.md)。
+关于在本地测试 *mobilecli* 的更多说明，请参阅 [docs/TESTING.md](docs/TESTING.md)。
 
 ```bash
 make lint

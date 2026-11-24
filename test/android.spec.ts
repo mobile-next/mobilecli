@@ -43,6 +43,9 @@ const mobilecliBinary = path.join(__dirname, '..', 'mobilecli');
 // settings is present on every android image, unlike chrome or play store
 const SETTINGS_PACKAGE = 'com.android.settings';
 
+// no app registers this scheme, so the VIEW intent cannot resolve
+const UNHANDLED_URL = 'notascheme://foo';
+
 // the settings search ui is a separate package that joins the settings task via
 // taskAffinity=com.android.settings.root. force-stopping settings alone leaves its
 // activity on top of that task, so `am start` resumes a task settings no longer owns
@@ -81,6 +84,21 @@ type Device = {
 	state: string;
 };
 
+type DragTiming = {
+	holdMs: number;
+	durationMs: number;
+};
+
+type DragSeenByPage = {
+	touches: number;
+	moves: number;
+	ended: boolean;
+	startX: number;
+	startY: number;
+	endX: number;
+	endY: number;
+};
+
 type Dimensions = {
 	width: number;
 	height: number;
@@ -104,11 +122,16 @@ function getFirstAndroidDevice(deviceType: string): Device | null {
 test.describe('Android Tests', () => {
 	let device: Device | null;
 
-	test.beforeAll(({deviceType}) => {
+	test.beforeAll(async ({deviceType}) => {
 		device = getFirstAndroidDevice(deviceType);
 		if (!device) {
 			console.log(`No Android ${deviceType} device found. See test/README.md for setup instructions.`);
+			return;
 		}
+
+		const serial = adbSerialOf(device);
+		wakeDeviceAndDismissKeyguard(serial);
+		await eventually(() => isDeviceAwake(serial), 'the device never woke up').toBe(true);
 	});
 
 	test('should take screenshot', ({deviceType}) => {
@@ -152,6 +175,22 @@ test.describe('Android Tests', () => {
 		test.skip(!device, 'No Android device found');
 
 		mobilecli(['url', 'https://example.com', '--device', device!.id]);
+	});
+
+	test('should report that no app can open a URL with an unknown scheme', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = openUrlError(device!.id, UNHANDLED_URL);
+
+		expect(error).toContain('unable to resolve Intent');
+	});
+
+	test('should report that a URL without a scheme needs one', () => {
+		test.skip(!device, 'No Android device found');
+
+		const error = openUrlError(device!.id, 'example.com');
+
+		expect(error).toContain('needs a scheme');
 	});
 
 	test('should get device info', () => {
@@ -428,7 +467,6 @@ test.describe('Android Tests', () => {
 		// installs an app we own rather than anything already on the image, so the
 		// uninstall half is safe to run for real. also leaves playground installed
 		// for the app-container fs group below.
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
 
 		let apkPath: string;
 
@@ -468,7 +506,6 @@ test.describe('Android Tests', () => {
 	test.describe('url with more than one query parameter', () => {
 		// playground owns this deep link and prints its `name` parameter on screen, so
 		// what the device received is readable without a browser or the network
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
 
 		test('should deliver every query parameter, not only the first', async () => {
 			test.skip(!device, 'No Android device found');
@@ -484,8 +521,7 @@ test.describe('Android Tests', () => {
 
 	test.describe.serial('webview', () => {
 		// the playground webview screen is the one embedded webview we control on
-		// both platforms. a real handset would be left on an arbitrary screen.
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
+		// both platforms.
 
 		let webViewId: string;
 
@@ -499,8 +535,13 @@ test.describe('Android Tests', () => {
 
 			// the app restores whatever url the webview last showed, so start every
 			// run from the sample page instead of inheriting the previous run's state
+			// when the webview is already on the sample page, the page it is leaving
+			// still answers as loaded until the reload commits, and whatever a test
+			// set on it is lost; so mark that page and wait for one without the mark
+			markWebViewPageAsOld(deviceId, webViewId);
 			webViewGoto(deviceId, webViewId, WEBVIEW_SAMPLE_URL);
 			webViewWait(deviceId, webViewId, 'load');
+			await eventually(() => isWebViewPageOld(deviceId, webViewId), 'the webview never loaded a fresh page').toBe(false);
 
 			// the webview is listed as soon as it exists, before its page has a title,
 			// so settle it here rather than leaving every test to race the load
@@ -554,6 +595,39 @@ test.describe('Android Tests', () => {
 
 			webViewWait(device!.id, webViewId, 'domcontentloaded');
 			webViewWait(device!.id, webViewId, 'load');
+		});
+
+		test('should double tap as two separate one-finger taps', async () => {
+			test.skip(!device, 'No Android device found');
+
+			// a double tap is two fingers in the gesture contract; pressed together
+			// they would reach the page as one two-finger tap instead
+			recordTouchesInWebView(device!.id, webViewId);
+			const screen = screenSizeOf(device!.id);
+
+			doubleTap(device!.id, Math.floor(screen.width / 2), Math.floor(screen.height / 2));
+
+			await eventually(() => fingersPerTouchInWebView(device!.id, webViewId), 'the double tap never reached the page')
+				.toEqual([1, 1]);
+		});
+
+		test('should drag one finger across the webview', async () => {
+			test.skip(!device, 'No Android device found');
+
+			recordDragInWebView(device!.id, webViewId);
+			const screen = screenSizeOf(device!.id);
+			const y = Math.floor(screen.height / 2);
+			const fromX = Math.floor(screen.width / 4);
+			const toX = Math.floor(screen.width * 3 / 4);
+
+			drag(device!.id, `${fromX},${y},${toX},${y}`, {holdMs: 100, durationMs: 400});
+
+			await eventually(() => dragSeenByWebView(device!.id, webViewId).ended, 'the drag never reached the page').toBe(true);
+			const seen = dragSeenByWebView(device!.id, webViewId);
+			expect(seen.touches, 'a drag is one touch, not several').toBe(1);
+			expect(seen.moves, 'the finger travels through points on the way').toBeGreaterThan(2);
+			expect(seen.endX - seen.startX, 'the finger ends to the right of where it started').toBeGreaterThan(0);
+			expect(seen.endY, 'a horizontal drag stays on its row').toBeCloseTo(seen.startY, 0);
 		});
 
 		test('should navigate the webview to another url', async () => {
@@ -616,8 +690,6 @@ test.describe('Android Tests', () => {
 	// mode. out of it, android behaves as if a hardware keyboard is in use: the next
 	// screen gives focus to a view, and a scroll view jumps to that view.
 	test.describe.serial('touch mode while typing', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		let serial: string;
 
 		test.beforeAll(async () => {
@@ -677,8 +749,6 @@ test.describe('Android Tests', () => {
 	// its own describe: it puts another screen on top of the webview screen, which would
 	// break the shared state the playground tests above set up once in their beforeAll
 	test.describe('webview behind another screen of the app', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		test.beforeAll(async () => {
 			if (!device) return;
 			// a relaunch resumes whatever screen the app was left on, so start it afresh
@@ -709,8 +779,6 @@ test.describe('Android Tests', () => {
 	// reads the foreground app, so this launches a different app and would break the
 	// shared state the playground tests set up once in their beforeAll
 	test.describe('webview on an app that cannot be inspected', () => {
-		test.skip(({deviceType}) => deviceType === 'real', 'leaves a physical phone modified');
-
 		test.beforeAll(async () => {
 			if (!device) return;
 			launchApp(device.id, SETTINGS_PACKAGE);
@@ -732,9 +800,8 @@ test.describe('Android Tests', () => {
 	});
 
 	test.describe('fs operations on app container (com.mobilenext.playground)', () => {
-		// reading an app sandbox needs a debuggable build installed, which is
-		// guaranteed on an emulator image but not on someone's phone
-		test.skip(({deviceType}) => deviceType === 'real', 'requires a debuggable playground build');
+		// reading an app sandbox needs a debuggable build installed, which the
+		// install group above leaves behind
 
 		const packageName = PLAYGROUND_PACKAGE;
 		let containerPath: string;
@@ -801,20 +868,13 @@ test.describe('Android Tests', () => {
 // centrally means a change to the output format fails these tests instead of
 // silently passing because only the exit code was checked
 function mobilecli(args: string[]): any {
-	try {
-		const output = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		return expectOkEnvelope(JSON.parse(output));
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	return expectOkEnvelope(JSON.parse(output));
 }
 
 // for the few tests that need a daemon of their own, or a setting that only an
@@ -885,6 +945,17 @@ function adbShell(serial: string, command: string): {ok: boolean; output: string
 	}
 }
 
+// a sleeping device has no display to record and no app in the foreground, so
+// screenrecord and the foreground tests fail on it. waking an awake device is a no-op
+function wakeDeviceAndDismissKeyguard(serial: string): void {
+	adb(['-s', serial], ['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+	adb(['-s', serial], ['shell', 'wm', 'dismiss-keyguard']);
+}
+
+function isDeviceAwake(serial: string): boolean {
+	return adbShell(serial, 'dumpsys power').output.includes('mWakefulness=Awake');
+}
+
 // a daemon of its own, started with env, launches the server the test wants. the
 // shared daemon's server must be gone first, or the new daemon adopts it instead,
 // and that one was started with the default idle timeout
@@ -905,8 +976,14 @@ function deviceServerPid(serial: string): number | undefined {
 	return result.ok ? Number(result.output.trim()) : undefined;
 }
 
+// read from /proc rather than `pgrep -a`: the toybox on android 14 and older has
+// no -a and prints nothing for it
 function deviceServerCommandLine(serial: string): string {
-	return adbShell(serial, `pgrep -af '${pgrepPatternFor(DEVICE_SERVER_CLASS)}'`).output;
+	const pid = deviceServerPid(serial);
+	if (pid === undefined) {
+		return '';
+	}
+	return adbShell(serial, `tr '\\0' ' ' < /proc/${pid}/cmdline`).output;
 }
 
 // brackets around the first letter keep pgrep from matching its own command line
@@ -926,22 +1003,15 @@ function removeUiautomatorDumpFile(serial: string): void {
 }
 
 function mobilecliJson(args: string[]): any {
-	try {
-		const result = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 60000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		const parsed = JSON.parse(result);
-		expectOkEnvelope(parsed);
-		return parsed;
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const result = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 60000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	const parsed = JSON.parse(result);
+	expectOkEnvelope(parsed);
+	return parsed;
 }
 
 // screenrecord streams progress to stderr and prints no json envelope, so it
@@ -1009,10 +1079,10 @@ function terminateApp(deviceId: string, packageName: string): void {
 	mobilecli(['apps', 'terminate', packageName, '--device', deviceId]);
 }
 
-// runs an `apps` subcommand that is expected to fail and returns its error message
-function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+// runs a command that is expected to fail and returns its error message
+function failingCommandError(args: string[]): string {
 	try {
-		mobilecliJson(['apps', subcommand, packageName, '--device', deviceId]);
+		mobilecliJson(args);
 	} catch (error: unknown) {
 		// a timeout or a missing binary fails without printing an envelope, and
 		// parsing that as json would bury the real cause
@@ -1023,7 +1093,15 @@ function appsCommandError(deviceId: string, subcommand: string, packageName: str
 		return expectErrorEnvelope(JSON.parse(stdout));
 	}
 
-	throw new Error(`apps ${subcommand} ${packageName} unexpectedly succeeded`);
+	throw new Error(`${args.join(' ')} unexpectedly succeeded`);
+}
+
+function appsCommandError(deviceId: string, subcommand: string, packageName: string): string {
+	return failingCommandError(['apps', subcommand, packageName, '--device', deviceId]);
+}
+
+function openUrlError(deviceId: string, url: string): string {
+	return failingCommandError(['url', url, '--device', deviceId]);
 }
 
 // force-stops every package that can hold an activity in the settings task, so the
@@ -1032,20 +1110,13 @@ function appsCommandError(deviceId: string, subcommand: string, packageName: str
 // they cannot go through mobilecli(), which asserts an ok envelope
 function runAgentCommand(deviceId: string, subcommand: string): any {
 	const args = ['agent', subcommand, '--device', deviceId];
-	try {
-		const output = execFileSync(mobilecliBinary, args, {
-			encoding: 'utf8',
-			timeout: 180000,
-			stdio: ['pipe', 'pipe', 'pipe'],
-			env: coverageEnv(),
-		});
-		return JSON.parse(output);
-	} catch (error: any) {
-		console.log(`Command failed: ${mobilecliBinary} ${args.join(' ')}`);
-		if (error.stderr) console.log(`stderr: ${error.stderr}`);
-		if (error.stdout) console.log(`stdout: ${error.stdout}`);
-		throw error;
-	}
+	const output = execFileSync(mobilecliBinary, args, {
+		encoding: 'utf8',
+		timeout: 180000,
+		stdio: ['pipe', 'pipe', 'pipe'],
+		env: coverageEnv(),
+	});
+	return JSON.parse(output);
 }
 
 function clearSettingsTask(deviceId: string): void {
@@ -1067,6 +1138,14 @@ function dumpUI(deviceId: string): UIDumpResponse {
 
 function tap(deviceId: string, x: number, y: number): void {
 	mobilecli(['io', 'tap', `${x},${y}`, '--device', deviceId]);
+}
+
+function doubleTap(deviceId: string, x: number, y: number): void {
+	mobilecli(['io', 'doubletap', `${x},${y}`, '--device', deviceId]);
+}
+
+function drag(deviceId: string, fromTo: string, timing: DragTiming): void {
+	mobilecli(['io', 'drag', fromTo, '--hold', String(timing.holdMs), '--duration', String(timing.durationMs), '--device', deviceId]);
 }
 
 function pressButton(deviceId: string, button: string): void {
@@ -1165,21 +1244,8 @@ async function expectWebViewToAppear(deviceId: string): Promise<void> {
 		.toBeGreaterThan(0);
 }
 
-// runs a webview command that is expected to fail and returns the error message
 function webViewCommandError(deviceId: string, args: string[]): string {
-	try {
-		mobilecliJson(['webview', ...args, '--device', deviceId]);
-	} catch (error: unknown) {
-		// a timeout or a missing binary fails without printing an envelope, and
-		// parsing that as json would bury the real cause
-		const stdout = (error as {stdout?: string}).stdout ?? '';
-		if (stdout.trim() === '') {
-			throw error;
-		}
-		return expectErrorEnvelope(JSON.parse(stdout));
-	}
-
-	throw new Error(`webview ${args.join(' ')} unexpectedly succeeded`);
+	return failingCommandError(['webview', ...args, '--device', deviceId]);
 }
 
 // the deep link opens its screen on top of whatever the app is showing, and the
@@ -1218,6 +1284,41 @@ function webViewContent(deviceId: string, webViewId: string): string {
 
 function webViewEval(deviceId: string, webViewId: string, expression: string): unknown {
 	return mobilecliJson(['webview', 'eval', webViewId, expression, '--device', deviceId]).data;
+}
+
+// keeps, for every touch that starts on the page, how many fingers were down
+function recordTouchesInWebView(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId,
+		'(() => { window.__fingersPerTouch = []; document.addEventListener("touchstart", e => window.__fingersPerTouch.push(e.touches.length)); return true; })()');
+}
+
+function fingersPerTouchInWebView(deviceId: string, webViewId: string): number[] {
+	return JSON.parse(webViewEval(deviceId, webViewId, 'JSON.stringify(window.__fingersPerTouch)') as string);
+}
+
+function markWebViewPageAsOld(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId, '(() => { window.__oldPage = true; return true; })()');
+}
+
+function isWebViewPageOld(deviceId: string, webViewId: string): boolean {
+	return webViewEval(deviceId, webViewId, 'String(window.__oldPage)') === 'true';
+}
+
+// follows one drag through the page: where it starts, how often it moves and
+// where it lifts. touchmove is cancelled so the page does not scroll instead,
+// which would end the touch early.
+function recordDragInWebView(deviceId: string, webViewId: string): void {
+	webViewEval(deviceId, webViewId, `(() => {
+		const seen = window.__drag = {touches: 0, moves: 0, ended: false, startX: 0, startY: 0, endX: 0, endY: 0};
+		document.addEventListener('touchstart', e => { seen.touches++; seen.startX = e.touches[0].clientX; seen.startY = e.touches[0].clientY; });
+		document.addEventListener('touchmove', e => { seen.moves++; e.preventDefault(); }, {passive: false});
+		document.addEventListener('touchend', e => { seen.ended = true; seen.endX = e.changedTouches[0].clientX; seen.endY = e.changedTouches[0].clientY; });
+		return true;
+	})()`);
+}
+
+function dragSeenByWebView(deviceId: string, webViewId: string): DragSeenByPage {
+	return JSON.parse(webViewEval(deviceId, webViewId, 'JSON.stringify(window.__drag)') as string);
 }
 
 function webViewQuery(deviceId: string, webViewId: string, selector: string): WebViewQueryResult[] {

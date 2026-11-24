@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mobile-next/mobilecli/cli"
+	"github.com/mobile-next/mobilecli/internal/cli"
 )
 
 func main() {

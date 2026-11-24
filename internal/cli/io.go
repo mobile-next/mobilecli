@@ -1,0 +1,409 @@
+package cli
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/mobile-next/mobilecli/internal/commands"
+	"github.com/mobile-next/mobilecli/internal/devices"
+	"github.com/mobile-next/mobilecli/internal/devices/devicekit"
+	"github.com/spf13/cobra"
+)
+
+var ioCmd = &cobra.Command{
+	Use:   "io",
+	Short: "Input/output operations with devices",
+	Long:  `Perform input/output operations like tapping, pressing buttons, sending text, and reading or writing the device clipboard.`,
+}
+
+// screenPoint is where a touch command should land: either explicit
+// coordinates or an element ref ("@e5") to resolve against the current screen.
+type screenPoint struct {
+	X   int
+	Y   int
+	Ref string
+}
+
+// parseScreenPoint reads the single argument tap, doubletap and longpress take: "x,y" or
+// an element ref from the latest "dump ui".
+func parseScreenPoint(arg string) (screenPoint, error) {
+	if strings.HasPrefix(arg, "@") {
+		return screenPoint{Ref: arg}, nil
+	}
+
+	parts := strings.Split(arg, ",")
+	if len(parts) != 2 {
+		return screenPoint{}, fmt.Errorf("invalid target format. Expected 'x,y' coordinates or an element ref like '@e15', got '%s'", arg)
+	}
+
+	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errX != nil || errY != nil {
+		return screenPoint{}, fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1])
+	}
+
+	return screenPoint{X: x, Y: y}, nil
+}
+
+// screenPointArg parses a touch command's target and, like every other
+// command failure, prints the error as a json response before returning it.
+func screenPointArg(arg string) (screenPoint, error) {
+	target, err := parseScreenPoint(arg)
+	if err != nil {
+		response := commands.NewErrorResponse(err)
+		printJson(response)
+		return screenPoint{}, fmt.Errorf("%s", response.Error)
+	}
+
+	return target, nil
+}
+
+// parseDragPoints reads the single argument drag takes: where the drag starts
+// and where it ends, each either "x,y" or an element ref, joined by a comma
+// ("10,10,50,50", "@e1,@e2", "@e1,300,400").
+func parseDragPoints(arg string) (from screenPoint, to screenPoint, err error) {
+	invalid := fmt.Errorf("invalid drag format. Expected a start and an end, each 'x,y' or an element ref, like 'x1,y1,x2,y2', '@e1,@e2' or '@e1,300,400', got '%s'", arg)
+
+	var points []screenPoint
+	parts := strings.Split(arg, ",")
+	for i := 0; i < len(parts); i++ {
+		part := strings.TrimSpace(parts[i])
+		if strings.HasPrefix(part, "@") {
+			points = append(points, screenPoint{Ref: part})
+			continue
+		}
+
+		// coordinates take two parts: this one and the next
+		if i+1 >= len(parts) {
+			return screenPoint{}, screenPoint{}, invalid
+		}
+		x, errX := strconv.Atoi(part)
+		y, errY := strconv.Atoi(strings.TrimSpace(parts[i+1]))
+		if errX != nil || errY != nil {
+			return screenPoint{}, screenPoint{}, invalid
+		}
+		points = append(points, screenPoint{X: x, Y: y})
+		i++
+	}
+
+	if len(points) != 2 {
+		return screenPoint{}, screenPoint{}, invalid
+	}
+	return points[0], points[1], nil
+}
+
+var ioTapCmd = &cobra.Command{
+	Use:   "tap [x,y | @ref]",
+	Short: "Tap on a device screen at the given coordinates or element ref",
+	Long:  `Sends a tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		target, err := screenPointArg(args[0])
+		if err != nil {
+			return err
+		}
+
+		req := commands.TapRequest{
+			DeviceID: deviceId,
+			X:        target.X,
+			Y:        target.Y,
+			Ref:      target.Ref,
+		}
+
+		return runViaDaemon("cli.io.tap", req)
+	},
+}
+
+var ioDoubleTapCmd = &cobra.Command{
+	Use:   "doubletap [x,y | @ref]",
+	Short: "Double tap on a device screen at the given coordinates or element ref",
+	Long:  `Sends a double tap event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		target, err := screenPointArg(args[0])
+		if err != nil {
+			return err
+		}
+
+		req := commands.DoubleTapRequest{
+			DeviceID: deviceId,
+			X:        target.X,
+			Y:        target.Y,
+			Ref:      target.Ref,
+		}
+
+		return runViaDaemon("cli.io.doubletap", req)
+	},
+}
+
+var longPressDuration int
+var swipeDuration int
+var dragDuration int
+var dragHold int
+var pinchDirection string
+var pinchDistance int
+var pinchDuration int
+
+var ioLongPressCmd = &cobra.Command{
+	Use:   "longpress [x,y | @ref]",
+	Short: "Long press on a device screen at the given coordinates or element ref",
+	Long:  `Sends a long press event to the specified device at the given x,y coordinates ("x,y"), or at the center of an element ref from the latest "dump ui" (e.g. "@e5").`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		target, err := screenPointArg(args[0])
+		if err != nil {
+			return err
+		}
+
+		req := commands.LongPressRequest{
+			DeviceID: deviceId,
+			X:        target.X,
+			Y:        target.Y,
+			Duration: longPressDuration,
+			Ref:      target.Ref,
+		}
+
+		return runViaDaemon("cli.io.longpress", req)
+	},
+}
+
+var ioButtonCmd = &cobra.Command{
+	Use:   "button [button_name]",
+	Short: "Press a hardware button on a device",
+	Long: fmt.Sprintf(`Sends a hardware button press event to the specified device. Button names are case-insensitive.
+
+Android: %s
+iOS:     %s
+
+POWER and LOCK are the same button.`,
+		strings.Join(devices.AndroidButtonNames(), ", "),
+		strings.Join(devicekit.ButtonNames(), ", ")),
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.ButtonRequest{
+			DeviceID: deviceId,
+			Button:   args[0],
+		}
+
+		return runViaDaemon("cli.io.button", req)
+	},
+}
+
+var ioTextCmd = &cobra.Command{
+	Use:   "text [text]",
+	Short: "Send text input to a device",
+	Long:  `Sends text input to the currently focused element on the specified device.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.TextRequest{
+			DeviceID: deviceId,
+			Text:     args[0],
+		}
+
+		return runViaDaemon("cli.io.text", req)
+	},
+}
+
+var ioKeysCmd = &cobra.Command{
+	Use:   "keys [key-combo...]",
+	Short: "Press keyboard keys with optional modifiers on a device",
+	Long: `Presses one or more key combinations on the specified device, in order. A combo is a key with optional modifiers, e.g. "cmd+a", "ctrl+shift+z", "backspace".
+
+Keys name physical keys and are case-insensitive: "cmd+A" is the same as "cmd+a" (the A key, i.e. select-all), not Shift+A. Use "shift+a" to hold shift.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.KeysRequest{
+			DeviceID: deviceId,
+			Keys:     args,
+		}
+
+		return runViaDaemon("cli.io.keys", req)
+	},
+}
+
+var ioFillCmd = &cobra.Command{
+	Use:   "fill [text]",
+	Short: "Replace the text of the focused text field on a device",
+	Long:  `Replaces the text of the field that has focus on the specified device; "" clears it. Tap the field first to focus it. Unlike "io text", which types key by key, this sets the text in one step.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.FillRequest{
+			DeviceID: deviceId,
+			Text:     args[0],
+		}
+
+		return runViaDaemon("cli.io.fill", req)
+	},
+}
+
+var ioSwipeCmd = &cobra.Command{
+	Use:   "swipe [x1,y1,x2,y2]",
+	Short: "Swipe on a device screen from one point to another",
+	Long:  `Sends a swipe gesture to the specified device from coordinates x1,y1 to x2,y2. Coordinates should be provided as a single string "x1,y1,x2,y2".`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		coordsStr := args[0]
+		parts := strings.Split(coordsStr, ",")
+		if len(parts) != 4 {
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x1,y1,x2,y2', got '%s'", coordsStr))
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		x1, errX1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		y1, errY1 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		x2, errX2 := strconv.Atoi(strings.TrimSpace(parts[2]))
+		y2, errY2 := strconv.Atoi(strings.TrimSpace(parts[3]))
+
+		if errX1 != nil || errY1 != nil || errX2 != nil || errY2 != nil {
+			response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x1, y1, x2, y2 must be integers. Got x1='%s', y1='%s', x2='%s', y2='%s'", parts[0], parts[1], parts[2], parts[3]))
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		req := commands.SwipeRequest{
+			DeviceID: deviceId,
+			X1:       x1,
+			Y1:       y1,
+			X2:       x2,
+			Y2:       y2,
+			Duration: swipeDuration,
+		}
+
+		return runViaDaemon("cli.io.swipe", req)
+	},
+}
+
+var ioDragCmd = &cobra.Command{
+	Use:   "drag [from,to]",
+	Short: "Drag on a device screen from one point or element ref to another",
+	Long: `Presses one finger where the drag starts, moves it to where the drag ends and lifts it there. The start and the end are each x,y coordinates or an element ref from the latest "dump ui", given as a single string: "x1,y1,x2,y2", "@e1,@e2", or a mix like "@e1,300,400".
+
+"--hold" keeps the finger still before it starts moving, which is how apps tell a drag from a scroll (e.g. to pick up a list item). "--duration" is how long the finger travels.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		from, to, err := parseDragPoints(args[0])
+		if err != nil {
+			response := commands.NewErrorResponse(err)
+			printJson(response)
+			return fmt.Errorf("%s", response.Error)
+		}
+
+		req := commands.DragRequest{
+			DeviceID: deviceId,
+			From:     commands.DragPoint{X: from.X, Y: from.Y, Ref: from.Ref},
+			To:       commands.DragPoint{X: to.X, Y: to.Y, Ref: to.Ref},
+			Hold:     dragHold,
+			Duration: dragDuration,
+		}
+
+		return runViaDaemon("cli.io.drag", req)
+	},
+}
+
+var ioPinchCmd = &cobra.Command{
+	Use:   "pinch [x,y]",
+	Short: "Pinch on a device screen with two fingers to zoom in or out",
+	Long:  `Sends a two-finger pinch to the specified device, centered at the given x,y coordinates or at the center of the screen when omitted. "--direction out" spreads the fingers apart (zoom in); "--direction in" brings them together (zoom out). Coordinates should be provided as a single string "x,y".`,
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := commands.PinchRequest{
+			DeviceID:  deviceId,
+			Direction: pinchDirection,
+			Distance:  pinchDistance,
+			Duration:  pinchDuration,
+		}
+
+		if len(args) == 1 {
+			coordsStr := args[0]
+			parts := strings.Split(coordsStr, ",")
+			if len(parts) != 2 {
+				response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate format. Expected 'x,y', got '%s'", coordsStr))
+				printJson(response)
+				return fmt.Errorf("%s", response.Error)
+			}
+
+			x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+			y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+
+			if errX != nil || errY != nil {
+				response := commands.NewErrorResponse(fmt.Errorf("invalid coordinate values. x and y must be integers. Got x='%s', y='%s'", parts[0], parts[1]))
+				printJson(response)
+				return fmt.Errorf("%s", response.Error)
+			}
+
+			req.X = x
+			req.Y = y
+		}
+
+		return runViaDaemon("cli.io.pinch", req)
+	},
+}
+
+var ioKeyboardCmd = &cobra.Command{
+	Use:   "keyboard",
+	Short: "On-screen keyboard operations",
+	Long:  `Query or dismiss the on-screen keyboard on a device.`,
+}
+
+var ioKeyboardStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check whether the on-screen keyboard is visible",
+	Long:  `Reports whether the on-screen keyboard is currently visible on the specified device.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.io.keyboard.status", commands.KeyboardRequest{DeviceID: deviceId})
+	},
+}
+
+var ioKeyboardHideCmd = &cobra.Command{
+	Use:   "hide",
+	Short: "Hide the on-screen keyboard",
+	Long:  `Dismisses the on-screen keyboard on the specified device. On real iOS devices it only works in debuggable apps. On iOS simulators it only works in apps you installed.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runViaDaemon("cli.io.keyboard.hide", commands.KeyboardRequest{DeviceID: deviceId})
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(ioCmd)
+
+	// add io subcommands
+	ioCmd.AddCommand(ioTapCmd)
+	ioCmd.AddCommand(ioDoubleTapCmd)
+	ioCmd.AddCommand(ioLongPressCmd)
+	ioCmd.AddCommand(ioButtonCmd)
+	ioCmd.AddCommand(ioTextCmd)
+	ioCmd.AddCommand(ioKeysCmd)
+	ioCmd.AddCommand(ioFillCmd)
+	ioCmd.AddCommand(ioSwipeCmd)
+	ioCmd.AddCommand(ioDragCmd)
+	ioCmd.AddCommand(ioPinchCmd)
+	ioCmd.AddCommand(ioKeyboardCmd)
+
+	// io keyboard subcommands
+	ioKeyboardCmd.AddCommand(ioKeyboardStatusCmd)
+	ioKeyboardCmd.AddCommand(ioKeyboardHideCmd)
+
+	// io command flags
+	ioTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to tap on")
+	ioDoubleTapCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to double tap on")
+	ioLongPressCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to long press on")
+	ioLongPressCmd.Flags().IntVar(&longPressDuration, "duration", 500, "duration of the long press in milliseconds")
+	ioSwipeCmd.Flags().IntVar(&swipeDuration, "duration", 0, "duration of the swipe in milliseconds (0 uses the platform default)")
+	ioButtonCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press button on")
+	ioTextCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to send keys to")
+	ioKeysCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to press keys on")
+	ioFillCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to fill the focused text field on")
+	ioSwipeCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to swipe on")
+	ioKeyboardStatusCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to check keyboard status on")
+	ioKeyboardHideCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to hide keyboard on")
+	ioDragCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to drag on")
+	ioDragCmd.Flags().IntVar(&dragDuration, "duration", commands.DefaultDragDurationMs, "how long the finger travels, in milliseconds")
+	ioDragCmd.Flags().IntVar(&dragHold, "hold", 0, "how long the finger stays down before it moves, in milliseconds")
+	ioPinchCmd.Flags().StringVar(&deviceId, "device", "", "ID of the device to pinch on")
+	ioPinchCmd.Flags().StringVar(&pinchDirection, "direction", "", "\"in\" to zoom out or \"out\" to zoom in (required)")
+	ioPinchCmd.Flags().IntVar(&pinchDistance, "distance", 0, "pixels each finger travels (0 = auto, scaled to the screen)")
+	ioPinchCmd.Flags().IntVar(&pinchDuration, "duration", 300, "duration of the finger movement in milliseconds")
+	cobra.CheckErr(ioPinchCmd.MarkFlagRequired("direction"))
+}

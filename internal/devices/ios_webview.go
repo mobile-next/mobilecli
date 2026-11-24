@@ -1,0 +1,412 @@
+package devices
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/mobile-next/mobilecli/internal/agentassets"
+	"github.com/mobile-next/mobilecli/internal/utils"
+)
+
+// agentPortCache maps device UDID → (port, bundleID) of its injected agent.
+type agentCacheEntry struct {
+	port     int
+	bundleID string
+}
+
+var (
+	agentPortCache   = map[string]agentCacheEntry{}
+	agentPortCacheMu sync.Mutex
+)
+
+func cachedAgentPort(udid, bundleID string) (int, bool) {
+	agentPortCacheMu.Lock()
+	defer agentPortCacheMu.Unlock()
+	entry, ok := agentPortCache[udid]
+	if !ok || entry.bundleID != bundleID {
+		return 0, false
+	}
+	return entry.port, true
+}
+
+func setCachedAgentPort(udid, bundleID string, port int) {
+	agentPortCacheMu.Lock()
+	defer agentPortCacheMu.Unlock()
+	agentPortCache[udid] = agentCacheEntry{port: port, bundleID: bundleID}
+}
+
+// findSimulatorPIDForBundle searches the Mac process list for the running
+// process of a specific bundle ID inside the given simulator.
+// Returns the PID and the .app bundle path.
+func findSimulatorPIDForBundle(udid, bundleID string) (pid int, appBundlePath string, err error) {
+	out, err := exec.CommandContext(context.Background(), "ps", "aux").Output()
+	if err != nil {
+		return 0, "", fmt.Errorf("ps aux: %w", err)
+	}
+
+	pattern := fmt.Sprintf(`CoreSimulator/Devices/%s/data/Containers/Bundle`, udid)
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, pattern) {
+			continue
+		}
+		if strings.Contains(line, "UITests-Runner") || strings.Contains(line, ".xctrunner") {
+			continue
+		}
+		m := psLineRegex.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		p, parseErr := strconv.Atoi(m[1])
+		if parseErr != nil {
+			continue
+		}
+		bundle := appBundleFromExecPath(m[2])
+		if bundle == "" {
+			continue
+		}
+		bid, plistErr := bundleIDFromInfoPlist(filepath.Join(bundle, "Info.plist"))
+		if plistErr != nil || bid != bundleID {
+			continue
+		}
+		return p, bundle, nil
+	}
+
+	return 0, "", fmt.Errorf("no running process found for %s in simulator %s", bundleID, udid)
+}
+
+// appBundleFromExecPath returns the .app directory containing the executable.
+// e.g. ".../playground.app/playground" → ".../playground.app"
+func appBundleFromExecPath(execPath string) string {
+	re := regexp.MustCompile(`(.*\.app)/`)
+	m := re.FindStringSubmatch(execPath)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// bundleIDFromInfoPlist reads CFBundleIdentifier from an Info.plist using
+// the macOS `defaults read` command, which handles both XML and binary plists.
+func bundleIDFromInfoPlist(plistPath string) (string, error) {
+	out, err := exec.CommandContext(context.Background(), "defaults", "read", plistPath, "CFBundleIdentifier").Output()
+	if err != nil {
+		return "", fmt.Errorf("defaults read %s: %w", plistPath, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// writeIOSAgentDylib writes the embedded simulator dylib to a temp file and
+// returns the path. The caller is responsible for removing the file.
+func writeIOSAgentDylib() (string, error) {
+	f, err := os.CreateTemp("", "mobilecli-agent-*.dylib")
+	if err != nil {
+		return "", fmt.Errorf("create temp dylib: %w", err)
+	}
+	if _, err := f.Write(agentassets.IOSAgentSimDylib); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write dylib: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write dylib: %w", err)
+	}
+	return f.Name(), nil
+}
+
+var simulatorListeningPort = regexp.MustCompile(`TCP 127\.0\.0\.1:(\d+) \(LISTEN\)`)
+
+// portFromLLDB matches the result of mobilecli_get_port(), as in: (int) $2 = 27042
+var portFromLLDB = regexp.MustCompile(`\(int\) \$\d+ = (\d+)`)
+
+// dlerrorFromLLDB matches the string lldb prints for a non-NULL dlerror(), as in:
+// (char *) $1 = 0x0000600000c04000 "dlopen(...): mach-o file, but is an incompatible architecture"
+var dlerrorFromLLDB = regexp.MustCompile(`\(char \*\) \$\d+ = 0x[0-9a-fA-F]+ "(.*)"`)
+
+// psLineRegex matches a ps aux line and captures PID (group 1) and the full
+// command string including spaces (group 2).
+// Columns: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND...
+var psLineRegex = regexp.MustCompile(`^\S+\s+(\d+)(?:\s+\S+){8}\s+(.+)$`)
+
+const lldbTimeout = 30 * time.Second
+
+// findRunningSimulatorAgent finds the agent socket owned by this app process.
+// The daemon's in-memory port cache is lost when it restarts, while the dylib
+// stays loaded until the app exits. Loading another copy into that process
+// would run its constructor and URLSession swizzles a second time.
+func findRunningSimulatorAgent(pid int) (int, bool) {
+	out, err := exec.Command("lsof", "-nP", "-a", "-p", strconv.Itoa(pid), "-iTCP").Output()
+	if err != nil {
+		return 0, false
+	}
+	for _, port := range parseSimulatorListeningPorts(string(out)) {
+		if _, err := agentRequestWithTimeout(port, "device.webview.list", nil, time.Second); err == nil {
+			return port, true
+		}
+	}
+	return 0, false
+}
+
+func parseSimulatorListeningPorts(output string) []int {
+	var ports []int
+	for _, line := range strings.Split(output, "\n") {
+		match := simulatorListeningPort.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		if port, err := strconv.Atoi(match[1]); err == nil {
+			ports = append(ports, port)
+		}
+	}
+	return ports
+}
+
+// injectIOSAgent attaches lldb to the given PID, loads the dylib, reads the
+// bound port via mobilecli_get_port(), then detaches. Returns the port.
+func injectIOSAgent(pid int, dylibPath string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), lldbTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "lldb",
+		"-p", strconv.Itoa(pid),
+		"-o", fmt.Sprintf("expr (void*)dlopen(%q, 2)", dylibPath),
+		"-o", "expr (char*)dlerror()",
+		"-o", "expr (int)mobilecli_get_port()",
+		"-o", "detach",
+		"-o", "quit",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return 0, fmt.Errorf("lldb timed out after %s", lldbTimeout)
+		}
+		return 0, fmt.Errorf("lldb: %w\noutput:\n%s", err, out)
+	}
+
+	return portFromInjectOutput(string(out))
+}
+
+// portFromInjectOutput reads the agent port out of the lldb session that loaded
+// the agent. When dlopen failed, the error is what dlerror() reported, such as
+// an app that runs as an architecture the agent was not built for.
+func portFromInjectOutput(out string) (int, error) {
+	if m := portFromLLDB.FindStringSubmatch(out); m != nil {
+		if port, err := strconv.Atoi(m[1]); err == nil && port != 0 {
+			return port, nil
+		}
+	}
+	if m := dlerrorFromLLDB.FindStringSubmatch(out); m != nil {
+		return 0, fmt.Errorf("could not load the agent into the app: %s", m[1])
+	}
+	return 0, fmt.Errorf("could not parse port from lldb output:\n%s", out)
+}
+
+// safariInForeground returns what drives the tabs of Safari, when Safari is the
+// app in front. Safari cannot take the agent, so its tabs are driven through the
+// web inspector of the simulator instead (see ios_webinspector.go). Not knowing
+// the foreground app leaves it to the injected agent, which reports why.
+func (s *SimulatorDevice) safariInForeground() (safariWebViews, bool) {
+	if s.deviceKitClient == nil {
+		if err := s.StartAgent(StartAgentConfig{}); err != nil {
+			utils.Verbose("could not start DeviceKit to look up the foreground app: %v", err)
+			return safariWebViews{}, false
+		}
+	}
+	activeApp, err := s.deviceKitClient.GetActiveAppInfo()
+	if err != nil {
+		utils.Verbose("could not look up the foreground app: %v", err)
+		return safariWebViews{}, false
+	}
+	if activeApp.BundleID != safariBundleID {
+		return safariWebViews{}, false
+	}
+	inspector := webInspectorOf(s.UDID, func() (io.ReadWriteCloser, error) { return dialSimulatorWebInspector(s.UDID) })
+	return safariWebViews{inspector: inspector}, true
+}
+
+// ensureIOSAgentReady ensures the iOS agent is running inside the simulator
+// and returns the local TCP port to connect to.
+func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
+	if s.deviceKitClient == nil {
+		if err := s.StartAgent(StartAgentConfig{}); err != nil {
+			return 0, fmt.Errorf("webview commands require DeviceKit to be running — %w", err)
+		}
+	}
+	foreground, err := s.GetForegroundApp()
+	if err != nil {
+		return 0, fmt.Errorf("could not determine foreground app: %w", err)
+	}
+
+	// fast path: reuse the port if the same app is still in the foreground
+	if port, ok := cachedAgentPort(s.UDID, foreground.PackageName); ok && isAgentReady(port) {
+		return port, nil
+	}
+
+	pid, appBundlePath, err := findSimulatorPIDForBundle(s.UDID, foreground.PackageName)
+	if err != nil {
+		return 0, fmt.Errorf("cannot attach to %s: app does not have get-task-allow entitlement — use a debug build", foreground.PackageName)
+	}
+	if port, ok := findRunningSimulatorAgent(pid); ok {
+		setCachedAgentPort(s.UDID, foreground.PackageName, port)
+		return port, nil
+	}
+
+	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, foreground.PackageName)
+
+	dylibPath, err := writeIOSAgentDylib()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = os.Remove(dylibPath) }()
+
+	port, err := injectIOSAgent(pid, dylibPath)
+	if err != nil {
+		return 0, fmt.Errorf("inject agent: %w", err)
+	}
+
+	// agent binds synchronously before dlopen returns, but give it a moment
+	deadline := time.Now().Add(3 * time.Second)
+	for !isAgentReady(port) {
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("iOS agent did not respond on port %d within 3s", port)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	setCachedAgentPort(s.UDID, foreground.PackageName, port)
+	return port, nil
+}
+
+func (s *SimulatorDevice) webViewAction(wvID, method string) error {
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, method, map[string]any{"id": wvID})
+	return err
+}
+
+// WebViewReload reloads the page in the given webview.
+func (s *SimulatorDevice) WebViewReload(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewReload(wvID)
+	}
+	return s.webViewAction(wvID, "device.webview.reload")
+}
+
+// WebViewGoBack navigates the given webview back in history.
+func (s *SimulatorDevice) WebViewGoBack(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoBack(wvID)
+	}
+	return s.webViewAction(wvID, "device.webview.goBack")
+}
+
+// WebViewGoForward navigates the given webview forward in history.
+func (s *SimulatorDevice) WebViewGoForward(wvID string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoForward(wvID)
+	}
+	return s.webViewAction(wvID, "device.webview.goForward")
+}
+
+// WebViewContent returns the full outer HTML of the page in the given webview.
+func (s *SimulatorDevice) WebViewContent(wvID string) (string, error) {
+	result, err := s.WebViewEvaluate(wvID, "return document.documentElement.outerHTML", nil)
+	if err != nil {
+		return "", err
+	}
+	content, ok := result.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected content type %T", result)
+	}
+	return content, nil
+}
+
+// WebViewWaitForLoadState blocks until the webview reaches the given load state.
+// timeoutMs of 0 uses the agent's default.
+func (s *SimulatorDevice) WebViewWaitForLoadState(wvID, state string, timeoutMs int) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewWaitForLoadState(wvID, state, timeoutMs)
+	}
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return err
+	}
+	return webViewWaitForLoadState(port, wvID, state, timeoutMs)
+}
+
+// WebViewGoto navigates the webview identified by wvID to url.
+func (s *SimulatorDevice) WebViewGoto(wvID, url string) error {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewGoto(wvID, url)
+	}
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return err
+	}
+	_, err = agentRequest(port, "device.webview.goto", map[string]any{"id": wvID, "url": url})
+	return err
+}
+
+// WebViewEvaluate runs expression in the webview and returns the JS result value.
+func (s *SimulatorDevice) WebViewEvaluate(wvID, expression string, args []any) (any, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.WebViewEvaluate(wvID, expression, args)
+	}
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return nil, err
+	}
+	return webViewEvaluate(port, wvID, expression, args)
+}
+
+// ListWebViews returns all embedded WKWebViews found in the foreground simulator app.
+func (s *SimulatorDevice) ListWebViews() ([]WebViewInfo, error) {
+	if safari, ok := s.safariInForeground(); ok {
+		return safari.ListWebViews()
+	}
+	port, err := s.ensureIOSAgentReady()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := agentRequest(port, "device.webview.list", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []struct {
+		ID      string         `json:"id"`
+		URL     string         `json:"url"`
+		Title   string         `json:"title"`
+		Bounds  map[string]any `json:"bounds"`
+		Visible bool           `json:"visible"`
+	}
+	if err := json.Unmarshal(result, &raw); err != nil {
+		return nil, fmt.Errorf("parse webview list: %w", err)
+	}
+
+	webviews := make([]WebViewInfo, len(raw))
+	for i, wv := range raw {
+		webviews[i] = WebViewInfo{
+			ID:        wv.ID,
+			URL:       wv.URL,
+			Title:     wv.Title,
+			Bounds:    wv.Bounds,
+			IsVisible: wv.Visible,
+		}
+	}
+	return webviews, nil
+}

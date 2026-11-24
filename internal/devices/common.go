@@ -1,0 +1,545 @@
+package devices
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/mobile-next/mobilecli/internal/daemon"
+	"github.com/mobile-next/mobilecli/internal/devices/devicekit"
+	"github.com/mobile-next/mobilecli/internal/types"
+	"github.com/mobile-next/mobilecli/internal/utils"
+)
+
+// recordingStopTimeout bounds how long a stopped native recorder (adb
+// screenrecord, simctl recordVideo) gets to finalize its video and exit.
+// Past it the recorder is killed, so a missed or ignored stop never leaves
+// the device's recorder claimed. It is derived from the daemon's shutdown
+// grace, leaving room after it to clean up before the daemon exits.
+const recordingStopTimeout = daemon.ShutdownGrace - 2*time.Second
+
+// LogEntry represents a single parsed log entry from a device
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem,omitempty"`
+	Category  string `json:"category,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+}
+
+// processNameFromPath extracts the binary name from a full image path
+func processNameFromPath(path string) string {
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		return path[idx+1:]
+	}
+	return path
+}
+
+type CrashReport struct {
+	ProcessName string `json:"processName"`
+	Timestamp   string `json:"timestamp"`
+	ID          string `json:"id"`
+}
+
+func ParseCrashReports(filenames []string) []CrashReport {
+	var crashes []CrashReport
+	for _, f := range filenames {
+		if f == "." || f == ".." {
+			continue
+		}
+		report := ParseCrashFilename(f)
+		if report != nil {
+			crashes = append(crashes, *report)
+		}
+	}
+	if crashes == nil {
+		crashes = []CrashReport{}
+	}
+	return crashes
+}
+
+var crashFilenameRegex = regexp.MustCompile(`^(.+)-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})\.ips$`)
+
+func ParseCrashFilename(filename string) *CrashReport {
+	m := crashFilenameRegex.FindStringSubmatch(filename)
+	if m == nil {
+		return nil
+	}
+	timestamp := fmt.Sprintf("%s %s:%s:%s", m[2], m[3], m[4], m[5])
+	return &CrashReport{
+		ProcessName: m[1],
+		Timestamp:   timestamp,
+		ID:          filename,
+	}
+}
+
+const (
+	// default streaming quality (1-100)
+	DefaultQuality = 80
+	// default streaming scale (0.1-1.0)
+	DefaultScale = 1.0
+	// default streaming framerate (frames per second)
+	DefaultFramerate = 30
+)
+
+func buildMjpegURL(port, fps int, scale float64) string {
+	url := fmt.Sprintf("http://localhost:%d/mjpeg", port)
+	sep := "?"
+	if fps > 0 {
+		url += fmt.Sprintf("%sfps=%d", sep, fps)
+		sep = "&"
+	}
+	scalePercent := int(scale * 100)
+	if scalePercent > 0 && scalePercent != 100 {
+		url += fmt.Sprintf("%sscale=%d", sep, scalePercent)
+	}
+	return url
+}
+
+// ScreenshotOptions contains options for taking a screenshot.
+// MaxSize caps max(width, height) in pixels keeping aspect ratio and takes
+// precedence over Scale; neither ever upscales.
+// Rect crops before Scale/MaxSize apply; it is expressed in screen points
+// (the same units as dump.ui bounds) and mapped to pixels via
+// ScreenWidthPoints and ScreenHeightPoints, which are required when Rect is set.
+type ScreenshotOptions struct {
+	Format             string                   // "png" or "jpeg"
+	Quality            int                      // 1-100, only used for JPEG
+	Scale              float64                  // 0.0-1.0, 1.0 means no scaling
+	MaxSize            int                      // 0 means no limit
+	Clip               *types.ScreenElementRect // nil means no cropping
+	ScreenWidthPoints  int                      // screen width in points, required when Rect is set
+	ScreenHeightPoints int                      // screen height in points, required when Rect is set
+}
+
+// ScreenCaptureConfig contains configuration for screen capture operations
+type ScreenCaptureConfig struct {
+	Format     string
+	Quality    int
+	Scale      float64
+	FPS        int
+	Bitrate    int                  // bitrate in bits per second, only applies to AVC (0 for default)
+	OnProgress func(message string) // optional progress callback
+	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
+	OnData     func([]byte) bool    // data callback - return false to stop
+	StopChan   <-chan struct{}      // optional (avc only): stops this capture when closed, even while no frames are arriving
+}
+
+// StartAgentConfig contains configuration for agent startup operations
+type StartAgentConfig struct {
+	OnProgress func(message string) // optional progress callback
+	Hook       *ShutdownHook        // optional shutdown hook for cleanup tracking
+}
+
+// reportProgress calls OnProgress when one was given.
+func (c StartAgentConfig) reportProgress(message string) {
+	if c.OnProgress != nil {
+		c.OnProgress(message)
+	}
+}
+
+// ScreenElementRect represents the rectangle coordinates and dimensions
+// Re-export types for backward compatibility
+type ScreenElementRect = types.ScreenElementRect
+type ScreenElement = types.ScreenElement
+
+// FileEntry represents a file or directory in an app's container
+type FileEntry struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	IsDir   bool      `json:"isDir"`
+}
+
+// LaunchOptions carries optional parameters for launching an app.
+// Activity is Android-only; passing it to an iOS device is an error.
+// Arguments are process arguments on iOS. On Android each one must be key=value
+// and is passed as a string intent extra. Env is iOS-only; passing it to an
+// Android device is an error.
+type LaunchOptions struct {
+	Locales   []string
+	Activity  string
+	Arguments []string
+	Env       map[string]string
+}
+
+// DumpOptions controls what a UI dump includes.
+type DumpOptions struct {
+	// Full includes windows normally left out, such as the on-screen keyboard.
+	Full bool
+}
+
+// values returned by ControllableDevice.Platform, DeviceType and State
+const (
+	PlatformIOS     = "ios"
+	PlatformAndroid = "android"
+
+	DeviceTypeReal      = "real"
+	DeviceTypeSimulator = "simulator"
+	DeviceTypeEmulator  = "emulator"
+
+	StateOnline  = "online"
+	StateOffline = "offline"
+)
+
+// screen capture stream formats
+const (
+	FormatMJPEG = "mjpeg"
+	FormatAVC   = "avc"
+)
+
+// BootOptions controls how a simulator/emulator is booted
+type BootOptions struct {
+	// Headed shows the device window; by default the device boots hidden
+	Headed bool
+}
+
+type ControllableDevice interface {
+	ID() string
+	Name() string
+	Platform() string   // e.g., "ios", "android"
+	DeviceType() string // e.g., "real", "simulator", "emulator"
+	Version() string    // OS version
+	State() string      // e.g., "online", "offline"
+
+	TakeScreenshot(opts ScreenshotOptions) ([]byte, error)
+	Reboot() error
+	Boot(opts BootOptions) error // boot simulator/emulator
+	Shutdown() error             // shutdown simulator/emulator
+	Tap(x, y int) error
+	LongPress(x, y, duration int) error
+	Swipe(x1, y1, x2, y2, duration int) error
+	Gesture(actions []devicekit.TapAction) error
+	StartAgent(config StartAgentConfig) error
+	SendKeys(text string) error
+	GetClipboard() (string, error)
+	SetClipboard(text string) error
+	PressKeys(combos []KeyCombo) error
+	// Fill replaces the focused text field's text; "" clears it
+	Fill(text string) error
+	PressButton(key string) error
+	LaunchApp(bundleID string, opts LaunchOptions) error
+	TerminateApp(bundleID string) error
+	OpenURL(url string) error
+	ListApps(onlyLaunchable bool) ([]InstalledAppInfo, error)
+	GetForegroundApp() (*ForegroundAppInfo, error)
+	InstallApp(path string) error
+	UninstallApp(packageName string) (*InstalledAppInfo, error)
+	ClearApp(bundleID string) error
+	Info() (*FullDeviceInfo, error)
+	StartScreenCapture(config ScreenCaptureConfig) error
+	DumpSource(opts DumpOptions) ([]ScreenElement, error)
+	DumpSourceRaw(opts DumpOptions) (any, error)
+	GetOrientation() (string, error)
+	SetOrientation(orientation string) error
+	ListCrashReports() ([]CrashReport, error)
+	GetCrashReport(id string) ([]byte, error)
+	StreamLogs(ctx context.Context, onLog func(LogEntry) bool) error
+
+	PushFile(localPath, remotePath string) error
+	PullFile(remotePath, localPath string) error
+	ListFiles(bundleID, remotePath string) ([]FileEntry, error)
+	Mkdir(bundleID, remotePath string, parents bool) error
+	Rm(bundleID, remotePath string, recursive bool) error
+	GetAppContainerPath(bundleID string) (string, error)
+}
+
+// LocationSettable is implemented by devices that can simulate a GPS location.
+// Devices that don't implement it report location override as unsupported.
+type LocationSettable interface {
+	SetLocation(lat, lon float64) error
+	ClearLocation() error
+}
+
+// AnimationConfigurable is implemented by devices that can toggle system
+// animations. Devices that don't implement it are treated as a no-op by callers.
+type AnimationConfigurable interface {
+	SetAnimationsEnabled(enabled bool) error
+}
+
+// AppearanceConfigurable is implemented by devices that can switch the system
+// appearance between light and dark mode.
+type AppearanceConfigurable interface {
+	SetAppearance(appearance string) error
+}
+
+// WebViewable is implemented by devices that support webview inspection and control.
+type WebViewable interface {
+	ListWebViews() ([]WebViewInfo, error)
+	WebViewGoto(webviewID, url string) error
+	WebViewReload(webviewID string) error
+	WebViewGoBack(webviewID string) error
+	WebViewGoForward(webviewID string) error
+	WebViewContent(webviewID string) (string, error)
+	WebViewEvaluate(webviewID, expression string, args []any) (any, error)
+	WebViewWaitForLoadState(webviewID, state string, timeoutMs int) error
+}
+
+// KeyboardControllable is implemented by devices that can query and dismiss
+// the on-screen keyboard.
+type KeyboardControllable interface {
+	HideKeyboard() (bool, error)
+	IsKeyboardVisible() (bool, error)
+}
+
+// NetworkInterceptorProvider is implemented by devices that can attach a network
+// interceptor to the debuggable foreground app. Resolving the interceptor
+// injects/locates the in-app agent, so it can fail when no debuggable app is in
+// front; callers resolve it once per operation.
+type NetworkInterceptorProvider interface {
+	NetworkInterceptor() (NetworkInterceptable, error)
+}
+
+// NetworkInterceptable observes and intercepts the HTTP traffic of the app the
+// agent is attached to. It is a thin relay over the in-app agent's network.*
+// RPC methods; see docs/network-interception.md for the contract. Everything is
+// fail-open: a paused request the host never answers continues unchanged.
+type NetworkInterceptable interface {
+	// NetworkEnable turns on interception for the given routes. A request is
+	// paused only when it matches a route, so unmatched traffic is untouched.
+	NetworkEnable(routes []NetworkRoute) error
+	// NetworkPoll long-polls the agent for the next batch of events, returning
+	// each event as an opaque JSON object to relay to the client. It returns an
+	// empty slice (no error) when the poll window elapses with nothing pending.
+	NetworkPoll(ctx context.Context) ([]json.RawMessage, error)
+	// NetworkContinue, NetworkFulfill and NetworkAbort answer one paused request,
+	// keyed by requestId inside params. See docs/network-interception.md.
+	NetworkContinue(params map[string]any) error
+	NetworkFulfill(params map[string]any) error
+	NetworkAbort(params map[string]any) error
+	// NetworkDisable turns interception off; any still-paused request continues.
+	NetworkDisable() error
+}
+
+// NetworkRoute is one URL glob (and optional HTTP method) the host asked to
+// pause on. An empty Method matches any method.
+type NetworkRoute struct {
+	URL    string `json:"url"`
+	Method string `json:"method,omitempty"`
+}
+
+// GetAllControllableDevices aggregates all known devices with options
+func GetAllControllableDevices(includeOffline bool) ([]ControllableDevice, error) {
+
+	var allDevices []ControllableDevice
+
+	if os.Getenv("MOBILECLI_REMOTE_ONLY") != "" {
+		return allDevices, nil
+	}
+
+	startTotal := time.Now()
+
+	// get Android devices
+	startAndroid := time.Now()
+	androidDevices, err := GetAndroidDevices()
+	androidDuration := time.Since(startAndroid).Milliseconds()
+	androidCount := 0
+	if err != nil {
+		utils.Verbose("Warning: Failed to get Android devices: %v", err)
+	} else {
+		androidCount = len(androidDevices)
+		allDevices = append(allDevices, androidDevices...)
+	}
+
+	// get offline Android emulators if requested
+	offlineAndroidCount := 0
+	offlineAndroidDuration := int64(0)
+	if includeOffline {
+		// build map of online device IDs for quick lookup
+		onlineDeviceIDs := make(map[string]bool)
+		for _, device := range androidDevices {
+			onlineDeviceIDs[device.ID()] = true
+		}
+
+		startOfflineAndroid := time.Now()
+		offlineEmulators, err := getOfflineAndroidEmulators(onlineDeviceIDs)
+		offlineAndroidDuration = time.Since(startOfflineAndroid).Milliseconds()
+		if err != nil {
+			utils.Verbose("Warning: Failed to get offline Android emulators: %v", err)
+		} else {
+			offlineAndroidCount = len(offlineEmulators)
+			allDevices = append(allDevices, offlineEmulators...)
+		}
+	}
+
+	// get iOS real devices
+	startIOS := time.Now()
+	iosDevices, err := ListIOSDevices()
+	iosDuration := time.Since(startIOS).Milliseconds()
+	iosCount := 0
+	if err != nil {
+		utils.Verbose("Warning: Failed to get iOS real devices: %v", err)
+	} else {
+		iosCount = len(iosDevices)
+		for i := range iosDevices {
+			allDevices = append(allDevices, iosDevices[i])
+		}
+	}
+
+	// get iOS simulator devices (all simulators, not just booted ones)
+	startSimulators := time.Now()
+	sims, err := GetSimulators()
+	simulatorsDuration := time.Since(startSimulators).Milliseconds()
+	simulatorsCount := 0
+	if err != nil {
+		utils.Verbose("Warning: Failed to get iOS simulators: %v", err)
+	} else {
+		// filter to only include simulators that have been booted at least once
+		filteredSims := filterSimulatorsByDownloadsDirectory(sims)
+		simulatorsCount = len(filteredSims)
+		for _, sim := range filteredSims {
+			allDevices = append(allDevices, &SimulatorDevice{
+				Simulator:       sim,
+				deviceKitClient: nil,
+			})
+		}
+	}
+
+	totalDuration := time.Since(startTotal).Milliseconds()
+
+	// log all timing stats in one verbose message
+	if false {
+		utils.Verbose("GetAllControllableDevices completed in %dms: android=%dms (%d devices), offline_android=%dms (%d devices), ios=%dms (%d devices), simulators=%dms (%d devices)",
+			totalDuration, androidDuration, androidCount, offlineAndroidDuration, offlineAndroidCount, iosDuration, iosCount, simulatorsDuration, simulatorsCount)
+	}
+
+	return allDevices, nil
+}
+
+// DeviceInfo represents the JSON-friendly device information
+// DeviceListOptions configures device listing behavior
+type DeviceListOptions struct {
+	IncludeOffline bool
+	Platform       string
+	DeviceType     string
+}
+
+type DeviceProvider struct {
+	Type         string `json:"type"`
+	AllocationID string `json:"allocationId,omitempty"`
+}
+
+type DeviceInfo struct {
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Platform string          `json:"platform"`
+	Type     string          `json:"type"`
+	Version  string          `json:"version"`
+	State    string          `json:"state"`
+	Model    string          `json:"model"`
+	Provider json.RawMessage `json:"provider,omitempty"`
+}
+
+func (d *DeviceInfo) ProviderType() string {
+	if len(d.Provider) == 0 {
+		return ""
+	}
+	// handle string value
+	var s string
+	if json.Unmarshal(d.Provider, &s) == nil {
+		return s
+	}
+	// handle object value
+	var p DeviceProvider
+	if json.Unmarshal(d.Provider, &p) == nil {
+		return p.Type
+	}
+	return ""
+}
+
+func (d *DeviceInfo) SetProvider(providerType string) {
+	data, _ := json.Marshal(DeviceProvider{Type: providerType})
+	d.Provider = data
+}
+
+type ScreenSize struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	Scale  int `json:"scale"`
+}
+
+type FullDeviceInfo struct {
+	DeviceInfo
+	ScreenSize *ScreenSize `json:"screenSize"`
+}
+
+// GetDeviceInfoList returns a list of DeviceInfo for all connected devices
+func deviceModel(d ControllableDevice) string {
+	switch device := d.(type) {
+	case *IOSDevice:
+		return device.ProductType
+	case *SimulatorDevice:
+		return device.Simulator.DeviceType
+	case *AndroidDevice:
+		return device.model
+	}
+	return ""
+}
+
+func GetDeviceInfoList(opts DeviceListOptions) ([]DeviceInfo, error) {
+	startTime := time.Now()
+	devices, err := GetAllControllableDevices(opts.IncludeOffline)
+	if err != nil {
+		return nil, fmt.Errorf("error getting devices: %w", err)
+	}
+
+	deviceInfoList := make([]DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		state := d.State()
+
+		// filter offline devices unless includeOffline is true
+		if !opts.IncludeOffline && state == StateOffline {
+			continue
+		}
+
+		// filter by platform if specified
+		if opts.Platform != "" && d.Platform() != opts.Platform {
+			continue
+		}
+
+		// filter by device type if specified
+		if opts.DeviceType != "" && d.DeviceType() != opts.DeviceType {
+			continue
+		}
+
+		deviceInfoList = append(deviceInfoList, DeviceInfo{
+			ID:       d.ID(),
+			Name:     d.Name(),
+			Platform: d.Platform(),
+			Type:     d.DeviceType(),
+			Version:  d.Version(),
+			State:    state,
+			Model:    deviceModel(d),
+		})
+	}
+	utils.Verbose("GetDeviceInfoList took %s", time.Since(startTime))
+
+	return deviceInfoList, nil
+}
+
+// InstalledAppInfo represents information about an installed application.
+type InstalledAppInfo struct {
+	PackageName string `json:"packageName"`
+	AppName     string `json:"appName,omitempty"`
+	Version     string `json:"version,omitempty"`
+	// VersionCode is the build identifier: CFBundleVersion on iOS, versionCode on Android.
+	VersionCode string `json:"versionCode,omitempty"`
+}
+
+// ForegroundAppInfo represents information about the currently foreground application
+type ForegroundAppInfo struct {
+	PackageName string `json:"packageName"`
+	AppName     string `json:"appName"`
+	Version     string `json:"version"`
+	// Activity is the focused component within the app: activity class on
+	// Android, view controller class on iOS.
+	Activity string `json:"activity,omitempty"`
+}

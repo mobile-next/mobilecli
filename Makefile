@@ -1,10 +1,20 @@
-.PHONY: all build agents test test-cover lint fmt clean docs vulncheck
+.PHONY: all build agents devicekit devicekit-ios14 test test-cover lint fmt clean docs vulncheck
 
 all: build
 
 agents:
 	$(MAKE) -C agents/android all
-	$(MAKE) -C agents/ios all
+	$(MAKE) -C agents/ios/injected all
+
+# not part of `agents`: needs full Xcode and xcbeautify, and takes minutes.
+# outputs the runner + app .ipa and both simulator .zip files in agents/ios/devicekit/build/export
+devicekit:
+	$(MAKE) -C agents/ios/devicekit ipa-unsigned sim-zip
+
+# same outputs (overwrites them), built to run on iOS 14. voiceover does not work in this build.
+# needs Xcode 26 or older: Xcode 27 refuses a deployment target below 15.0.
+devicekit-ios14:
+	IPHONEOS_DEPLOYMENT_TARGET=14.0 $(MAKE) devicekit
 
 build: agents
 	go mod tidy
@@ -59,6 +69,7 @@ fmt:
 
 clean:
 	$(MAKE) -C agents/android clean
-	$(MAKE) -C agents/ios clean
+	$(MAKE) -C agents/ios/injected clean
+	rm -rf agents/ios/devicekit/build
 	rm -f mobilecli coverage.out coverage.html
 

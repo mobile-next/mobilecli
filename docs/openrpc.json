@@ -221,6 +221,44 @@
       }
     },
     {
+      "name": "device.io.doubletap",
+      "summary": "Perform double tap gesture",
+      "description": "Performs a double tap gesture at the specified coordinates on the device screen",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "x",
+          "description": "X coordinate for the double tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "y",
+          "description": "Y coordinate for the double tap",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
       "name": "device.io.longpress",
       "summary": "Perform long press gesture",
       "description": "Performs a long press gesture at the specified coordinates on the device screen",
@@ -433,7 +471,7 @@
         },
         {
           "name": "button",
-          "description": "Button to press",
+          "description": "Button to press, case-insensitive. All platforms: HOME, POWER (alias LOCK), VOLUME_UP, VOLUME_DOWN, ENTER. Android only: BACK, BACKSPACE, APP_SWITCH, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER",
           "required": true,
           "schema": {
             "type": "string"
@@ -463,7 +501,7 @@
         },
         {
           "name": "actions",
-          "description": "List of gesture actions to perform",
+          "description": "List of gesture actions to perform: pointerMove, pointerDown, pointerUp and pause (ms), each with a button (finger index). A pause before a finger's pointerDown delays its touch-down, so a second finger can tap after the first lifts (double tap)",
           "required": true,
           "schema": {
             "type": "array",
@@ -563,6 +601,92 @@
           "required": false,
           "schema": {
             "type": "integer"
+          }
+        }
+      ],
+      "result": {
+        "name": "success",
+        "description": "Operation result",
+        "schema": {
+          "$ref": "#/components/schemas/SuccessResult"
+        }
+      }
+    },
+    {
+      "name": "device.io.drag",
+      "summary": "Perform drag gesture",
+      "description": "Presses one finger where the drag starts, optionally holds it still, moves it to where the drag ends and lifts it there",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "from",
+          "description": "Where the drag starts: an element ref, or x and y coordinates",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "description": "Either ref, or both x and y",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Element ref from the latest UI dump, e.g. @e5"
+              },
+              "x": {
+                "type": "integer",
+                "description": "X coordinate"
+              },
+              "y": {
+                "type": "integer",
+                "description": "Y coordinate"
+              }
+            }
+          }
+        },
+        {
+          "name": "to",
+          "description": "Where the drag ends: an element ref, or x and y coordinates",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "description": "Either ref, or both x and y",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Element ref from the latest UI dump, e.g. @e5"
+              },
+              "x": {
+                "type": "integer",
+                "description": "X coordinate"
+              },
+              "y": {
+                "type": "integer",
+                "description": "Y coordinate"
+              }
+            }
+          }
+        },
+        {
+          "name": "hold",
+          "description": "How long the finger stays down before it moves, in milliseconds",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 0
+          }
+        },
+        {
+          "name": "duration",
+          "description": "How long the finger travels, in milliseconds",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "default": 800
           }
         }
       ],
@@ -742,6 +866,140 @@
       }
     },
     {
+      "name": "device.voiceover.get",
+      "summary": "Get VoiceOver state",
+      "description": "Reports whether VoiceOver is on. Requires iOS 27 or later, on a simulator or a real device",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "voiceover",
+        "description": "VoiceOver state",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether VoiceOver is on"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.set",
+      "summary": "Turn VoiceOver on or off",
+      "description": "Turns VoiceOver on or off. Requires iOS 27 or later. VoiceOver stays on after mobilecli exits, and while it is on a tap focuses an element instead of activating it",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "enabled",
+          "description": "true to turn VoiceOver on, false to turn it off",
+          "required": true,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "voiceover",
+        "description": "VoiceOver state",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether VoiceOver is on"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.speech",
+      "summary": "Read VoiceOver speech",
+      "description": "Returns what VoiceOver speaks for the element it is focused on. Requires VoiceOver to be on",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "speech",
+        "description": "VoiceOver speech",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "utterance": {
+              "type": "string",
+              "description": "What VoiceOver speaks for the element, e.g. \"Add Favorites, button\""
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "device.voiceover.move",
+      "summary": "Move the VoiceOver cursor",
+      "description": "Moves the VoiceOver cursor and returns what VoiceOver speaks for the element it lands on. Requires VoiceOver to be on; 'in' and 'out' need VoiceOver's Navigation Style set to Groups",
+      "params": [
+        {
+          "name": "deviceId",
+          "description": "ID of the target device",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "direction",
+          "description": "'next', 'previous', 'in' (into a container) or 'out' (out of a container)",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "next",
+              "previous",
+              "in",
+              "out"
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "speech",
+        "description": "VoiceOver speech",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "utterance": {
+              "type": "string",
+              "description": "What VoiceOver speaks for the element, e.g. \"Add Favorites, button\""
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "device.location.set",
       "summary": "Override device location",
       "description": "Overrides the GPS location reported by the device. On iOS 17+ physical devices the override only lasts as long as the mobilecli process that set it",
@@ -820,6 +1078,14 @@
           "required": true,
           "schema": {
             "type": "string"
+          }
+        },
+        {
+          "name": "headed",
+          "description": "Show the simulator or emulator window. Defaults to false, which boots the device without a window",
+          "required": false,
+          "schema": {
+            "type": "boolean"
           }
         }
       ],
