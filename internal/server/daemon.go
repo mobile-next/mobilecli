@@ -44,8 +44,9 @@ type cliStreamHandler func(ctx context.Context, params json.RawMessage, notify f
 // cliStreamRegistry holds CLI methods that emit stream.data notifications.
 func cliStreamRegistry() map[string]cliStreamHandler {
 	return map[string]cliStreamHandler{
-		"cli.device.logs":   streamLogs,
-		"cli.screencapture": streamScreenCapture,
-		"cli.screenrecord":  streamScreenRecord,
+		"cli.device.logs":    streamLogs,
+		"cli.screencapture":  streamScreenCapture,
+		"cli.screenrecord":   streamScreenRecord,
+		"cli.network.listen": streamNetwork,
 	}
 }

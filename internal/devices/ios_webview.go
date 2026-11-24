@@ -126,6 +126,8 @@ func writeIOSAgentDylib() (string, error) {
 	return f.Name(), nil
 }
 
+var simulatorListeningPort = regexp.MustCompile(`TCP 127\.0\.0\.1:(\d+) \(LISTEN\)`)
+
 // portFromLLDB matches the result of mobilecli_get_port(), as in: (int) $2 = 27042
 var portFromLLDB = regexp.MustCompile(`\(int\) \$\d+ = (\d+)`)
 
@@ -139,6 +141,37 @@ var dlerrorFromLLDB = regexp.MustCompile(`\(char \*\) \$\d+ = 0x[0-9a-fA-F]+ "(.
 var psLineRegex = regexp.MustCompile(`^\S+\s+(\d+)(?:\s+\S+){8}\s+(.+)$`)
 
 const lldbTimeout = 30 * time.Second
+
+// findRunningSimulatorAgent finds the agent socket owned by this app process.
+// The daemon's in-memory port cache is lost when it restarts, while the dylib
+// stays loaded until the app exits. Loading another copy into that process
+// would run its constructor and URLSession swizzles a second time.
+func findRunningSimulatorAgent(pid int) (int, bool) {
+	out, err := exec.Command("lsof", "-nP", "-a", "-p", strconv.Itoa(pid), "-iTCP").Output()
+	if err != nil {
+		return 0, false
+	}
+	for _, port := range parseSimulatorListeningPorts(string(out)) {
+		if _, err := agentRequestWithTimeout(port, "device.webview.list", nil, time.Second); err == nil {
+			return port, true
+		}
+	}
+	return 0, false
+}
+
+func parseSimulatorListeningPorts(output string) []int {
+	var ports []int
+	for _, line := range strings.Split(output, "\n") {
+		match := simulatorListeningPort.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		if port, err := strconv.Atoi(match[1]); err == nil {
+			ports = append(ports, port)
+		}
+	}
+	return ports
+}
 
 // injectIOSAgent attaches lldb to the given PID, loads the dylib, reads the
 // bound port via mobilecli_get_port(), then detaches. Returns the port.
@@ -224,6 +257,10 @@ func (s *SimulatorDevice) ensureIOSAgentReady() (int, error) {
 	pid, appBundlePath, err := findSimulatorPIDForBundle(s.UDID, foreground.PackageName)
 	if err != nil {
 		return 0, fmt.Errorf("cannot attach to %s: app does not have get-task-allow entitlement — use a debug build", foreground.PackageName)
+	}
+	if port, ok := findRunningSimulatorAgent(pid); ok {
+		setCachedAgentPort(s.UDID, foreground.PackageName, port)
+		return port, nil
 	}
 
 	utils.Verbose("attaching to %s (pid %d, bundle %s)", appBundlePath, pid, foreground.PackageName)
