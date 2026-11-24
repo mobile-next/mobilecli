@@ -28,6 +28,10 @@ switch (process.platform) {
 				packageName = "@mobilenext/mobilecli-linux-arm64";
 				binaryName = "mobilecli-linux-arm64";
 				break;
+			case "riscv64":
+				packageName = "@mobilenext/mobilecli-linux-riscv64";
+				binaryName = "mobilecli-linux-riscv64";
+				break;
 			case "x64":
 				packageName = "@mobilenext/mobilecli-linux-amd64";
 				binaryName = "mobilecli-linux-amd64";
