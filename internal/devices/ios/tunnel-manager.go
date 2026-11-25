@@ -18,14 +18,25 @@ var ErrTunnelAlreadyRunning = errors.New("tunnel is already running")
 
 type TunnelManager struct {
 	udid         string
+	pairRecords  tunnel.PairRecordManager
 	tunnelMgr    *tunnel.TunnelManager
+	loop         *updateLoop // the running update loop, nil when none
 	tunnelCancel context.CancelFunc
 	tunnelMutex  sync.Mutex
 	updateCtx    context.Context
 }
 
+// updateLoop is one generation of the tunnel update loop. exited is set under tunnelMutex,
+// so the loop and ResetTunnel agree on which of them closes the loop's manager.
+type updateLoop struct {
+	done   chan struct{}
+	exited bool
+}
+
 // GetTunnelManager returns the underlying go-ios tunnel manager
 func (tm *TunnelManager) GetTunnelManager() *tunnel.TunnelManager {
+	tm.tunnelMutex.Lock()
+	defer tm.tunnelMutex.Unlock()
 	return tm.tunnelMgr
 }
 
@@ -45,8 +56,9 @@ func NewTunnelManager(udid string) (*TunnelManager, error) {
 	tunnelMgr := tunnel.NewTunnelManager(pm, true)
 
 	return &TunnelManager{
-		udid:      udid,
-		tunnelMgr: tunnelMgr,
+		udid:        udid,
+		pairRecords: pm,
+		tunnelMgr:   tunnelMgr,
 	}, nil
 }
 
@@ -66,17 +78,36 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 	tm.tunnelCancel = cancel
 	tm.updateCtx = ctx
 
+	// the loop works on this generation's manager; ResetTunnel may swap in a new one
+	mgr := tm.tunnelMgr
+	loop := &updateLoop{done: make(chan struct{})}
+	tm.loop = loop
+
 	// Start the tunnel manager update loop for this device
 	go func() {
+		defer close(loop.done)
 		defer func() {
 			tm.tunnelMutex.Lock()
-			tm.updateCtx = nil
-			tm.tunnelCancel = nil
+			// only clear state that still belongs to this generation
+			if tm.updateCtx == ctx {
+				tm.updateCtx = nil
+				tm.tunnelCancel = nil
+			}
+			// decided under the lock: either a reset already swapped the manager and left it
+			// to us, or we mark the loop exited and the reset closes it
+			replaced := tm.tunnelMgr != mgr
+			loop.exited = true
 			tm.tunnelMutex.Unlock()
+			// no tunnel handshake is in flight any more, so this releases the tunnel it built
+			if replaced {
+				if err := mgr.Close(); err != nil {
+					utils.Verbose("Error closing replaced tunnel manager: %v", err)
+				}
+			}
 		}()
 
 		// Initial tunnel update to start tunnels for connected devices
-		err := tm.tunnelMgr.UpdateTunnels(ctx)
+		err := mgr.UpdateTunnels(ctx)
 		if err != nil {
 			log.WithError(err).Warn("Failed to update tunnels initially")
 			if onProcessDied != nil {
@@ -96,7 +127,7 @@ func (tm *TunnelManager) StartTunnelWithCallback(onProcessDied func(error)) erro
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				err := tm.tunnelMgr.UpdateTunnels(ctx)
+				err := mgr.UpdateTunnels(ctx)
 				if err != nil {
 					log.WithError(err).Debug("Failed to update tunnels")
 				}
@@ -154,4 +185,45 @@ func (tm *TunnelManager) GetTunnelInfo() (*tunnel.Tunnel, error) {
 	}
 
 	return nil, fmt.Errorf("tunnel not found for device %s", tm.udid)
+}
+
+// ResetTunnel drops the current tunnel so the next StartTunnel builds a new one. go-ios keeps
+// a device's tunnel for as long as usbmuxd lists the device on any connection, so a tunnel
+// built over USB outlives the cable it ran on; a go-ios manager cannot be reused once closed,
+// hence the fresh one.
+func (tm *TunnelManager) ResetTunnel() error {
+	tm.tunnelMutex.Lock()
+	cancel := tm.tunnelCancel
+	loop := tm.loop
+	tm.tunnelMutex.Unlock()
+
+	// wait outside the lock: the loop takes it on exit. A loop stuck in a lockdown handshake
+	// (go-ios does not pass the context down) must not block the rebuild forever.
+	if cancel != nil {
+		cancel()
+	}
+	if loop != nil {
+		select {
+		case <-loop.done:
+		case <-time.After(15 * time.Second):
+			utils.Verbose("tunnel loop of device %s did not stop in time, it will close its manager on exit", tm.udid)
+		}
+	}
+
+	tm.tunnelMutex.Lock()
+	defer tm.tunnelMutex.Unlock()
+	// whether the loop is still running is read under the same lock it uses to decide, so
+	// exactly one of us closes the manager; closing mid-handshake would miss the tunnel
+	// being built, so a running loop closes it itself once it sees the swap
+	if loop == nil || loop.exited {
+		if err := tm.tunnelMgr.Close(); err != nil {
+			utils.Verbose("Error closing tunnel manager: %v", err)
+		}
+	}
+	tm.updateCtx = nil
+	tm.tunnelCancel = nil
+	tm.loop = nil
+	tm.tunnelMgr = tunnel.NewTunnelManager(tm.pairRecords, true)
+	utils.Verbose("Tunnel reset for device %s", tm.udid)
+	return nil
 }

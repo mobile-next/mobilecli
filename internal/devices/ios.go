@@ -72,12 +72,17 @@ type IOSDevice struct {
 	OSVersion   string `json:"Version"`
 	ProductType string `json:"ProductType"`
 
+	startMu                     sync.Mutex       // serializes StartAgent: connection check, rebuild, launch
 	mu                          sync.Mutex       // protects fields below
 	flutterCandidate            flutterCandidate // Info.plist verdict for the last foreground process
 	tunnelManager               *ios.TunnelManager
 	deviceKitClient             *devicekit.DeviceKitClient
 	mjpegClient                 *mjpeg.DeviceKitMjpegClient
 	deviceKitCancel             context.CancelFunc
+	deviceKitDone               chan struct{} // closed when the runner started with deviceKitCancel exits
+	agentTunnelAddr             string        // tunnel address the running agent forwarder/runner use, "" for usbmuxd
+	agentTunnelPort             int           // local userspace tunnel port that forwarder dials, 0 for usbmuxd
+	agentOverUSB                *bool         // connection the agent and tunnel were set up over, nil before the first start
 	portForwarderDeviceKitAgent *ios.PortForwarder
 	portForwarderMjpeg          *ios.PortForwarder
 	portForwarderDeviceKit      *ios.PortForwarder                     // devicekit http forwarder
@@ -421,6 +426,31 @@ func (d *IOSDevice) cleanupTunnel() error {
 	return nil
 }
 
+// agentTunnelAddress returns the device side of the tunnel when the agent must be reached
+// through it, that is when usbmuxd lists the device only over the network. It returns ""
+// over USB, which keeps the usbmuxd forward to the loopback-bound agent. A device without
+// USB whose tunnel cannot be found is an error: the usbmuxd path cannot reach its agent.
+func (d *IOSDevice) agentTunnelAddress(overUSB bool) (string, error) {
+	if !d.requiresTunnel() || overUSB {
+		return "", nil
+	}
+	// the tunnel loop may still be in its handshake when a second start comes in
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		tunnelInfo, err := d.tunnelManager.GetTunnelManager().FindTunnel(d.Udid)
+		if err == nil && tunnelInfo.Address != "" {
+			return tunnelInfo.Address, nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return "", fmt.Errorf("device %s is connected over the network only, but its tunnel is not available: %w", d.Udid, err)
+			}
+			return "", fmt.Errorf("device %s is connected over the network only, but its tunnel has no address", d.Udid)
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
 func (d *IOSDevice) requiresTunnel() bool {
 	parts := strings.Split(d.OSVersion, ".")
 	if len(parts) == 0 {
@@ -500,10 +530,29 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	// 6. we need to wait for the agent to be ready ✅
 	// 7. just in case, click HOME button ✅
 
+	d.startMu.Lock()
+	defer d.startMu.Unlock()
+
 	if _, err := d.deviceKitClient.GetStatus(); err == nil {
 		return nil
 	}
 	utils.Verbose("DeviceKit agent is not running, starting it")
+
+	// detect the connection once per start: the reset, the forwarder and the runner's
+	// listen address must all agree on it
+	overUSB := true
+	if d.requiresTunnel() {
+		var err error
+		overUSB, err = ios.HasUSBConnection(d.Udid)
+		if err != nil {
+			return fmt.Errorf("failed to check how device %s is connected: %w", d.Udid, err)
+		}
+	}
+
+	// before anything talks to the device through the tunnel, which may be stale
+	if err := d.resetIfConnectionChanged(overUSB); err != nil {
+		return err
+	}
 
 	agentBundleId, err := d.findInstalledAgentBundleID()
 	if err != nil {
@@ -518,7 +567,16 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 		return err
 	}
 
-	err = d.ensureDeviceKitAgentForwarder()
+	// decide the transport once, so the forwarder and the runner's listen address agree
+	tunnelAddr, err := d.agentTunnelAddress(overUSB)
+	if err != nil {
+		return err
+	}
+	if err := d.resetAgentIfTransportChanged(tunnelAddr, d.userspaceTunnelPort(tunnelAddr)); err != nil {
+		return err
+	}
+
+	err = d.ensureDeviceKitAgentForwarder(tunnelAddr)
 	if err != nil {
 		return err
 	}
@@ -532,6 +590,127 @@ func (d *IOSDevice) StartAgent(config StartAgentConfig) error {
 	}
 
 	return d.launchAgent(agentBundleId, config)
+}
+
+// resetIfConnectionChanged rebuilds the tunnel and restarts the agent when the device
+// moved between USB and network since the agent was set up: a tunnel built over USB dies
+// with the cable while go-ios still reports it running.
+func (d *IOSDevice) resetIfConnectionChanged(overUSB bool) error {
+	if !d.requiresTunnel() {
+		return nil
+	}
+
+	d.mu.Lock()
+	prev := d.agentOverUSB
+	d.mu.Unlock()
+
+	if prev != nil && *prev != overUSB {
+		utils.Verbose("Device %s moved to %s, rebuilding the tunnel", d.Udid, map[bool]string{true: "USB", false: "network"}[overUSB])
+		d.stopAgent()
+		if err := d.tunnelManager.ResetTunnel(); err != nil {
+			return err
+		}
+	}
+
+	// record the connection only once the rebuild succeeded, so a failed one is retried
+	d.mu.Lock()
+	d.agentOverUSB = &overUSB
+	d.mu.Unlock()
+	return nil
+}
+
+// userspaceTunnelPort returns the local userspace tunnel port the forwarder dials, 0 when the
+// agent is not reached through a tunnel or the tunnel is not available.
+func (d *IOSDevice) userspaceTunnelPort(tunnelAddr string) int {
+	if tunnelAddr == "" {
+		return 0
+	}
+	tunnelInfo, err := d.tunnelManager.GetTunnelManager().FindTunnel(d.Udid)
+	if err != nil {
+		return 0
+	}
+	return tunnelInfo.UserspaceTUNPort
+}
+
+// resetAgentIfTransportChanged stops the agent forwarder and runner when they were set up
+// for another transport (USB vs a tunnel address): a runner launched over USB listens on
+// loopback only, and a tunnel address changes whenever the tunnel is rebuilt.
+func (d *IOSDevice) resetAgentIfTransportChanged(tunnelAddr string, tunnelPort int) error {
+	d.mu.Lock()
+	// a rebuilt tunnel may keep its device address but listen on a new local port
+	changed := d.agentTunnelAddr != tunnelAddr || d.agentTunnelPort != tunnelPort
+	forwarder := d.portForwarderDeviceKitAgent
+	cancel := d.deviceKitCancel
+	d.mu.Unlock()
+
+	if !changed || (forwarder == nil && cancel == nil) {
+		return nil
+	}
+	utils.Verbose("Agent transport changed for device %s, restarting the agent", d.Udid)
+	d.stopAgent()
+	return nil
+}
+
+// stopAgent stops the agent forwarder and abandons the runner: it is only called after the
+// connection or tunnel changed, so the runner's testmanagerd session runs over a dead link
+// and may not notice the cancel for a long time. Clearing ownership lets the next launch go
+// ahead; the old goroutine leaves the fields alone once it exits (see LaunchTestRunner), and
+// testmanagerd ends the old runner on the device when the new session starts.
+func (d *IOSDevice) stopAgent() {
+	d.mu.Lock()
+	forwarder := d.portForwarderDeviceKitAgent
+	cancel := d.deviceKitCancel
+	d.deviceKitCancel = nil
+	d.deviceKitDone = nil
+	d.mu.Unlock()
+
+	if forwarder != nil && forwarder.IsRunning() {
+		_ = forwarder.Stop()
+	}
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// userspaceTunnelDevice returns the device entry the tunnel forwarder dials through: only the
+// userspace TUN endpoint is needed, read straight from the tunnel. getEnhancedDevice is not
+// used because it zeroes those fields when its RSD handshake fails and still returns no error.
+func (d *IOSDevice) userspaceTunnelDevice() (goios.DeviceEntry, error) {
+	device, err := ios.GetDevice(d.Udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("device not found: %s: %w", d.Udid, err)
+	}
+	tunnelInfo, err := d.tunnelManager.GetTunnelManager().FindTunnel(d.Udid)
+	if err != nil {
+		return goios.DeviceEntry{}, fmt.Errorf("tunnel of device %s is not available: %w", d.Udid, err)
+	}
+	// go-ios reports "not found" as a zero tunnel without an error
+	if tunnelInfo.Udid == "" || !tunnelInfo.UserspaceTUN || tunnelInfo.UserspaceTUNPort == 0 {
+		return goios.DeviceEntry{}, fmt.Errorf("tunnel of device %s is not available", d.Udid)
+	}
+	device.UserspaceTUN = tunnelInfo.UserspaceTUN
+	device.UserspaceTUNHost = "localhost"
+	device.UserspaceTUNPort = tunnelInfo.UserspaceTUNPort
+	return device, nil
+}
+
+// abandonFailedStart lets the next StartAgent try again after the agent never answered:
+// otherwise the runner left behind counts as "already running" and every later start just
+// waits for it again. Over a tunnel the tunnel itself may be the broken part, so it is
+// rebuilt as well.
+func (d *IOSDevice) abandonFailedStart() {
+	d.mu.Lock()
+	overTunnel := d.agentTunnelAddr != ""
+	d.agentTunnelAddr = ""
+	d.agentTunnelPort = 0
+	d.mu.Unlock()
+
+	d.stopAgent()
+	if overTunnel {
+		if err := d.tunnelManager.ResetTunnel(); err != nil {
+			utils.Verbose("failed to reset tunnel after a failed agent start: %v", err)
+		}
+	}
 }
 
 // findInstalledAgentBundleID returns the bundle id the agent is installed under.
@@ -554,7 +733,7 @@ func (d *IOSDevice) findInstalledAgentBundleID() (string, error) {
 }
 
 // ensureDeviceKitAgentForwarder sets up DeviceKit agent port forwarding if not already running.
-func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
+func (d *IOSDevice) ensureDeviceKitAgentForwarder(tunnelAddr string) error {
 	d.mu.Lock()
 	needsPortForwarder := d.portForwarderDeviceKitAgent == nil || !d.portForwarderDeviceKitAgent.IsRunning()
 	d.mu.Unlock()
@@ -580,13 +759,28 @@ func (d *IOSDevice) ensureDeviceKitAgentForwarder() error {
 	}
 
 	forwarder := ios.NewPortForwarder(d.ID())
-	err = forwarder.Forward(port, deviceKitHTTPPort)
-	if err != nil {
-		return fmt.Errorf("failed to forward port: %w", err)
+	forwarderTunnelPort := 0
+	if tunnelAddr != "" {
+		device, err := d.userspaceTunnelDevice()
+		if err != nil {
+			return err
+		}
+		forwarderTunnelPort = device.UserspaceTUNPort
+		err = forwarder.ForwardOverTunnel(port, device, tunnelAddr, deviceKitHTTPPort)
+		if err != nil {
+			return fmt.Errorf("failed to forward port over tunnel: %w", err)
+		}
+	} else {
+		err = forwarder.Forward(port, deviceKitHTTPPort)
+		if err != nil {
+			return fmt.Errorf("failed to forward port: %w", err)
+		}
 	}
 
 	d.mu.Lock()
 	d.portForwarderDeviceKitAgent = forwarder
+	d.agentTunnelAddr = tunnelAddr
+	d.agentTunnelPort = forwarderTunnelPort
 	d.deviceKitClient = devicekit.NewDeviceKitClient(fmt.Sprintf("http://localhost:%d", port))
 	d.mu.Unlock()
 
@@ -607,6 +801,7 @@ func (d *IOSDevice) launchAgent(agentBundleId string, config StartAgentConfig) e
 
 	err = d.deviceKitClient.WaitForAgent()
 	if err != nil {
+		d.abandonFailedStart()
 		return fmt.Errorf("failed to wait for agent: %w", err)
 	}
 
@@ -657,8 +852,18 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 
 	// create context and store cancel function
 	ctx, cancel := context.WithCancel(context.Background())
+	runnerDone := make(chan struct{})
 	d.deviceKitCancel = cancel
+	d.deviceKitDone = runnerDone
+	tunnelAddr := d.agentTunnelAddr
 	d.mu.Unlock()
+
+	env := map[string]any{}
+	if tunnelAddr != "" {
+		// tunnel address only: loopback is unreachable without USB, and an abandoned runner
+		// may still hold 127.0.0.1:12004, which would fail the whole server's startup
+		env["DEVICEKIT_LISTEN_HOST"] = tunnelAddr
+	}
 
 	// start the agent in background using testmanagerd
 	go func() {
@@ -666,7 +871,7 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 			BundleId:           bundleID,
 			TestRunnerBundleId: testRunnerBundleID,
 			XctestConfigName:   xctestConfig,
-			Env:                map[string]any{},
+			Env:                env,
 			Args:               []string{},
 			Device:             device,
 			Listener:           testmanagerd.NewTestListener(io.Discard, io.Discard, "/tmp"),
@@ -678,10 +883,14 @@ func (d *IOSDevice) LaunchTestRunner(bundleID, testRunnerBundleID, xctestConfig 
 			utils.Verbose("DeviceKit agent process ended")
 		}
 
-		// clear cancel function when done (thread-safe)
+		// clear cancel function when done (thread-safe), unless a newer runner took over
 		d.mu.Lock()
-		d.deviceKitCancel = nil
+		if d.deviceKitDone == runnerDone {
+			d.deviceKitCancel = nil
+			d.deviceKitDone = nil
+		}
 		d.mu.Unlock()
+		close(runnerDone)
 	}()
 
 	utils.Verbose("DeviceKit agent launched in background")

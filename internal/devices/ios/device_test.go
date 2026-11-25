@@ -43,3 +43,26 @@ func TestPickDeviceEntryNotFound(t *testing.T) {
 		t.Fatal("expected no entry for unknown udid")
 	}
 }
+
+func TestUSBConnection(t *testing.T) {
+	tests := []struct {
+		name      string
+		entries   []goios.DeviceEntry
+		wantUSB   bool
+		wantFound bool
+	}{
+		{"usb only", []goios.DeviceEntry{entry(7, "udid-1", "USB")}, true, true},
+		{"network only", []goios.DeviceEntry{entry(8, "udid-1", "Network")}, false, true},
+		{"network listed before usb", []goios.DeviceEntry{entry(8, "udid-1", "Network"), entry(7, "udid-1", "USB")}, true, true},
+		{"usb of another device", []goios.DeviceEntry{entry(7, "udid-2", "USB"), entry(8, "udid-1", "Network")}, false, true},
+		{"not listed", []goios.DeviceEntry{entry(7, "udid-2", "USB")}, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usb, found := usbConnection(tt.entries, "udid-1")
+			if usb != tt.wantUSB || found != tt.wantFound {
+				t.Fatalf("usbConnection = (%v, %v), want (%v, %v)", usb, found, tt.wantUSB, tt.wantFound)
+			}
+		})
+	}
+}
