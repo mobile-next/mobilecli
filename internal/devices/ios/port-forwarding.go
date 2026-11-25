@@ -1,6 +1,7 @@
 package ios
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -114,7 +115,7 @@ func (pf *PortForwarder) ForwardOverTunnel(srcPort int, device goios.DeviceEntry
 		return fmt.Errorf("port forwarding is already running from %d to %d", pf.srcPort, pf.dstPort)
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", srcPort))
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf("127.0.0.1:%d", srcPort))
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %d: %w", srcPort, err)
 	}
@@ -138,7 +139,7 @@ func (pf *PortForwarder) ForwardOverTunnel(srcPort int, device goios.DeviceEntry
 }
 
 func proxyOverTunnel(clientConn net.Conn, device goios.DeviceEntry, dstAddr string, dstPort int) {
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	deviceConn, err := goios.ConnectTUNDevice(dstAddr, dstPort, device)
 	if err != nil {
@@ -149,7 +150,7 @@ func proxyOverTunnel(clientConn net.Conn, device goios.DeviceEntry, dstAddr stri
 		utils.Verbose("tunnel forward: could not reach [%s]:%d: %v", dstAddr, dstPort, err)
 		return
 	}
-	defer deviceConn.Close()
+	defer func() { _ = deviceConn.Close() }()
 
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(deviceConn, clientConn); done <- struct{}{} }()

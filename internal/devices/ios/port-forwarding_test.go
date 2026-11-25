@@ -2,6 +2,7 @@ package ios
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -21,10 +22,7 @@ type fakeUserspaceTUN struct {
 
 func startFakeUserspaceTUN(t *testing.T, echo bool) *fakeUserspaceTUN {
 	t.Helper()
-	l, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	l := listenLocal(t, "tcp4")
 	f := &fakeUserspaceTUN{listener: l, headers: make(chan []byte, 4)}
 	t.Cleanup(func() { _ = l.Close() })
 	go func() {
@@ -34,7 +32,7 @@ func startFakeUserspaceTUN(t *testing.T, echo bool) *fakeUserspaceTUN {
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				header := make([]byte, 20)
 				if _, err := io.ReadFull(c, header); err != nil {
 					return
@@ -49,22 +47,43 @@ func startFakeUserspaceTUN(t *testing.T, echo bool) *fakeUserspaceTUN {
 	return f
 }
 
-func (f *fakeUserspaceTUN) device() goios.DeviceEntry {
+func (f *fakeUserspaceTUN) device(t *testing.T) goios.DeviceEntry {
+	t.Helper()
 	return goios.DeviceEntry{
 		UserspaceTUN:     true,
 		UserspaceTUNHost: "127.0.0.1",
-		UserspaceTUNPort: f.listener.Addr().(*net.TCPAddr).Port,
+		UserspaceTUNPort: tcpPort(t, f.listener),
 	}
+}
+
+func listenLocal(t *testing.T, network string) net.Listener {
+	t.Helper()
+	l, err := (&net.ListenConfig{}).Listen(context.Background(), network, "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func tcpPort(t *testing.T, l net.Listener) int {
+	t.Helper()
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener address %v is not TCP", l.Addr())
+	}
+	return addr.Port
+}
+
+func dialLocal(port int, timeout time.Duration) (net.Conn, error) {
+	d := net.Dialer{Timeout: timeout}
+	return d.DialContext(context.Background(), "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 }
 
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	l := listenLocal(t, "tcp")
+	defer func() { _ = l.Close() }()
+	return tcpPort(t, l)
 }
 
 func TestForwardOverTunnelProxiesThroughTunnel(t *testing.T) {
@@ -73,10 +92,10 @@ func TestForwardOverTunnelProxiesThroughTunnel(t *testing.T) {
 	port := freePort(t)
 	const tunnelAddr = "fd35:8002:295a::1"
 
-	if err := pf.ForwardOverTunnel(port, tun.device(), tunnelAddr, 12004); err != nil {
+	if err := pf.ForwardOverTunnel(port, tun.device(t), tunnelAddr, 12004); err != nil {
 		t.Fatal(err)
 	}
-	defer pf.Stop()
+	defer func() { _ = pf.Stop() }()
 
 	if !pf.IsRunning() {
 		t.Fatal("forwarder should report running")
@@ -85,11 +104,11 @@ func TestForwardOverTunnelProxiesThroughTunnel(t *testing.T) {
 		t.Fatalf("GetPorts = (%d, %d), want (%d, 12004)", src, dst, port)
 	}
 
-	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	conn, err := dialLocal(port, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	if _, err := conn.Write([]byte("ping")); err != nil {
@@ -115,12 +134,12 @@ func TestForwardOverTunnelProxiesThroughTunnel(t *testing.T) {
 func TestForwardOverTunnelRejectsSecondForward(t *testing.T) {
 	tun := startFakeUserspaceTUN(t, true)
 	pf := NewPortForwarder("udid-1")
-	if err := pf.ForwardOverTunnel(freePort(t), tun.device(), "fd00::1", 12004); err != nil {
+	if err := pf.ForwardOverTunnel(freePort(t), tun.device(t), "fd00::1", 12004); err != nil {
 		t.Fatal(err)
 	}
-	defer pf.Stop()
+	defer func() { _ = pf.Stop() }()
 
-	if err := pf.ForwardOverTunnel(freePort(t), tun.device(), "fd00::1", 12004); err == nil {
+	if err := pf.ForwardOverTunnel(freePort(t), tun.device(t), "fd00::1", 12004); err == nil {
 		t.Fatal("expected an error for a second tunnel forward")
 	}
 	if err := pf.Forward(freePort(t), 12004); err == nil {
@@ -132,7 +151,7 @@ func TestForwardOverTunnelStop(t *testing.T) {
 	tun := startFakeUserspaceTUN(t, true)
 	pf := NewPortForwarder("udid-1")
 	port := freePort(t)
-	if err := pf.ForwardOverTunnel(port, tun.device(), "fd00::1", 12004); err != nil {
+	if err := pf.ForwardOverTunnel(port, tun.device(t), "fd00::1", 12004); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,7 +161,7 @@ func TestForwardOverTunnelStop(t *testing.T) {
 	if pf.IsRunning() {
 		t.Fatal("forwarder should not report running after Stop")
 	}
-	if _, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second); err == nil {
+	if _, err := dialLocal(port, time.Second); err == nil {
 		t.Fatal("local port should be closed after Stop")
 	}
 	if err := pf.Stop(); err == nil {
@@ -152,7 +171,7 @@ func TestForwardOverTunnelStop(t *testing.T) {
 
 func TestForwardOverTunnelClosesClientWhenTunnelUnreachable(t *testing.T) {
 	tun := startFakeUserspaceTUN(t, false)
-	device := tun.device()
+	device := tun.device(t)
 	_ = tun.listener.Close() // nothing answers on the tunnel port any more
 
 	pf := NewPortForwarder("udid-1")
@@ -160,13 +179,13 @@ func TestForwardOverTunnelClosesClientWhenTunnelUnreachable(t *testing.T) {
 	if err := pf.ForwardOverTunnel(port, device, "fd00::1", 12004); err != nil {
 		t.Fatal(err)
 	}
-	defer pf.Stop()
+	defer func() { _ = pf.Stop() }()
 
-	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	conn, err := dialLocal(port, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(make([]byte, 1)); err == nil {
 		t.Fatal("expected the client connection to be closed")

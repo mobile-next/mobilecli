@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"net"
 	"testing"
 
@@ -14,9 +15,11 @@ import (
 // and a tunnel endpoint nobody dials in these tests.
 func runningForwarder(t *testing.T) *ios.PortForwarder {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
+	addr, ok := l.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	port := addr.Port
 	require.NoError(t, l.Close())
 
 	pf := ios.NewPortForwarder("udid-1")
