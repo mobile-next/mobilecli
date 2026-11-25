@@ -12,7 +12,7 @@ type DeviceInfoResponse struct {
 }
 
 func InfoCommand(deviceID string) *CommandResponse {
-	targetDevice, err := FindDeviceWithAgent(deviceID)
+	targetDevice, err := findDeviceForInfo(deviceID)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
@@ -27,4 +27,17 @@ func InfoCommand(deviceID string) *CommandResponse {
 	}
 
 	return NewSuccessResponse(response)
+}
+
+// findDeviceForInfo skips the agent on real iOS devices: their screen size
+// comes from lockdown, so device info works without an installed agent.
+func findDeviceForInfo(deviceID string) (devices.ControllableDevice, error) {
+	targetDevice, err := FindDeviceOrAutoSelect(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("error finding device: %w", err)
+	}
+	if _, isRealIOS := targetDevice.(*devices.IOSDevice); isRealIOS {
+		return targetDevice, nil
+	}
+	return FindDeviceWithAgent(deviceID)
 }
