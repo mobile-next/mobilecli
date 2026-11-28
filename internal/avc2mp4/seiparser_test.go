@@ -2,6 +2,7 @@ package avc2mp4
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"testing"
 )
 
@@ -153,5 +154,35 @@ func TestParseTimestampWithEmulationPreventionInPayload(t *testing.T) {
 	expected := binary.BigEndian.Uint64(rawTs)
 	if ts != expected {
 		t.Fatalf("expected timestamp %d, got %d", expected, ts)
+	}
+}
+
+// the Android screen capture agent (agents/android/java/AvcTimecode.java)
+// writes these exact bytes; the zero runs in the last two need emulation
+// prevention bytes, which the agent inserts and the parser must strip.
+var androidAgentTimecodes = []struct {
+	timestampUs uint64
+	annexB      string
+}{
+	{1234567890123, "000000010605184d4f42494c454e5854494d45434f4445000003011f71fb04cb80"},
+	{0x0000000300000001, "000000010605184d4f42494c454e5854494d45434f44450000030003000003000180"},
+	{196608, "000000010605184d4f42494c454e5854494d45434f44450000030000030003000080"},
+}
+
+func TestParseTimestampReadsTheAndroidAgentTimecode(t *testing.T) {
+	for _, tc := range androidAgentTimecodes {
+		raw, err := hex.DecodeString(tc.annexB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		units := ParseNALUnits(raw)
+		if len(units) != 1 || units[0].Type != nalTypeSEI {
+			t.Fatalf("expected one SEI NAL unit, got %+v", units)
+		}
+
+		ts, ok := ParseTimestamp(units[0].Data)
+		if !ok || ts != tc.timestampUs {
+			t.Errorf("timestamp = %d, %v; want %d", ts, ok, tc.timestampUs)
+		}
 	}
 }

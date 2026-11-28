@@ -7,6 +7,7 @@ import android.util.Log;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +60,8 @@ class JsonRpcSocketServer {
 	private final Dispatcher dispatcher;
 	private volatile boolean running = true;
 	private LocalServerSocket serverSocket;
+	// set by a dispatched method that must act only once its reply has gone out
+	private Runnable afterReply;
 
 	JsonRpcSocketServer(String socketName, Dispatcher dispatcher) {
 		this.socketName = socketName;
@@ -67,8 +70,33 @@ class JsonRpcSocketServer {
 
 	/** Binds and serves on the calling thread until stop() or a socket error. */
 	void start() throws Exception {
+		bind();
+		serve();
+	}
+
+	/**
+	 * Binds now, so a caller that must own the name fails when another process
+	 * already holds it, then serves on a daemon thread.
+	 */
+	void bindAndServeDaemon() throws IOException {
+		bind();
+		Thread thread = new Thread(() -> {
+			try {
+				serve();
+			} catch (Exception e) {
+				Log.w(TAG, "server on " + socketName + " stopped: " + e.getMessage());
+			}
+		}, "jsonrpc-" + socketName);
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	private void bind() throws IOException {
 		serverSocket = new LocalServerSocket(socketName);
 		Log.i(TAG, "Listening on localabstract:" + socketName);
+	}
+
+	private void serve() throws Exception {
 		while (running) {
 			LocalSocket conn;
 			try {
@@ -87,6 +115,23 @@ class JsonRpcSocketServer {
 				} catch (Exception ignored) {
 				}
 			}
+			runAfterReply();
+		}
+	}
+
+	/**
+	 * Runs action once the reply to the request being dispatched has been written
+	 * and its connection closed. Only call it from inside the dispatcher.
+	 */
+	void afterReply(Runnable action) {
+		afterReply = action;
+	}
+
+	private void runAfterReply() {
+		Runnable action = afterReply;
+		afterReply = null;
+		if (action != null) {
+			action.run();
 		}
 	}
 
