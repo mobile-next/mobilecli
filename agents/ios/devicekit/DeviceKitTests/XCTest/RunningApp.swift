@@ -16,10 +16,13 @@ struct RunningApp {
 
     private init() {}
 
+    // placeholder XCUIApplication+Helper.m reports when the daemon cannot resolve a pid
+    private static let unresolvedBundleId = "unknowBundleId"
+
     static func getForegroundApp() -> XCUIApplication? {
-        let runningAppIds = XCUIApplication.activeAppsInfo().compactMap {
-            $0["bundleId"] as? String
-        }
+        let runningAppIds = XCUIApplication.activeAppsInfo()
+            .compactMap { $0["bundleId"] as? String }
+            .filter { $0 != unresolvedBundleId }
 
         NSLog("Detected running apps: \(runningAppIds)")
 
