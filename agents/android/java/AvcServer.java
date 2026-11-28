@@ -116,7 +116,7 @@ public class AvcServer {
 		System.exit(0);
 	}
 
-	// A mirror that could not be recreated draws nothing more. End the stream, so
+	// A mirror that lost its surface draws nothing more. End the stream, so
 	// its reader learns of it, rather than leave it open with no video.
 	private void refreshOrEnd(DisplayUtils.DisplayMirror mirror) {
 		try {
