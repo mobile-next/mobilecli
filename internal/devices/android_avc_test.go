@@ -105,7 +105,7 @@ func (l *fakeAvcLauncher) waitForLaunch(t *testing.T) *fakeAvcServer {
 func sharedAndroidSource(l *fakeAvcLauncher, grace time.Duration) avcSource {
 	return avcSource{
 		start: func(emit func([]byte), ended func(error)) (func(), error) {
-			return runAvcServer(l.launch, grace, emit, ended)
+			return runAvcServer(l.launch, grace, neverCancelled, emit, ended)
 		},
 		requestKeyFrame: func() error {
 			l.mu.Lock()
@@ -122,7 +122,7 @@ func sharedAndroidSource(l *fakeAvcLauncher, grace time.Duration) avcSource {
 func startAvcServerInBackground(l *fakeAvcLauncher, grace time.Duration, emit func([]byte), ended func(error)) <-chan error {
 	result := make(chan error, 1)
 	go func() {
-		_, err := runAvcServer(l.launch, grace, emit, ended)
+		_, err := runAvcServer(l.launch, grace, neverCancelled, emit, ended)
 		result <- err
 	}()
 	return result
@@ -141,6 +141,9 @@ func waitForResult(t *testing.T, result <-chan error) error {
 
 func ignoreChunks([]byte) {}
 func ignoreEnd(error)     {}
+
+// neverCancelled is the cancel channel of a capture nobody stops.
+var neverCancelled <-chan struct{}
 
 // --- AvcServer process lifecycle --------------------------------------------------
 
@@ -248,7 +251,7 @@ func TestATakenControlSocketKillsLeftoversAndRetriesOnce(t *testing.T) {
 	var leftoverKills atomic.Int32
 	result := make(chan error, 1)
 	go func() {
-		_, err := runAvcServerRetrying(launcher.launch, func() { leftoverKills.Add(1) }, time.Second, ignoreChunks, ignoreEnd)
+		_, err := runAvcServerRetrying(launcher.launch, func() { leftoverKills.Add(1) }, time.Second, neverCancelled, ignoreChunks, ignoreEnd)
 		result <- err
 	}()
 
@@ -267,7 +270,7 @@ func TestAnotherStartFailureIsNotRetried(t *testing.T) {
 	launcher := newFakeAvcLauncher()
 	result := make(chan error, 1)
 	go func() {
-		_, err := runAvcServerRetrying(launcher.launch, func() {}, time.Second, ignoreChunks, ignoreEnd)
+		_, err := runAvcServerRetrying(launcher.launch, func() {}, time.Second, neverCancelled, ignoreChunks, ignoreEnd)
 		result <- err
 	}()
 
@@ -311,7 +314,7 @@ func TestStoppingTheAvcServerFromInsideItsOwnEmitDoesNotDeadlock(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		stop, err := runAvcServer(launcher.launch, time.Second, emit, ignoreEnd)
+		stop, err := runAvcServer(launcher.launch, time.Second, neverCancelled, emit, ignoreEnd)
 		stopFunc <- stop
 		result <- err
 	}()
@@ -325,6 +328,47 @@ func TestStoppingTheAvcServerFromInsideItsOwnEmitDoesNotDeadlock(t *testing.T) {
 		t.Fatal("stop called from inside emit never returned")
 	}
 	assert.True(t, server.wasKilled())
+}
+
+func TestCancellingASilentAvcServerStartReturnsAtOnce(t *testing.T) {
+	// a dozing screen draws nothing, so the start waits out its grace; Ctrl+C
+	// must not have to wait with it
+	launcher := newFakeAvcLauncher()
+	cancel := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		_, err := runAvcServer(launcher.launch, time.Minute, cancel, ignoreChunks, ignoreEnd)
+		result <- err
+	}()
+	server := launcher.waitForLaunch(t)
+
+	close(cancel)
+
+	assert.ErrorIs(t, waitForResult(t, result), errAvcStartCancelled)
+	assert.True(t, server.wasKilled())
+}
+
+func TestCancellingAHungAvcServerLaunchReturnsAtOnceAndKillsItWhenItLands(t *testing.T) {
+	// the launch runs adb, which can hang; the capture must not hang with it
+	release := make(chan struct{})
+	server := newFakeAvcServer()
+	launch := func() (*avcServerProcess, error) {
+		<-release
+		return server.process(), nil
+	}
+	cancel := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		_, err := runAvcServer(launch, time.Minute, cancel, ignoreChunks, ignoreEnd)
+		result <- err
+	}()
+
+	close(cancel)
+	assert.ErrorIs(t, waitForResult(t, result), errAvcStartCancelled)
+	assert.False(t, server.wasKilled(), "nothing to kill before the launch lands")
+
+	close(release)
+	assert.Eventually(t, server.wasKilled, 2*time.Second, 5*time.Millisecond)
 }
 
 // --- one AvcServer per device, shared through the hub ----------------------------

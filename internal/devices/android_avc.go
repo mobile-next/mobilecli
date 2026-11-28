@@ -72,28 +72,42 @@ func (d *AndroidDevice) startSharedAvcCapture(config ScreenCaptureConfig) error 
 	err := d.avcStream.subscribe(avcSource{
 		start: func(emit func([]byte), ended func(error)) (func(), error) {
 			launch := func() (*avcServerProcess, error) { return d.launchAvcServer(config) }
-			return runAvcServerRetrying(launch, d.killLeftoverAvcServers, avcServerStartGrace, emit, ended)
+			return runAvcServerRetrying(launch, d.killLeftoverAvcServers, avcServerStartGrace, cancel, emit, ended)
 		},
 		ready:           config.OnReady,
 		requestKeyFrame: func() error { return RequestAvcKeyFrame(d) },
 	}, config.OnData, cancel)
 
 	utils.Verbose("avc stream ended")
+	// stopped by its caller before it began: an ordinary end, like any other stop
+	if errors.Is(err, errAvcStartCancelled) {
+		return nil
+	}
 	return err
 }
 
 // runAvcServerRetrying is runAvcServer, retried once after killing leftover
 // servers when the control socket was taken: the kill before the launch can
 // race a leftover that is still shutting down.
-func runAvcServerRetrying(launch func() (*avcServerProcess, error), killLeftovers func(), grace time.Duration, emit func([]byte), ended func(error)) (func(), error) {
-	stop, err := runAvcServer(launch, grace, emit, ended)
+func runAvcServerRetrying(launch func() (*avcServerProcess, error), killLeftovers func(), grace time.Duration, cancel <-chan struct{}, emit func([]byte), ended func(error)) (func(), error) {
+	stop, err := runAvcServer(launch, grace, cancel, emit, ended)
 	if err == nil || !strings.Contains(err.Error(), avcControlSocketTaken) {
 		return stop, err
 	}
 
 	utils.Info("the screen capture control socket is taken; killing leftover servers and retrying once")
 	killLeftovers()
-	return runAvcServer(launch, grace, emit, ended)
+	return runAvcServer(launch, grace, cancel, emit, ended)
+}
+
+// errAvcStartCancelled ends a capture that was stopped while its server was
+// still starting.
+var errAvcStartCancelled = errors.New("screen capture was stopped while it was starting")
+
+// avcServerLaunch is what a launch came back with.
+type avcServerLaunch struct {
+	proc *avcServerProcess
+	err  error
 }
 
 // runAvcServer launches an AvcServer and pumps its stdout into emit until it
@@ -101,10 +115,28 @@ func runAvcServerRetrying(launch func() (*avcServerProcess, error), killLeftover
 // the server stays silent; a server that exits or prints only text before then
 // fails the start with its own message. The returned stop kills the server; it
 // does not wait for the reading goroutine, so it may be called from inside emit.
-func runAvcServer(launch func() (*avcServerProcess, error), grace time.Duration, emit func([]byte), ended func(error)) (func(), error) {
-	proc, err := launch()
-	if err != nil {
-		return nil, err
+//
+// Closing cancel ends the start at once with errAvcStartCancelled: the launch
+// runs adb, which can hang, and a silent server holds the start for its grace.
+// A launch that lands after that is killed.
+func runAvcServer(launch func() (*avcServerProcess, error), grace time.Duration, cancel <-chan struct{}, emit func([]byte), ended func(error)) (func(), error) {
+	// buffered, so a launch nobody waits for any more still finishes
+	landed := make(chan avcServerLaunch, 1)
+	go func() {
+		proc, err := launch()
+		landed <- avcServerLaunch{proc: proc, err: err}
+	}()
+
+	var proc *avcServerProcess
+	select {
+	case launched := <-landed:
+		if launched.err != nil {
+			return nil, launched.err
+		}
+		proc = launched.proc
+	case <-cancel:
+		go killWhenLanded(landed)
+		return nil, errAvcStartCancelled
 	}
 	stop := sync.OnceFunc(proc.kill)
 
@@ -125,10 +157,23 @@ func runAvcServer(launch func() (*avcServerProcess, error), grace time.Duration,
 		}
 	case <-timer.C:
 		utils.Verbose("screen capture agent has no video yet after %s, keeping the stream open", grace)
+	case <-cancel:
+		decision <- false
+		stop()
+		return nil, errAvcStartCancelled
 	}
 
 	decision <- true
 	return stop, nil
+}
+
+// killWhenLanded ends a server whose capture was stopped before its launch
+// came back. It waits as long as the launch does; nothing else waits on it.
+func killWhenLanded(landed <-chan avcServerLaunch) {
+	launched := <-landed
+	if launched.err == nil {
+		launched.proc.kill()
+	}
 }
 
 // pumpAvcServer reads the server's stdout. Whether video started is reported on
