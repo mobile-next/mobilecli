@@ -113,7 +113,10 @@ class DisplayUtils {
 
 			@Override
 			public synchronized void release() {
-				destroyDisplay(display);
+				if (display != null) {
+					destroyDisplay(display);
+					display = null;
+				}
 			}
 
 			@Override
@@ -123,11 +126,20 @@ class DisplayUtils {
 				// display goes first: a surface takes one display at a time, and a
 				// second display made on it while the first still holds it never
 				// draws, so the mirror stopped for good once the first was destroyed.
+				release();
 				try {
-					destroyDisplay(display);
+					display = createMirrorDisplay(name, width, height, surface);
+					return;
+				} catch (Exception e) {
+					Log.w(TAG, "Failed to recreate the mirror display, trying once more", e);
+				}
+
+				try {
 					display = createMirrorDisplay(name, width, height, surface);
 				} catch (Exception e) {
-					Log.w(TAG, "Failed to refresh the mirror display", e);
+					// Nothing draws into the encoder any more. End the stream, so its
+					// reader learns of it, rather than leave it open with no video.
+					throw new IllegalStateException("the screen mirror could not be recreated", e);
 				}
 			}
 		};
