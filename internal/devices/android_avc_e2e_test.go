@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,13 +83,25 @@ func TestARecordingThatJoinsALiveAndroidStreamStartsDecodableAtTheNextKeyFrame(t
 	// this source answers the joiner's key frame request with nothing, so the
 	// joiner starts at the encoder's own next key frame (picture 30)
 	src := sharedAndroidSource(launcher, time.Second)
-	src.requestKeyFrame = func() error { return nil }
+	// The hub asks for a key frame only once the joiner is registered, so the
+	// first request also says the recording is attached.
+	keyFrameAsked := make(chan struct{})
+	var askedOnce sync.Once
+	src.requestKeyFrame = func() error {
+		askedOnce.Do(func() { close(keyFrameAsked) })
+		return nil
+	}
 	live := startCapture(hub, src)
 	server := launcher.waitForLaunch(t)
 	server.print(concat(androidSPS, androidPPS, androidPictures(0, 10)))
 	live.waitForBytes(t, 1)
 
 	recording := startCapture(hub, src)
+	select {
+	case <-keyFrameAsked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the joining recording never asked for a key frame")
+	}
 	server.print(androidPictures(10, 91))
 	recording.waitForBytes(t, len(androidSPS)+len(androidPPS)+len(androidPictures(30, 91))-len(androidPicture(90, 0)))
 	recording.interrupt()
