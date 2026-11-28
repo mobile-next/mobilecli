@@ -25,7 +25,18 @@ import java.util.concurrent.CountDownLatch;
  *
  * Usage:
  *   adb exec-out CLASSPATH=/data/local/tmp/mobilecli.dex app_process / \
- *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60]
+ *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60] [--session id]
+ *
+ * --session is not read here: it only tags the command line, so the host can
+ * find and kill exactly this process on the device.
+ *
+ * Only one AvcServer runs per device: the control socket name is fixed, and a
+ * second server would take keyframe and bitrate requests meant for the first.
+ * Startup fails when the socket is already held.
+ *
+ * Every picture is preceded by a timecode SEI (see AvcTimecode). When the
+ * display is larger than the encoder supports, it is encoded at the largest
+ * size the encoder takes, keeping the aspect ratio (see EncoderSize).
  */
 public class AvcServer {
 
@@ -38,6 +49,11 @@ public class AvcServer {
 	// The encoder is "idle" when it produced nothing for this long: the screen is static and
 	// REPEAT_PREVIOUS_FRAME_AFTER has stopped feeding it (it repeats a frame only a few times).
 	private static final long IDLE_AFTER_MS = 500;
+	// A new virtual display is drawn once when it appears, but not when the screen is
+	// dozing or the first draw was missed; until the first output, it is redrawn this
+	// often, this many times, so a fresh stream does not wait for the screen to change.
+	private static final long FIRST_OUTPUT_REFRESH_MS = 1_000;
+	private static final int FIRST_OUTPUT_REFRESHES = 3;
 
 	// localabstract socket for the control channel; must match avcControlSocket in devices/avc_control.go
 	static final String CONTROL_SOCKET = "mobilecli-avc";
@@ -51,6 +67,8 @@ public class AvcServer {
 	// enqueued here and drained there so all codec access stays single-threaded.
 	private final ConcurrentLinkedQueue<Runnable> codecCommands = new ConcurrentLinkedQueue<>();
 	private volatile long lastOutputAtMs = SystemClock.uptimeMillis();
+	// reused for every stamped picture, so each one leaves in a single write
+	private ByteBuffer stamped = ByteBuffer.allocateDirect(0);
 
 	AvcServer(int bitrate, float scale, int fps) {
 		this.bitrate = bitrate;
@@ -84,7 +102,7 @@ public class AvcServer {
 		return Math.max(MIN_BITRATE, Math.min(MAX_BITRATE, bps));
 	}
 
-	private void startControlServer(MediaCodec codec, DisplayUtils.DisplayMirror mirror) {
+	private void startControlServer(MediaCodec codec, DisplayUtils.DisplayMirror mirror) throws IOException {
 		new JsonRpcSocketServer(CONTROL_SOCKET, (method, params) -> {
 			switch (method) {
 				case "screencapture.setBitrate": {
@@ -116,7 +134,42 @@ public class AvcServer {
 				default:
 					throw new RpcException(RpcException.METHOD_NOT_FOUND, "Method not found: " + method);
 			}
-		}).startDaemon();
+		}).bindAndServeDaemon();
+	}
+
+	/**
+	 * Writes one encoder output buffer in a single write. A buffer that holds a
+	 * picture (any slice) gets a timecode SEI in front of its first slice; one
+	 * without a slice, such as the SPS/PPS config buffer, is written as is.
+	 */
+	private void writeOutput(FileChannel out, ByteBuffer frame, long timestampUs) throws IOException {
+		int sliceAt = AvcTimecode.firstSliceAt(frame);
+		if (sliceAt < 0) {
+			writeFully(out, frame);
+			return;
+		}
+
+		byte[] sei = AvcTimecode.sei(timestampUs);
+		int size = frame.remaining() + sei.length;
+		if (stamped.capacity() < size) {
+			stamped = ByteBuffer.allocateDirect(size + size / 2);
+		}
+		stamped.clear();
+		ByteBuffer head = frame.duplicate();
+		head.limit(sliceAt);
+		stamped.put(head);
+		stamped.put(sei);
+		frame.position(sliceAt);
+		stamped.put(frame);
+		stamped.flip();
+		writeFully(out, stamped);
+	}
+
+	// blocking zero-copy write; provides backpressure
+	private static void writeFully(FileChannel out, ByteBuffer buffer) throws IOException {
+		while (buffer.hasRemaining()) {
+			out.write(buffer);
+		}
 	}
 
 	private void stream() throws Exception {
@@ -131,19 +184,19 @@ public class AvcServer {
 		// alignment (usually 2); a raw (display * scale) can be odd. Round down.
 		int widthAlign = Math.max(caps.getWidthAlignment(), 2);
 		int heightAlign = Math.max(caps.getHeightAlignment(), 2);
-		int width = ((int) (display.width * scale) / widthAlign) * widthAlign;
-		int height = ((int) (display.height * scale) / heightAlign) * heightAlign;
-
-		if (width <= 0 || height <= 0) {
+		int requestedWidth = (int) (display.width * scale);
+		int requestedHeight = (int) (display.height * scale);
+		int[] size = EncoderSize.fit(requestedWidth, requestedHeight, widthAlign, heightAlign, caps::isSizeSupported);
+		if (size == null) {
 			codec.release();
-			throw new IllegalArgumentException("Invalid dimensions: " + width + "x" + height);
+			throw new IllegalArgumentException("No video size the encoder supports fits "
+					+ requestedWidth + "x" + requestedHeight);
 		}
-		if (!caps.isSizeSupported(width, height)) {
-			String max = caps.getSupportedWidths().getUpper() + "x" + caps.getSupportedHeights().getUpper();
-			codec.release();
-			throw new IllegalArgumentException("Video dimensions " + width + "x" + height
-					+ " exceed codec capabilities. Maximum supported: " + max
-					+ ". Try using --scale parameter to reduce resolution (e.g., --scale 0.5)");
+		int width = size[0];
+		int height = size[1];
+		if (width != requestedWidth || height != requestedHeight) {
+			// logcat only: stdout and stderr carry the stream
+			Log.i(TAG, "Encoding " + requestedWidth + "x" + requestedHeight + " as " + width + "x" + height);
 		}
 
 		MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
@@ -176,11 +229,21 @@ public class AvcServer {
 			throw new IllegalStateException("Failed to create virtual display");
 		}
 
+		try {
+			startControlServer(codec, virtualDisplay);
+		} catch (IOException e) {
+			virtualDisplay.release();
+			codec.release();
+			throw new IllegalStateException("another screen capture is already running on this device ("
+					+ CONTROL_SOCKET + " is taken)", e);
+		}
 		codec.start();
-		startControlServer(codec, virtualDisplay);
 
 		MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 		FileChannel stdout = new FileOutputStream(FileDescriptor.out).getChannel();
+		boolean hadOutput = false;
+		int firstOutputRefreshes = 0;
+		long lastRefreshAtMs = SystemClock.uptimeMillis();
 		try {
 			while (shutdown.getCount() > 0) {
 				Runnable command;
@@ -194,17 +257,26 @@ public class AvcServer {
 
 				int index = codec.dequeueOutputBuffer(info, DEQUEUE_TIMEOUT_US);
 				if (index < 0) {
-					continue; // INFO_TRY_AGAIN_LATER / INFO_OUTPUT_FORMAT_CHANGED
+					// INFO_TRY_AGAIN_LATER / INFO_OUTPUT_FORMAT_CHANGED
+					long now = SystemClock.uptimeMillis();
+					if (!hadOutput && firstOutputRefreshes < FIRST_OUTPUT_REFRESHES
+							&& now - lastRefreshAtMs >= FIRST_OUTPUT_REFRESH_MS) {
+						virtualDisplay.refresh();
+						firstOutputRefreshes++;
+						lastRefreshAtMs = now;
+					}
+					continue;
+				}
+				// the config buffer (SPS/PPS) can come before any picture
+				if ((info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+					hadOutput = true;
 				}
 				ByteBuffer buffer = codec.getOutputBuffer(index);
 				if (buffer != null && info.size > 0) {
 					buffer.position(info.offset);
 					buffer.limit(info.offset + info.size);
 					try {
-						// blocking zero-copy write; provides backpressure
-						while (buffer.hasRemaining()) {
-							stdout.write(buffer);
-						}
+						writeOutput(stdout, buffer, info.presentationTimeUs);
 					} catch (IOException e) {
 						break; // pipe broken - client disconnected
 					}
