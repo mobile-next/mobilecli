@@ -1,4 +1,5 @@
 import {expect} from '@playwright/test';
+import {eventually} from './poll';
 import type {Point, UIDumpResponse, UIElement} from './types';
 
 // the playground webview loads this page, and the page reads its own query string:
@@ -84,11 +85,9 @@ export interface WebViewQueryResult {
 // `goto`, `back` and `forward` return as soon as the navigation is requested, and
 // `wait` can observe the load event of the page still on screen. polling the url
 // is what actually proves the navigation landed, without a guessed sleep.
+// a read that lands mid-navigation throws, and eventually retries it on the new page.
 export async function expectWebViewUrlToBecome(readUrl: () => string, expected: string): Promise<void> {
-	await expect.poll(readUrl, {
-		timeout: 15000,
-		message: `webview never navigated to ${expected}`,
-	}).toBe(expected);
+	await eventually(readUrl, `webview never navigated to ${expected}`).toBe(expected);
 }
 
 // no webview ever has this id, so every command that takes one fails on it
