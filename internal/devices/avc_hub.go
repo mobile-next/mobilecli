@@ -180,7 +180,7 @@ func (h *avcHub) attach(src avcSource, cancel <-chan struct{}) (*avcSubscriber, 
 			sub := &avcSubscriber{ch: make(chan []byte, avcSubscriberQueue), joined: make(chan struct{}), waiting: true}
 			h.subs[sub] = struct{}{}
 			h.mu.Unlock()
-			utils.Verbose("avc hub: joined a running stream, this request's capture settings are ignored")
+			utils.Info("screen capture joined a running stream; its scale, fps and bitrate are ignored, the first capture's apply")
 			return sub, nil
 		}
 

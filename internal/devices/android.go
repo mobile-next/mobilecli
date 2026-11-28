@@ -116,6 +116,8 @@ type AndroidDevice struct {
 	// host port of the DeviceServer once it's known to be up and current
 	serverMu   sync.Mutex
 	serverPort int
+
+	avcStream avcHub // fans the one AvcServer stream out to every concurrent avc capture
 }
 
 func (d *AndroidDevice) ID() string {
@@ -1641,26 +1643,23 @@ func (d *AndroidDevice) StartScreenCapture(config ScreenCaptureConfig) error {
 		return fmt.Errorf("unsupported format: %s, only 'mjpeg' and 'avc' are supported", config.Format)
 	}
 
+	// every avc capture of the device shares one AvcServer; see startSharedAvcCapture
+	if config.Format == FormatAVC {
+		return d.startSharedAvcCapture(config)
+	}
+
+	// mjpeg: one MjpegServer per capture. it binds no socket, so several can run.
 	if err := d.pushTempFile(agentassets.AndroidMobilecliDEX, androidDexPath); err != nil {
 		return fmt.Errorf("push .dex: %w", err)
 	}
 
 	serverClass := "com.mobilenext.mobilecli.MjpegServer"
-	if config.Format == FormatAVC {
-		serverClass = "com.mobilenext.mobilecli.AvcServer"
-	}
-
 	if config.OnProgress != nil {
 		config.OnProgress("Starting Agent")
 	}
 
 	utils.Verbose("Starting %s via mobilecli.dex", serverClass)
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier()}, "exec-out", "CLASSPATH="+androidDexPath, "app_process", "/", serverClass, "--quality", fmt.Sprintf("%d", config.Quality), "--scale", fmt.Sprintf("%.4f", config.Scale), "--fps", fmt.Sprintf("%d", config.FPS))
-
-	// bitrate only applies to AvcServer
-	if config.Format == FormatAVC && config.Bitrate > 0 {
-		cmdArgs = append(cmdArgs, "--bitrate", fmt.Sprintf("%d", config.Bitrate))
-	}
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 	cmd := exec.CommandContext(context.Background(), getAdbPath(), cmdArgs...)
 
