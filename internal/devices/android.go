@@ -2179,18 +2179,30 @@ func (d *AndroidDevice) getUiAutomatorDump() (string, error) {
 }
 
 func (d *AndroidDevice) DumpSourceRaw(opts DumpOptions) (any, error) {
+	var deviceServerErr error
 	if jsonStr, err := d.getDeviceServerDump(opts); err == nil {
 		return jsonStr, nil
 	} else {
 		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
+		deviceServerErr = err
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+		return nil, viewTreeDumpError(err, deviceServerErr)
 	}
 
 	return xmlContent, nil
+}
+
+// viewTreeDumpError keeps the device server error next to the uiautomator one:
+// the fallback usually fails for its own reason, and the reason the better path
+// was skipped is the part a reader needs.
+func viewTreeDumpError(uiautomatorErr, deviceServerErr error) error {
+	if deviceServerErr == nil {
+		return fmt.Errorf("failed to get view tree dump: %w", uiautomatorErr)
+	}
+	return fmt.Errorf("failed to get view tree dump: %w (device server: %w)", uiautomatorErr, deviceServerErr)
 }
 
 func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
@@ -2202,19 +2214,24 @@ func (d *AndroidDevice) DumpSource(opts DumpOptions) ([]ScreenElement, error) {
 		return elements, nil
 	}
 
+	var deviceServerErr error
 	if nodes, err := d.dumpUiNodes(opts); err == nil {
 		return collectUiNodeElements(nodes), nil
 	} else {
 		utils.Verbose("device server dump unavailable, falling back to uiautomator: %v", err)
+		deviceServerErr = err
 	}
 
 	xmlContent, err := d.getUiAutomatorDump()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get view tree dump: %w", err)
+		return nil, viewTreeDumpError(err, deviceServerErr)
 	}
 
 	var uiXml uiAutomatorXml
 	if err := xml.Unmarshal([]byte(xmlContent), &uiXml); err != nil {
+		if deviceServerErr != nil {
+			return nil, fmt.Errorf("failed to parse uiautomator XML: %w (device server: %w)", err, deviceServerErr)
+		}
 		return nil, fmt.Errorf("failed to parse uiautomator XML: %w", err)
 	}
 
