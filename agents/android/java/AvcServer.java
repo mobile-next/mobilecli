@@ -25,10 +25,12 @@ import java.util.concurrent.CountDownLatch;
  *
  * Usage:
  *   adb exec-out CLASSPATH=/data/local/tmp/mobilecli.dex app_process / \
- *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60] [--session id]
+ *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60]
  *
- * --session is not read here: it only tags the command line, so the host can
- * find and kill exactly this process on the device.
+ * Control methods: screencapture.setBitrate {bps}, screencapture.requestKeyFrame,
+ * and screencapture.stop, which replies and then shuts the server down cleanly
+ * (exit 0). Killing the host's adb alone leaves this process running until its
+ * next write fails, which a static screen may never make.
  *
  * Only one AvcServer runs per device: the control socket name is fixed, and a
  * second server would take keyframe and bitrate requests meant for the first.
@@ -62,6 +64,7 @@ public class AvcServer {
 	private final float scale;
 	private final int fps;
 	private final CountDownLatch shutdown = new CountDownLatch(1);
+	private JsonRpcSocketServer controlServer;
 
 	// MediaCodec is driven from the encoder thread; control-socket commands are
 	// enqueued here and drained there so all codec access stays single-threaded.
@@ -96,6 +99,8 @@ public class AvcServer {
 			System.err.println("Error: " + e.getMessage());
 			System.exit(1);
 		}
+		// binder and other runtime threads must not keep the process alive
+		System.exit(0);
 	}
 
 	private static int clampBitrate(int bps) {
@@ -103,7 +108,7 @@ public class AvcServer {
 	}
 
 	private void startControlServer(MediaCodec codec, DisplayUtils.DisplayMirror mirror) throws IOException {
-		new JsonRpcSocketServer(CONTROL_SOCKET, (method, params) -> {
+		controlServer = new JsonRpcSocketServer(CONTROL_SOCKET, (method, params) -> {
 			switch (method) {
 				case "screencapture.setBitrate": {
 					int bps = params == null ? -1 : params.optInt("bps", -1);
@@ -131,10 +136,17 @@ public class AvcServer {
 					});
 					return new JSONObject().put("ok", true);
 				}
+				case "screencapture.stop": {
+					// the encode loop polls the latch every DEQUEUE_TIMEOUT_US, so this ends
+					// it on a static screen too; counting down again is a no-op
+					controlServer.afterReply(shutdown::countDown);
+					return new JSONObject().put("ok", true);
+				}
 				default:
 					throw new RpcException(RpcException.METHOD_NOT_FOUND, "Method not found: " + method);
 			}
-		}).bindAndServeDaemon();
+		});
+		controlServer.bindAndServeDaemon();
 	}
 
 	/**
@@ -289,6 +301,7 @@ public class AvcServer {
 			try { codec.stop(); } catch (Exception ignored) { }
 			try { codec.release(); } catch (Exception ignored) { }
 			try { virtualDisplay.release(); } catch (Exception ignored) { }
+			controlServer.stop();
 		}
 	}
 }

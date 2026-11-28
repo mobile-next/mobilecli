@@ -60,6 +60,8 @@ class JsonRpcSocketServer {
 	private final Dispatcher dispatcher;
 	private volatile boolean running = true;
 	private LocalServerSocket serverSocket;
+	// set by a dispatched method that must act only once its reply has gone out
+	private Runnable afterReply;
 
 	JsonRpcSocketServer(String socketName, Dispatcher dispatcher) {
 		this.socketName = socketName;
@@ -113,6 +115,23 @@ class JsonRpcSocketServer {
 				} catch (Exception ignored) {
 				}
 			}
+			runAfterReply();
+		}
+	}
+
+	/**
+	 * Runs action once the reply to the request being dispatched has been written
+	 * and its connection closed. Only call it from inside the dispatcher.
+	 */
+	void afterReply(Runnable action) {
+		afterReply = action;
+	}
+
+	private void runAfterReply() {
+		Runnable action = afterReply;
+		afterReply = null;
+		if (action != null) {
+			action.run();
 		}
 	}
 
