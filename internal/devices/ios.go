@@ -965,9 +965,9 @@ func (d *IOSDevice) GetForegroundApp() (*ForegroundAppInfo, error) {
 }
 
 func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
-	windowSize, err := d.deviceKitClient.GetWindowSize()
+	screenSize, err := readScreenSizeFromLockdown(d.Udid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window size from DeviceKit agent: %w", err)
+		return nil, fmt.Errorf("failed to get screen size: %w", err)
 	}
 
 	return &FullDeviceInfo{
@@ -980,11 +980,7 @@ func (d *IOSDevice) Info() (*FullDeviceInfo, error) {
 			State:    d.State(),
 			Model:    d.ProductType,
 		},
-		ScreenSize: &ScreenSize{
-			Width:  windowSize.ScreenSize.Width,
-			Height: windowSize.ScreenSize.Height,
-			Scale:  windowSize.Scale,
-		},
+		ScreenSize: screenSize,
 	}, nil
 }
 
