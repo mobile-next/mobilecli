@@ -121,28 +121,39 @@ class DisplayUtils {
 
 			@Override
 			public synchronized void refresh() {
-				// A new display is composed once when it appears; re-applying the same
-				// surface to the old one changes nothing and draws nothing. The old
-				// display goes first: a surface takes one display at a time, and a
-				// second display made on it while the first still holds it never
-				// draws, so the mirror stopped for good once the first was destroyed.
-				release();
+				// The display is composed again when its surface is taken away and
+				// given back. It is never recreated: a second display on the encoder's
+				// surface does not draw while the first holds it, and on some devices
+				// (seen on Android 13) one created after the first is destroyed does
+				// not draw either. Both left the stream open with no video.
 				try {
-					display = createMirrorDisplay(name, width, height, surface);
-					return;
+					setMirrorSurface(display, null);
 				} catch (Exception e) {
-					Log.w(TAG, "Failed to recreate the mirror display, trying once more", e);
+					// still attached: nothing was drawn, and nothing was lost
+					Log.w(TAG, "Failed to refresh the mirror display", e);
+					return;
 				}
 
 				try {
-					display = createMirrorDisplay(name, width, height, surface);
+					setMirrorSurface(display, surface);
 				} catch (Exception e) {
 					// Nothing draws into the encoder any more. End the stream, so its
 					// reader learns of it, rather than leave it open with no video.
-					throw new IllegalStateException("the screen mirror could not be recreated", e);
+					throw new IllegalStateException("the screen mirror lost its surface", e);
 				}
 			}
 		};
+	}
+
+	/** Points a mirror display at surface, or at nothing when surface is null, in its own transaction. */
+	private static void setMirrorSurface(IBinder display, Surface surface) throws Exception {
+		Class<?> sc = Class.forName("android.view.SurfaceControl");
+		sc.getMethod("openTransaction").invoke(null);
+		try {
+			sc.getMethod("setDisplaySurface", IBinder.class, Surface.class).invoke(null, display, surface);
+		} finally {
+			sc.getMethod("closeTransaction").invoke(null);
+		}
 	}
 
 	private static void destroyDisplay(IBinder display) {
