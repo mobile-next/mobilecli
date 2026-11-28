@@ -116,6 +116,17 @@ public class AvcServer {
 		System.exit(0);
 	}
 
+	// A mirror that could not be recreated draws nothing more. End the stream, so
+	// its reader learns of it, rather than leave it open with no video.
+	private void refreshOrEnd(DisplayUtils.DisplayMirror mirror) {
+		try {
+			mirror.refresh();
+		} catch (IllegalStateException e) {
+			Log.e(TAG, "Ending the stream: " + e.getMessage(), e);
+			shutdown.countDown();
+		}
+	}
+
 	private static int clampBitrate(int bps) {
 		return Math.max(MIN_BITRATE, Math.min(MAX_BITRATE, bps));
 	}
@@ -144,7 +155,7 @@ public class AvcServer {
 						// A sync frame is made from the next input frame, and a static screen
 						// sends none: have the display drawn once more so there is one.
 						if (SystemClock.uptimeMillis() - lastOutputAtMs > IDLE_AFTER_MS) {
-							mirror.refresh();
+							refreshOrEnd(mirror);
 						}
 					});
 					return new JSONObject().put("ok", true);
@@ -290,7 +301,7 @@ public class AvcServer {
 					long now = SystemClock.uptimeMillis();
 					if (!hadOutput && firstOutputRefreshes < FIRST_OUTPUT_REFRESHES
 							&& now - lastRefreshAtMs >= FIRST_OUTPUT_REFRESH_MS) {
-						virtualDisplay.refresh();
+						refreshOrEnd(virtualDisplay);
 						firstOutputRefreshes++;
 						lastRefreshAtMs = now;
 					}
