@@ -1965,12 +1965,40 @@ type androidNodeAttrs struct {
 }
 
 // isScreenElement reports whether the node is worth listing: it has text, a pane title,
-// content-desc, hint, resource-id, or is interactable (clickable or checkable,
-// e.g. Flutter icon-only buttons), and has a positive width and height.
+// content-desc, hint, resource-id, is interactable (clickable or checkable,
+// e.g. Flutter icon-only buttons) or is a WebView, and has a positive width and height.
+// A WebView is always kept: callers map page coordinates onto its bounds, and
+// Chromium's accessibility provider can report it with no label or resource-id.
 func (a androidNodeAttrs) isScreenElement() bool {
 	isLabeled := a.text != "" || a.contentDesc != "" || a.hint != "" || a.resourceID != "" || a.value != "" || a.paneTitle != ""
 	isInteractable := a.clickable || a.checkable
-	return (isLabeled || isInteractable) && a.rect.Width > 0 && a.rect.Height > 0
+	return (isLabeled || isInteractable || a.isWebView()) && a.rect.Width > 0 && a.rect.Height > 0
+}
+
+func (a androidNodeAttrs) isWebView() bool {
+	return a.class == androidWebViewClass
+}
+
+const androidWebViewClass = "android.webkit.WebView"
+
+// unwrapNestedWebView returns the children of a WebView's single child when that
+// child is a second WebView node with the same bounds, as Chromium reports it,
+// so the page shows up as one WebView rather than two. An inner WebView that
+// carries a label is kept, so its text and identifier are not lost.
+func (a androidNodeAttrs) unwrapNestedWebView(children []types.ScreenElement) []types.ScreenElement {
+	if !a.isWebView() || len(children) != 1 {
+		return children
+	}
+	inner := children[0]
+	if inner.Type != androidWebViewClass || inner.Rect != a.rect || isLabeledElement(inner) {
+		return children
+	}
+	return inner.Children
+}
+
+func isLabeledElement(e types.ScreenElement) bool {
+	hasText := e.Text != nil && *e.Text != ""
+	return hasText || e.Label != nil || e.Identifier != nil || e.Placeholder != nil || e.Value != nil || e.PaneTitle != nil
 }
 
 func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.ScreenElement {
@@ -1978,7 +2006,7 @@ func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.
 		Type:     a.class,
 		Text:     &a.text,
 		Rect:     a.rect,
-		Children: children,
+		Children: a.unwrapNestedWebView(children),
 	}
 
 	// set placeholder from hint; text is left as the source reported it
