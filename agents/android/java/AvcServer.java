@@ -25,16 +25,17 @@ import java.util.concurrent.CountDownLatch;
  *
  * Usage:
  *   adb exec-out CLASSPATH=/data/local/tmp/mobilecli.dex app_process / \
- *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60]
+ *     com.mobilenext.mobilecli.AvcServer [--bitrate bps] [--scale 0.1-2.0] [--fps 1-60] [--exclusive]
  *
  * Control methods: screencapture.setBitrate {bps}, screencapture.requestKeyFrame,
  * and screencapture.stop, which replies and then shuts the server down cleanly
  * (exit 0). Killing the host's adb alone leaves this process running until its
  * next write fails, which a static screen may never make.
  *
- * Only one AvcServer runs per device: the control socket name is fixed, and a
- * second server would take keyframe and bitrate requests meant for the first.
- * Startup fails when the socket is already held.
+ * The control socket name is fixed, so only one AvcServer per device can be
+ * controlled. A server that finds the name taken streams anyway, without
+ * control, as it always has. With --exclusive it refuses to start instead, for
+ * a host that runs one server per device and must not get an uncontrolled one.
  *
  * Every picture is preceded by a timecode SEI (see AvcTimecode). When the
  * display is larger than the encoder supports, it is encoded at the largest
@@ -63,6 +64,7 @@ public class AvcServer {
 	private final int bitrate;
 	private final float scale;
 	private final int fps;
+	private final boolean exclusive;
 	private final CountDownLatch shutdown = new CountDownLatch(1);
 	private JsonRpcSocketServer controlServer;
 
@@ -73,7 +75,8 @@ public class AvcServer {
 	// reused for every stamped picture, so each one leaves in a single write
 	private ByteBuffer stamped = ByteBuffer.allocateDirect(0);
 
-	AvcServer(int bitrate, float scale, int fps) {
+	AvcServer(int bitrate, float scale, int fps, boolean exclusive) {
+		this.exclusive = exclusive;
 		this.bitrate = bitrate;
 		this.scale = scale;
 		this.fps = fps;
@@ -83,7 +86,16 @@ public class AvcServer {
 		int bitrate = DEFAULT_BITRATE;
 		float scale = 1.0f;
 		int fps = 30;
-		for (int i = 0; i + 1 < args.length; i += 2) {
+		boolean exclusive = false;
+		for (int i = 0; i < args.length; i++) {
+			// the only option without a value
+			if (args[i].equals("--exclusive")) {
+				exclusive = true;
+				continue;
+			}
+			if (i + 1 >= args.length) {
+				break;
+			}
 			if (args[i].equals("--bitrate")) {
 				bitrate = clampBitrate(Integer.parseInt(args[i + 1]));
 			} else if (args[i].equals("--scale")) {
@@ -91,9 +103,10 @@ public class AvcServer {
 			} else if (args[i].equals("--fps")) {
 				fps = Math.max(1, Math.min(60, Integer.parseInt(args[i + 1])));
 			}
+			i++;
 		}
 		try {
-			new AvcServer(bitrate, scale, fps).stream();
+			new AvcServer(bitrate, scale, fps, exclusive).stream();
 		} catch (Exception e) {
 			Log.e(TAG, "Failed to start AVC stream", e);
 			System.err.println("Error: " + e.getMessage());
@@ -244,10 +257,14 @@ public class AvcServer {
 		try {
 			startControlServer(codec, virtualDisplay);
 		} catch (IOException e) {
-			virtualDisplay.release();
-			codec.release();
-			throw new IllegalStateException("another screen capture is already running on this device ("
-					+ CONTROL_SOCKET + " is taken)", e);
+			if (exclusive) {
+				virtualDisplay.release();
+				codec.release();
+				throw new IllegalStateException("another screen capture is already running on this device ("
+						+ CONTROL_SOCKET + " is taken)", e);
+			}
+			// logcat only: stderr shares the video stream under adb exec-out
+			Log.w(TAG, CONTROL_SOCKET + " is taken; streaming without bitrate, key frame and stop control");
 		}
 		codec.start();
 
