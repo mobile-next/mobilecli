@@ -117,7 +117,8 @@ type AndroidDevice struct {
 	serverMu   sync.Mutex
 	serverPort int
 
-	avcStream avcHub // fans the one AvcServer stream out to every concurrent avc capture
+	avcStream avcHub     // fans the one AvcServer stream out to every concurrent avc capture
+	avcLaunch sync.Mutex // one AvcServer launch at a time; see launchUnlessStopped
 }
 
 func (d *AndroidDevice) ID() string {

@@ -345,7 +345,109 @@ func TestCancellingASilentAvcServerStartReturnsAtOnce(t *testing.T) {
 	close(cancel)
 
 	assert.ErrorIs(t, waitForResult(t, result), errAvcStartCancelled)
-	assert.True(t, server.wasKilled())
+	// the stop can win before the start has taken the launched server, which
+	// is then killed in the background
+	assert.Eventually(t, server.wasKilled, 2*time.Second, 5*time.Millisecond)
+}
+
+// launchSteps records what a guarded launch did, in order.
+type launchSteps struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (l *launchSteps) did(step string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steps = append(l.steps, step)
+}
+
+func (l *launchSteps) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.steps...)
+}
+
+func TestAStoppedLaunchTouchesNothingOnTheDevice(t *testing.T) {
+	var mu sync.Mutex
+	var did launchSteps
+	cancel := make(chan struct{})
+	close(cancel)
+
+	_, err := launchUnlessStopped(&mu, cancel,
+		func() error { did.did("push"); return nil },
+		func() { did.did("kill leftovers") },
+		func() (*avcServerProcess, error) { did.did("start"); return newFakeAvcServer().process(), nil })
+
+	assert.ErrorIs(t, err, errAvcStartCancelled)
+	assert.Empty(t, did.list())
+}
+
+func TestALaunchStoppedDuringItsPushDoesNotKillTheNextCapturesServer(t *testing.T) {
+	// the push runs adb and can take long; by the time it returns, the capture
+	// may be gone and another one may own the device's server
+	var mu sync.Mutex
+	var did launchSteps
+	cancel := make(chan struct{})
+
+	_, err := launchUnlessStopped(&mu, cancel,
+		func() error { did.did("push"); close(cancel); return nil },
+		func() { did.did("kill leftovers") },
+		func() (*avcServerProcess, error) { did.did("start"); return newFakeAvcServer().process(), nil })
+
+	assert.ErrorIs(t, err, errAvcStartCancelled)
+	assert.Equal(t, []string{"push"}, did.list())
+}
+
+func TestALaunchStoppedWhileItClearsLeftoversStartsNoServer(t *testing.T) {
+	var mu sync.Mutex
+	var did launchSteps
+	cancel := make(chan struct{})
+
+	_, err := launchUnlessStopped(&mu, cancel,
+		func() error { did.did("push"); return nil },
+		func() { did.did("kill leftovers"); close(cancel) },
+		func() (*avcServerProcess, error) { did.did("start"); return newFakeAvcServer().process(), nil })
+
+	assert.ErrorIs(t, err, errAvcStartCancelled)
+	assert.Equal(t, []string{"push", "kill leftovers"}, did.list())
+}
+
+func TestALaunchStoppedWhileItsServerStartsKillsThatServerBeforeLettingGo(t *testing.T) {
+	var mu sync.Mutex
+	cancel := make(chan struct{})
+	server := newFakeAvcServer()
+
+	_, err := launchUnlessStopped(&mu, cancel,
+		func() error { return nil },
+		func() {},
+		func() (*avcServerProcess, error) { close(cancel); return server.process(), nil })
+
+	assert.ErrorIs(t, err, errAvcStartCancelled)
+	assert.True(t, server.wasKilled(), "killed before the next launch may begin")
+}
+
+func TestLaunchesOfOneDeviceDoNotInterleave(t *testing.T) {
+	var mu sync.Mutex
+	var did launchSteps
+	firstPushing := make(chan struct{})
+	letFirstGo := make(chan struct{})
+	done := make(chan struct{}, 2)
+	launch := func(name string, push func() error) {
+		_, _ = launchUnlessStopped(&mu, neverCancelled, push,
+			func() { did.did(name + " kill leftovers") },
+			func() (*avcServerProcess, error) { did.did(name + " start"); return newFakeAvcServer().process(), nil })
+		done <- struct{}{}
+	}
+
+	go launch("first", func() error { close(firstPushing); <-letFirstGo; return nil })
+	<-firstPushing
+	go launch("second", func() error { return nil })
+	close(letFirstGo)
+	<-done
+	<-done
+
+	assert.Equal(t, []string{"first kill leftovers", "first start", "second kill leftovers", "second start"}, did.list())
 }
 
 func TestCancellingAHungAvcServerLaunchReturnsAtOnceAndKillsItWhenItLands(t *testing.T) {

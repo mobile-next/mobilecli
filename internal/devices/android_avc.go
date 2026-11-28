@@ -71,7 +71,7 @@ func (d *AndroidDevice) startSharedAvcCapture(config ScreenCaptureConfig) error 
 
 	err := d.avcStream.subscribe(avcSource{
 		start: func(emit func([]byte), ended func(error)) (func(), error) {
-			launch := func() (*avcServerProcess, error) { return d.launchAvcServer(config) }
+			launch := func() (*avcServerProcess, error) { return d.launchAvcServer(config, cancel) }
 			return runAvcServerRetrying(launch, d.killLeftoverAvcServers, avcServerStartGrace, cancel, emit, ended)
 		},
 		ready:           config.OnReady,
@@ -135,7 +135,7 @@ func runAvcServer(launch func() (*avcServerProcess, error), grace time.Duration,
 		}
 		proc = launched.proc
 	case <-cancel:
-		go killWhenLanded(landed)
+		abandonLaunch(landed)
 		return nil, errAvcStartCancelled
 	}
 	stop := sync.OnceFunc(proc.kill)
@@ -167,12 +167,77 @@ func runAvcServer(launch func() (*avcServerProcess, error), grace time.Duration,
 	return stop, nil
 }
 
-// killWhenLanded ends a server whose capture was stopped before its launch
-// came back. It waits as long as the launch does; nothing else waits on it.
+// abandonLaunch gives up a launch whose capture was stopped. One that already
+// came back is killed here, before the start returns and the next capture may
+// begin. One still running is left to end by itself: launchUnlessStopped makes
+// a stopped launch touch nothing more on the device and kill what it started.
+func abandonLaunch(landed <-chan avcServerLaunch) {
+	select {
+	case launched := <-landed:
+		if launched.err == nil {
+			launched.proc.kill()
+		}
+	default:
+		go killWhenLanded(landed)
+	}
+}
+
+// killWhenLanded covers the instant between a launch's last look at its stop
+// and its return: such a launch comes back with a server nobody wants.
 func killWhenLanded(landed <-chan avcServerLaunch) {
 	launched := <-landed
 	if launched.err == nil {
 		launched.proc.kill()
+	}
+}
+
+// launchUnlessStopped runs the device steps of a launch (push the agent, kill
+// leftover servers, start the server) one launch at a time per device, and
+// stops between steps once cancel is closed.
+//
+// A capture that is stopped while its push is still inside adb returns at once
+// (see runAvcServer), so the next capture of the device may already be running
+// when the push comes back. Carrying on would kill that capture's server as a
+// leftover, or start a second server beside it. A stopped launch therefore
+// touches nothing more, and a server it had already started is killed before
+// the lock is released, while its control socket is still its own.
+func launchUnlessStopped(mu *sync.Mutex, cancel <-chan struct{}, push func() error, killLeftovers func(), start func() (*avcServerProcess, error)) (*avcServerProcess, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if isClosed(cancel) {
+		return nil, errAvcStartCancelled
+	}
+	if err := push(); err != nil {
+		return nil, err
+	}
+
+	if isClosed(cancel) {
+		return nil, errAvcStartCancelled
+	}
+	killLeftovers()
+
+	if isClosed(cancel) {
+		return nil, errAvcStartCancelled
+	}
+	proc, err := start()
+	if err != nil {
+		return nil, err
+	}
+	if isClosed(cancel) {
+		proc.kill()
+		return nil, errAvcStartCancelled
+	}
+	return proc, nil
+}
+
+// isClosed reports whether c is closed, without waiting.
+func isClosed(c <-chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -273,16 +338,22 @@ func avcServerStartupError(proc *avcServerProcess, text []byte, readErr error) e
 // config's settings. Any AvcServer already on the device is killed first: this
 // device's hub is not running one, so it belongs to a capture that is gone (or
 // to another program), and it would hold the control socket.
-func (d *AndroidDevice) launchAvcServer(config ScreenCaptureConfig) (*avcServerProcess, error) {
-	if err := d.pushTempFile(agentassets.AndroidMobilecliDEX, androidDexPath); err != nil {
-		return nil, fmt.Errorf("push .dex: %w", err)
+func (d *AndroidDevice) launchAvcServer(config ScreenCaptureConfig, cancel <-chan struct{}) (*avcServerProcess, error) {
+	push := func() error {
+		if err := d.pushTempFile(agentassets.AndroidMobilecliDEX, androidDexPath); err != nil {
+			return fmt.Errorf("push .dex: %w", err)
+		}
+		if config.OnProgress != nil {
+			config.OnProgress("Starting Agent")
+		}
+		return nil
 	}
-	if config.OnProgress != nil {
-		config.OnProgress("Starting Agent")
-	}
+	start := func() (*avcServerProcess, error) { return d.startAvcServer(config) }
+	return launchUnlessStopped(&d.avcLaunch, cancel, push, d.killLeftoverAvcServers, start)
+}
 
-	d.killLeftoverAvcServers()
-
+// startAvcServer runs `adb exec-out ... AvcServer` with config's settings.
+func (d *AndroidDevice) startAvcServer(config ScreenCaptureConfig) (*avcServerProcess, error) {
 	cmdArgs := append([]string{"-s", d.getAdbIdentifier(), "exec-out"}, avcServerArgs(config)...)
 	utils.Verbose("Running command: %s %s", getAdbPath(), strings.Join(cmdArgs, " "))
 
