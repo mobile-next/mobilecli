@@ -184,14 +184,14 @@ func androidSdkCandidates() []string {
 }
 
 // findInAndroidSdk returns the first SDK candidate's sdk/dir/tool (tool.exe
-// on Windows) that exists, or "" if none has it.
+// on Windows) that is an executable file, or "" if none has it.
 func findInAndroidSdk(dir, tool string) string {
 	if runtime.GOOS == goosWindows {
 		tool += ".exe"
 	}
 	for _, sdk := range androidSdkCandidates() {
 		p := filepath.Join(sdk, dir, tool)
-		if _, err := os.Stat(p); err == nil {
+		if _, err := exec.LookPath(p); err == nil {
 			return p
 		}
 	}
