@@ -399,6 +399,20 @@ func TestALaunchStoppedDuringItsPushDoesNotKillTheNextCapturesServer(t *testing.
 	assert.Equal(t, []string{"push"}, did.list())
 }
 
+func TestALaunchStoppedWhileItClearsLeftoversStartsNoServer(t *testing.T) {
+	var mu sync.Mutex
+	var did launchSteps
+	cancel := make(chan struct{})
+
+	_, err := launchUnlessStopped(&mu, cancel,
+		func() error { did.did("push"); return nil },
+		func() { did.did("kill leftovers"); close(cancel) },
+		func() (*avcServerProcess, error) { did.did("start"); return newFakeAvcServer().process(), nil })
+
+	assert.ErrorIs(t, err, errAvcStartCancelled)
+	assert.Equal(t, []string{"push", "kill leftovers"}, did.list())
+}
+
 func TestALaunchStoppedWhileItsServerStartsKillsThatServerBeforeLettingGo(t *testing.T) {
 	var mu sync.Mutex
 	cancel := make(chan struct{})

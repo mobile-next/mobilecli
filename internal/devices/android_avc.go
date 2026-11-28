@@ -217,6 +217,9 @@ func launchUnlessStopped(mu *sync.Mutex, cancel <-chan struct{}, push func() err
 	}
 	killLeftovers()
 
+	if isClosed(cancel) {
+		return nil, errAvcStartCancelled
+	}
 	proc, err := start()
 	if err != nil {
 		return nil, err
