@@ -150,55 +150,59 @@ func (d *AndroidDevice) State() string {
 	return d.state
 }
 
-func getAndroidSdkPath() string {
-	sdkPath := os.Getenv("ANDROID_HOME")
-	if sdkPath != "" {
-		if _, err := os.Stat(sdkPath); err == nil {
-			return sdkPath
+// androidSdkCandidates lists the places an Android SDK may live, in order:
+// ANDROID_HOME, the deprecated ANDROID_SDK_ROOT (still set by many CI images
+// and older setups), then Android Studio's default install location for the
+// current OS.
+func androidSdkCandidates() []string {
+	var candidates []string
+	for _, env := range []string{"ANDROID_HOME", "ANDROID_SDK_ROOT"} {
+		if p := os.Getenv(env); p != "" {
+			candidates = append(candidates, p)
 		}
 	}
 
-	// try default Android SDK location on macOS
 	homeDir := os.Getenv("HOME")
 	if homeDir != "" {
-		defaultPath := filepath.Join(homeDir, "Library", "Android", "sdk")
-		if _, err := os.Stat(defaultPath); err == nil {
-			return defaultPath
-		}
+		// Android Studio's default on macOS
+		candidates = append(candidates, filepath.Join(homeDir, "Library", "Android", "sdk"))
 	}
 
-	// try default Android SDK location on Windows
 	if runtime.GOOS == goosWindows {
-		localAppData := os.Getenv("LOCALAPPDATA")
-		if localAppData != "" {
-			defaultPath := filepath.Join(localAppData, "Android", "Sdk")
-			if _, err := os.Stat(defaultPath); err == nil {
-				return defaultPath
-			}
+		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+			candidates = append(candidates, filepath.Join(localAppData, "Android", "Sdk"))
 		}
-
-		// fallback to USERPROFILE on Windows
-		userProfile := os.Getenv("USERPROFILE")
-		if userProfile != "" {
-			defaultPath := filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk")
-			if _, err := os.Stat(defaultPath); err == nil {
-				return defaultPath
-			}
+		if userProfile := os.Getenv("USERPROFILE"); userProfile != "" {
+			candidates = append(candidates, filepath.Join(userProfile, "AppData", "Local", "Android", "Sdk"))
 		}
+	} else if homeDir != "" {
+		// Android Studio's default on Linux
+		candidates = append(candidates, filepath.Join(homeDir, "Android", "Sdk"))
 	}
 
+	return candidates
+}
+
+func getAndroidSdkPath() string {
+	for _, p := range androidSdkCandidates() {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
 	return ""
 }
 
 func getAdbPath() string {
-	sdkPath := getAndroidSdkPath()
-	if sdkPath != "" {
-		adbPath := filepath.Join(sdkPath, "platform-tools", "adb")
-		if runtime.GOOS == goosWindows {
-			adbPath += ".exe"
-		}
+	adbName := "adb"
+	if runtime.GOOS == goosWindows {
+		adbName += ".exe"
+	}
 
-		return adbPath
+	for _, sdkPath := range androidSdkCandidates() {
+		adbPath := filepath.Join(sdkPath, "platform-tools", adbName)
+		if _, err := os.Stat(adbPath); err == nil {
+			return adbPath
+		}
 	}
 
 	// best effort, look in path
