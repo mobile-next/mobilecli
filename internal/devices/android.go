@@ -1983,16 +1983,22 @@ const androidWebViewClass = "android.webkit.WebView"
 
 // unwrapNestedWebView returns the children of a WebView's single child when that
 // child is a second WebView node with the same bounds, as Chromium reports it,
-// so the page shows up as one WebView rather than two.
+// so the page shows up as one WebView rather than two. An inner WebView that
+// carries a label is kept, so its text and identifier are not lost.
 func (a androidNodeAttrs) unwrapNestedWebView(children []types.ScreenElement) []types.ScreenElement {
 	if !a.isWebView() || len(children) != 1 {
 		return children
 	}
 	inner := children[0]
-	if inner.Type != androidWebViewClass || inner.Rect != a.rect {
+	if inner.Type != androidWebViewClass || inner.Rect != a.rect || isLabeledElement(inner) {
 		return children
 	}
 	return inner.Children
+}
+
+func isLabeledElement(e types.ScreenElement) bool {
+	hasText := e.Text != nil && *e.Text != ""
+	return hasText || e.Label != nil || e.Identifier != nil || e.Placeholder != nil || e.Value != nil || e.PaneTitle != nil
 }
 
 func (a androidNodeAttrs) toScreenElement(children []types.ScreenElement) types.ScreenElement {

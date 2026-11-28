@@ -877,3 +877,31 @@ func TestCollectUiNodeElementsKeepsUnlabeledWebViewOnce(t *testing.T) {
 		t.Errorf("expected the page content directly under the WebView, got %+v", output[0].Children)
 	}
 }
+
+func TestCollectUiNodeElementsKeepsLabeledInnerWebView(t *testing.T) {
+	webviewRect := uiRect{X: 0, Y: 289, Width: 1080, Height: 2135}
+	nodes := []uiNode{
+		{
+			Class: "android.webkit.WebView",
+			Rect:  webviewRect,
+			Children: []uiNode{
+				{
+					Class:      "android.webkit.WebView",
+					Text:       "Login",
+					ResourceID: "page",
+					Rect:       webviewRect,
+				},
+			},
+		},
+	}
+
+	output := collectUiNodeElements(nodes)
+
+	if len(output) != 1 || len(output[0].Children) != 1 {
+		t.Fatalf("expected the labeled inner WebView to be kept, got %+v", output)
+	}
+	inner := output[0].Children[0]
+	if screenElementText(inner) != "Login" || inner.Identifier == nil || *inner.Identifier != "page" {
+		t.Errorf("expected the inner WebView's text and identifier, got %+v", inner)
+	}
+}
