@@ -130,7 +130,21 @@ type ScreenCaptureConfig struct {
 	OnReady    func()               // optional: called once capture is confirmed live (e.g. after the ReplayKit broadcast picker is clicked), before streaming begins
 	OnData     func([]byte) bool    // data callback - return false to stop
 	StopChan   <-chan struct{}      // optional (avc only): stops this capture when closed, even while no frames are arriving
+	StopMode   StopMode             // optional (avc only): how this capture leaves once StopChan closes
 }
+
+// StopMode is how an avc capture leaves the stream once its StopChan closes.
+type StopMode int
+
+const (
+	// StopRightAway leaves at once.
+	StopRightAway StopMode = iota
+	// StopAfterAFinalFrame (Android) asks the encoder for a fresh frame and
+	// keeps taking the stream until it arrived, for at most avcFinalFrameLimit.
+	// A static screen sends no frames, so without it a recording would end at
+	// the last change on screen rather than at the stop.
+	StopAfterAFinalFrame
+)
 
 // StartAgentConfig contains configuration for agent startup operations
 type StartAgentConfig struct {

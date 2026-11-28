@@ -15,6 +15,10 @@ const avcSizeLimit int64 = 4_000_000_000
 // endReasonSizeLimit is reported when a recording hit avcSizeLimit.
 const endReasonSizeLimit = "size_limit"
 
+// endReasonStreamEnded is reported when the device's stream stopped before the
+// recording was stopped (the capture agent died, the device went away).
+const endReasonStreamEnded = "stream_ended"
+
 // avcSpool writes a recorded AVC stream to disk one whole NAL unit at a time,
 // and stops before the unit that would take the file past its size limit, so
 // a stopped file never ends in a torn unit.
@@ -65,6 +69,11 @@ func (s *avcSpool) finish() error {
 		s.writeUnit(rest)
 	}
 	return s.err
+}
+
+// hasData tells whether anything was spooled.
+func (s *avcSpool) hasData() bool {
+	return s.written > 0
 }
 
 // reachedSizeLimit tells whether the size limit ended the recording.
