@@ -75,6 +75,10 @@ class WebViews {
 
 	private static long sEvalCounter = 0;
 
+	// returned by the poll script when window.__mwEval is gone: a navigation
+	// replaced the page after the expression ran, so its result can never arrive
+	private static final String EVAL_PAGE_REPLACED = "__mwPageReplaced";
+
 	static JSONObject evaluateExpression(WebView wv, String expression, JSONArray args) throws Exception {
 		String argsJson = (args != null && args.length() > 0) ? args.toString() : "[]";
 		// WebView.evaluateJavascript does not await promises — it would serialize a
@@ -89,6 +93,9 @@ class WebViews {
 		long deadline = System.currentTimeMillis() + 10_000;
 		while (System.currentTimeMillis() < deadline) {
 			String raw = AndroidBridge.evalJs(wv, buildPollScript(token));
+			if (("\"" + EVAL_PAGE_REPLACED + "\"").equals(raw)) {
+				throw new Exception("page navigated during evaluate, retry");
+			}
 			if (raw != null && !"null".equals(raw)) {
 				Object tokenized = new JSONTokener(raw).nextValue();
 				if (tokenized instanceof String) {
@@ -149,11 +156,12 @@ class WebViews {
 			"})()";
 	}
 
-	// Read and clear the stored result for a token; returns null until it's ready.
+	// Read and clear the stored result for a token; returns null until it's ready,
+	// or EVAL_PAGE_REPLACED when a navigation has dropped the result slot.
 	private static String buildPollScript(String token) {
 		return "(function() {" +
 			"  var m = window.__mwEval;" +
-			"  if (!m) { return null; }" +
+			"  if (!m) { return '" + EVAL_PAGE_REPLACED + "'; }" +
 			"  var r = m['" + token + "'];" +
 			"  if (r === undefined) { return null; }" +
 			"  delete m['" + token + "'];" +
