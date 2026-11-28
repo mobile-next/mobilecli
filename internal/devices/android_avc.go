@@ -64,10 +64,26 @@ type avcServerProcess struct {
 // name, so a second server would take the first one's keyframe and bitrate
 // requests. The first capture's scale, fps and bitrate start the server; later
 // captures join it as it runs and their settings are ignored. A bitrate change
-// made through SetAvcBitrate applies to every capture of the device.
+// made through SetAvcBitrate applies to every capture of the device: a
+// recording running beside a live view follows that view's adaptive bitrate.
 func (d *AndroidDevice) startSharedAvcCapture(config ScreenCaptureConfig) error {
 	cancel, stopWatching := watchStop(config.StopChan)
 	defer stopWatching()
+
+	onData := config.OnData
+	if config.StopMode == StopAfterAFinalFrame {
+		done := make(chan struct{})
+		defer close(done)
+		arrived := make(chan struct{}, 1)
+		onData = func(chunk []byte) bool {
+			select {
+			case arrived <- struct{}{}:
+			default:
+			}
+			return config.OnData(chunk)
+		}
+		cancel = leaveAfterFinalFrame(cancel, d.requestFinalFrame, arrived, done, avcFinalFrameQuiet, avcFinalFrameLimit)
+	}
 
 	err := d.avcStream.subscribe(avcSource{
 		start: func(emit func([]byte), ended func(error)) (func(), error) {
@@ -76,7 +92,7 @@ func (d *AndroidDevice) startSharedAvcCapture(config ScreenCaptureConfig) error 
 		},
 		ready:           config.OnReady,
 		requestKeyFrame: func() error { return RequestAvcKeyFrame(d) },
-	}, config.OnData, cancel)
+	}, onData, cancel)
 
 	utils.Verbose("avc stream ended")
 	// stopped by its caller before it began: an ordinary end, like any other stop

@@ -45,7 +45,7 @@ type ScreenRecordResponse struct {
 	Output     string `json:"output"`
 	FrameCount int    `json:"frameCount"`
 	Duration   string `json:"duration"`
-	EndReason  string `json:"endReason,omitempty"` // "size_limit" when the recording hit the size safety stop
+	EndReason  string `json:"endReason,omitempty"` // "size_limit" when the recording hit the size safety stop, "stream_ended" when the device stream stopped first
 }
 
 // MaxScreenRecordTimeLimit is the longest time limit, in seconds, a recording
@@ -119,6 +119,10 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 	}
 
 	switch {
+	case recordsFromSharedStream(targetDevice.Platform(), targetDevice.DeviceType()):
+		// screenRecordAvc signals req.Ready itself once the stream is live (on
+		// real iOS devices, once the broadcast picker is confirmed started).
+		return screenRecordAvc(targetDevice, req, progress)
 	case targetDevice.Platform() == devices.PlatformAndroid:
 		dev, ok := targetDevice.(*devices.AndroidDevice)
 		if !ok {
@@ -139,15 +143,23 @@ func ScreenRecordCommand(req ScreenRecordRequest) *CommandResponse {
 		return screenRecordExclusive(dev.ID(), func() error {
 			return dev.ScreenRecord(req.OutputPath, req.TimeLimit, req.StopChan)
 		}, req, progress)
-	case targetDevice.Platform() == devices.PlatformIOS && targetDevice.DeviceType() == devices.DeviceTypeReal:
-		// real iOS devices route through DeviceKit + ReplayKit; screenRecordAvc
-		// signals req.Ready itself once the broadcast picker is confirmed started.
-		return screenRecordAvc(targetDevice, req, progress)
 	default:
 		err := fmt.Errorf("screen recording is not supported for this device type")
 		req.signalReady(err)
 		return NewErrorResponse(err)
 	}
+}
+
+// recordsFromSharedStream tells whether a device records by subscribing to its
+// one shared H.264 stream, the one live captures use too, rather than with a
+// native recorder. Real devices do: no time cap, one encoder for the stream
+// and the recording. Android emulators keep adb screenrecord and iOS
+// simulators their native recorder.
+func recordsFromSharedStream(platform, deviceType string) bool {
+	if deviceType != devices.DeviceTypeReal {
+		return false
+	}
+	return platform == devices.PlatformAndroid || platform == devices.PlatformIOS
 }
 
 // screenRecordProgress manages progress output during screen recording
@@ -242,9 +254,38 @@ func (p *screenRecordProgress) downloaded(speedMBps float64) {
 
 // screenRecordAvc records through the device's shared H.264 stream: subscribe,
 // spool the elementary stream to a temp .avc, then mux it to mp4. Used by real
-// iOS devices (DeviceKit + ReplayKit), so a concurrent screencapture and
-// screenrecord share one broadcast instead of stealing it from each other.
+// iOS and Android devices, so a concurrent screencapture and screenrecord share
+// one encoder instead of stealing it from each other.
 func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress) *CommandResponse {
+	// iOS keeps its behaviour: its stream ends cleanly on EOF, and a read
+	// error fails the recording as it always did
+	policy := failRecording
+	if targetDevice.Platform() == devices.PlatformAndroid {
+		policy = keepCapturedPart
+	}
+	return recordFromAvcStream(req, progress, policy, func(req ScreenRecordRequest, progress *screenRecordProgress, spool *avcSpool) error {
+		return captureAvc(targetDevice, req, progress, spool)
+	})
+}
+
+// avcCapture spools a device's avc stream until the recording stops.
+type avcCapture func(req ScreenRecordRequest, progress *screenRecordProgress, spool *avcSpool) error
+
+// streamEndPolicy is what a recording does when its stream ends with an error
+// after the recording went live.
+type streamEndPolicy int
+
+const (
+	// failRecording reports the error and saves nothing
+	failRecording streamEndPolicy = iota
+	// keepCapturedPart saves what was captured as a complete mp4, with
+	// endReason "stream_ended"
+	keepCapturedPart
+)
+
+// recordFromAvcStream runs capture into a temp spool and muxes the result; see
+// streamEndPolicy for a stream that ends early.
+func recordFromAvcStream(req ScreenRecordRequest, progress *screenRecordProgress, policy streamEndPolicy, capture avcCapture) *CommandResponse {
 	tempFile, err := os.CreateTemp("", "screenrecord-*.avc")
 	if err != nil {
 		req.signalReady(err)
@@ -261,7 +302,7 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 	}
 
 	spool := newAvcSpool(tempFile, avcSizeLimit)
-	err = captureAvc(targetDevice, req, progress, spool)
+	captureErr := capture(req, progress, spool)
 
 	progress.recordingEnded()
 
@@ -269,27 +310,61 @@ func screenRecordAvc(targetDevice devices.ControllableDevice, req ScreenRecordRe
 		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 	}
 
-	err = errors.Join(err, spool.finish(), tempFile.Close())
+	err = errors.Join(spool.finish(), tempFile.Close())
+	keepsPart := policy == keepCapturedPart && captureErr != nil && progress.wasStarted && spool.hasData()
+	if !keepsPart {
+		err = errors.Join(captureErr, err)
+	}
 
 	if err != nil {
 		// no-op if OnReady already fired above; covers failures that happen
-		// before DeviceKit/the broadcast picker was ever confirmed live.
+		// before the stream (on iOS, the broadcast picker) was confirmed live.
 		req.signalReady(err)
 		return NewErrorResponse(fmt.Errorf("error during screen capture: %w", err))
 	}
 
 	endReason := ""
+	if keepsPart {
+		endReason = endReasonStreamEnded
+		utils.Info("screen recording ended early, saving what was captured: %v", captureErr)
+	}
 	if spool.reachedSizeLimit() {
 		endReason = endReasonSizeLimit
 		utils.Info("screen recording stopped at the %d byte size limit", avcSizeLimit)
 	}
-	return muxAvcRecording(tempPath, req, progress, endReason)
+	var streamErr error
+	if keepsPart {
+		streamErr = captureErr
+	}
+	return muxAvcRecording(tempPath, req, progress, endReason, streamErr)
 }
 
 // captureAvc subscribes to the device's AVC stream and spools it until the
 // caller stops, the time limit passes, or the spool is full.
 func captureAvc(targetDevice devices.ControllableDevice, req ScreenRecordRequest, progress *screenRecordProgress, spool *avcSpool) error {
-	return targetDevice.StartScreenCapture(devices.ScreenCaptureConfig{
+	config, release := avcRecordingConfig(targetDevice.Platform(), req, progress, spool, time.Second)
+	defer release()
+	return targetDevice.StartScreenCapture(config)
+}
+
+// avcRecordingConfig is the capture config of a recording on platform; the
+// returned release must be called once the capture ended. timeLimitUnit is
+// what one unit of req.TimeLimit lasts (a second; tests shorten it).
+//
+// How a recording ends:
+//   - the caller stops it (StopChan, which is the request's context in the
+//     daemon) or the time limit passes: on Android both close the capture's
+//     StopChan, so the device takes one final frame before leaving and a
+//     static screen at the end stays in the video. The time limit is a timer,
+//     not a check on the next chunk, which a static screen may never send.
+//   - the spool is full (size cap): OnData refuses the chunk and the capture
+//     leaves at once; there is no room for a final frame.
+//   - the stream dies: the capture ends with its error; nothing more comes.
+//
+// iOS keeps its earlier behaviour: the time limit and the stop are checked in
+// OnData and the capture leaves at once.
+func avcRecordingConfig(platform string, req ScreenRecordRequest, progress *screenRecordProgress, spool *avcSpool, timeLimitUnit time.Duration) (devices.ScreenCaptureConfig, func()) {
+	config := devices.ScreenCaptureConfig{
 		Format:  "avc",
 		Quality: devices.DefaultQuality,
 		Scale:   devices.DefaultScale,
@@ -310,12 +385,66 @@ func captureAvc(targetDevice devices.ControllableDevice, req ScreenRecordRequest
 		// few; hand the stop channel down so leaving the shared stream doesn't
 		// wait for the next frame.
 		StopChan: req.StopChan,
-	})
+		StopMode: devices.StopRightAway,
+	}
+	if platform != devices.PlatformAndroid {
+		return config, func() {}
+	}
+
+	limit := time.Duration(req.TimeLimit) * timeLimitUnit
+	stop, firstChunk, release := stopAfterTimeLimit(req.StopChan, limit)
+	config.OnData = func(chunk []byte) bool {
+		firstChunk()
+		return spool.write(chunk)
+	}
+	config.StopChan = stop
+	config.StopMode = devices.StopAfterAFinalFrame
+	return config, release
+}
+
+// stopAfterTimeLimit returns a channel that closes when callerStop closes, or
+// limit after firstChunk was first called (never when limit is 0). release
+// ends the wait.
+func stopAfterTimeLimit(callerStop <-chan struct{}, limit time.Duration) (stop <-chan struct{}, firstChunk func(), release func()) {
+	stopped := make(chan struct{})
+	started := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		// the limit starts at the first chunk, not now: setup (on iOS the
+		// broadcast picker) can take longer than a short limit
+		var waitStart <-chan struct{}
+		if limit > 0 {
+			waitStart = started
+		}
+		var expired <-chan time.Time
+		for {
+			select {
+			case <-callerStop:
+				close(stopped)
+				return
+			case <-waitStart:
+				waitStart = nil
+				timer := time.NewTimer(limit)
+				defer timer.Stop()
+				expired = timer.C
+			case <-expired:
+				utils.Verbose("screen recording reached its %s time limit", limit)
+				close(stopped)
+				return
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return stopped, sync.OnceFunc(func() { close(started) }), sync.OnceFunc(func() { close(done) })
 }
 
 // muxAvcRecording converts the spooled stream at avcPath to the requested mp4,
 // streaming from disk so memory does not grow with the recording's length.
-func muxAvcRecording(avcPath string, req ScreenRecordRequest, progress *screenRecordProgress, endReason string) *CommandResponse {
+// streamErr is why the stream ended early, if it did; it is part of any error.
+func muxAvcRecording(avcPath string, req ScreenRecordRequest, progress *screenRecordProgress, endReason string, streamErr error) *CommandResponse {
 	in, err := os.Open(filepath.Clean(avcPath))
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error reading temp file: %w", err))
@@ -338,6 +467,9 @@ func muxAvcRecording(avcPath string, req ScreenRecordRequest, progress *screenRe
 
 	result, err := avc2mp4.ConvertFile(in, outFile)
 	err = errors.Join(err, outFile.Close())
+	if err != nil && streamErr != nil {
+		err = fmt.Errorf("%w (the stream ended early: %w)", err, streamErr)
+	}
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("error converting to mp4: %w", err))
 	}

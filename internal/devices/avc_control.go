@@ -22,6 +22,9 @@ const avcControlSocket = "mobilecli-avc"
 func SetAvcBitrate(device ControllableDevice, bitrate int) error {
 	switch dev := device.(type) {
 	case *AndroidDevice:
+		// every avc capture of the device shares one encoder (see
+		// startSharedAvcCapture), so this also sets a running recording's
+		// bitrate: a recording follows the live view's adaptive bitrate.
 		port, err := dev.ensureControlForward()
 		if err != nil {
 			return err
