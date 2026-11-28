@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	goios "github.com/danielpaulus/go-ios/ios"
+	"github.com/mobile-next/mobilecli/internal/devices/ios"
 )
 
 // iTunesLockdownDomain exposes the native screen resolution over plain usbmux
@@ -13,7 +14,7 @@ const iTunesLockdownDomain = "com.apple.mobile.iTunes"
 
 // readScreenSizeFromLockdown returns the screen size in points, like DeviceKit.
 func readScreenSizeFromLockdown(udid string) (*ScreenSize, error) {
-	device, err := goios.GetDevice(udid)
+	device, err := ios.GetDevice(udid)
 	if err != nil {
 		return nil, fmt.Errorf("device not found: %s: %w", udid, err)
 	}

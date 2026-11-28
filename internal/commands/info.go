@@ -39,5 +39,11 @@ func findDeviceForInfo(deviceID string) (devices.ControllableDevice, error) {
 	if _, isRealIOS := targetDevice.(*devices.IOSDevice); isRealIOS {
 		return targetDevice, nil
 	}
-	return FindDeviceWithAgent(deviceID)
+	err = targetDevice.StartAgent(devices.StartAgentConfig{
+		Hook: GetShutdownHook(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent on device %s: %w", targetDevice.ID(), err)
+	}
+	return targetDevice, nil
 }
