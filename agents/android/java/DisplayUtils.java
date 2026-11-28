@@ -118,12 +118,14 @@ class DisplayUtils {
 
 			@Override
 			public synchronized void refresh() {
-				// a new display is composed once when it appears; re-applying the same
-				// surface to the old one changes nothing and draws nothing
+				// A new display is composed once when it appears; re-applying the same
+				// surface to the old one changes nothing and draws nothing. The old
+				// display goes first: a surface takes one display at a time, and a
+				// second display made on it while the first still holds it never
+				// draws, so the mirror stopped for good once the first was destroyed.
 				try {
-					IBinder fresh = createMirrorDisplay(name, width, height, surface);
 					destroyDisplay(display);
-					display = fresh;
+					display = createMirrorDisplay(name, width, height, surface);
 				} catch (Exception e) {
 					Log.w(TAG, "Failed to refresh the mirror display", e);
 				}
