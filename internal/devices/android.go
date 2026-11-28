@@ -183,8 +183,14 @@ func androidSdkCandidates() []string {
 	return candidates
 }
 
-func getAndroidSdkPath() string {
-	for _, p := range androidSdkCandidates() {
+// findInAndroidSdk returns the first SDK candidate's sdk/dir/tool (tool.exe
+// on Windows) that exists, or "" if none has it.
+func findInAndroidSdk(dir, tool string) string {
+	if runtime.GOOS == goosWindows {
+		tool += ".exe"
+	}
+	for _, sdk := range androidSdkCandidates() {
+		p := filepath.Join(sdk, dir, tool)
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -193,34 +199,17 @@ func getAndroidSdkPath() string {
 }
 
 func getAdbPath() string {
-	adbName := "adb"
-	if runtime.GOOS == goosWindows {
-		adbName += ".exe"
+	if p := findInAndroidSdk("platform-tools", "adb"); p != "" {
+		return p
 	}
-
-	for _, sdkPath := range androidSdkCandidates() {
-		adbPath := filepath.Join(sdkPath, "platform-tools", adbName)
-		if _, err := os.Stat(adbPath); err == nil {
-			return adbPath
-		}
-	}
-
 	// best effort, look in path
 	return "adb"
 }
 
 func getEmulatorPath() string {
-	sdkPath := getAndroidSdkPath()
-	if sdkPath != "" {
-		emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
-		if runtime.GOOS == goosWindows {
-			emulatorPath += ".exe"
-		}
-		if _, err := os.Stat(emulatorPath); err == nil {
-			return emulatorPath
-		}
+	if p := findInAndroidSdk("emulator", "emulator"); p != "" {
+		return p
 	}
-
 	// best effort, look in path
 	return DeviceTypeEmulator
 }

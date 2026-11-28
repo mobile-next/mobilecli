@@ -7,32 +7,15 @@ import (
 	"testing"
 )
 
-// fakeSdk creates dir/platform-tools/adb and returns dir.
-func fakeSdk(t *testing.T, dir string, withAdb bool) string {
-	t.Helper()
-	tools := filepath.Join(dir, "platform-tools")
-	if err := os.MkdirAll(tools, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if withAdb {
-		name := "adb"
-		if runtime.GOOS == goosWindows {
-			name += ".exe"
-		}
-		if err := os.WriteFile(filepath.Join(tools, name), nil, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir
-}
-
-func clearSdkEnv(t *testing.T, home string) {
-	t.Helper()
-	t.Setenv("ANDROID_HOME", "")
-	t.Setenv("ANDROID_SDK_ROOT", "")
-	t.Setenv("HOME", home)
-	t.Setenv("LOCALAPPDATA", "")
-	t.Setenv("USERPROFILE", "")
+// adbPathTestCase describes SDK dirs (relative to a fake $HOME, true = has
+// adb), env vars pointing at them, and which one getAdbPath should pick
+// ("" means fall back to "adb" from PATH).
+type adbPathTestCase struct {
+	name          string
+	sdks          map[string]bool
+	env           map[string]string
+	want          string
+	skipOnWindows bool
 }
 
 func adbIn(sdk string) string {
@@ -43,85 +26,58 @@ func adbIn(sdk string) string {
 	return filepath.Join(sdk, "platform-tools", name)
 }
 
-func TestGetAdbPath_AndroidHome(t *testing.T) {
-	clearSdkEnv(t, t.TempDir())
-	sdk := fakeSdk(t, t.TempDir(), true)
-	t.Setenv("ANDROID_HOME", sdk)
-
-	if got := getAdbPath(); got != adbIn(sdk) {
-		t.Fatalf("getAdbPath() = %q, want %q", got, adbIn(sdk))
+func createFakeSdk(t *testing.T, dir string, withAdb bool) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "platform-tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if withAdb {
+		if err := os.WriteFile(adbIn(dir), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
-func TestGetAdbPath_AndroidSdkRoot(t *testing.T) {
-	clearSdkEnv(t, t.TempDir())
-	sdk := fakeSdk(t, t.TempDir(), true)
-	t.Setenv("ANDROID_SDK_ROOT", sdk)
-
-	if got := getAdbPath(); got != adbIn(sdk) {
-		t.Fatalf("getAdbPath() = %q, want %q", got, adbIn(sdk))
+func useOnlyFakeHome(t *testing.T, home string) {
+	t.Helper()
+	for _, env := range []string{"ANDROID_HOME", "ANDROID_SDK_ROOT", "LOCALAPPDATA", "USERPROFILE"} {
+		t.Setenv(env, "")
 	}
-	if got := getAndroidSdkPath(); got != sdk {
-		t.Fatalf("getAndroidSdkPath() = %q, want %q", got, sdk)
-	}
+	t.Setenv("HOME", home)
 }
 
-func TestGetAdbPath_AndroidHomeWins(t *testing.T) {
-	clearSdkEnv(t, t.TempDir())
-	home := fakeSdk(t, t.TempDir(), true)
-	root := fakeSdk(t, t.TempDir(), true)
-	t.Setenv("ANDROID_HOME", home)
-	t.Setenv("ANDROID_SDK_ROOT", root)
-
-	if got := getAdbPath(); got != adbIn(home) {
-		t.Fatalf("getAdbPath() = %q, want ANDROID_HOME's %q", got, adbIn(home))
+func TestGetAdbPath(t *testing.T) {
+	cases := []adbPathTestCase{
+		{name: "ANDROID_HOME", sdks: map[string]bool{"a": true}, env: map[string]string{"ANDROID_HOME": "a"}, want: "a"},
+		{name: "ANDROID_SDK_ROOT", sdks: map[string]bool{"a": true}, env: map[string]string{"ANDROID_SDK_ROOT": "a"}, want: "a"},
+		{name: "ANDROID_HOME wins over ANDROID_SDK_ROOT", sdks: map[string]bool{"a": true, "b": true}, env: map[string]string{"ANDROID_HOME": "a", "ANDROID_SDK_ROOT": "b"}, want: "a"},
+		{name: "skips SDK without adb", sdks: map[string]bool{"a": false, "b": true}, env: map[string]string{"ANDROID_HOME": "a", "ANDROID_SDK_ROOT": "b"}, want: "b"},
+		{name: "falls back to PATH", sdks: map[string]bool{"a": false}, env: map[string]string{"ANDROID_HOME": "a"}, want: ""},
+		{name: "macOS default", sdks: map[string]bool{filepath.Join("Library", "Android", "sdk"): true}, want: filepath.Join("Library", "Android", "sdk")},
+		{name: "Linux default", sdks: map[string]bool{filepath.Join("Android", "Sdk"): true}, want: filepath.Join("Android", "Sdk"), skipOnWindows: true},
 	}
-}
 
-func TestGetAdbPath_SkipsSdkWithoutAdb(t *testing.T) {
-	clearSdkEnv(t, t.TempDir())
-	noAdb := fakeSdk(t, t.TempDir(), false)
-	withAdb := fakeSdk(t, t.TempDir(), true)
-	t.Setenv("ANDROID_HOME", noAdb)
-	t.Setenv("ANDROID_SDK_ROOT", withAdb)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipOnWindows && runtime.GOOS == goosWindows {
+				t.Skip("not an SDK default on Windows")
+			}
+			home := t.TempDir()
+			useOnlyFakeHome(t, home)
+			for dir, withAdb := range tc.sdks {
+				createFakeSdk(t, filepath.Join(home, dir), withAdb)
+			}
+			for env, dir := range tc.env {
+				t.Setenv(env, filepath.Join(home, dir))
+			}
 
-	if got := getAdbPath(); got != adbIn(withAdb) {
-		t.Fatalf("getAdbPath() = %q, want %q", got, adbIn(withAdb))
-	}
-}
-
-func TestGetAdbPath_FallsBackToPath(t *testing.T) {
-	home := t.TempDir()
-	clearSdkEnv(t, home)
-	t.Setenv("ANDROID_HOME", fakeSdk(t, t.TempDir(), false))
-
-	if got := getAdbPath(); got != "adb" {
-		t.Fatalf("getAdbPath() = %q, want %q", got, "adb")
-	}
-}
-
-func TestGetAdbPath_LinuxDefault(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Android Studio's ~/Android/Sdk default is Linux-only")
-	}
-	home := t.TempDir()
-	clearSdkEnv(t, home)
-	sdk := fakeSdk(t, filepath.Join(home, "Android", "Sdk"), true)
-
-	if got := getAdbPath(); got != adbIn(sdk) {
-		t.Fatalf("getAdbPath() = %q, want %q", got, adbIn(sdk))
-	}
-	if got := getAndroidSdkPath(); got != sdk {
-		t.Fatalf("getAndroidSdkPath() = %q, want %q", got, sdk)
-	}
-}
-
-func TestGetAdbPath_MacDefault(t *testing.T) {
-	home := t.TempDir()
-	clearSdkEnv(t, home)
-	sdk := fakeSdk(t, filepath.Join(home, "Library", "Android", "sdk"), true)
-
-	if got := getAdbPath(); got != adbIn(sdk) {
-		t.Fatalf("getAdbPath() = %q, want %q", got, adbIn(sdk))
+			want := "adb"
+			if tc.want != "" {
+				want = adbIn(filepath.Join(home, tc.want))
+			}
+			if got := getAdbPath(); got != want {
+				t.Fatalf("getAdbPath() = %q, want %q", got, want)
+			}
+		})
 	}
 }
